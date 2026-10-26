@@ -628,8 +628,11 @@ function returnVariantSummary(row: ReturnOrderItem): string {
   return [...new Set(row.details.map((line) => line.materialVariantCode))].join('；') || '—';
 }
 const quantity = (value: string | number) => Number(value).toFixed(0);
-const statusTag = (status: ReturnOrderStatus) =>
-  status === 'returned' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
+const statusTag = (status: ReturnOrderStatus) => {
+  if (status === 'returned') return 'success';
+  if (status === 'cancelled') return 'info';
+  return 'warning';
+};
 function hasDraft() {
   return Boolean(
     form.productionBatchId || form.remark.trim() || candidates.value.some((item) => item.selected),

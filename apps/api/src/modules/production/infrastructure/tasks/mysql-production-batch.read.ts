@@ -114,14 +114,13 @@ export async function selectBatchStepRecords(
       const projection = projectionById.get(String(step.id));
       const quantity = quantities.get(String(step.id));
       if (!projection || !quantity) throw new Error('任务工序数量投影缺失');
-      const executionEditBlockedReason =
-        pendingApprovalId !== null
-          ? '结案或产出更正在审批，工序参数被冻结'
-          : ['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status)
-            ? '任务已结束执行，不能调整实际 SOP'
-            : step.status !== 'pending' && step.status !== 'assigned'
-              ? '工序开始后不能调整实际 SOP'
-              : null;
+      let executionEditBlockedReason: string | null = null;
+      if (pendingApprovalId !== null)
+        executionEditBlockedReason = '结案或产出更正在审批，工序参数被冻结';
+      else if (['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status))
+        executionEditBlockedReason = '任务已结束执行，不能调整实际 SOP';
+      else if (step.status !== 'pending' && step.status !== 'assigned')
+        executionEditBlockedReason = '工序开始后不能调整实际 SOP';
       return {
         ...mapStep(step),
         upperLimitQuantity: quantity.upperLimitQuantity,

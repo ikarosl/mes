@@ -13,14 +13,7 @@ export class NotificationDomainExceptionFilter implements ExceptionFilter {
       setHeader(k: string, v: string): void;
       status(s: number): { json(body: ApiErrorResponse): void };
     }>();
-    const status =
-      error.code === 'NOT_FOUND'
-        ? 404
-        : error.code === 'FORBIDDEN'
-          ? 403
-          : error.code === 'CONCURRENT_MODIFICATION' || error.code === 'NOTIFICATION_EVENT_CONFLICT'
-            ? 409
-            : 400;
+    const status = notificationErrorStatus(error.code);
     const requestId = request.requestId ?? createRequestId();
     response.setHeader('x-request-id', requestId);
     response.status(status).json({
@@ -33,3 +26,10 @@ export class NotificationDomainExceptionFilter implements ExceptionFilter {
     });
   }
 }
+
+const notificationErrorStatus = (code: NotificationDomainError['code']): number => {
+  if (code === 'NOT_FOUND') return 404;
+  if (code === 'FORBIDDEN') return 403;
+  if (code === 'CONCURRENT_MODIFICATION' || code === 'NOTIFICATION_EVENT_CONFLICT') return 409;
+  return 400;
+};

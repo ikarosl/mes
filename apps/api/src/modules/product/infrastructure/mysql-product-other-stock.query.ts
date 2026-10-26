@@ -66,7 +66,9 @@ const sortedIds = (ids: string[]): string[] =>
   [...new Set(ids)].sort((left, right) => {
     const a = BigInt(left);
     const b = BigInt(right);
-    return a < b ? -1 : a > b ? 1 : 0;
+    if (a < b) return -1;
+    if (a > b) return 1;
+    return 0;
   });
 
 const mapObject = (row: ObjectRow, itemKind: OtherStockObject['itemKind']): OtherStockObject => ({
@@ -157,12 +159,14 @@ export class MysqlProductOtherStockQuery extends ProductOtherStockQuery {
           WHERE p.status=1 AND p.is_deleted=0
             AND c.status=1 AND c.is_deleted=0 AND c.item_kind='finished_product'`;
     const keyword = query.keyword?.trim();
-    const keywordFilter = keyword
-      ? material
+    let keywordFilter = '';
+    let keywordParameters: string[] = [];
+    if (keyword) {
+      keywordFilter = material
         ? ' AND (m.material_code LIKE ? OR m.material_name LIKE ? OR v.variant_code LIKE ?)'
-        : ' AND (p.item_code LIKE ? OR p.product_name LIKE ?)'
-      : '';
-    const keywordParameters = keyword ? Array<string>(material ? 3 : 2).fill(`%${keyword}%`) : [];
+        : ' AND (p.item_code LIKE ? OR p.product_name LIKE ?)';
+      keywordParameters = Array<string>(material ? 3 : 2).fill(`%${keyword}%`);
+    }
     const materialFilter = query.materialId !== undefined ? ' AND m.id=?' : '';
     const materialParameters = query.materialId !== undefined ? [query.materialId] : [];
     const orderBy = material ? 'm.material_code,v.variant_code,v.id' : 'p.item_code,p.id';
@@ -171,14 +175,13 @@ export class MysqlProductOtherStockQuery extends ProductOtherStockQuery {
         `${base}${materialFilter}${keywordFilter} ORDER BY ${orderBy} LIMIT ?`,
         [...materialParameters, ...keywordParameters, MATERIAL_OPTIONS_WINDOW_SIZE + 1],
       );
-      const selected = includeIds.length
-        ? (
-            await db.query<ObjectRow[]>(
-              `${base}${materialFilter} AND ${material ? 'v' : 'p'}.id IN (${includeIds.map(() => '?').join(',')}) ORDER BY ${orderBy}`,
-              [...materialParameters, ...includeIds],
-            )
-          )[0]
-        : [];
+      let selected: ObjectRow[] = [];
+      if (includeIds.length) {
+        [selected] = await db.query<ObjectRow[]>(
+          `${base}${materialFilter} AND ${material ? 'v' : 'p'}.id IN (${includeIds.map(() => '?').join(',')}) ORDER BY ${orderBy}`,
+          [...materialParameters, ...includeIds],
+        );
+      }
       const rows = new Map(
         [...window.slice(0, MATERIAL_OPTIONS_WINDOW_SIZE), ...selected].map((row) => [row.id, row]),
       );

@@ -13,14 +13,12 @@
       v-for="record in records"
       :key="record.id"
       :name="record.id"
-      :title="`${!currentRoundId ? '检验记录' : record.roundId === currentRoundId ? '本轮检验' : '历史检验'} · 记录 ID ${record.id} · ${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[record.releaseDecision]} · ${formatDateTimeForDisplay(record.inspectedAt)}${record.roundId !== currentRoundId && record.id === latestInspectionId ? ' · 最近一条' : ''}`"
+      :title="recordTitle(record)"
     >
       <FinishedInspectionRecordDetail
         :inspection="record"
         :unit="unit"
-        :round-label="
-          currentRoundId ? (record.roundId === currentRoundId ? '本轮' : '历史轮') : null
-        "
+        :round-label="roundLabel(record)"
       />
     </el-collapse-item>
   </el-collapse>
@@ -39,6 +37,23 @@ const props = defineProps<{
   unit?: string;
 }>();
 const expanded = ref<string[]>([]);
+function recordTitle(record: ProductionOutputInspection): string {
+  let source = '检验记录';
+  if (props.currentRoundId) {
+    if (record.roundId === props.currentRoundId) source = '本轮检验';
+    else source = '历史检验';
+  }
+  const latest =
+    record.roundId !== props.currentRoundId && record.id === props.latestInspectionId
+      ? ' · 最近一条'
+      : '';
+  return `${source} · 记录 ID ${record.id} · ${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[record.releaseDecision]} · ${formatDateTimeForDisplay(record.inspectedAt)}${latest}`;
+}
+function roundLabel(record: ProductionOutputInspection): string | null {
+  if (!props.currentRoundId) return null;
+  if (record.roundId === props.currentRoundId) return '本轮';
+  return '历史轮';
+}
 watch(
   () => [props.focusedRecordId, props.records],
   () => {

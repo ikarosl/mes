@@ -8,6 +8,8 @@ import type {
   BatchCloseoutApprovalSnapshot,
   BatchCloseoutAction,
   ProductionOutputDetail,
+  ProductionOutputInspection,
+  ProductionOutputRound,
 } from '@company/contracts';
 import type { MysqlProductionCloseoutRepository } from './mysql-production-closeout.repository.js';
 import type { PoolConnection, RowDataPacket } from 'mysql2/promise';
@@ -276,19 +278,12 @@ export async function loadOutputState(
   const currentRound = rounds.find((round) => round.id === nullableOutputId(row.current_round_id));
   const currentRoundInspection = inspections.find((record) => record.roundId === currentRound?.id);
   const latestInspection = inspections.at(-1) ?? null;
-  const applicableInspectionId =
-    !inCloseoutPhase ||
-    currentRound?.status === 'superseded' ||
-    currentRound?.status === 'inspecting'
-      ? null
-      : currentRoundInspection
-        ? currentRoundInspection.releaseDecision === 'released'
-          ? currentRoundInspection.id
-          : null
-        : currentRound?.triggerType === 'finalization_correction' &&
-            latestInspection?.releaseDecision === 'released'
-          ? latestInspection.id
-          : null;
+  const applicableInspectionId = applicableOutputInspectionId(
+    inCloseoutPhase,
+    currentRound,
+    currentRoundInspection,
+    latestInspection,
+  );
   const canExecuteCurrentRevision =
     inCloseoutPhase &&
     base !== null &&
@@ -297,17 +292,12 @@ export async function loadOutputState(
     row.pending_approval_id === null &&
     row.correction_reason === null &&
     base.allocations.some((allocation) => Number(allocation.remainingQuantity) > 0);
-  const executionBlockedReason = canExecuteCurrentRevision
-    ? null
-    : base === null
-      ? '尚无批准清单'
-      : currentRound?.id === base.roundId &&
-          currentRound.status === 'finalized' &&
-          base.allocations.every((allocation) => Number(allocation.remainingQuantity) <= 0)
-        ? '已无剩余待入库量'
-        : row.pending_approval_id !== null
-          ? '清单正在审批中，旧版剩余入库已暂停'
-          : '当前轮次尚未重新定稿，旧版剩余入库已暂停';
+  const executionBlockedReason = outputExecutionBlockedReason(
+    canExecuteCurrentRevision,
+    base,
+    currentRound,
+    row,
+  );
   const reinspection = evaluateOutputReinspection({
     batchStatus: closeout.check.batchStatus,
     hasPendingApproval: row.pending_approval_id !== null,
@@ -363,14 +353,7 @@ export async function loadOutputState(
       batchId: String(row.production_batch_id),
       version: row.version,
       mode: row.closeout_mode,
-      status:
-        row.pending_approval_id !== null
-          ? 'reviewing'
-          : row.correction_reason !== null
-            ? 'correcting'
-            : base
-              ? 'approved'
-              : 'draft',
+      status: outputDisplayStatus(row, base),
       check: closeout.check,
       workOrderOwnerId: ownerEvidence.ownerId,
       workOrderOwnerName: ownerEvidence.ownerId,
@@ -409,6 +392,58 @@ export async function loadOutputState(
     },
   };
 }
+function applicableOutputInspectionId(
+  inCloseoutPhase: boolean,
+  currentRound: ProductionOutputRound | undefined,
+  currentRoundInspection: ProductionOutputInspection | undefined,
+  latestInspection: ProductionOutputInspection | null,
+): string | null {
+  if (
+    !inCloseoutPhase ||
+    currentRound?.status === 'superseded' ||
+    currentRound?.status === 'inspecting'
+  )
+    return null;
+  if (currentRoundInspection) {
+    if (currentRoundInspection.releaseDecision === 'released') return currentRoundInspection.id;
+    return null;
+  }
+  if (
+    currentRound?.triggerType === 'finalization_correction' &&
+    latestInspection?.releaseDecision === 'released'
+  )
+    return latestInspection.id;
+  return null;
+}
+
+function outputExecutionBlockedReason(
+  canExecuteCurrentRevision: boolean,
+  base: ProductionOutputRevision | null,
+  currentRound: ProductionOutputRound | undefined,
+  row: CloseoutRow,
+): string | null {
+  if (canExecuteCurrentRevision) return null;
+  if (base === null) return '尚无批准清单';
+  if (
+    currentRound?.id === base.roundId &&
+    currentRound.status === 'finalized' &&
+    base.allocations.every((allocation) => Number(allocation.remainingQuantity) <= 0)
+  )
+    return '已无剩余待入库量';
+  if (row.pending_approval_id !== null) return '清单正在审批中，旧版剩余入库已暂停';
+  return '当前轮次尚未重新定稿，旧版剩余入库已暂停';
+}
+
+function outputDisplayStatus(
+  row: CloseoutRow,
+  base: ProductionOutputRevision | null,
+): ProductionOutputDetail['status'] {
+  if (row.pending_approval_id !== null) return 'reviewing';
+  if (row.correction_reason !== null) return 'correcting';
+  if (base) return 'approved';
+  return 'draft';
+}
+
 export function snapshotOf(row: CloseoutRow, state: OutputState): BatchCloseoutApprovalSnapshot {
   const output = state.detail.draft;
   const inspection = state.detail.inspections.find(

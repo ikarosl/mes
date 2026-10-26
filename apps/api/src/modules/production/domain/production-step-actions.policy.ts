@@ -18,22 +18,8 @@ export function evaluateProductionStepActionAvailability(
 ): ProductionStepActionAvailability {
   const frozen = input.pendingApprovalId !== null;
   const executing = input.batchStatus === 'doing';
-  const startBlockedReason = frozen
-    ? '结案或产出更正在审批，工序状态被冻结'
-    : !input.hasResponsibleUser
-      ? '工序尚未派工'
-      : input.stepStatus !== 'assigned' || input.hasStarted
-        ? '只有已派工且未开始的工序可以开始'
-        : !executing
-          ? '请由管理员先明确开始任务执行；结束执行后工序只读'
-          : null;
-  const executionBlockedReason = frozen
-    ? '结案或产出更正在审批，工序状态被冻结'
-    : !executing
-      ? '任务已结束执行，工序状态只读'
-      : !input.hasStarted
-        ? '工序尚未实际开始'
-        : null;
+  const startBlockedReason = stepStartBlockedReason(input, frozen, executing);
+  const executionBlockedReason = stepExecutionBlockedReason(input, frozen, executing);
   const completeBlockedReason =
     executionBlockedReason ??
     (input.stepStatus === 'doing' ? null : '只有进行中的工序可以明确完成');
@@ -49,4 +35,28 @@ export function evaluateProductionStepActionAvailability(
     canReopen: reopenBlockedReason === null,
     reopenBlockedReason,
   };
+}
+
+function stepStartBlockedReason(
+  input: ProductionStepActionState,
+  frozen: boolean,
+  executing: boolean,
+): string | null {
+  if (frozen) return '结案或产出更正在审批，工序状态被冻结';
+  if (!input.hasResponsibleUser) return '工序尚未派工';
+  if (input.stepStatus !== 'assigned' || input.hasStarted)
+    return '只有已派工且未开始的工序可以开始';
+  if (!executing) return '请由管理员先明确开始任务执行；结束执行后工序只读';
+  return null;
+}
+
+function stepExecutionBlockedReason(
+  input: ProductionStepActionState,
+  frozen: boolean,
+  executing: boolean,
+): string | null {
+  if (frozen) return '结案或产出更正在审批，工序状态被冻结';
+  if (!executing) return '任务已结束执行，工序状态只读';
+  if (!input.hasStarted) return '工序尚未实际开始';
+  return null;
 }

@@ -111,15 +111,11 @@ export function productionDemandTraceStatus(row: ProductionMaterialDemandItem): 
 } {
   if (row.correction?.pendingCorrectionId)
     return { label: MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending, type: 'warning' };
-  const type: StatusTagType =
-    row.businessStatus === 'fulfilled'
-      ? 'success'
-      : row.businessStatus === 'cancelled'
-        ? 'danger'
-        : row.businessStatus === 'closed'
-          ? 'info'
-          : 'primary';
-  return { label: DEMAND_BUSINESS_STATUS_LABELS[row.businessStatus], type };
+  const label = DEMAND_BUSINESS_STATUS_LABELS[row.businessStatus];
+  if (row.businessStatus === 'fulfilled') return { label, type: 'success' };
+  if (row.businessStatus === 'cancelled') return { label, type: 'danger' };
+  if (row.businessStatus === 'closed') return { label, type: 'info' };
+  return { label, type: 'primary' };
 }
 
 export function productionDemandTraceProgressLabel(row: ProductionMaterialDemandItem): string {
@@ -130,10 +126,10 @@ export function productionDemandCorrectionHistoryStatus(row: DemandCorrectionHis
   label: string;
   type: StatusTagType;
 } {
-  return {
-    label: DEMAND_CORRECTION_STATE_LABELS[row.state],
-    type: row.state === 'applied' ? 'success' : row.state === 'pending' ? 'warning' : 'info',
-  };
+  const label = DEMAND_CORRECTION_STATE_LABELS[row.state];
+  if (row.state === 'applied') return { label, type: 'success' };
+  if (row.state === 'pending') return { label, type: 'warning' };
+  return { label, type: 'info' };
 }
 
 export function productionDemandCorrectionReplacementLabel(

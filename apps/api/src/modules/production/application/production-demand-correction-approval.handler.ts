@@ -54,16 +54,13 @@ export async function productionApprovalCall<T>(work: () => Promise<T>): Promise
   try {
     return await work();
   } catch (error) {
-    if (error instanceof ProductionDomainError)
-      throw new ApprovalSubjectError(
-        error.code === 'NOT_FOUND'
-          ? 'NOT_FOUND'
-          : error.code === 'INVALID_INPUT'
-            ? 'INVALID_INPUT'
-            : 'CONFLICT',
-        error.message,
-        error.details,
-      );
+    if (error instanceof ProductionDomainError) {
+      let code: ApprovalSubjectError['code'];
+      if (error.code === 'NOT_FOUND') code = 'NOT_FOUND';
+      else if (error.code === 'INVALID_INPUT') code = 'INVALID_INPUT';
+      else code = 'CONFLICT';
+      throw new ApprovalSubjectError(code, error.message, error.details);
+    }
     throw error;
   }
 }

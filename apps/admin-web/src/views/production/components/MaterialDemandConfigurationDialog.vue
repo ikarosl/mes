@@ -137,13 +137,7 @@
               type="primary"
               @click="toggleHint(row.id)"
             >
-              {{
-                expandedHints.includes(row.id)
-                  ? '收起提示'
-                  : row.supplierHint
-                    ? '编辑提示'
-                    : '添加提示'
-              }}
+              {{ hintActionLabel(row) }}
             </el-button>
             <span
               v-if="row.supplierHint && !expandedHints.includes(row.id)"
@@ -258,6 +252,11 @@ const toggleHint = (id: string): void => {
   expandedHints.value = expandedHints.value.includes(id)
     ? expandedHints.value.filter((current) => current !== id)
     : [...expandedHints.value, id];
+};
+const hintActionLabel = (row: RowDraft): string => {
+  if (expandedHints.value.includes(row.id)) return '收起提示';
+  if (row.supplierHint) return '编辑提示';
+  return '添加提示';
 };
 const configuredTotal = (row: RowDraft): number =>
   row.splits.reduce((total, split) => total + (Number(split.quantity) || 0), 0);

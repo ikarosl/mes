@@ -38,13 +38,15 @@ export const EMessage = {
   info: (message: string) => ElMessage.info(message),
   error: (error: unknown, fallback = '操作失败，请稍后重试') => {
     if (isHttpErrorHandled(error)) return;
-    notifyError(
-      typeof error === 'string'
-        ? error
-        : error instanceof Error && error.message
-          ? error.message
-          : fallback,
-    );
+    if (typeof error === 'string') {
+      notifyError(error);
+      return;
+    }
+    if (error instanceof Error && error.message) {
+      notifyError(error.message);
+      return;
+    }
+    notifyError(fallback);
   },
 };
 

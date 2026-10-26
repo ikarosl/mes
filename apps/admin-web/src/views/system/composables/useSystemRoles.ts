@@ -16,18 +16,16 @@ export function useSystemRoles() {
   const loadRoles = async (): Promise<void> => {
     loading.value = true;
     try {
+      let status: typeof SYSTEM_STATUS.enabled | typeof SYSTEM_STATUS.disabled | undefined;
+      if (query.status === 'enabled') status = SYSTEM_STATUS.enabled;
+      else if (query.status === 'disabled') status = SYSTEM_STATUS.disabled;
       const result = await systemApi.roles({
         page: currentPage.value,
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,
         name: query.name.trim() || undefined,
         code: query.code.trim() || undefined,
-        status:
-          query.status === 'enabled'
-            ? SYSTEM_STATUS.enabled
-            : query.status === 'disabled'
-              ? SYSTEM_STATUS.disabled
-              : undefined,
+        status,
       });
       roles.value = result.items;
       total.value = result.total;

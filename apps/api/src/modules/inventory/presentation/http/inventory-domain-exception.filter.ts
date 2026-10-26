@@ -24,8 +24,7 @@ export class InventoryDomainExceptionFilter implements ExceptionFilter {
     const header = request.headers?.['x-request-id'];
     const supplied = Array.isArray(header) ? header[0] : header;
     const requestId = request.requestId ?? (isRequestId(supplied) ? supplied : createRequestId());
-    const status =
-      exception.code === 'NOT_FOUND' ? 404 : exception.code === 'INVALID_INPUT' ? 400 : 409;
+    const status = inventoryErrorStatus(exception.code);
     response.setHeader('x-request-id', requestId);
     response.status(status).json({
       status,
@@ -38,3 +37,9 @@ export class InventoryDomainExceptionFilter implements ExceptionFilter {
     });
   }
 }
+
+const inventoryErrorStatus = (code: InventoryDomainError['code']): number => {
+  if (code === 'NOT_FOUND') return 404;
+  if (code === 'INVALID_INPUT') return 400;
+  return 409;
+};

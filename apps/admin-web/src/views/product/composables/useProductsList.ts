@@ -24,12 +24,17 @@ export function useProductsList() {
     const token = ++requestToken;
     loading.value = true;
     try {
+      let status: 0 | 1 | undefined;
+      if (query.status !== '') {
+        if (query.status === 'enabled') status = 1;
+        else status = 0;
+      }
       const result = await productApi.products({
         page: currentPage.value,
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,
         categoryId: query.categoryId || undefined,
-        status: query.status === '' ? undefined : query.status === 'enabled' ? 1 : 0,
+        status,
       });
       if (token !== requestToken) return;
       products.value = result.items;

@@ -33,5 +33,8 @@ const dependencySummary = (result: HealthCheckResult): string =>
     `objectStorage=${formatDependency(result.objectStorage)}`,
   ].join(' ');
 
-const formatDependency = (dependency: HealthDependency): string =>
-  dependency.status === 'up' ? 'up' : `down${dependency.error ? `(code=${dependency.error})` : ''}`;
+const formatDependency = (dependency: HealthDependency): string => {
+  if (dependency.status === 'up') return 'up';
+  if (dependency.error) return `down(code=${dependency.error})`;
+  return 'down';
+};

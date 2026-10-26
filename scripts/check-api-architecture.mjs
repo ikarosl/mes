@@ -12,7 +12,9 @@ const filesUnder = async (directory) => {
     entries.map((entry) => {
       const target = path.join(directory, entry.name);
       if (entry.isDirectory() && entry.name === '__tests__') return [];
-      return entry.isDirectory() ? filesUnder(target) : target.endsWith('.ts') ? [target] : [];
+      if (entry.isDirectory()) return filesUnder(target);
+      if (target.endsWith('.ts')) return [target];
+      return [];
     }),
   );
   return files.flat();
@@ -596,6 +598,19 @@ const sqlFragments = (relative, source) => {
   );
 };
 
+const platformSourceOwner = (relative) => {
+  if (relative === 'apps/api/src/infrastructure/numbering/mysql-business-number.ts') {
+    return 'platform-numbering';
+  }
+  if (relative.startsWith('apps/api/src/infrastructure/idempotency/')) {
+    return 'platform-idempotency';
+  }
+  if (relative === 'apps/api/src/common/audit/transactional-audit-writer.ts') {
+    return 'platform-audit';
+  }
+  return null;
+};
+
 const applyDataOwnershipChecks = async (sources, violations) => {
   const owners = new Map();
   for (const [owner, tables] of Object.entries(API_DATA_OWNERSHIP)) {
@@ -616,15 +631,7 @@ const applyDataOwnershipChecks = async (sources, violations) => {
   for (const { path: relative, source } of sources) {
     if (!relative.startsWith('apps/api/src/')) continue;
     const moduleName = relative.match(/^apps\/api\/src\/modules\/([^/]+)\//)?.[1];
-    const sourceOwner =
-      moduleName ??
-      (relative === 'apps/api/src/infrastructure/numbering/mysql-business-number.ts'
-        ? 'platform-numbering'
-        : relative.startsWith('apps/api/src/infrastructure/idempotency/')
-          ? 'platform-idempotency'
-          : relative === 'apps/api/src/common/audit/transactional-audit-writer.ts'
-            ? 'platform-audit'
-            : null);
+    const sourceOwner = moduleName ?? platformSourceOwner(relative);
     const forbidden = new Set();
     const displayAccess = API_DISPLAY_READ_ACCESS.find((rule) =>
       relative.startsWith(rule.directory),

@@ -37,9 +37,7 @@
           ><div>{{ quantity(row.scrapQuantity) }} {{ row.unit }}</div>
           <el-tag
             size="small"
-            :type="
-              row.status === 'confirmed' ? 'success' : row.status === 'pending' ? 'warning' : 'info'
-            "
+            :type="lossStatusType(row.status)"
             >{{ scrapStatusLabel(row.status) }}</el-tag
           ></template
         ></el-table-column
@@ -71,7 +69,13 @@ import { MATERIAL_LOSS_PURPOSE_LABELS } from '@company/constants';
 import { scrapStatusLabel } from '../../../constants/business-status';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity as quantity } from '../production-status';
+import type { StatusTagType } from '../production-status';
 defineProps<{ records: BatchTerminationLossRecord[] }>();
+function lossStatusType(status: BatchTerminationLossRecord['status']): StatusTagType {
+  if (status === 'confirmed') return 'success';
+  if (status === 'pending') return 'warning';
+  return 'info';
+}
 </script>
 <style scoped>
 .loss-records {

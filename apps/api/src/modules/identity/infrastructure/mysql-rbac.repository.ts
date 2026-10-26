@@ -769,8 +769,11 @@ const findMissingReferenceIds = async (
 };
 
 /** 按数值升序比较 BIGINT 主键字符串，保证多行引用锁的获取顺序一致。 */
-const compareNumericId = (a: string, b: string): number =>
-  BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;
+const compareNumericId = (a: string, b: string): number => {
+  if (BigInt(a) < BigInt(b)) return -1;
+  if (BigInt(a) > BigInt(b)) return 1;
+  return 0;
+};
 
 /** 把基础设施层可预期的数据库错误映射为写结果；未预期的错误继续上抛。 */
 const mapWriteError = (error: unknown, dupMessage: string): RbacWriteFailure => {

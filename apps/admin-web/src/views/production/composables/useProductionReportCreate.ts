@@ -62,6 +62,11 @@ export const useProductionReportCreate = (options: {
     intent.reset();
     intentStatus.value = 'idle';
   };
+  const successMessage = (): string => {
+    if (historical.value) return '普通正常报工历史补录已记录';
+    if (mode.value === 'normal') return '正常报工已记录';
+    return '异常报工已记录，待按业务规则处置';
+  };
   const submit = async (input: ProductionReportInput): Promise<void> => {
     if (
       !task.value ||
@@ -122,13 +127,7 @@ export const useProductionReportCreate = (options: {
               ),
       );
       visible.value = false;
-      EMessage.success(
-        historical.value
-          ? '普通正常报工历史补录已记录'
-          : mode.value === 'normal'
-            ? '正常报工已记录'
-            : '异常报工已记录，待按业务规则处置',
-      );
+      EMessage.success(successMessage());
       await options.refresh();
     } catch (error) {
       EMessage.error(error, '报工未完成，请核对工序资格和统一上限');

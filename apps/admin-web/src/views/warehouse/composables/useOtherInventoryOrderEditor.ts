@@ -310,13 +310,15 @@ export function useOtherInventoryOrderEditor(
       applyOrder(result);
       mode.value = command.kind === 'create' || command.kind === 'save' ? 'edit' : 'detail';
       cancelReason.value = '';
-      EMessage.success(
-        command.kind === 'confirm'
-          ? `${result.orderNo} 已整单确认，库存流水已生成`
-          : command.kind === 'cancel'
-            ? `${result.orderNo} 已取消，未生成库存流水`
-            : `${result.orderNo} 草稿已保存，库存尚未变化`,
-      );
+      let successMessage: string;
+      if (command.kind === 'confirm') {
+        successMessage = `${result.orderNo} 已整单确认，库存流水已生成`;
+      } else if (command.kind === 'cancel') {
+        successMessage = `${result.orderNo} 已取消，未生成库存流水`;
+      } else {
+        successMessage = `${result.orderNo} 草稿已保存，库存尚未变化`;
+      }
+      EMessage.success(successMessage);
       await afterWrite();
     } catch (cause) {
       if (epoch !== editorEpoch) return;

@@ -28,15 +28,7 @@
         <el-descriptions-item
           label="开工前提"
           :span="2"
-          >{{
-            basis.orderType === 'research'
-              ? basis.hasInitialMaterialConfiguration
-                ? '正式物料需求已配置；研发任务无需 BOM 或工序'
-                : '须先配置至少一条正式物料需求；研发任务无需 BOM 或工序'
-              : basis.hasInitialMaterialConfiguration
-                ? '正式 BOM 需求已完整配置'
-                : '须先完成正式 BOM 需求配置'
-          }}</el-descriptions-item
+          >{{ startPrerequisite }}</el-descriptions-item
         >
       </el-descriptions>
       <el-alert
@@ -185,6 +177,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import type {
   DemandType,
   ProductionExecutionStartCheck,
@@ -245,6 +238,16 @@ const editor = useProductionTaskCommand<
 });
 const { basis, reason, loading, submitting, error, unresolved, stale, canSubmit, canRetry } =
   editor;
+const startPrerequisite = computed(() => {
+  const check = basis.value;
+  if (!check) return '';
+  if (check.orderType === 'research') {
+    if (check.hasInitialMaterialConfiguration) return '正式物料需求已配置；研发任务无需 BOM 或工序';
+    return '须先配置至少一条正式物料需求；研发任务无需 BOM 或工序';
+  }
+  if (check.hasInitialMaterialConfiguration) return '正式 BOM 需求已完整配置';
+  return '须先完成正式 BOM 需求配置';
+});
 defineExpose({ close: editor.close, navigationLocked: submitting });
 </script>
 

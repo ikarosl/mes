@@ -23,14 +23,19 @@ export const normalizeDateOnly = (value: string): string => {
   return value;
 };
 
+const readTimestamp = (value: InstantInput): number => {
+  if (typeof value === 'number') return value;
+  if (value instanceof Date) return value.getTime();
+  return Date.parse(value);
+};
+
 const instantTimestamp = (value: InstantInput): number => {
   if (typeof value === 'string') {
     const match = ZONED_INSTANT_PATTERN.exec(value);
     if (!match) throw new RangeError('Expected an ISO date-time with an explicit offset');
     normalizeDateOnly(match[1]!);
   }
-  const timestamp =
-    typeof value === 'number' ? value : value instanceof Date ? value.getTime() : Date.parse(value);
+  const timestamp = readTimestamp(value);
   if (!Number.isFinite(timestamp)) throw new RangeError('Invalid instant');
   return timestamp;
 };

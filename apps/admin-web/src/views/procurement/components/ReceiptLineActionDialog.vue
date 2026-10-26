@@ -163,15 +163,7 @@
         :loading="command.busy.value"
         :disabled="!canConfirm"
         @click="confirm"
-        >{{
-          action === 'return'
-            ? '确认全部已退回供应商'
-            : action === 'correct'
-              ? '确认更正到货量'
-              : action === 'revoke'
-                ? '撤销拒收并重新办理'
-                : '确认人工拒收'
-        }}</el-button
+        >{{ confirmLabel }}</el-button
       ></template
     >
   </el-dialog>
@@ -212,15 +204,18 @@ const {
 const line = computed(() =>
   sourceLine.value && 'allocations' in sourceLine.value ? sourceLine.value : null,
 );
-const title = computed(() =>
-  action.value === 'correct'
-    ? '更正到货量'
-    : action.value === 'return'
-      ? '确认实际退回供应商'
-      : action.value === 'revoke'
-        ? '撤销人工拒收并重新办理'
-        : '人工拒收整批剩余实物',
-);
+const title = computed(() => {
+  if (action.value === 'correct') return '更正到货量';
+  if (action.value === 'return') return '确认实际退回供应商';
+  if (action.value === 'revoke') return '撤销人工拒收并重新办理';
+  return '人工拒收整批剩余实物';
+});
+const confirmLabel = computed(() => {
+  if (action.value === 'return') return '确认全部已退回供应商';
+  if (action.value === 'correct') return '确认更正到货量';
+  if (action.value === 'revoke') return '撤销拒收并重新办理';
+  return '确认人工拒收';
+});
 const beforeClose = (): void => {
   void close();
 };

@@ -152,13 +152,7 @@
           <template #default="{ row }">
             <div>{{ row.operatorName || '-' }}</div>
             <div class="secondary-text">
-              {{
-                row.confirmedAt
-                  ? formatDateTimeForDisplay(row.confirmedAt)
-                  : row.status === 'cancelled'
-                    ? '已取消，库存未变动'
-                    : '等待整单确认'
-              }}
+              {{ confirmationTimeText(row) }}
             </div>
           </template>
         </el-table-column>
@@ -220,7 +214,11 @@ import {
   OTHER_INVENTORY_DIRECTION_LABELS,
   OTHER_INVENTORY_STATUS_LABELS,
 } from '@company/constants';
-import type { OtherInventoryDirection, OtherInventoryStatus } from '@company/contracts';
+import type {
+  OtherInventoryDirection,
+  OtherInventoryOrder,
+  OtherInventoryStatus,
+} from '@company/contracts';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
@@ -249,6 +247,11 @@ const { canAccessRoute } = useRouteAccess();
 const orders = useOtherInventoryOrdersList(props.direction);
 const editor = useOtherInventoryOrderEditor(props.direction, props.routeName, orders.load);
 onMounted(orders.load);
+function confirmationTimeText(row: OtherInventoryOrder): string {
+  if (row.confirmedAt) return formatDateTimeForDisplay(row.confirmedAt);
+  if (row.status === 'cancelled') return '已取消，库存未变动';
+  return '等待整单确认';
+}
 
 async function goBatch(itemBatchId: string): Promise<void> {
   if (!canAccessRoute({ name: 'warehouse-inventory' })) return;

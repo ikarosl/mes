@@ -478,21 +478,14 @@
         :disabled="!canSubmit"
         @click="submit"
       >
-        {{
-          editor?.action === 'unassign'
-            ? '确认撤回'
-            : editor?.action === 'assign'
-              ? '确认派工'
-              : editor?.action === 'reassign'
-                ? '确认改派'
-                : '保存参考文件'
-        }}
+        {{ submitLabel }}
       </el-button>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import { BATCH_STEP_REWORK_RESULT_LABELS, WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import InlineHint from '../../../components/InlineHint.vue';
@@ -559,6 +552,12 @@ const {
 } = useProductionTaskStepsDialog(props, {
   changed: (batchId) => emit('changed', batchId),
   closed: () => emit('update:visible', false),
+});
+const submitLabel = computed(() => {
+  if (editor.value?.action === 'unassign') return '确认撤回';
+  if (editor.value?.action === 'assign') return '确认派工';
+  if (editor.value?.action === 'reassign') return '确认改派';
+  return '保存参考文件';
 });
 
 async function closeCommandDialog(done?: () => void): Promise<void> {

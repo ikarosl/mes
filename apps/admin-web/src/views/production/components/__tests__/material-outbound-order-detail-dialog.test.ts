@@ -50,13 +50,11 @@ const detailColumnStub = defineComponent({
   props: { prop: { type: String, default: '' } },
   setup(props, { slots }) {
     const row = pendingOrder.details[0]!;
-    return () =>
-      h(
-        'div',
-        slots.default
-          ? [slots.default({ row })]
-          : [props.prop ? String(row[props.prop as keyof typeof row] ?? '') : ''],
-      );
+    return () => {
+      if (slots.default) return h('div', [slots.default({ row })]);
+      if (props.prop) return h('div', [String(row[props.prop as keyof typeof row] ?? '')]);
+      return h('div', ['']);
+    };
   },
 });
 

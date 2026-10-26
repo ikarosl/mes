@@ -343,20 +343,11 @@
           label="批次状态"
           width="110"
           ><template #default="{ row }"
-            ><el-tag
-              :type="
-                row.batchStatus === 'available' && inventoryAvailable(row) > 0
-                  ? 'success'
-                  : row.batchStatus === 'frozen'
-                    ? 'warning'
-                    : 'info'
-              "
-              >{{
-                row.batchStatus === 'available' && inventoryAvailable(row) <= 0
-                  ? '无可用库存'
-                  : inventoryBatchStatusLabel(row.batchStatus)
-              }}</el-tag
-            ></template
+            ><el-tag :type="batchStatusTag(row)">{{
+              row.batchStatus === 'available' && inventoryAvailable(row) <= 0
+                ? '无可用库存'
+                : inventoryBatchStatusLabel(row.batchStatus)
+            }}</el-tag></template
           ></el-table-column
         ><el-table-column
           label="操作"
@@ -626,6 +617,11 @@ const inventoryAvailable = (row: InventoryBatchItem) =>
       ? row.onHandAvailableQuantity
       : row.availableToAllocateQuantity,
   );
+const batchStatusTag = (row: InventoryBatchItem) => {
+  if (row.batchStatus === 'available' && inventoryAvailable(row) > 0) return 'success';
+  if (row.batchStatus === 'frozen') return 'warning';
+  return 'info';
+};
 const canOpenInbound = (sourceType: InventorySourceType): boolean => {
   const name = inventoryInboundRouteName(sourceType);
   return name !== null && canAccessRoute({ name });

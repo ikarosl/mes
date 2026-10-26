@@ -22,8 +22,11 @@ export const otherInventoryStatuses = (
   );
 export const otherInventoryStatusTag = (
   status: OtherInventoryStatus,
-): 'success' | 'info' | 'warning' =>
-  status === 'completed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
+): 'success' | 'info' | 'warning' => {
+  if (status === 'completed') return 'success';
+  if (status === 'cancelled') return 'info';
+  return 'warning';
+};
 export const otherInventoryQuantity = (value: string | number): string =>
   Number(value).toLocaleString('zh-CN', { maximumFractionDigits: 0 });
 export const activeOtherInventoryLines = (order: OtherInventoryOrder): OtherInventoryLine[] =>

@@ -72,24 +72,22 @@ export async function loadCloseoutItems(
     order.details.map((line) => ({ outboundId: order.id, demandId: line.demandId })),
   );
   const allocationDemands = new Map(allocations.map((row) => [row.id, row.demandId]));
+  const demandIdsOf = (impact: BatchTerminationCheck['impacts'][number]): string[] => {
+    if (impact.kind === 'demand') return [impact.id];
+    if (impact.kind === 'allocation') return [allocationDemands.get(impact.id)!];
+    if (impact.kind === 'outbound')
+      return [
+        ...new Set(
+          outboundDemands.filter((row) => row.outboundId === impact.id).map((row) => row.demandId),
+        ),
+      ];
+    if (impact.kind === 'supplement')
+      return demands.filter((row) => row.supplementId === impact.id).map((row) => row.id);
+    return [];
+  };
   const pendingItems = check.impacts.map((impact): BatchCloseoutPendingItem => {
     const blockedReason = closeoutItemBlockedReason(impact, check.impacts);
-    const demandIds =
-      impact.kind === 'demand'
-        ? [impact.id]
-        : impact.kind === 'allocation'
-          ? [allocationDemands.get(impact.id)!]
-          : impact.kind === 'outbound'
-            ? [
-                ...new Set(
-                  outboundDemands
-                    .filter((row) => row.outboundId === impact.id)
-                    .map((row) => row.demandId),
-                ),
-              ]
-            : impact.kind === 'supplement'
-              ? demands.filter((row) => row.supplementId === impact.id).map((row) => row.id)
-              : [];
+    const demandIds = demandIdsOf(impact);
     return { ...impact, demandIds, blockedReason };
   });
   return {

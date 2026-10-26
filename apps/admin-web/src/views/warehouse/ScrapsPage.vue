@@ -503,8 +503,11 @@ function pageChanged(value: number) {
   void loadRows();
 }
 const quantity = (value: string | number) => Number(value).toFixed(0);
-const statusTag = (status: ScrapStatus) =>
-  status === 'confirmed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
+const statusTag = (status: ScrapStatus) => {
+  if (status === 'confirmed') return 'success';
+  if (status === 'cancelled') return 'info';
+  return 'warning';
+};
 onMounted(loadRows);
 onActivated(loadRows);
 </script>

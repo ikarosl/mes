@@ -69,16 +69,13 @@ export async function readReceiptQuantitySummaries(
     const unprocessed = Number(facts.unprocessedQuantity);
     const pendingInbound = remaining('inbound');
     const pendingReturn = remaining('return');
+    let undetermined = unprocessed;
+    if (currentRound.status === 'voided') undetermined = 0;
+    else if (currentRound.status === 'finalized') undetermined = remaining('pending');
     result.set(id, {
       unprocessedQuantity: String(unprocessed),
       receivedQuantity: facts.receivedQuantity,
-      undeterminedQuantity: String(
-        currentRound.status === 'voided'
-          ? 0
-          : currentRound.status === 'finalized'
-            ? remaining('pending')
-            : unprocessed,
-      ),
+      undeterminedQuantity: String(undetermined),
       approvedQuantity: String(inbound + pendingInbound),
       inboundQuantity: String(inbound),
       returnDueQuantity: String(returned + pendingReturn),

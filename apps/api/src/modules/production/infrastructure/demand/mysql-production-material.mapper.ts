@@ -257,5 +257,8 @@ const progress = (row: DemandRow): MaterialDemandProgressStatus => {
 
 export const decimal = fixedIntegerQuantity;
 export const placeholders = (ids: string[]): string => ids.map(() => '?').join(',');
-export const bigintCompare = (a: string, b: string): number =>
-  BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0;
+export const bigintCompare = (a: string, b: string): number => {
+  if (BigInt(a) < BigInt(b)) return -1;
+  if (BigInt(a) > BigInt(b)) return 1;
+  return 0;
+};

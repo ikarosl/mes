@@ -1,15 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="
-      check?.termination
-        ? '结案信息核对'
-        : canBegin
-          ? '提前结束生产'
-          : detail
-            ? '批次逐项收尾'
-            : '提前结束生产'
-    "
+    :title="dialogTitle"
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
@@ -56,20 +48,8 @@
         </el-descriptions>
         <el-alert
           class="notice"
-          :title="
-            check.termination
-              ? '本批次已结束，以下内容仅供查阅'
-              : check.batchStatus !== 'closing' && detail
-                ? '任务已恢复生产，收尾历史仅供复核'
-                : '处理收尾事项并逐项实核物料，完成后返回产出清单提交审批'
-          "
-          :description="
-            check.termination
-              ? '以下展示收尾与物料核对记录，最终产出请打开批准清单查看。需要办理退料时，请在退料管理重新核对当前可退数量。'
-              : check.batchStatus !== 'closing' && detail
-                ? '任务已恢复生产，收尾记录仅供查看。再次结束任务后，可按当前任务状态办理产出和质检；已完成的处理不会自动撤销。'
-                : '进入收尾后停止生产。余料请到退料管理办理，物料损坏在下方登记；待确认损耗须先处理或取消。已关闭事项不会因结案审批驳回而恢复。'
-          "
+          :title="noticeTitle"
+          :description="noticeDescription"
           type="info"
           :closable="false"
         />
@@ -115,11 +95,7 @@
           class="section"
         >
           <el-tab-pane
-            :label="
-              readonly
-                ? '收尾历史'
-                : `收尾事项（${check.termination ? 0 : (detail?.pendingItems.length ?? 0)}）`
-            "
+            :label="itemsTabLabel"
             name="items"
           >
             <el-collapse
@@ -522,6 +498,30 @@ const {
   readonly,
   canBegin,
 } = editor;
+const dialogTitle = computed(() => {
+  if (check.value?.termination) return '结案信息核对';
+  if (canBegin.value) return '提前结束生产';
+  if (detail.value) return '批次逐项收尾';
+  return '提前结束生产';
+});
+const noticeTitle = computed(() => {
+  if (check.value?.termination) return '本批次已结束，以下内容仅供查阅';
+  if (check.value?.batchStatus !== 'closing' && detail.value)
+    return '任务已恢复生产，收尾历史仅供复核';
+  return '处理收尾事项并逐项实核物料，完成后返回产出清单提交审批';
+});
+const noticeDescription = computed(() => {
+  if (check.value?.termination)
+    return '以下展示收尾与物料核对记录，最终产出请打开批准清单查看。需要办理退料时，请在退料管理重新核对当前可退数量。';
+  if (check.value?.batchStatus !== 'closing' && detail.value)
+    return '任务已恢复生产，收尾记录仅供查看。再次结束任务后，可按当前任务状态办理产出和质检；已完成的处理不会自动撤销。';
+  return '进入收尾后停止生产。余料请到退料管理办理，物料损坏在下方登记；待确认损耗须先处理或取消。已关闭事项不会因结案审批驳回而恢复。';
+});
+const itemsTabLabel = computed(() => {
+  if (readonly.value) return '收尾历史';
+  if (check.value?.termination) return '收尾事项（0）';
+  return `收尾事项（${detail.value?.pendingItems.length ?? 0}）`;
+});
 async function openWithdrawal(): Promise<void> {
   const batchId = props.batchId;
   if (!batchId || busy.value || unresolved.value) return;

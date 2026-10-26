@@ -83,22 +83,8 @@
             min-width="160"
           >
             <template #default="{ row }">
-              <span
-                :class="
-                  !row.canConfirm
-                    ? 'error'
-                    : selectedTaskId && selectedTaskId !== row.productionBatchId
-                      ? 'constrained'
-                      : 'available'
-                "
-              >
-                {{
-                  row.canConfirm
-                    ? selectedTaskId && selectedTaskId !== row.productionBatchId
-                      ? '需与已选明细同一任务'
-                      : '可入库'
-                    : row.blockers.join('；') || '当前不可入库'
-                }}
+              <span :class="candidateStateClass(row)">
+                {{ candidateStateText(row) }}
               </span>
             </template>
           </el-table-column>
@@ -154,6 +140,17 @@ const emit = defineEmits<{
   open: [source: FinishedGoodsInboundCandidate];
   inspection: [batchId: string];
 }>();
+function candidateStateClass(row: FinishedGoodsInboundCandidate): string {
+  if (!row.canConfirm) return 'error';
+  if (props.selectedTaskId && props.selectedTaskId !== row.productionBatchId) return 'constrained';
+  return 'available';
+}
+function candidateStateText(row: FinishedGoodsInboundCandidate): string {
+  if (!row.canConfirm) return row.blockers.join('；') || '当前不可入库';
+  if (props.selectedTaskId && props.selectedTaskId !== row.productionBatchId)
+    return '需与已选明细同一任务';
+  return '可入库';
+}
 interface WorkOrderPageGroup {
   workOrderId: string;
   workOrderNo: string;

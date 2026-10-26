@@ -18,16 +18,14 @@ export function useProcessSteps() {
     const token = ++listRequestToken;
     loading.value = true;
     try {
+      let status: ProcessStepQuery['status'];
+      if (query.status === 'enabled') status = SYSTEM_STATUS.enabled;
+      else if (query.status === 'disabled') status = SYSTEM_STATUS.disabled;
       const params: ProcessStepQuery = {
         page: currentPage.value,
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,
-        status:
-          query.status === 'enabled'
-            ? SYSTEM_STATUS.enabled
-            : query.status === 'disabled'
-              ? SYSTEM_STATUS.disabled
-              : undefined,
+        status,
       };
       const result = await productApi.processSteps(params);
       if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应

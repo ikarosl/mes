@@ -83,28 +83,7 @@ function nextActionForStage(
   }
 }
 function mapTask(row: TaskRow): FinishedInspectionTaskItem {
-  const reinspectionBlockedReason = !['closing', 'completed', 'terminated'].includes(row.status)
-    ? '任务尚未进入结案阶段，不能办理成品复检'
-    : row.pending_approval_id !== null
-      ? '清单正在审批中，请先撤回或驳回'
-      : row.available_quantity === null
-        ? '请先保存产出草稿'
-        : row.latest_id === null
-          ? '当前尚无检验记录，请先完成首次检验'
-          : row.current_round_status === 'inspecting'
-            ? '本轮检验正在填写，请继续登记结果'
-            : row.current_round_status === 'pending_inspection' &&
-                row.current_round_trigger_type !== 'finalization_correction'
-              ? '本轮检验尚未开始，请先完成当前轮次'
-              : row.current_round_status === 'reviewing'
-                ? '清单正在审批中，请先撤回或驳回'
-                : row.current_round_status === 'pending_finalization' ||
-                    row.current_round_status === 'finalized' ||
-                    row.current_round_status === 'superseded' ||
-                    (row.current_round_status === 'pending_inspection' &&
-                      row.current_round_trigger_type === 'finalization_correction')
-                  ? null
-                  : '当前轮次不能发起复检';
+  const reinspectionBlockedReason = taskReinspectionBlockedReason(row);
   const canBeginReinspection = reinspectionBlockedReason === null;
   return {
     batchId: String(row.batch_id),
@@ -150,6 +129,30 @@ function mapTask(row: TaskRow): FinishedInspectionTaskItem {
     nextAction: nextActionForStage(row.stage, canBeginReinspection),
   };
 }
+
+function taskReinspectionBlockedReason(row: TaskRow): string | null {
+  if (!['closing', 'completed', 'terminated'].includes(row.status))
+    return '任务尚未进入结案阶段，不能办理成品复检';
+  if (row.pending_approval_id !== null) return '清单正在审批中，请先撤回或驳回';
+  if (row.available_quantity === null) return '请先保存产出草稿';
+  if (row.latest_id === null) return '当前尚无检验记录，请先完成首次检验';
+  if (row.current_round_status === 'inspecting') return '本轮检验正在填写，请继续登记结果';
+  if (
+    row.current_round_status === 'pending_inspection' &&
+    row.current_round_trigger_type !== 'finalization_correction'
+  )
+    return '本轮检验尚未开始，请先完成当前轮次';
+  if (row.current_round_status === 'reviewing') return '清单正在审批中，请先撤回或驳回';
+  if (
+    row.current_round_status === 'pending_finalization' ||
+    row.current_round_status === 'finalized' ||
+    row.current_round_status === 'superseded' ||
+    (row.current_round_status === 'pending_inspection' &&
+      row.current_round_trigger_type === 'finalization_correction')
+  )
+    return null;
+  return '当前轮次不能发起复检';
+}
 export async function listFinishedInspectionTasks(
   db: Db,
   query: FinishedInspectionTaskQuery,
@@ -187,17 +190,16 @@ export async function readFinishedInspectionTask(
   declared: ProductionOutputQuantities | null;
 } | null> {
   const [[row]] = await db.query<TaskRow[]>(`${SELECT} WHERE b.id=?`, [batchId]);
-  return row
-    ? {
-        item: mapTask(row),
-        declared:
-          row.available_quantity === null
-            ? null
-            : {
-                availableQuantity: Number(row.available_quantity),
-                extraQuantity: Number(row.extra_quantity),
-                additionalScrapQuantity: Number(row.additional_scrap_quantity),
-              },
-      }
-    : null;
+  if (!row) return null;
+  return {
+    item: mapTask(row),
+    declared:
+      row.available_quantity === null
+        ? null
+        : {
+            availableQuantity: Number(row.available_quantity),
+            extraQuantity: Number(row.extra_quantity),
+            additionalScrapQuantity: Number(row.additional_scrap_quantity),
+          },
+  };
 }

@@ -27,13 +27,18 @@ export function useMaterialsList(canRead: () => boolean = () => true) {
     const { isCurrent, signal } = reads.begin(canRead);
     loading.value = true;
     try {
+      let status: 0 | 1 | undefined;
+      if (query.status !== '') {
+        if (query.status === 'enabled') status = 1;
+        else status = 0;
+      }
       const result = await productApi.materialList(
         {
           page: currentPage.value,
           pageSize: pageSize.value,
           keyword: query.keyword.trim() || undefined,
           categoryId: query.categoryId || undefined,
-          status: query.status === '' ? undefined : query.status === 'enabled' ? 1 : 0,
+          status,
         },
         { signal, skipErrorHandling: true },
       );

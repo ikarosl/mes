@@ -45,7 +45,11 @@ export const id = (value: unknown): string | null =>
 export const quantity = (value: unknown): string => fixedIntegerQuantity(String(value ?? 0));
 export const clean = (value: string | null | undefined): string | null => value?.trim() || null;
 export const sortIds = (values: string[]): string[] =>
-  [...new Set(values)].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
+  [...new Set(values)].sort((a, b) => {
+    if (BigInt(a) < BigInt(b)) return -1;
+    if (BigInt(a) > BigInt(b)) return 1;
+    return 0;
+  });
 export const fail = (message: string): never => {
   throw new InventoryDomainError('INVALID_INPUT', message);
 };

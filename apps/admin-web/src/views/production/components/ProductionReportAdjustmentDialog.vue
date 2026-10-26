@@ -148,13 +148,7 @@
         :loading="editor.submitting"
         :disabled="!editor.canSubmit"
         @click="editor.submit"
-        >{{
-          editor.intentStatus === 'pending'
-            ? '重试本次提交'
-            : editor.mode === 'correct'
-              ? '确认更正正常数量'
-              : '确认全量冲销'
-        }}</el-button
+        >{{ submitLabel }}</el-button
       >
     </template>
   </el-dialog>
@@ -176,6 +170,11 @@ import ProductionQuotaBasis from './ProductionQuotaBasis.vue';
 import ProductionReportVerificationDialog from './ProductionReportVerificationDialog.vue';
 
 const props = defineProps<{ editor: ProductionReportAdjustmentEditor }>();
+const submitLabel = computed(() => {
+  if (props.editor.intentStatus === 'pending') return '重试本次提交';
+  if (props.editor.mode === 'correct') return '确认更正正常数量';
+  return '确认全量冲销';
+});
 const verificationVisible = ref(false);
 const previewQuantity = (quantity: number | null): string =>
   quantity !== null && Number.isFinite(quantity) ? formatQuantity(quantity) : '—';

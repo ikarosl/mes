@@ -28,9 +28,8 @@ export const executionBatchOverdueDays = (
   );
 };
 
-export const executionBatchRiskClass = (batch: ProductionExecutionBatchSummary): string =>
-  executionBatchHasAbnormal(batch)
-    ? 'risk-error'
-    : executionBatchOverdueDays(batch) > 0
-      ? 'risk-warning'
-      : '';
+export const executionBatchRiskClass = (batch: ProductionExecutionBatchSummary): string => {
+  if (executionBatchHasAbnormal(batch)) return 'risk-error';
+  if (executionBatchOverdueDays(batch) > 0) return 'risk-warning';
+  return '';
+};

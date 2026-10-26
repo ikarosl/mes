@@ -62,18 +62,7 @@ export async function readTaskCloseoutWithdrawalCheck(
   lock = false,
 ): Promise<BatchCloseoutWithdrawalCheck> {
   const entry = closeout ? await readTaskCloseoutEntry(db, closeout, lock) : null;
-  const blockedReason =
-    batch.status !== 'closing'
-      ? '只有结案中的任务可以撤回本次结束'
-      : !closeout
-        ? '结案记录不存在'
-        : closeout.current_revision_id !== null
-          ? '结案已经批准，不能恢复任务执行'
-          : closeout.pending_approval_id !== null
-            ? '结案正在审批，请先撤回或驳回审批申请'
-            : !entry
-              ? '缺少本次进入结案的行动依据，不能推断恢复阶段'
-              : null;
+  const blockedReason = taskCloseoutWithdrawalBlockedReason(batch, closeout, entry);
   return {
     batchId: String(batch.id),
     batchStatus: batch.status,
@@ -84,6 +73,19 @@ export async function readTaskCloseoutWithdrawalCheck(
     canWithdraw: blockedReason === null,
     blockedReason,
   };
+}
+
+function taskCloseoutWithdrawalBlockedReason(
+  batch: BatchRow,
+  closeout: CloseoutRow | null,
+  entry: TaskActionRow | null,
+): string | null {
+  if (batch.status !== 'closing') return '只有结案中的任务可以撤回本次结束';
+  if (!closeout) return '结案记录不存在';
+  if (closeout.current_revision_id !== null) return '结案已经批准，不能恢复任务执行';
+  if (closeout.pending_approval_id !== null) return '结案正在审批，请先撤回或驳回审批申请';
+  if (!entry) return '缺少本次进入结案的行动依据，不能推断恢复阶段';
+  return null;
 }
 
 /** 普通结束与提前停止共用唯一根，重入保留原产出、检验、轮次和子事项处理。 */

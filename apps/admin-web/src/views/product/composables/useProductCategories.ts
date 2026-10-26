@@ -22,17 +22,15 @@ export function useProductCategories() {
     const token = ++listRequestToken;
     loading.value = true;
     try {
+      let status: ProductCategoryQuery['status'];
+      if (query.status === 'enabled') status = SYSTEM_STATUS.enabled;
+      else if (query.status === 'disabled') status = SYSTEM_STATUS.disabled;
       const params: ProductCategoryQuery = {
         page: currentPage.value,
         pageSize: pageSize.value,
         categoryCode: query.categoryCode.trim() || undefined,
         categoryName: query.categoryName.trim() || undefined,
-        status:
-          query.status === 'enabled'
-            ? SYSTEM_STATUS.enabled
-            : query.status === 'disabled'
-              ? SYSTEM_STATUS.disabled
-              : undefined,
+        status,
       };
       const result = await productApi.categories(params);
       if (token !== listRequestToken) return; // 查询/翻页已变化，丢弃旧响应

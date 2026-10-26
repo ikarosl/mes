@@ -227,16 +227,15 @@ const submitting = ref(false);
 let detailRequestToken = 0;
 
 const formatDateTime = (value: string | null): string => formatDateTimeForDisplay(value, '—');
-const statusMeta = (status: ApprovalInstanceStatus) =>
-  ({
+const statusMeta = (status: ApprovalInstanceStatus) => {
+  let type: 'success' | 'danger' | 'warning' = 'warning';
+  if (status === 'approved') type = 'success';
+  else if (status === 'rejected' || status === 'withdrawn') type = 'danger';
+  return {
     label: APPROVAL_INSTANCE_STATUS_LABELS[status],
-    type:
-      status === 'approved'
-        ? 'success'
-        : status === 'rejected' || status === 'withdrawn'
-          ? 'danger'
-          : 'warning',
-  }) as const;
+    type,
+  } as const;
+};
 
 const openDetail = async (id: string): Promise<void> => {
   const token = ++detailRequestToken;
@@ -277,9 +276,10 @@ const execute = async (kind: 'approve' | 'reject' | 'withdraw', comment: string)
     }
     if (token === detailRequestToken && detailVisible.value) detail.value = result;
     await load();
-    EMessage.success(
-      kind === 'approve' ? '当前节点已通过' : kind === 'reject' ? '申请已驳回' : '申请已撤回',
-    );
+    let successMessage = '申请已撤回';
+    if (kind === 'approve') successMessage = '当前节点已通过';
+    else if (kind === 'reject') successMessage = '申请已驳回';
+    EMessage.success(successMessage);
   } catch (error) {
     EMessage.error(error, '审批操作失败');
     // 版本冲突、资格变化等错误后重读详情，避免继续以旧状态操作。

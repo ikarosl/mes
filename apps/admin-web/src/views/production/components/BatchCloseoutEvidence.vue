@@ -46,13 +46,7 @@
       <el-descriptions-item label="结案类型">{{
         PRODUCTION_CLOSEOUT_MODE_LABELS[snapshot.mode]
       }}</el-descriptions-item>
-      <el-descriptions-item label="前次批准清单">{{
-        snapshot.previousRevisionId === null
-          ? '首次结案'
-          : snapshot.previousRevisionNo === null
-            ? '原批准版本无法读取'
-            : `第 ${snapshot.previousRevisionNo} 版`
-      }}</el-descriptions-item>
+      <el-descriptions-item label="前次批准清单">{{ previousRevisionLabel }}</el-descriptions-item>
       <el-descriptions-item label="质检记录">id {{ snapshot.inspection.id }}</el-descriptions-item>
       <el-descriptions-item
         v-if="snapshot.correctionReason"
@@ -142,6 +136,7 @@
   </section>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { BatchCloseoutApprovalDisplaySnapshot } from '@company/contracts';
 import { PRODUCTION_CLOSEOUT_MODE_LABELS } from '@company/constants';
 import { formatQuantity as quantity } from '../production-status';
@@ -153,7 +148,12 @@ import {
   batchCloseoutActionLabel,
   batchCloseoutActionStatusLabel,
 } from '../batch-closeout-action-presentation';
-defineProps<{ snapshot: BatchCloseoutApprovalDisplaySnapshot }>();
+const props = defineProps<{ snapshot: BatchCloseoutApprovalDisplaySnapshot }>();
+const previousRevisionLabel = computed(() => {
+  if (props.snapshot.previousRevisionId === null) return '首次结案';
+  if (props.snapshot.previousRevisionNo === null) return '原批准版本无法读取';
+  return `第 ${props.snapshot.previousRevisionNo} 版`;
+});
 </script>
 <style scoped>
 .output-note {

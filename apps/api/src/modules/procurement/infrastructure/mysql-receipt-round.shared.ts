@@ -92,22 +92,21 @@ export async function insertRound(
     );
     hasAllocations = Boolean(source);
   }
-  const sourceRoundId =
-    input.status === 'voided'
-      ? null
-      : nextReceiptAllocationSourceRoundId(
-          input.previous
-            ? {
-                id: String(input.previous.id),
-                status: input.previous.status,
-                sourceAllocationRoundId:
-                  input.previous.source_allocation_round_id === null
-                    ? null
-                    : String(input.previous.source_allocation_round_id),
-              }
-            : null,
-          hasAllocations,
-        );
+  let sourceRoundId: string | null = null;
+  if (input.status !== 'voided') {
+    let previous: Parameters<typeof nextReceiptAllocationSourceRoundId>[0] = null;
+    if (input.previous) {
+      previous = {
+        id: String(input.previous.id),
+        status: input.previous.status,
+        sourceAllocationRoundId:
+          input.previous.source_allocation_round_id === null
+            ? null
+            : String(input.previous.source_allocation_round_id),
+      };
+    }
+    sourceRoundId = nextReceiptAllocationSourceRoundId(previous, hasAllocations);
+  }
   const [result] = await db.execute<ResultSetHeader>(
     `INSERT INTO procurement_receipt_round(receipt_line_id,round_no,previous_round_id,trigger_type,receipt_revision_id,
       starting_quantity,status,inspection_id,reason,created_by,updated_by,source_allocation_round_id) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,

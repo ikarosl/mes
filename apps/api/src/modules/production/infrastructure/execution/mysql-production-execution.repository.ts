@@ -493,8 +493,10 @@ export class MysqlProductionExecutionRepository extends ProductionExecutionRepos
           );
       }
 
-      const targetStatus =
-        action === 'unassign' ? 'pending' : action === 'assign' ? 'assigned' : current.status;
+      let targetStatus: typeof current.status;
+      if (action === 'unassign') targetStatus = 'pending';
+      else if (action === 'assign') targetStatus = 'assigned';
+      else targetStatus = current.status;
       const [updated] = await connection.execute<ResultSetHeader>(
         'UPDATE batch_step_records SET status=?,responsible_user_id=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?',
         [targetStatus, responsibleUserId, context.actorId, stepRecordId, batchId, version],

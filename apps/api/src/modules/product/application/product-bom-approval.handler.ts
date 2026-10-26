@@ -97,14 +97,11 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
       return await work();
     } catch (error) {
       if (error instanceof ProductDomainError) {
-        throw new ApprovalSubjectError(
-          error.code === 'NOT_FOUND'
-            ? 'NOT_FOUND'
-            : error.code === 'CONFLICT'
-              ? 'CONFLICT'
-              : 'INVALID_INPUT',
-          error.message,
-        );
+        let code: ApprovalSubjectError['code'];
+        if (error.code === 'NOT_FOUND') code = 'NOT_FOUND';
+        else if (error.code === 'CONFLICT') code = 'CONFLICT';
+        else code = 'INVALID_INPUT';
+        throw new ApprovalSubjectError(code, error.message);
       }
       throw error;
     }

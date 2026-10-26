@@ -290,13 +290,14 @@ function focusInspection(): void {
 }
 defineExpose({ focusInspection });
 const inspectionOptions = computed(() => [...props.detail.inspections].reverse());
+function inspectionRelationshipLabel(record: ProductionOutputInspection): string {
+  if (record.id === props.detail.applicableInspectionId) return '最新，本次适用';
+  if (record.roundId === props.detail.currentRoundId && record.releaseDecision !== 'released')
+    return '本轮未放行，不可选';
+  return '已过时，不可选';
+}
 function inspectionOptionLabel(record: ProductionOutputInspection): string {
-  const relationship =
-    record.id === props.detail.applicableInspectionId
-      ? '最新，本次适用'
-      : record.roundId === props.detail.currentRoundId && record.releaseDecision !== 'released'
-        ? '本轮未放行，不可选'
-        : '已过时，不可选';
+  const relationship = inspectionRelationshipLabel(record);
   return `检验记录 ID ${record.id} · ${formatDateTimeForDisplay(record.inspectedAt)} · ${record.createdByName}（${relationship}）`;
 }
 function selectInspection(id: string | null | undefined): void {
@@ -379,9 +380,10 @@ const advice = computed(() => {
     return '待核对数量';
   const proposedFromOriginalRound = total.value - originalReceived;
   const difference = proposedFromOriginalRound - record.qualifiedQuantity;
-  return difference === 0
-    ? `扣除原检验轮建立时已入 ${originalReceived} ${props.detail.check.unit} 后，与实检合格数一致`
-    : `拟定稿累计目标扣除原检验轮建立时已入 ${originalReceived} ${props.detail.check.unit} 后，${difference > 0 ? '高于' : '低于'}实检合格数 ${Math.abs(difference)} ${props.detail.check.unit}（仅提示）`;
+  if (difference === 0)
+    return `扣除原检验轮建立时已入 ${originalReceived} ${props.detail.check.unit} 后，与实检合格数一致`;
+  const comparison = difference > 0 ? '高于' : '低于';
+  return `拟定稿累计目标扣除原检验轮建立时已入 ${originalReceived} ${props.detail.check.unit} 后，${comparison}实检合格数 ${Math.abs(difference)} ${props.detail.check.unit}（仅提示）`;
 });
 function changeQuantity(field: keyof ProductionOutputQuantities, value: number | undefined): void {
   emit('change', { [field]: value ?? Number.NaN });

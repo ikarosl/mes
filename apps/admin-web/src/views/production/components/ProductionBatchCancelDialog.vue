@@ -125,20 +125,20 @@ const trimmedReason = computed(() => reason.value.trim());
 const canSubmit = computed(
   () => Boolean(props.check?.canCancel && trimmedReason.value) && !props.submitting,
 );
-const blockerTitle = computed(() =>
-  props.check?.blockers.includes('pending_demand_correction')
-    ? '存在在审需求更正，不能取消任务'
-    : props.check?.blockers.includes('material_already_outbound')
-      ? '物料已经实际出库，禁止取消任务'
-      : '任务已经开工或结束，禁止取消任务',
-);
-const blockerDescription = computed(() =>
-  props.check?.blockers.includes('pending_demand_correction')
-    ? '请先撤回或驳回需求更正审批，再核对任务取消。'
-    : props.check?.blockers.includes('material_already_outbound')
-      ? '请办理逐项收尾与提前结束审批。'
-      : '第一版只允许未开工且物料未实际出库的生产任务取消。',
-);
+const blockerTitle = computed(() => {
+  if (props.check?.blockers.includes('pending_demand_correction'))
+    return '存在在审需求更正，不能取消任务';
+  if (props.check?.blockers.includes('material_already_outbound'))
+    return '物料已经实际出库，禁止取消任务';
+  return '任务已经开工或结束，禁止取消任务';
+});
+const blockerDescription = computed(() => {
+  if (props.check?.blockers.includes('pending_demand_correction'))
+    return '请先撤回或驳回需求更正审批，再核对任务取消。';
+  if (props.check?.blockers.includes('material_already_outbound'))
+    return '请办理逐项收尾与提前结束审批。';
+  return '第一版只允许未开工且物料未实际出库的生产任务取消。';
+});
 
 watch(
   () => [props.visible, props.batch?.id],

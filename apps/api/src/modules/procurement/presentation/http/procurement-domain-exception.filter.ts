@@ -23,20 +23,7 @@ export class ProcurementDomainExceptionFilter extends HttpExceptionFilter {
       | ProductionProcurementInputError,
     host: ArgumentsHost,
   ): void {
-    const status =
-      exception.code === PROCUREMENT_ERROR_CODES.supplierNotFound ||
-      exception.code === PROCUREMENT_ERROR_CODES.purchaseOrderNotFound ||
-      exception.code === PROCUREMENT_ERROR_CODES.receiptNotFound ||
-      exception.code === 'NOT_FOUND'
-        ? HttpStatus.NOT_FOUND
-        : exception.code === PROCUREMENT_ERROR_CODES.supplierNameTaken ||
-            exception.code === PROCUREMENT_ERROR_CODES.purchaseOrderState ||
-            exception.code === PROCUREMENT_ERROR_CODES.receiptState ||
-            exception.code === 'INVALID_STATE' ||
-            exception.code === 'CONCURRENT_MODIFICATION' ||
-            exception.code === 'CONFLICT'
-          ? HttpStatus.CONFLICT
-          : HttpStatus.BAD_REQUEST;
+    const status = procurementErrorStatus(exception.code);
     let message = exception.message;
     if (
       exception instanceof QualityCommandError &&
@@ -53,3 +40,23 @@ export class ProcurementDomainExceptionFilter extends HttpExceptionFilter {
     super.catch(new HttpException({ code: exception.code, message }, status), host);
   }
 }
+
+const procurementErrorStatus = (code: string): HttpStatus => {
+  if (
+    code === PROCUREMENT_ERROR_CODES.supplierNotFound ||
+    code === PROCUREMENT_ERROR_CODES.purchaseOrderNotFound ||
+    code === PROCUREMENT_ERROR_CODES.receiptNotFound ||
+    code === 'NOT_FOUND'
+  )
+    return HttpStatus.NOT_FOUND;
+  if (
+    code === PROCUREMENT_ERROR_CODES.supplierNameTaken ||
+    code === PROCUREMENT_ERROR_CODES.purchaseOrderState ||
+    code === PROCUREMENT_ERROR_CODES.receiptState ||
+    code === 'INVALID_STATE' ||
+    code === 'CONCURRENT_MODIFICATION' ||
+    code === 'CONFLICT'
+  )
+    return HttpStatus.CONFLICT;
+  return HttpStatus.BAD_REQUEST;
+};

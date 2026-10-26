@@ -1,9 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="
-      editingOrderId ? '编辑工单' : form.previousResearchOrderId ? '开启下一轮研发' : '新增工单'
-    "
+    :title="dialogTitle"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
     @open="onOpen"
@@ -231,6 +229,11 @@ const initialForm = (): WorkOrderFormValue => ({
 });
 
 const form = reactive<WorkOrderFormValue>(initialForm());
+const dialogTitle = computed(() => {
+  if (props.editingOrderId) return '编辑工单';
+  if (form.previousResearchOrderId) return '开启下一轮研发';
+  return '新增工单';
+});
 const displayedWorkOrderNo = ref('');
 const previousResearchOrder = ref<ResearchWorkOrderReference | null>(null);
 

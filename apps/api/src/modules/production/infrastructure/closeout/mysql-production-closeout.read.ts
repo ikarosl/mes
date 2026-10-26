@@ -55,14 +55,13 @@ export async function loadCloseoutDetail(
           action.item_kind === 'material' && String(action.target_id) === material.allocationId,
       )
       .at(-1);
+    let status: BatchCloseoutDetail['materialReviews'][number]['status'] = 'pending';
+    if (reviewed)
+      status = isDeepStrictEqual(json(reviewed.fact_snapshot), material) ? 'reviewed' : 'stale';
     return {
       allocationId: material.allocationId,
       demandId: allocationDemands.get(material.allocationId)!,
-      status: !reviewed
-        ? ('pending' as const)
-        : isDeepStrictEqual(json(reviewed.fact_snapshot), material)
-          ? ('reviewed' as const)
-          : ('stale' as const),
+      status,
       reason: reviewed?.reason ?? null,
       actorId: reviewed ? String(reviewed.created_by) : null,
       reviewedAt: reviewed ? toBeijingISOString(reviewed.created_at) : null,

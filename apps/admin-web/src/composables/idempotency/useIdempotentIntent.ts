@@ -76,7 +76,11 @@ export const stableClientSignature = (snapshot: ClientIntentSnapshot): string =>
         if (item === undefined) continue;
         entries.push([key, normalize(item)]);
       }
-      entries.sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+      entries.sort(([a], [b]) => {
+        if (a < b) return -1;
+        if (a > b) return 1;
+        return 0;
+      });
       return Object.fromEntries(entries);
     }
     return value;

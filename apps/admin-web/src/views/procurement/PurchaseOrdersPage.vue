@@ -566,12 +566,11 @@ const create = async (
     if (!(await releaseDialogs(current))) return false;
     await editor.value?.open(type, undefined, demandIds, workOrderId);
     if (!current()) return false;
-    const location: LocateQuery = expansion.focusedId.value
-      ? {
-          purchaseOrderId: expansion.focusedId.value,
-          ...(focusedLineId.value ? { purchaseOrderLineId: focusedLineId.value } : {}),
-        }
-      : {};
+    const location: LocateQuery = {};
+    if (expansion.focusedId.value) {
+      location.purchaseOrderId = expansion.focusedId.value;
+      if (focusedLineId.value) location.purchaseOrderLineId = focusedLineId.value;
+    }
     if (!(await writeLocation(location, current))) return false;
     rememberLocation(location);
     return true;
@@ -738,13 +737,21 @@ const locate = async (): Promise<void> => {
       : undefined;
   // 已打开的路由意图在缓存恢复时沿用原草稿；只有成功定位才更新 accepted。
   consumed = token;
-  const succeeded = orderId
-    ? query.supplementLineId
-      ? await openSupplement(orderId, query.supplementLineId, reason, query.receiptLineId)
-      : await navigate(orderId, query.purchaseOrderLineId)
-    : demandId
-      ? await create('demand', [demandId], query.workOrderId)
-      : false;
+  let succeeded = false;
+  if (orderId) {
+    if (query.supplementLineId) {
+      succeeded = await openSupplement(
+        orderId,
+        query.supplementLineId,
+        reason,
+        query.receiptLineId,
+      );
+    } else {
+      succeeded = await navigate(orderId, query.purchaseOrderLineId);
+    }
+  } else if (demandId) {
+    succeeded = await create('demand', [demandId], query.workOrderId);
+  }
   if (succeeded || !current() || locateToken(readLocateQuery()) !== token) return;
   const previous = { ...accepted };
   if (await writeLocation(previous, current)) rememberLocation(previous);

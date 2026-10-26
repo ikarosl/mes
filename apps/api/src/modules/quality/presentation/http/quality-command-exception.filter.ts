@@ -6,12 +6,7 @@ import { QualityCommandError } from '../../quality-command.error.js';
 export class QualityCommandExceptionFilter extends HttpExceptionFilter {
   private readonly diagnosticLogger = new Logger(QualityCommandExceptionFilter.name);
   override catch(exception: QualityCommandError, host: ArgumentsHost): void {
-    const status =
-      exception.code === 'NOT_FOUND'
-        ? HttpStatus.NOT_FOUND
-        : exception.code === 'INVALID_INPUT'
-          ? HttpStatus.BAD_REQUEST
-          : HttpStatus.CONFLICT;
+    const status = qualityErrorStatus(exception.code);
     let message = exception.message;
     if (
       exception.code === 'INVALID_STATE' &&
@@ -27,3 +22,9 @@ export class QualityCommandExceptionFilter extends HttpExceptionFilter {
     super.catch(new HttpException({ code: exception.code, message }, status), host);
   }
 }
+
+const qualityErrorStatus = (code: QualityCommandError['code']): HttpStatus => {
+  if (code === 'NOT_FOUND') return HttpStatus.NOT_FOUND;
+  if (code === 'INVALID_INPUT') return HttpStatus.BAD_REQUEST;
+  return HttpStatus.CONFLICT;
+};

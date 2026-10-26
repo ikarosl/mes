@@ -176,31 +176,23 @@ const canEarlyClose = computed(
   () =>
     unfinishedBatches.value.length === 0 && !isFullyProduced.value && Boolean(trimmedReason.value),
 );
-const canSubmit = computed(
-  () =>
-    !props.submitting &&
-    Boolean(props.order) &&
-    (props.mode === 'complete'
-      ? canComplete.value
-      : props.mode === 'early-close'
-        ? canEarlyClose.value
-        : props.order?.status === 'completed'),
-);
+const canSubmit = computed(() => {
+  if (props.submitting || !props.order) return false;
+  if (props.mode === 'complete') return canComplete.value;
+  if (props.mode === 'early-close') return canEarlyClose.value;
+  return props.order.status === 'completed';
+});
 
-const dialogTitle = computed(() =>
-  props.mode === 'complete'
-    ? '确认工单完工'
-    : props.mode === 'early-close'
-      ? '提前关闭工单'
-      : '归档关闭工单',
-);
-const confirmText = computed(() =>
-  props.mode === 'complete'
-    ? '确认工单完工'
-    : props.mode === 'early-close'
-      ? '确认提前关闭'
-      : '确认归档关闭',
-);
+const dialogTitle = computed(() => {
+  if (props.mode === 'complete') return '确认工单完工';
+  if (props.mode === 'early-close') return '提前关闭工单';
+  return '归档关闭工单';
+});
+const confirmText = computed(() => {
+  if (props.mode === 'complete') return '确认工单完工';
+  if (props.mode === 'early-close') return '确认提前关闭';
+  return '确认归档关闭';
+});
 const alertType = computed<'success' | 'warning' | 'error' | 'info'>(() => {
   if (props.mode === 'archive') return 'info';
   if (unfinishedBatches.value.length > 0) return 'error';

@@ -187,14 +187,13 @@ function inspectionSummary(lines: ProcurementInboundInspectionLineItem[]): strin
   }
   return `本页待检 / 待复检 ${pending} 条 · 检验中 ${reviewing} 条 · 质量阻断 ${blocked} 条`;
 }
-const lineAction = (item: ProcurementInboundInspectionLineItem): string =>
-  item.stage === 'completed' || item.stage === 'manual_rejection'
-    ? '查看详情'
-    : item.stage === 'uninspected' || item.stage === 'reinspection_required'
-      ? '查看 / 核对待检'
-      : item.stage === 'reviewing'
-        ? '查看 / 填写结果'
-        : '查看详情';
+const lineAction = (item: ProcurementInboundInspectionLineItem): string => {
+  if (item.stage === 'completed' || item.stage === 'manual_rejection') return '查看详情';
+  if (item.stage === 'uninspected' || item.stage === 'reinspection_required')
+    return '查看 / 核对待检';
+  if (item.stage === 'reviewing') return '查看 / 填写结果';
+  return '查看详情';
+};
 async function searchAndExpand() {
   await search();
   worklist.value?.expandPage();

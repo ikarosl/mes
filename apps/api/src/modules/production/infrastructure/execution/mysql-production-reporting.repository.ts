@@ -490,16 +490,13 @@ const requireCorrectable = (
   phase: ReportingPhase,
 ): void => {
   const reason = correctableReportReason(report, dependencies, phase);
-  if (reason)
-    throw new ProductionDomainError(
-      dependencies.length
-        ? 'STEP_REPORT_DEPENDENCY_CONFLICT'
-        : !report.is_effective || report.report_type !== 'normal'
-          ? 'STEP_REPORT_ALREADY_REVERSED'
-          : 'STEP_REPORT_NOT_ALLOWED',
-      reason,
-      { reportId: String(report.id), dependencies },
-    );
+  if (!reason) return;
+  let code: ProductionDomainError['code'];
+  if (dependencies.length) code = 'STEP_REPORT_DEPENDENCY_CONFLICT';
+  else if (!report.is_effective || report.report_type !== 'normal')
+    code = 'STEP_REPORT_ALREADY_REVERSED';
+  else code = 'STEP_REPORT_NOT_ALLOWED';
+  throw new ProductionDomainError(code, reason, { reportId: String(report.id), dependencies });
 };
 const insertReversal = (db: PoolConnection, target: ReportRow, reason: string, actorId: string) =>
   insertReportingFact(db, {

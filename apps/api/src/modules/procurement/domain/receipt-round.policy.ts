@@ -93,11 +93,9 @@ export function requireReceiptInspectionCase(
 }
 
 export function roundStatusAfterInspection(decision: QualityReleaseDecision): ReceiptRoundStatus {
-  return decision === 'released'
-    ? 'awaiting_acceptance'
-    : decision === 'pending_reinspection'
-      ? 'reinspection_required'
-      : 'quality_rejected';
+  if (decision === 'released') return 'awaiting_acceptance';
+  if (decision === 'pending_reinspection') return 'reinspection_required';
+  return 'quality_rejected';
 }
 
 /** 已定稿空轮清除旧来源；复核轮仅沿用明确的约束来源。 */
@@ -110,9 +108,7 @@ export function nextReceiptAllocationSourceRoundId(
   hasAllocations: boolean,
 ): string | null {
   if (!previous) return null;
-  return previous.status === 'finalized'
-    ? hasAllocations
-      ? previous.id
-      : null
-    : previous.sourceAllocationRoundId;
+  if (previous.status !== 'finalized') return previous.sourceAllocationRoundId;
+  if (hasAllocations) return previous.id;
+  return null;
 }

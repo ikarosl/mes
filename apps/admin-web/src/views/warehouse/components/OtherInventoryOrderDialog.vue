@@ -355,16 +355,11 @@ const props = defineProps<{
 }>();
 const editor = props.editor;
 const dialogTitle = computed(() => {
-  const prefix =
-    editor.mode.value === 'create'
-      ? '创建'
-      : editor.mode.value === 'edit'
-        ? '编辑'
-        : editor.mode.value === 'cancel'
-          ? '取消'
-          : editor.mode.value === 'confirm'
-            ? '确认'
-            : '';
+  let prefix = '';
+  if (editor.mode.value === 'create') prefix = '创建';
+  else if (editor.mode.value === 'edit') prefix = '编辑';
+  else if (editor.mode.value === 'cancel') prefix = '取消';
+  else if (editor.mode.value === 'confirm') prefix = '确认';
   return `${prefix}${OTHER_INVENTORY_DIRECTION_LABELS[props.direction]}单${editor.mode.value === 'detail' ? '详情' : ''}`;
 });
 function updateLine(value: OtherInventoryDraftLineUpdate): void {

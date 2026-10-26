@@ -715,9 +715,10 @@ const completionSummary = computed(() => {
   if (!check) return '';
   if (check.canComplete) return '可执行完工';
   const first = check.blockers[0];
-  return first
-    ? `${PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS[first]}${check.blockers.length > 1 ? `，另 ${check.blockers.length - 1} 项阻断` : ''}`
-    : '尚不满足完工条件';
+  if (!first) return '尚不满足完工条件';
+  const remainingBlockers =
+    check.blockers.length > 1 ? `，另 ${check.blockers.length - 1} 项阻断` : '';
+  return `${PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS[first]}${remainingBlockers}`;
 });
 const processingExpansion = ref<Record<string, boolean>>({});
 const reportTrace = useProductionReportTrace({
@@ -809,19 +810,17 @@ const reworkEditor = useProductionReworkCompletion({
 const contextForStep = (
   step: BatchStepExecutionRecordItem,
   historical = false,
-): ProductionReportContext | null =>
-  record.value
-    ? {
-        ...step,
-        batchNo: record.value.batchNo,
-        plannedQuantity: record.value.plannedQuantity,
-        hasPreviousStep: step.previousStepNormalQuantity !== null,
-        canReport: historical ? step.canCreateHistoricalReport : step.canReport,
-        reportBlockedReason: historical
-          ? step.historicalCreateBlockedReason
-          : step.reportBlockedReason,
-      }
-    : null;
+): ProductionReportContext | null => {
+  if (!record.value) return null;
+  return {
+    ...step,
+    batchNo: record.value.batchNo,
+    plannedQuantity: record.value.plannedQuantity,
+    hasPreviousStep: step.previousStepNormalQuantity !== null,
+    canReport: historical ? step.canCreateHistoricalReport : step.canReport,
+    reportBlockedReason: historical ? step.historicalCreateBlockedReason : step.reportBlockedReason,
+  };
+};
 const canReportStep = (step: BatchStepExecutionRecordItem, historical = false): boolean => {
   if (historical && record.value?.batchStatus === 'closing') return false;
   const context = contextForStep(step, historical);

@@ -395,7 +395,9 @@ async function locate() {
   await nextTick();
   const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
   const recordId = typeof route.query.inspectionId === 'string' ? route.query.inspectionId : '';
-  const action = recordId ? 'record' : route.query.action === 'reinspect' ? 'reinspect' : undefined;
+  let action: 'record' | 'reinspect' | undefined;
+  if (recordId) action = 'record';
+  else if (route.query.action === 'reinspect') action = 'reinspect';
   if (!id || navigating) return;
   if (openedBatchId === id && openedRecordId === recordId && detail.value?.visible) {
     if (action === 'reinspect') detail.value.focusReinspection();

@@ -59,6 +59,29 @@ const blockedReason = (step: BatchStepRecordItem, action: TaskStepAction): strin
   return step.executionEditBlockedReason || '';
 };
 
+const commandSuccessMessage = (action: TaskStepAction): string => {
+  if (action === 'assign') return '工序派工成功';
+  if (action === 'reassign') return '工序改派成功';
+  if (action === 'unassign') return '工序派工已撤回';
+  return '参考文件已保存';
+};
+
+const commandFailureMessage = (failure: unknown): string => {
+  if (
+    failure instanceof RequestError &&
+    (failure.code === 'CONCURRENT_MODIFICATION' || failure.code === 'STEP_ASSIGNMENT_CONFLICT')
+  )
+    return '工序状态或派工已变化；选择仍保留，请重新核对后继续';
+  if (failure instanceof Error) return failure.message;
+  return '工序操作失败，请重新核对';
+};
+
+const selectedReferenceFileLabel = (step: BatchStepRecordItem): string => {
+  if (!step.actualSopFileName) return '';
+  const versionLabel = step.actualSopVersionNo ? ` · 版本 ${step.actualSopVersionNo}` : '';
+  return `${step.actualSopFileName}${versionLabel}`;
+};
+
 export function technicalFileLabel(file: TechnicalFileListItem): string {
   return file.versionNo ? `${file.fileName} · 版本 ${file.versionNo}` : file.fileName;
 }
@@ -405,9 +428,7 @@ export function useProductionTaskStepsDialog(
       action === 'assign'
         ? current.defaultResponsibleUserName || ''
         : current.responsibleUserName || '';
-    selectedFileName.value = current.actualSopFileName
-      ? `${current.actualSopFileName}${current.actualSopVersionNo ? ` · 版本 ${current.actualSopVersionNo}` : ''}`
-      : '';
+    selectedFileName.value = selectedReferenceFileLabel(current);
     if (action === 'assign' || action === 'reassign') await refreshUsers();
     else if (action === 'execution') await refreshSopFiles();
   }
@@ -493,28 +514,14 @@ export function useProductionTaskStepsDialog(
       succeeded = true;
       if (batch.value?.id === active.batchId) detailReady.value = false;
       if (editor.value === active) clearEditor();
-      EMessage.success(
-        active.action === 'assign'
-          ? '工序派工成功'
-          : active.action === 'reassign'
-            ? '工序改派成功'
-            : active.action === 'unassign'
-              ? '工序派工已撤回'
-              : '参考文件已保存',
-      );
+      EMessage.success(commandSuccessMessage(active.action));
       callbacks.changed(active.batchId);
     } catch (failure) {
       if (epoch !== sessionEpoch || editor.value !== active) return;
       unknownResult.value = isAmbiguousFailure(failure);
       needsRecheck.value = true;
       if (!unknownResult.value) pendingCommand = null;
-      writeError.value =
-        failure instanceof RequestError &&
-        (failure.code === 'CONCURRENT_MODIFICATION' || failure.code === 'STEP_ASSIGNMENT_CONFLICT')
-          ? '工序状态或派工已变化；选择仍保留，请重新核对后继续'
-          : failure instanceof Error
-            ? failure.message
-            : '工序操作失败，请重新核对';
+      writeError.value = commandFailureMessage(failure);
     } finally {
       if (epoch === sessionEpoch) submitting.value = false;
     }

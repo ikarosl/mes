@@ -83,7 +83,11 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
     if (ids.length > 100 || ids.some((id) => !/^[1-9]\d*$/.test(id)))
       throw new InventoryDomainError('INVALID_INPUT', '一次最多查询 100 个有效到货明细');
     if (!ids.length) return Promise.resolve([]);
-    ids.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
+    ids.sort((a, b) => {
+      if (BigInt(a) < BigInt(b)) return -1;
+      if (BigInt(a) > BigInt(b)) return 1;
+      return 0;
+    });
     return withActiveConnection(this.pool, async (db) => {
       // 保留事实当前读；批次身份由组合外键保证，不为展示批号提前取得库批共享锁。
       // 共批入库只在确认写入时统一锁定目标批次，避免历史共享锁再升级为排他锁。

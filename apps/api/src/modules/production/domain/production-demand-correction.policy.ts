@@ -68,11 +68,9 @@ export function demandCorrectionCloseCause(
   kind: SubmitDemandCorrectionPayload['kind'],
   newRemainingQuantity: number,
 ): Extract<DemandCloseCause, 'single_close' | 'correction_replaced' | 'correction_exhausted'> {
-  return kind === 'close'
-    ? 'single_close'
-    : newRemainingQuantity > 0
-      ? 'correction_replaced'
-      : 'correction_exhausted';
+  if (kind === 'close') return 'single_close';
+  if (newRemainingQuantity > 0) return 'correction_replaced';
+  return 'correction_exhausted';
 }
 
 /** 模拟当前需求关闭剩余量对既有补产授权的影响，不修改需求或授权事实。 */

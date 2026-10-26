@@ -60,7 +60,11 @@ export class MysqlInventoryInboundCommand extends InventoryInboundCommand {
             detail.target.mode === 'existing' ? [detail.target.batchId] : [],
           ),
         ),
-      ].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
+      ].sort((a, b) => {
+        if (BigInt(a) < BigInt(b)) return -1;
+        if (BigInt(a) > BigInt(b)) return 1;
+        return 0;
+      });
       const [existingRows] = existingIds.length
         ? await db.query<
             (RowDataPacket & {

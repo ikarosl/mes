@@ -117,12 +117,14 @@ export class MysqlProductionProcurementQuery extends ProductionProcurementQuery 
       const byId = new Map(demands.map((demand) => [demand.demandId, demand]));
       return input.demandIds.map((demandId) => {
         const demand = byId.get(demandId) ?? null;
-        const blockedReason = demand
-          ? (productionBlock(demand) ??
+        let blockedReason: string | null = '需求不存在';
+        if (demand) {
+          blockedReason =
+            productionBlock(demand) ??
             (purchasableVariants.has(demand.materialVariantId)
               ? null
-              : '基础物料或分类已停用、已删除，或该精确版本已删除'))
-          : '需求不存在';
+              : '基础物料或分类已停用、已删除，或该精确版本已删除');
+        }
         return { demandId, demand, eligible: blockedReason === null, blockedReason };
       });
     });
@@ -246,5 +248,9 @@ function productionBlock(demand: ProcurementDemandCandidate): string | null {
 const validIds = (ids: string[]): boolean =>
   ids.length > 0 && ids.length <= 100 && ids.every((id) => /^[1-9]\d*$/.test(id));
 const sortedIds = (ids: string[]): string[] =>
-  [...new Set(ids)].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
+  [...new Set(ids)].sort((a, b) => {
+    if (BigInt(a) < BigInt(b)) return -1;
+    if (BigInt(a) > BigInt(b)) return 1;
+    return 0;
+  });
 const placeholders = (ids: string[]): string => ids.map(() => '?').join(',');

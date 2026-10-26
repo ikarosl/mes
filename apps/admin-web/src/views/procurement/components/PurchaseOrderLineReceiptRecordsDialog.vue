@@ -76,9 +76,7 @@
         class="records-table"
       >
         <template #empty>
-          <span>{{
-            failed ? '到货记录读取失败' : loading ? '正在读取到货记录' : '暂无到货记录'
-          }}</span>
+          <span>{{ emptyText }}</span>
         </template>
         <el-table-column
           label="到货单号"
@@ -155,6 +153,7 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
@@ -183,6 +182,11 @@ const {
   changePage,
   changePageSize,
 } = usePurchaseOrderLineReceiptRecords();
+const emptyText = computed(() => {
+  if (failed.value) return '到货记录读取失败';
+  if (loading.value) return '正在读取到货记录';
+  return '暂无到货记录';
+});
 
 defineExpose({ open, close, visible });
 </script>

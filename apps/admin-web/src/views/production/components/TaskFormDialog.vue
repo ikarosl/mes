@@ -346,9 +346,9 @@ const existingTaskContext = ref<Pick<
 > | null>(null);
 const existingRouteLabel = computed(() => {
   const context = existingTaskContext.value;
-  return context?.routeCode
-    ? `${context.routeCode}${context.routeVersion ? ` / ${context.routeVersion}` : ''}`
-    : '未配置';
+  if (!context?.routeCode) return '未配置';
+  const versionLabel = context.routeVersion ? ` / ${context.routeVersion}` : '';
+  return `${context.routeCode}${versionLabel}`;
 });
 const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
   workOrderId: '',

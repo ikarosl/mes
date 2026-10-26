@@ -9,6 +9,7 @@ import type {
   ProcessInspectionEntry,
   ProcessInspectionRecord,
   ProcessInspectionStepSummary,
+  ProcessInspectionCommandResult,
 } from '@company/contracts';
 import { processInspectionsApi } from '../../../api/process-inspections';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -297,12 +298,14 @@ export function useProcessInspectionEntry(
           body: command.body,
         },
         async (key) => {
-          const response =
-            command.mode === 'create'
-              ? await processInspectionsApi.create(command.body, key)
-              : command.mode === 'correct'
-                ? await processInspectionsApi.correct(command.id, command.body, key)
-                : await processInspectionsApi.reverse(command.id, command.body, key);
+          let response: ProcessInspectionCommandResult;
+          if (command.mode === 'create') {
+            response = await processInspectionsApi.create(command.body, key);
+          } else if (command.mode === 'correct') {
+            response = await processInspectionsApi.correct(command.id, command.body, key);
+          } else {
+            response = await processInspectionsApi.reverse(command.id, command.body, key);
+          }
           if (
             !response?.inspectionId ||
             !response.recordId ||
@@ -361,10 +364,17 @@ export function useProcessInspectionEntry(
         body: { version: current.version, reason: form.reason.trim() },
       };
     else return;
-    const message =
-      command.mode === 'reverse'
-        ? '确认冲销本次检查的当前结果？历史保留，本次未处理量归零，工序仍可继续登记新的检查。'
-        : `本次检查合格 ${command.body.qualifiedQuantity}，不合格 ${command.body.unqualifiedQuantity}。${command.mode === 'correct' ? '原结果将冲销并追加替代结果。' : '请确认不合格实物未在其他检查中重复登记。'}检查结果不自动修改报工。`;
+    let message: string;
+    if (command.mode === 'reverse') {
+      message =
+        '确认冲销本次检查的当前结果？历史保留，本次未处理量归零，工序仍可继续登记新的检查。';
+    } else {
+      const resultNotice =
+        command.mode === 'correct'
+          ? '原结果将冲销并追加替代结果。'
+          : '请确认不合格实物未在其他检查中重复登记。';
+      message = `本次检查合格 ${command.body.qualifiedQuantity}，不合格 ${command.body.unqualifiedQuantity}。${resultNotice}检查结果不自动修改报工。`;
+    }
     try {
       await RouteMessageBox.confirm(message, '确认提交', { type: 'warning' });
     } catch {

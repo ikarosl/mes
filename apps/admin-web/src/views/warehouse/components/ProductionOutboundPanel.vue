@@ -143,13 +143,7 @@
           <template #default="{ row }">
             <div>{{ row.operatorName || '-' }}</div>
             <div class="secondary-text">
-              {{
-                row.outboundAt
-                  ? formatTime(row.outboundAt)
-                  : row.status === 'pending_picking'
-                    ? '等待确认出库'
-                    : '未产生出库'
-              }}
+              {{ outboundTimeText(row) }}
             </div>
           </template>
         </el-table-column>
@@ -457,11 +451,19 @@ const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
 const variantSummary = (row: MaterialOutboundItem): string =>
   [...new Set(row.details.map((detail) => variantCode(detail)))].join('；') || '—';
-const statusTag = (status: OutboundOrderStatus) =>
-  status === 'completed' ? 'success' : status === 'cancelled' ? 'info' : 'warning';
+const statusTag = (status: OutboundOrderStatus) => {
+  if (status === 'completed') return 'success';
+  if (status === 'cancelled') return 'info';
+  return 'warning';
+};
 const statusLabel = (status: OutboundOrderStatus) => OUTBOUND_ORDER_STATUS_LABELS[status];
 const isPending = (action: string, id: string) => orders.pendingKeys.value.has(`${action}:${id}`);
 const formatTime = (value: string): string => formatDateTimeForDisplay(value);
+const outboundTimeText = (row: MaterialOutboundItem): string => {
+  if (row.outboundAt) return formatTime(row.outboundAt);
+  if (row.status === 'pending_picking') return '等待确认出库';
+  return '未产生出库';
+};
 const escapeHtml = (value: string): string =>
   value.replace(
     /[&<>'"]/g,

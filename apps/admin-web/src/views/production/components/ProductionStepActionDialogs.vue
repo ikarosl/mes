@@ -148,13 +148,13 @@ const stale = computed(
     currentStep.value.version !== snapshot.value.version,
 );
 const actionTitle = computed(() => PRODUCTION_STEP_EXECUTION_ACTION_LABELS[action.value]);
-const actionNote = computed(() =>
-  action.value === 'reopen'
-    ? '用于误点完工或实际继续加工，保留此前完成历史。重开不改变报工数量或上下游状态。'
-    : action.value === 'complete'
-      ? '明确确认本道作业结束。报工比例无需达到 100%；完成后新增报工须先重新开工，记录纠错不要求重开。异常及返工继续按各自规则办理。'
-      : '任务由管理员统一开工后，可开始本道作业；工序开工只改变本道状态。',
-);
+const actionNote = computed(() => {
+  if (action.value === 'reopen')
+    return '用于误点完工或实际继续加工，保留此前完成历史。重开不改变报工数量或上下游状态。';
+  if (action.value === 'complete')
+    return '明确确认本道作业结束。报工比例无需达到 100%；完成后新增报工须先重新开工，记录纠错不要求重开。异常及返工继续按各自规则办理。';
+  return '任务由管理员统一开工后，可开始本道作业；工序开工只改变本道状态。';
+});
 const canSubmit = computed(
   () =>
     !submitting.value &&

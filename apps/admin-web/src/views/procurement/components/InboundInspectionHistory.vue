@@ -78,20 +78,16 @@ function roundNo(record: QualityInboundCaseItem): number | undefined {
 }
 function recordTitle(record: QualityInboundCaseItem): string {
   const sourceRoundNo = roundNo(record);
-  const source =
-    sourceRoundNo !== undefined
-      ? `处理第 ${sourceRoundNo} 轮`
-      : !props.currentRoundId
-        ? '检验记录'
-        : record.roundId === props.currentRoundId
-          ? '本轮检验'
-          : '历史检验';
-  const adopted =
-    record.inspection?.id === props.adoptedInspectionId
-      ? record.roundId === props.currentRoundId
-        ? ' · 当前采用'
-        : ' · 当前采用，沿用此前检验'
-      : '';
+  let source: string;
+  if (sourceRoundNo !== undefined) source = `处理第 ${sourceRoundNo} 轮`;
+  else if (!props.currentRoundId) source = '检验记录';
+  else if (record.roundId === props.currentRoundId) source = '本轮检验';
+  else source = '历史检验';
+  let adopted = '';
+  if (record.inspection?.id === props.adoptedInspectionId) {
+    if (record.roundId === props.currentRoundId) adopted = ' · 当前采用';
+    else adopted = ' · 当前采用，沿用此前检验';
+  }
   return record.inspection
     ? `${source} · 检验记录 ID ${record.inspection.id} · ${QUALITY_RELEASE_DECISION_LABELS[record.inspection.releaseDecision]} · ${formatDateTimeForDisplay(record.inspection.inspectedAt)}${adopted}`
     : `${source} · ${QUALITY_INBOUND_CASE_TYPE_LABELS[record.caseType]} · ${QUALITY_INBOUND_CASE_STATUS_LABELS[record.status]} · ${formatDateTimeForDisplay(record.createdAt)}`;

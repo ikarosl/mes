@@ -55,6 +55,11 @@ const StubTableColumn = defineComponent({
       stubTableRowsKey,
       computed<StubRow[]>(() => []),
     );
+    const cellContent = (row: StubRow) => {
+      if (slots.default) return slots.default({ row });
+      if (props.prop) return String(row[props.prop] ?? '');
+      return '';
+    };
     return () =>
       h(
         'div',
@@ -63,11 +68,7 @@ const StubTableColumn = defineComponent({
           h(
             'div',
             { class: 'stub-cell', key: String(row.allocationId ?? row.outboundNo ?? index) },
-            slots.default
-              ? slots.default({ row })
-              : props.prop
-                ? String(row[props.prop] ?? '')
-                : '',
+            cellContent(row),
           ),
         ),
       );

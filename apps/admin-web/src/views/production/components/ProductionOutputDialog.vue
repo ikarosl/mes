@@ -575,54 +575,44 @@ const workflowStep = computed(() => {
   if (dirty.value || !hasSavedInspectionReference.value) return 2;
   return detail.value.canSubmit ? 4 : 3;
 });
+const inspectionStepNote = computed(() => {
+  if (currentRound.value?.status === 'inspecting') return '本轮检验中';
+  if (detail.value?.applicableInspectionId) return '已有适用放行记录';
+  return '保存申报后办理';
+});
+const inspectionReferenceStepNote = computed(() => {
+  if (hasSavedInspectionReference.value && !dirty.value) return '引用已保存';
+  if (draft.inspectionRecordId && draft.inspectionRecordId === detail.value?.applicableInspectionId)
+    return '待保存本次填写';
+  return '明确选择适用记录';
+});
+const closeoutStepNote = computed(() => {
+  if (hasSavedInspectionReference.value && !dirty.value && detail.value?.canSubmit) {
+    if (detail.value.currentRevisionId) return '沿用批准收尾依据';
+    return '送审条件已满足';
+  }
+  if (workflowStep.value === 3 && detail.value?.blockers.length)
+    return `仍有 ${detail.value.blockers.length} 项送审阻断`;
+  return '处理事项与逐项实核';
+});
 const workflowSteps = computed(() => [
   { title: '保存产出草稿', note: detail.value?.draft ? '已保存申报' : '填写数量与安排' },
-  {
-    title: '完成成品质检',
-    note:
-      currentRound.value?.status === 'inspecting'
-        ? '本轮检验中'
-        : detail.value?.applicableInspectionId
-          ? '已有适用放行记录'
-          : '保存申报后办理',
-  },
-  {
-    title: '引用记录并保存',
-    note:
-      hasSavedInspectionReference.value && !dirty.value
-        ? '引用已保存'
-        : draft.inspectionRecordId &&
-            draft.inspectionRecordId === detail.value?.applicableInspectionId
-          ? '待保存本次填写'
-          : '明确选择适用记录',
-  },
-  {
-    title: '收尾与物料核对',
-    note:
-      hasSavedInspectionReference.value && !dirty.value && detail.value?.canSubmit
-        ? detail.value.currentRevisionId
-          ? '沿用批准收尾依据'
-          : '送审条件已满足'
-        : workflowStep.value === 3 && detail.value?.blockers.length
-          ? `仍有 ${detail.value.blockers.length} 项送审阻断`
-          : '处理事项与逐项实核',
-  },
+  { title: '完成成品质检', note: inspectionStepNote.value },
+  { title: '引用记录并保存', note: inspectionReferenceStepNote.value },
+  { title: '收尾与物料核对', note: closeoutStepNote.value },
   { title: '提交结案审批', note: workflowStep.value === 4 ? '可提交负责人审批' : '完成核对后提交' },
 ]);
-const inspectionActionLabel = computed(() =>
-  currentRound.value?.status === 'inspecting'
-    ? '继续成品质检'
-    : detail.value?.canBeginReinspection
-      ? '前往复检'
-      : '前往成品质检',
-);
-const saveActionLabel = computed(() =>
-  !detail.value?.draft && canViewFinishedInspections.value
-    ? '保存草稿并前往质检'
-    : draft.inspectionRecordId && draft.inspectionRecordId === detail.value?.applicableInspectionId
-      ? '保存引用与产出草稿'
-      : '保存产出草稿',
-);
+const inspectionActionLabel = computed(() => {
+  if (currentRound.value?.status === 'inspecting') return '继续成品质检';
+  if (detail.value?.canBeginReinspection) return '前往复检';
+  return '前往成品质检';
+});
+const saveActionLabel = computed(() => {
+  if (!detail.value?.draft && canViewFinishedInspections.value) return '保存草稿并前往质检';
+  if (draft.inspectionRecordId && draft.inspectionRecordId === detail.value?.applicableInspectionId)
+    return '保存引用与产出草稿';
+  return '保存产出草稿';
+});
 const footerStatus = computed(() => {
   if (unresolved.value) return '原操作结果未确认，请先重试或核对业务结果。';
   if (stale.value) return '依据已更新；先核对更新内容，再继续填写。';
@@ -641,22 +631,28 @@ const footerStatus = computed(() => {
       ? '草稿已保存，下一步完成本轮成品质检。'
       : '草稿已保存，请由有成品质检页面权限的人员完成检验。';
   if (workflowStep.value === 2) return '质检已放行，请选择本次使用的记录并保存草稿。';
-  if (workflowStep.value === 3)
-    return detail.value?.blockers[0]
-      ? `暂不能送审：${detail.value.blockers[0]}${detail.value.blockers.length > 1 ? `（另有 ${detail.value.blockers.length - 1} 项，见当前步骤）` : ''}`
-      : '产出与引用已保存，请核对收尾及当前送审资格。';
+  if (workflowStep.value === 3) {
+    if (!detail.value?.blockers[0]) return '产出与引用已保存，请核对收尾及当前送审资格。';
+    const remainingBlockers =
+      detail.value.blockers.length > 1
+        ? `（另有 ${detail.value.blockers.length - 1} 项，见当前步骤）`
+        : '';
+    return `暂不能送审：${detail.value.blockers[0]}${remainingBlockers}`;
+  }
   if (workflowStep.value === 4) return '送审条件已满足；提交后冻结本次产出和引用。';
   return '先填写并保存产出草稿。';
 });
-const dialogTitle = computed(() =>
-  detail.value && !detail.value.currentRevisionId && detail.value.check.batchStatus !== 'closing'
-    ? '保留产出记录'
-    : detail.value?.status === 'reviewing'
-      ? '产出清单 · 审批中'
-      : detail.value?.status === 'approved'
-        ? '产出批准清单'
-        : '产出清单与结案核对',
-);
+const dialogTitle = computed(() => {
+  if (
+    detail.value &&
+    !detail.value.currentRevisionId &&
+    detail.value.check.batchStatus !== 'closing'
+  )
+    return '保留产出记录';
+  if (detail.value?.status === 'reviewing') return '产出清单 · 审批中';
+  if (detail.value?.status === 'approved') return '产出批准清单';
+  return '产出清单与结案核对';
+});
 const currentStep = computed(() => {
   if (detail.value?.canEdit)
     return `第 ${workflowStep.value + 1} 步 · ${workflowSteps.value[workflowStep.value]?.title}`;
@@ -675,12 +671,13 @@ const currentStepNote = computed(() => {
   if (detail.value?.canEdit) {
     if (workflowStep.value === 0)
       return '先填写产出数量、产出说明和物料初步安排并保存；首次质检需要已保存的申报，质检引用稍后补充。';
-    if (workflowStep.value === 1)
-      return currentRound.value?.status === 'inspecting'
-        ? '本轮检验正在办理，暂不能送审或入库。完成并保存质检结果后，回到此处引用记录。'
-        : canViewFinishedInspections.value
-          ? '产出申报已保存。前往成品质检完成本轮检验，再回来选择适用的放行记录并保存。'
-          : '产出申报已保存。请由有成品质检页面权限的人员完成检验，再刷新核对并引用放行记录。';
+    if (workflowStep.value === 1) {
+      if (currentRound.value?.status === 'inspecting')
+        return '本轮检验正在办理，暂不能送审或入库。完成并保存质检结果后，回到此处引用记录。';
+      if (canViewFinishedInspections.value)
+        return '产出申报已保存。前往成品质检完成本轮检验，再回来选择适用的放行记录并保存。';
+      return '产出申报已保存。请由有成品质检页面权限的人员完成检验，再刷新核对并引用放行记录。';
+    }
     if (workflowStep.value === 2)
       return dirty.value
         ? '核对当前产出及适用质检记录，保存本次填写与引用后，再处理收尾和物料。'

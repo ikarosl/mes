@@ -70,7 +70,7 @@
           </div>
         </el-form-item>
         <el-form-item
-          :label="historical ? '历史纠错原因' : mode === 'normal' ? '备注' : '异常说明（选填）'"
+          :label="remarkLabel"
           :required="historical"
         >
           <el-input
@@ -148,9 +148,16 @@ const form = reactive<{
   remark: '',
 });
 const quantityTouched = ref(false);
-const dialogTitle = computed(() =>
-  props.historical ? '普通正常报工历史补录' : props.mode === 'normal' ? '正常报工' : '异常报工',
-);
+const dialogTitle = computed(() => {
+  if (props.historical) return '普通正常报工历史补录';
+  if (props.mode === 'normal') return '正常报工';
+  return '异常报工';
+});
+const remarkLabel = computed(() => {
+  if (props.historical) return '历史纠错原因';
+  if (props.mode === 'normal') return '备注';
+  return '异常说明（选填）';
+});
 const submitLabel = computed(() => (props.mode === 'normal' ? '提交正常报工' : '提交异常报工'));
 const available = computed(() => Math.max(0, Number(props.task?.availableReportQuantity ?? 0)));
 const maximumQuantity = computed(() => Math.min(available.value, PRODUCTION_REPORT_QUANTITY_MAX));
@@ -162,17 +169,17 @@ const abnormalOriginTip = computed(() =>
     ? '前置工序异常表示在当前工序接手时发现上游问题；管理员判定报废时还需选择实际重制与补料的截止工序。'
     : '当前为首道工序，只能上报当前工序发生的异常。',
 );
-const quantityTip = computed(() =>
-  (props.intentStatus ?? 'idle') !== 'idle'
-    ? submissionRecoveryMessage(props.intentStatus ?? 'idle', '报工记录')
-    : props.contextReady === false
-      ? '当前依据已变化或加载失败，输入已保留；请重新核对最新工序后办理。'
-      : props.task && !canOpenProductionReport(props.task, props.historical)
-        ? (productionReportBlockedReason(props.task, props.historical) ?? '当前不可报工')
-        : props.historical
-          ? '历史补录仅登记纯正常普通报工，并保留本次真实录入时间和原因；不改变工序状态、批准产出、质检或库存。'
-          : null,
-);
+const quantityTip = computed(() => {
+  if ((props.intentStatus ?? 'idle') !== 'idle')
+    return submissionRecoveryMessage(props.intentStatus ?? 'idle', '报工记录');
+  if (props.contextReady === false)
+    return '当前依据已变化或加载失败，输入已保留；请重新核对最新工序后办理。';
+  if (props.task && !canOpenProductionReport(props.task, props.historical))
+    return productionReportBlockedReason(props.task, props.historical) ?? '当前不可报工';
+  if (props.historical)
+    return '历史补录仅登记纯正常普通报工，并保留本次真实录入时间和原因；不改变工序状态、批准产出、质检或库存。';
+  return null;
+});
 const canSubmit = computed(
   () =>
     !props.submitting &&

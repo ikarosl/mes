@@ -45,15 +45,12 @@ export class HttpExceptionFilter implements ExceptionFilter {
     const isConcurrencyError = exception instanceof ConcurrencyError;
     const isIdempotencyStorageError = exception instanceof IdempotencyStorageError;
     const isMulterFileTooLarge = isMulterFileSizeError(exception);
-    const status = isMulterFileTooLarge
-      ? HttpStatus.PAYLOAD_TOO_LARGE
-      : isHttpException
-        ? exception.getStatus()
-        : isConcurrencyError
-          ? HttpStatus.CONFLICT
-          : isIdempotencyStorageError
-            ? idempotencyStorageStatus(exception)
-            : HttpStatus.INTERNAL_SERVER_ERROR;
+    let status: number;
+    if (isMulterFileTooLarge) status = HttpStatus.PAYLOAD_TOO_LARGE;
+    else if (isHttpException) status = exception.getStatus();
+    else if (isConcurrencyError) status = HttpStatus.CONFLICT;
+    else if (isIdempotencyStorageError) status = idempotencyStorageStatus(exception);
+    else status = HttpStatus.INTERNAL_SERVER_ERROR;
     const requestId =
       request.requestId ?? readRequestId(request.headers?.['x-request-id']) ?? createRequestId();
 
@@ -87,16 +84,18 @@ export class HttpExceptionFilter implements ExceptionFilter {
       );
     }
 
+    const code = errorCode(status, exception);
+    let message: string;
+    if (isMulterFileTooLarge) message = technicalFileTooLargeMessage;
+    else if (isHttpException) message = exceptionMessage(exception, status);
+    else if (isConcurrencyError || isIdempotencyStorageError)
+      message = translateBackendMessage(exception.message, status);
+    else message = '服务器内部错误，请稍后重试';
+
     const body: ApiErrorResponse = {
       status,
-      code: errorCode(status, exception),
-      message: isMulterFileTooLarge
-        ? technicalFileTooLargeMessage
-        : isHttpException
-          ? exceptionMessage(exception, status)
-          : isConcurrencyError || isIdempotencyStorageError
-            ? translateBackendMessage(exception.message, status)
-            : '服务器内部错误，请稍后重试',
+      code,
+      message,
       requestId,
       timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',

@@ -116,12 +116,12 @@ export const closeoutActionSchema = z
     createdAt: z.string(),
   })
   .refine(
-    (action) =>
-      action.kind === 'task'
-        ? action.actionType === 'enter'
-          ? action.entryActionId === null
-          : action.actionType === 'withdraw' && action.entryActionId !== null
-        : action.actionType === null && action.entryActionId === null,
+    (action) => {
+      if (action.kind !== 'task')
+        return action.actionType === null && action.entryActionId === null;
+      if (action.actionType === 'enter') return action.entryActionId === null;
+      return action.actionType === 'withdraw' && action.entryActionId !== null;
+    },
     { message: '任务进入／撤回行动与逐项收尾行动的历史类型不一致' },
   );
 export const closeoutOutputSchema = z.object({

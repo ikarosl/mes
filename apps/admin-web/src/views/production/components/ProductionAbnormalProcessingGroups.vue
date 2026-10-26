@@ -66,14 +66,7 @@
         >
           <strong>异常处置</strong><span>{{ group.disposition.dispositionNo }}</span>
           <el-tag
-            :type="
-              group.disposition.reviewStatus === 'pending_review'
-                ? 'warning'
-                : group.disposition.reviewStatus === 'approved' &&
-                    group.disposition.dispositionType === 'scrap'
-                  ? 'danger'
-                  : 'info'
-            "
+            :type="dispositionTagType(group.disposition)"
             size="small"
           >
             {{ dispositionResultLabel(group.disposition) }}
@@ -225,6 +218,7 @@ import type {
 } from '@company/contracts';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../production-status';
+import type { StatusTagType } from '../production-status';
 import ProductionAbnormalProcessingSummary from './ProductionAbnormalProcessingSummary.vue';
 import {
   dispositionResultLabel,
@@ -268,6 +262,12 @@ const viewInspection = async (inspectionId: string): Promise<void> => {
 };
 const resultQuantity = (quantity: string | null): string =>
   quantity === null ? '待核对' : formatQuantity(quantity);
+const dispositionTagType = (disposition: BatchStepAbnormalDispositionView): StatusTagType => {
+  if (disposition.reviewStatus === 'pending_review') return 'warning';
+  if (disposition.reviewStatus === 'approved' && disposition.dispositionType === 'scrap')
+    return 'danger';
+  return 'info';
+};
 const isExpanded = (group: AbnormalProcessingGroup): boolean =>
   props.expansion[processingGroupKey(group)] ?? processingGroupPending(group);
 const toggle = (group: AbnormalProcessingGroup): void =>

@@ -475,15 +475,14 @@ export function useFinishedInspection(
     const extraDraft = extraDraftMessage();
     if (unresolved.value || inspectionOpen.value || extraDraft) {
       try {
-        await RouteMessageBox.confirm(
-          unresolved.value
-            ? '提交结果尚未确认，请先核对检验历史。关闭会放弃本地重试标识，确认关闭？'
-            : inspectionOpen.value
-              ? '存在未保存的检验填写，确认放弃本地输入并关闭？当前检验轮保持办理中；如已发起复检，剩余入库仍暂停。'
-              : (extraDraft ?? ''),
-          '关闭成品质检',
-          { type: 'warning' },
-        );
+        let message = extraDraft ?? '';
+        if (unresolved.value) {
+          message = '提交结果尚未确认，请先核对检验历史。关闭会放弃本地重试标识，确认关闭？';
+        } else if (inspectionOpen.value) {
+          message =
+            '存在未保存的检验填写，确认放弃本地输入并关闭？当前检验轮保持办理中；如已发起复检，剩余入库仍暂停。';
+        }
+        await RouteMessageBox.confirm(message, '关闭成品质检', { type: 'warning' });
       } catch {
         return false;
       }
@@ -548,8 +547,11 @@ export function useFinishedInspection(
     changeInspection,
     discardInspection,
     recordInspection,
-    retry: async () =>
-      pendingReinspection ? runReinspection() : pendingStart ? runStart() : run(),
+    retry: async () => {
+      if (pendingReinspection) return runReinspection();
+      if (pendingStart) return runStart();
+      return run();
+    },
     changePage,
     changePageSize,
   };

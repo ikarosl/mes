@@ -424,30 +424,26 @@ watch(
   { immediate: true },
 );
 
-const statusMeta = (status: ApprovalInstanceStatus) =>
-  ({
+const statusMeta = (status: ApprovalInstanceStatus) => {
+  let type: 'success' | 'danger' | 'warning' = 'warning';
+  if (status === 'approved') type = 'success';
+  else if (status === 'rejected' || status === 'withdrawn') type = 'danger';
+  return {
     label: APPROVAL_INSTANCE_STATUS_LABELS[status],
-    type:
-      status === 'approved'
-        ? 'success'
-        : status === 'rejected' || status === 'withdrawn'
-          ? 'danger'
-          : 'warning',
-  }) as const;
-const stepStatusMeta = (status: ApprovalStepStatus) =>
-  ({
+    type,
+  } as const;
+};
+const stepStatusMeta = (status: ApprovalStepStatus) => {
+  let type: 'success' | 'danger' | 'warning' | 'primary' | 'info' = 'info';
+  if (status === 'approved') type = 'success';
+  else if (status === 'rejected' || status === 'cancelled') type = 'danger';
+  else if (status === 'blocked') type = 'warning';
+  else if (status === 'pending') type = 'primary';
+  return {
     label: APPROVAL_STEP_STATUS_LABELS[status],
-    type:
-      status === 'approved'
-        ? 'success'
-        : status === 'rejected' || status === 'cancelled'
-          ? 'danger'
-          : status === 'blocked'
-            ? 'warning'
-            : status === 'pending'
-              ? 'primary'
-              : 'info',
-  }) as const;
+    type,
+  } as const;
+};
 const actionLabel = (type: ApprovalActionType) => APPROVAL_ACTION_TYPE_LABELS[type];
 const sceneLabel = (sceneCode: string) => APPROVAL_SCENE_LABELS[sceneCode] ?? sceneCode;
 const actionStepNo = (stepId: string): number | null =>

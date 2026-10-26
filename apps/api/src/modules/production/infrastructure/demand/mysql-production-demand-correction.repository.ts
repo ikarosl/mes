@@ -90,6 +90,22 @@ const id = (value: number | string | null): string | null =>
   value === null ? null : String(value);
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 
+const correctionResultOf = (
+  snapshot: Correction['result_snapshot'],
+): { fulfilledSupplementIds: string[] } => {
+  if (snapshot === null) return { fulfilledSupplementIds: [] };
+  if (typeof snapshot === 'string')
+    return JSON.parse(snapshot) as { fulfilledSupplementIds: string[] };
+  return snapshot;
+};
+
+const correctionStateOf = (row: Correction): DemandCorrectionHistoryItem['state'] => {
+  if (row.applied_at) return 'applied';
+  if (row.ended_at) return 'ended';
+  if (row.approval_instance_id) return 'pending';
+  return 'draft';
+};
+
 @Injectable()
 export class MysqlProductionDemandCorrectionRepository extends ProductionDemandCorrectionRepository {
   constructor(
@@ -128,26 +144,13 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         ids,
       );
       return rows.map((row) => {
-        const result =
-          row.result_snapshot === null
-            ? { fulfilledSupplementIds: [] }
-            : typeof row.result_snapshot === 'string'
-              ? (JSON.parse(row.result_snapshot) as {
-                  fulfilledSupplementIds: string[];
-                })
-              : row.result_snapshot;
+        const result = correctionResultOf(row.result_snapshot);
         return {
           id: String(row.id),
           oldDemandId: String(row.old_demand_id),
           newDemandId: id(row.new_demand_id),
           approvalInstanceId: id(row.approval_instance_id),
-          state: row.applied_at
-            ? 'applied'
-            : row.ended_at
-              ? 'ended'
-              : row.approval_instance_id
-                ? 'pending'
-                : 'draft',
+          state: correctionStateOf(row),
           snapshot: this.snapshot(row),
           createdAt: toBeijingISOString(row.created_at),
           appliedAt: row.applied_at ? toBeijingISOString(row.applied_at) : null,

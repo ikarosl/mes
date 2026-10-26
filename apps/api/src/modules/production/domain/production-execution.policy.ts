@@ -20,12 +20,10 @@ export function evaluateAssignmentAvailability(input: {
   canUnassign: boolean;
   unassignBlockedReason: string | null;
 } {
-  const phaseBlocked =
-    input.pendingApprovalId !== null
-      ? '结案或产出更正在审批，不能调整派工'
-      : ['closing', 'completed', 'terminated', 'cancelled'].includes(input.batchStatus)
-        ? '任务已结束执行或取消，不能调整派工'
-        : null;
+  let phaseBlocked: string | null = null;
+  if (input.pendingApprovalId !== null) phaseBlocked = '结案或产出更正在审批，不能调整派工';
+  else if (['closing', 'completed', 'terminated', 'cancelled'].includes(input.batchStatus))
+    phaseBlocked = '任务已结束执行或取消，不能调整派工';
   const assignBlockedReason =
     phaseBlocked ?? (input.stepStatus === 'pending' ? null : '该工序已派工');
   const reassignBlockedReason =

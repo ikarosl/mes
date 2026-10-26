@@ -83,13 +83,7 @@
           :selected-task-id="selectedTaskId"
           :is-selected="isSelected"
           :can-view-inspection="auth.can(PERMISSIONS.quality.finishedInspections.view)"
-          :empty-text="
-            candidateError
-              ? '读取失败，请刷新重试'
-              : candidateKeyword || candidateSource
-                ? '当前筛选无可入库明细，请清除筛选'
-                : '暂无可入库明细；请先核对成品质检与批准产出清单'
-          "
+          :empty-text="candidateEmptyText"
           @toggle="toggle"
           @open="openFromCandidate"
           @inspection="goInspection"
@@ -221,13 +215,7 @@
           ref="historyGroups"
           :rows="rows"
           :loading="loading"
-          :empty-text="
-            error
-              ? '读取失败，请刷新重试'
-              : query.keyword || query.sourceType
-                ? '当前筛选无已入库记录，请清除筛选'
-                : '暂无已确认成品入库记录；可切换到待入库办理'
-          "
+          :empty-text="historyEmptyText"
           :details="list.details"
           :detail-loading="list.detailLoading"
           :detail-errors="list.detailErrors"
@@ -310,6 +298,16 @@ const selected = ref<FinishedInboundSelection[]>([]);
 const selectedTaskId = computed(() => selected.value[0]?.source.productionBatchId ?? null);
 const list = useFinishedGoodsInbounds();
 const { query, rows, total, loading, error } = list;
+const candidateEmptyText = computed(() => {
+  if (candidateError.value) return '读取失败，请刷新重试';
+  if (candidateKeyword.value || candidateSource.value) return '当前筛选无可入库明细，请清除筛选';
+  return '暂无可入库明细；请先核对成品质检与批准产出清单';
+});
+const historyEmptyText = computed(() => {
+  if (error.value) return '读取失败，请刷新重试';
+  if (query.keyword || query.sourceType) return '当前筛选无已入库记录，请清除筛选';
+  return '暂无已确认成品入库记录；可切换到待入库办理';
+});
 const route = useRoute();
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();

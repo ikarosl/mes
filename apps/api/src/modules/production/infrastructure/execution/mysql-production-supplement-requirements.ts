@@ -41,17 +41,19 @@ export async function loadSupplementRequirements(
     replacesDemandId: row.replaces_demand_id === null ? null : String(row.replaces_demand_id),
     closeCause: row.close_cause,
     issuedQuantity: Number(row.issued_quantity),
-    correction:
-      row.correction_id === null
-        ? null
-        : {
-            applied: row.applied_at !== null,
-            newDemandId: row.new_demand_id === null ? null : String(row.new_demand_id),
-            targetTotalQuantity: Number(row.target_total_quantity),
-            issuedQuantity: Number(row.correction_issued_quantity),
-            newRemainingQuantity: Number(row.new_remaining_quantity),
-          },
+    correction: supplementCorrectionOf(row),
   }));
+}
+
+function supplementCorrectionOf(row: RequirementRow): SupplementDemandRequirement['correction'] {
+  if (row.correction_id === null) return null;
+  return {
+    applied: row.applied_at !== null,
+    newDemandId: row.new_demand_id === null ? null : String(row.new_demand_id),
+    targetTotalQuantity: Number(row.target_total_quantity),
+    issuedQuantity: Number(row.correction_issued_quantity),
+    newRemainingQuantity: Number(row.new_remaining_quantity),
+  };
 }
 export async function supplementFulfillment(db: Db, supplementId: string) {
   return evaluateSupplementFulfillment(await loadSupplementRequirements(db, supplementId, true));

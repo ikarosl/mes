@@ -316,22 +316,7 @@ export async function listInspections(
   return {
     items: rows.map((row) => {
       const receiptLineId = text(row.id);
-      const currentCase: ProcurementInboundInspectionCaseSummary | null =
-        row.case_id === null
-          ? null
-          : {
-              id: text(row.case_id),
-              status: row.case_status as ProcurementInboundInspectionCaseSummary['status'],
-              inspection:
-                row.adopted_inspection_id === null
-                  ? null
-                  : {
-                      id: text(row.adopted_inspection_id),
-                      releaseDecision: row.release_decision as NonNullable<
-                        ProcurementInboundInspectionCaseSummary['inspection']
-                      >['releaseDecision'],
-                    },
-            };
+      const currentCase = mapCurrentInspectionCase(row);
       return {
         ...mapReceiptListSource(row),
         receiptLineId,
@@ -353,5 +338,22 @@ export async function listInspections(
     total: Number(count?.total ?? 0),
     page,
     pageSize,
+  };
+}
+
+function mapCurrentInspectionCase(row: ReadRow): ProcurementInboundInspectionCaseSummary | null {
+  if (row.case_id === null) return null;
+  return {
+    id: text(row.case_id),
+    status: row.case_status as ProcurementInboundInspectionCaseSummary['status'],
+    inspection:
+      row.adopted_inspection_id === null
+        ? null
+        : {
+            id: text(row.adopted_inspection_id),
+            releaseDecision: row.release_decision as NonNullable<
+              ProcurementInboundInspectionCaseSummary['inspection']
+            >['releaseDecision'],
+          },
   };
 }

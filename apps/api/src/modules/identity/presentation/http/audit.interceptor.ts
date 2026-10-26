@@ -62,14 +62,7 @@ export class AuditInterceptor implements NestInterceptor {
           this.writeBestEffort({
             ...entry,
             result: 'failed',
-            httpStatus:
-              error instanceof HttpException
-                ? error.getStatus()
-                : error instanceof ConcurrencyError
-                  ? HttpStatus.CONFLICT
-                  : error instanceof IdempotencyStorageError
-                    ? idempotencyStorageStatus(error)
-                    : 500,
+            httpStatus: auditFailureStatus(error),
             durationMs: Date.now() - startedAt,
             errorCode: auditErrorCode(error),
             remark: auditFailureRemark(error),
@@ -88,14 +81,19 @@ export class AuditInterceptor implements NestInterceptor {
 }
 
 /** 在不持久化原始异常消息或凭证的前提下，保留操作日志的诊断价值。 */
-export const auditFailureRemark = (error: unknown) =>
-  error instanceof HttpException
-    ? `HTTP ${error.getStatus()}`
-    : error instanceof ConcurrencyError
-      ? 'HTTP 409'
-      : error instanceof IdempotencyStorageError
-        ? `HTTP ${idempotencyStorageStatus(error)}`
-        : '未处理的请求失败';
+export const auditFailureRemark = (error: unknown): string => {
+  if (error instanceof HttpException) return `HTTP ${error.getStatus()}`;
+  if (error instanceof ConcurrencyError) return 'HTTP 409';
+  if (error instanceof IdempotencyStorageError) return `HTTP ${idempotencyStorageStatus(error)}`;
+  return '未处理的请求失败';
+};
+
+const auditFailureStatus = (error: unknown): number => {
+  if (error instanceof HttpException) return error.getStatus();
+  if (error instanceof ConcurrencyError) return HttpStatus.CONFLICT;
+  if (error instanceof IdempotencyStorageError) return idempotencyStorageStatus(error);
+  return 500;
+};
 
 /** 幂等存储错误与 HttpExceptionFilter 保持一致的 HTTP 状态：可重试 503，结果损坏 500。 */
 export const idempotencyStorageStatus = (error: IdempotencyStorageError) =>

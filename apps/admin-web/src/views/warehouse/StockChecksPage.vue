@@ -681,7 +681,9 @@ const cancellationReasonValidator = (input: string) =>
 function localResult(row: CountRow): StockCheckResult | null {
   if (row.actualQuantity === null) return null;
   const difference = row.actualQuantity - Number(row.systemQuantity);
-  return difference === 0 ? 'matched' : difference > 0 ? 'surplus' : 'shortage';
+  if (difference === 0) return 'matched';
+  if (difference > 0) return 'surplus';
+  return 'shortage';
 }
 function differenceText(row: CountRow) {
   if (row.actualQuantity === null) return '-';
@@ -715,14 +717,12 @@ function pageChanged(value: number) {
   void loadRows();
 }
 const quantity = (value: string | number) => Number(value).toFixed(0);
-const statusTag = (status: StockCheckStatus) =>
-  status === 'completed'
-    ? 'success'
-    : status === 'cancelled'
-      ? 'info'
-      : status === 'counting'
-        ? 'primary'
-        : 'warning';
+const statusTag = (status: StockCheckStatus) => {
+  if (status === 'completed') return 'success';
+  if (status === 'cancelled') return 'info';
+  if (status === 'counting') return 'primary';
+  return 'warning';
+};
 function createHasDraft() {
   return Boolean(createForm.remark.trim() || selectedTargets.value.size);
 }

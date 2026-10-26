@@ -5,6 +5,11 @@ import globals from 'globals';
 import tseslint from 'typescript-eslint';
 import vue from 'eslint-plugin-vue';
 
+const nestedTernaryRestriction = {
+  selector: 'ConditionalExpression ConditionalExpression',
+  message: '禁止嵌套三元运算符；使用 if 分支和提前 return 保持代码可读性。',
+};
+
 export default tseslint.config(
   // 忽略构建产物与 .claude/worktrees/**（并发会话的 git worktree 副本含独立 tsconfig/eslint 配置，
   // 会导致 tsconfigRootDir 多候选解析失败；worktree 属于临时工作区，不应参与本仓库门禁）。
@@ -27,6 +32,18 @@ export default tseslint.config(
     languageOptions: { parserOptions: { parser: tseslint.parser } },
   },
   prettier,
+  {
+    rules: {
+      'no-nested-ternary': 'error',
+      'no-restricted-syntax': ['error', nestedTernaryRestriction],
+    },
+  },
+  {
+    files: ['**/*.vue'],
+    rules: {
+      'vue/no-restricted-syntax': ['error', nestedTernaryRestriction],
+    },
+  },
   // 全局：underscore 前缀的函数参数是约定，不视为未使用
   {
     files: ['**/*.{ts,vue}'],
@@ -140,6 +157,7 @@ export default tseslint.config(
       ],
       'no-restricted-syntax': [
         'error',
+        nestedTernaryRestriction,
         {
           // @nestjs/common 的所有 *Exception 命名导入（BadRequest/NotFound/UnprocessableEntity/InternalServerError
           // 等当前及未来新增的 Nest HTTP 异常类）一律禁止，避免枚举遗漏导致门禁假通过。

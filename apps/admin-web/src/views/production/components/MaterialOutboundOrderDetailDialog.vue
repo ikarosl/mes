@@ -13,13 +13,7 @@
       <template v-if="detail">
         <el-alert
           :title="notice"
-          :type="
-            detail.status === 'completed'
-              ? 'success'
-              : detail.status === 'cancelled'
-                ? 'error'
-                : 'warning'
-          "
+          :type="noticeType"
           :closable="false"
         />
         <el-descriptions
@@ -157,6 +151,11 @@ const emit = defineEmits<{
   print: [detail: MaterialOutboundItem];
 }>();
 
+const noticeType = computed<'success' | 'error' | 'warning'>(() => {
+  if (props.detail?.status === 'completed') return 'success';
+  if (props.detail?.status === 'cancelled') return 'error';
+  return 'warning';
+});
 const notice = computed(() => {
   if (props.detail?.status === 'completed')
     return '整张单据已确认，每条明细均已生成负库存流水；当前有效需求的剩余量可继续分次办理。';

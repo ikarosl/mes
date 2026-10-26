@@ -9,9 +9,8 @@ const OUTBOUND_STATUS_HINTS: Record<OutboundOrderStatus, string> = {
 export const outboundStatusHint = (status: OutboundOrderStatus): string =>
   OUTBOUND_STATUS_HINTS[status];
 
-export const outboundRowClass = ({ row }: { row: MaterialOutboundItem }): string =>
-  row.status === 'pending_picking'
-    ? 'status-warning-row'
-    : row.status === 'cancelled'
-      ? 'status-muted-row'
-      : '';
+export const outboundRowClass = ({ row }: { row: MaterialOutboundItem }): string => {
+  if (row.status === 'pending_picking') return 'status-warning-row';
+  if (row.status === 'cancelled') return 'status-muted-row';
+  return '';
+};

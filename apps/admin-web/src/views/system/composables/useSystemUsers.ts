@@ -38,7 +38,9 @@ export function useSystemUsers(roleOptions: Readonly<Ref<SystemRoleOption[]>>) {
   const getPrimaryRoleName = (row: SystemUserListItem): string => {
     const id = row.roleIds?.[0];
     const code = row.roles?.[0];
-    return id ? getRoleName(id) : code ? getRoleName(code) : '-';
+    if (id) return getRoleName(id);
+    if (code) return getRoleName(code);
+    return '-';
   };
 
   /** 列表 last-request-wins：快速查询/翻页时旧响应不得覆盖新结果 */
@@ -47,6 +49,9 @@ export function useSystemUsers(roleOptions: Readonly<Ref<SystemRoleOption[]>>) {
     const token = ++listRequestToken;
     loading.value = true;
     try {
+      let status: typeof SYSTEM_STATUS.enabled | typeof SYSTEM_STATUS.disabled | undefined;
+      if (query.status === 'enabled') status = SYSTEM_STATUS.enabled;
+      else if (query.status === 'disabled') status = SYSTEM_STATUS.disabled;
       const result = await systemApi.users({
         page: currentPage.value,
         pageSize: pageSize.value,
@@ -54,12 +59,7 @@ export function useSystemUsers(roleOptions: Readonly<Ref<SystemRoleOption[]>>) {
         username: query.username.trim() || undefined,
         displayName: query.displayName.trim() || undefined,
         roleId: query.roleId || undefined,
-        status:
-          query.status === 'enabled'
-            ? SYSTEM_STATUS.enabled
-            : query.status === 'disabled'
-              ? SYSTEM_STATUS.disabled
-              : undefined,
+        status,
       });
       if (token !== listRequestToken) return; // 已有更新的请求，丢弃迟到响应
       users.value = result.items;

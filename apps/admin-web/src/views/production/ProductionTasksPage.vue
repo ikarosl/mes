@@ -730,6 +730,14 @@ const openCreate = (): void => {
   taskDialogVisible.value = true;
 };
 
+const batchCreationIntentMessage = (state: string): string => {
+  if (state === 'blocked')
+    return '暂时无法确认批次是否已创建，当前不能继续提交。请先核对批次列表并联系管理员；关闭后重新办理可能重复创建，确认关闭？';
+  if (state === 'expired')
+    return '本次提交已超过可重试时限。请先核对批次列表；关闭后重新办理可能重复创建，确认关闭？';
+  return '暂时无法确认批次是否已创建。关闭后无法继续重试本次提交，重新办理可能重复创建；请先核对批次列表，确认关闭？';
+};
+
 /**
  * 任务弹窗关闭守卫：意图结果未知（网络模糊失败/提交在途/结果损坏/超时）时不得静默丢弃 K1，
  * 否则重新提交可能生成第二个自动编号批次。必须提示后由用户显式确认才 reset（放弃）。
@@ -748,12 +756,7 @@ const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
     createBatchIntent.reset();
     return;
   }
-  const message =
-    state === 'blocked'
-      ? '暂时无法确认批次是否已创建，当前不能继续提交。请先核对批次列表并联系管理员；关闭后重新办理可能重复创建，确认关闭？'
-      : state === 'expired'
-        ? '本次提交已超过可重试时限。请先核对批次列表；关闭后重新办理可能重复创建，确认关闭？'
-        : '暂时无法确认批次是否已创建。关闭后无法继续重试本次提交，重新办理可能重复创建；请先核对批次列表，确认关闭？';
+  const message = batchCreationIntentMessage(state);
   try {
     await ElMessageBox.confirm(message, '关闭确认', {
       confirmButtonText: '仍要关闭',
@@ -926,12 +929,13 @@ const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): P
     EMessage.error(error, materialErrorFallback(error, '待出库单创建失败'));
   }
 };
-const materialIntentMessage = (operation: string, state: string): string =>
-  state === 'blocked'
-    ? `暂时无法确认${operation}是否成功，当前不能继续提交。请先核对需求、出库记录和库存，并联系管理员；确认关闭当前操作？`
-    : state === 'expired'
-      ? `${operation}已超过可重试时限。请先核对需求、出库记录和库存；重新办理可能重复提交，确认关闭当前操作？`
-      : `暂时无法确认${operation}是否成功。关闭后无法继续重试本次提交，重新办理可能重复操作；请先核对需求、出库记录和库存，确认关闭？`;
+const materialIntentMessage = (operation: string, state: string): string => {
+  if (state === 'blocked')
+    return `暂时无法确认${operation}是否成功，当前不能继续提交。请先核对需求、出库记录和库存，并联系管理员；确认关闭当前操作？`;
+  if (state === 'expired')
+    return `${operation}已超过可重试时限。请先核对需求、出库记录和库存；重新办理可能重复提交，确认关闭当前操作？`;
+  return `暂时无法确认${operation}是否成功。关闭后无法继续重试本次提交，重新办理可能重复操作；请先核对需求、出库记录和库存，确认关闭？`;
+};
 const confirmMaterialIntentReset = async (
   operation: string,
   status: 'idle' | 'pending' | 'blocked' | 'expired',

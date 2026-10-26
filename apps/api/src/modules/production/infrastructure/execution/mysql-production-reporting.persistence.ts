@@ -69,7 +69,9 @@ export const DISPOSITION_SELECT = `SELECT d.id,d.disposition_no,d.production_bat
 export const numericIdOrder = (left: string, right: string): number => {
   const a = BigInt(left);
   const b = BigInt(right);
-  return a === b ? 0 : a < b ? -1 : 1;
+  if (a === b) return 0;
+  if (a < b) return -1;
+  return 1;
 };
 
 export async function pendingReportingApproval(
@@ -188,14 +190,15 @@ export function requireReportingWrite(
     access,
     context.quantities.get(String(step.id))!.availableReportQuantity,
   );
-  const reason =
-    phase === 'history'
-      ? intent === 'create'
+  let reason: string | null;
+  if (phase === 'history')
+    reason =
+      intent === 'create'
         ? eligibility.historicalCreateBlockedReason
-        : eligibility.historicalCorrectionBlockedReason
-      : intent === 'create'
-        ? eligibility.reportBlockedReason
-        : eligibility.correctionBlockedReason;
+        : eligibility.historicalCorrectionBlockedReason;
+  else
+    reason =
+      intent === 'create' ? eligibility.reportBlockedReason : eligibility.correctionBlockedReason;
   if (reason)
     throw new ProductionDomainError(
       !access.canManageExecution && String(step.responsible_user_id) !== access.actorId

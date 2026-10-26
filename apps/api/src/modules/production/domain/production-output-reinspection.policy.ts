@@ -39,31 +39,7 @@ export function evaluateOutputReinspection(
       Number(facts.receipts.productionReceivedQuantity) -
       Number(facts.receipts.extraReceivedQuantity)
     : null;
-  const round = facts.currentRound;
-  const blockedReason = !['closing', 'completed', 'terminated'].includes(facts.batchStatus)
-    ? '任务尚未进入结案阶段，不能办理成品复检'
-    : facts.hasPendingApproval
-      ? '清单正在审批中，请先撤回或驳回'
-      : !facts.draft
-        ? '请先保存产出草稿'
-        : !facts.hasInspection
-          ? '当前尚无检验记录，请先完成首次检验'
-          : remaining !== null && remaining <= 0
-            ? '当前批准清单已无剩余实物可复检'
-            : round?.status === 'inspecting'
-              ? '本轮检验正在填写，请继续登记结果'
-              : round?.status === 'pending_inspection' &&
-                  round.triggerType !== 'finalization_correction'
-                ? '本轮检验尚未开始，请先完成当前轮次'
-                : round?.status === 'reviewing'
-                  ? '清单正在审批中，请先撤回或驳回'
-                  : round?.status === 'pending_finalization' ||
-                      round?.status === 'finalized' ||
-                      round?.status === 'superseded' ||
-                      (round?.status === 'pending_inspection' &&
-                        round.triggerType === 'finalization_correction')
-                    ? null
-                    : '当前轮次不能发起复检';
+  const blockedReason = outputReinspectionBlockedReason(facts, remaining);
   return {
     canBeginReinspection: blockedReason === null,
     reinspectionBlockedReason: blockedReason,
@@ -71,4 +47,29 @@ export function evaluateOutputReinspection(
     receivedPlannedQuantity: facts.receipts.productionReceivedQuantity,
     receivedExtraQuantity: facts.receipts.extraReceivedQuantity,
   };
+}
+
+function outputReinspectionBlockedReason(
+  facts: OutputReinspectionFacts,
+  remaining: number | null,
+): string | null {
+  const round = facts.currentRound;
+  if (!['closing', 'completed', 'terminated'].includes(facts.batchStatus))
+    return '任务尚未进入结案阶段，不能办理成品复检';
+  if (facts.hasPendingApproval) return '清单正在审批中，请先撤回或驳回';
+  if (!facts.draft) return '请先保存产出草稿';
+  if (!facts.hasInspection) return '当前尚无检验记录，请先完成首次检验';
+  if (remaining !== null && remaining <= 0) return '当前批准清单已无剩余实物可复检';
+  if (round?.status === 'inspecting') return '本轮检验正在填写，请继续登记结果';
+  if (round?.status === 'pending_inspection' && round.triggerType !== 'finalization_correction')
+    return '本轮检验尚未开始，请先完成当前轮次';
+  if (round?.status === 'reviewing') return '清单正在审批中，请先撤回或驳回';
+  if (
+    round?.status === 'pending_finalization' ||
+    round?.status === 'finalized' ||
+    round?.status === 'superseded' ||
+    (round?.status === 'pending_inspection' && round.triggerType === 'finalization_correction')
+  )
+    return null;
+  return '当前轮次不能发起复检';
 }

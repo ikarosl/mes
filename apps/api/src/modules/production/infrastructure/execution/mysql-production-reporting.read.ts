@@ -66,13 +66,13 @@ export async function selectBatchExecutionRecords(
   );
   const byStep = groupRowsBy(dispositions, (row) => row.stepRecordId);
   const quotaDistributions = calculateStepQuotaDistributions(steps, quantities, quotaFacts);
-  const batchReverseBlockedReason = !access.canManageExecution
-    ? `批量冲销需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`
-    : pendingApprovalId !== null
-      ? '结案或产出更正在审批，报工纠错冻结'
-      : reportingPhase(batch.status) === 'unavailable'
-        ? '任务阶段不允许报工冲销'
-        : null;
+  let batchReverseBlockedReason: string | null = null;
+  if (!access.canManageExecution)
+    batchReverseBlockedReason = `批量冲销需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
+  else if (pendingApprovalId !== null)
+    batchReverseBlockedReason = '结案或产出更正在审批，报工纠错冻结';
+  else if (reportingPhase(batch.status) === 'unavailable')
+    batchReverseBlockedReason = '任务阶段不允许报工冲销';
   return {
     productionBatchId: batchId,
     batchNo: batch.batch_no,

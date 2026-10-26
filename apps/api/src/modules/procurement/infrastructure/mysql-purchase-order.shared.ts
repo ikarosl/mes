@@ -42,7 +42,11 @@ export type OrderLineRow = RowDataPacket & {
 };
 export const idsSql = (ids: readonly string[]) => ids.map(() => '?').join(',');
 export const sortedIds = (ids: readonly string[]) =>
-  [...new Set(ids)].sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : BigInt(a) > BigInt(b) ? 1 : 0));
+  [...new Set(ids)].sort((a, b) => {
+    if (BigInt(a) < BigInt(b)) return -1;
+    if (BigInt(a) > BigInt(b)) return 1;
+    return 0;
+  });
 export const orderError = (
   message: string,
   code:

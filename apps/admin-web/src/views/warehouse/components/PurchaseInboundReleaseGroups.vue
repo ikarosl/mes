@@ -10,13 +10,7 @@
       v-if="!releaseGroups.length"
       class="empty-list"
     >
-      {{
-        releases.loadError.value
-          ? '读取失败，请刷新重试'
-          : releases.query.keyword || releases.query.receiptLineId
-            ? '当前筛选无可入库授权，请清除筛选'
-            : '无当前可入授权；请先核对到货检验与正式清单'
-      }}
+      {{ emptyText }}
     </div>
     <section
       v-for="group in releaseGroups"
@@ -190,6 +184,12 @@ const props = defineProps<{
   goSource: (name: string, query: Record<string, string>) => Promise<void>;
 }>();
 const releases = props.releases;
+const emptyText = computed(() => {
+  if (releases.loadError.value) return '读取失败，请刷新重试';
+  if (releases.query.keyword || releases.query.receiptLineId)
+    return '当前筛选无可入库授权，请清除筛选';
+  return '无当前可入授权；请先核对到货检验与正式清单';
+});
 const goSource = props.goSource;
 const auth = useAuthStore();
 interface ReceiptPageGroup {

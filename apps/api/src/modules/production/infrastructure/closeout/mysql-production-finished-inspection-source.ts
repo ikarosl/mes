@@ -63,17 +63,14 @@ export class MysqlProductionFinishedInspectionSource
         return run(db as PoolConnection);
       });
     } catch (error) {
-      if (error instanceof ProductionDomainError)
-        throw new QualityCommandError(
-          error.code === 'NOT_FOUND'
-            ? 'NOT_FOUND'
-            : error.code === 'INVALID_INPUT'
-              ? 'INVALID_INPUT'
-              : error.code === 'CONCURRENT_MODIFICATION'
-                ? 'CONCURRENT_MODIFICATION'
-                : 'INVALID_STATE',
-          error.message,
-        );
+      if (error instanceof ProductionDomainError) {
+        let code: QualityCommandError['code'];
+        if (error.code === 'NOT_FOUND') code = 'NOT_FOUND';
+        else if (error.code === 'INVALID_INPUT') code = 'INVALID_INPUT';
+        else if (error.code === 'CONCURRENT_MODIFICATION') code = 'CONCURRENT_MODIFICATION';
+        else code = 'INVALID_STATE';
+        throw new QualityCommandError(code, error.message);
+      }
       throw error;
     }
   }

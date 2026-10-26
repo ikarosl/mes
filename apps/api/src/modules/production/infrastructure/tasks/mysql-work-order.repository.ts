@@ -439,14 +439,12 @@ export class MysqlWorkOrderRepository {
           'WORK_ORDER_CLOSE_NOT_ALLOWED',
           '生产数量已足量完成，请先确认工单完工，再执行归档关闭',
         );
-      const closeType =
-        before.status === 'completed'
-          ? 'completed_archive'
-          : activeBatches.some((batch) => batch.status === 'terminated')
-            ? 'production_terminated'
-            : activeBatches.length === 0
-              ? 'unproduced'
-              : 'underproduced';
+      let closeType: WorkOrderDetail['closeType'];
+      if (before.status === 'completed') closeType = 'completed_archive';
+      else if (activeBatches.some((batch) => batch.status === 'terminated'))
+        closeType = 'production_terminated';
+      else if (activeBatches.length === 0) closeType = 'unproduced';
+      else closeType = 'underproduced';
       const [result] = await connection.execute<ResultSetHeader>(
         `UPDATE work_orders SET status='closed',close_type=?,close_reason=?,closed_by=?,closed_at=NOW(),version=version+1,updated_by=? WHERE id=? AND status=? AND version=?`,
         [closeType, reason, audit.actorId, audit.actorId, id, before.status, version],

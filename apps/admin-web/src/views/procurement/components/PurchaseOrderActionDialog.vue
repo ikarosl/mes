@@ -239,26 +239,19 @@ const {
   startAction,
   confirmAction,
 } = usePurchaseOrderActions((id, result) => emit('changed', id, result));
-const title = computed(() =>
-  mode.value === 'place'
-    ? '正式下单'
-    : mode.value === 'cancel'
-      ? '取消整张采购单'
-      : mode.value === 'close-order'
-        ? '结束整张采购单'
-        : mode.value === 'reopen'
-          ? '恢复采购物料行'
-          : '结束采购物料行',
-);
-const confirmLabel = computed(() =>
-  mode.value === 'place'
-    ? '确认下单'
-    : mode.value === 'cancel'
-      ? '确认取消'
-      : mode.value === 'reopen'
-        ? '确认恢复'
-        : '确认结束',
-);
+const title = computed(() => {
+  if (mode.value === 'place') return '正式下单';
+  if (mode.value === 'cancel') return '取消整张采购单';
+  if (mode.value === 'close-order') return '结束整张采购单';
+  if (mode.value === 'reopen') return '恢复采购物料行';
+  return '结束采购物料行';
+});
+const confirmLabel = computed(() => {
+  if (mode.value === 'place') return '确认下单';
+  if (mode.value === 'cancel') return '确认取消';
+  if (mode.value === 'reopen') return '确认恢复';
+  return '确认结束';
+});
 const confirmationLines = computed(() => {
   const items = actionOrder.value?.items ?? detail.value?.items ?? [];
   return mode.value === 'close-order' ? items.filter((line) => line.status === 'open') : items;

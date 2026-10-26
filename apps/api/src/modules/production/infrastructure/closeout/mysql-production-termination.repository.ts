@@ -174,8 +174,9 @@ export class MysqlProductionTerminationRepository extends ProductionTerminationR
     ] as const;
     // SQL 标识符只来自本地封闭定义，所有业务值使用占位符。
     for (const [kind, table, label, status, condition] of definitions) {
-      const quantity =
-        kind === 'demand' ? 'remaining_number' : kind === 'allocation' ? 'assigned_number' : 'NULL';
+      let quantity = 'NULL';
+      if (kind === 'demand') quantity = 'remaining_number';
+      else if (kind === 'allocation') quantity = 'assigned_number';
       const unit = kind === 'demand' || kind === 'allocation' ? 'unit_snapshot' : 'NULL';
       const [rows] = await db.query<
         (RowDataPacket & {

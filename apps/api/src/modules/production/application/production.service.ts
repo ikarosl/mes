@@ -271,14 +271,13 @@ export class ProductionService {
     payload: UpdateBatchStepExecutionPayload,
     audit: CommandContext,
   ): Promise<ProductionStepCommandResult> {
-    const actualSop =
-      payload.actualSopFileId === undefined
-        ? undefined
-        : payload.actualSopFileId === null
-          ? null
-          : this.requireProduct(
-              await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId!),
-            );
+    let actualSop: ResolvedBatchStepOverride['actualSop'] | undefined;
+    if (payload.actualSopFileId === undefined) actualSop = undefined;
+    else if (payload.actualSopFileId === null) actualSop = null;
+    else
+      actualSop = this.requireProduct(
+        await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId),
+      );
     return this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit);
   }
   private async requireActiveUser(id: string | null): Promise<void> {

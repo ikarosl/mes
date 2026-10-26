@@ -49,14 +49,7 @@
       </el-form-item>
     </div>
     <InlineHint
-      :tone="
-        preview &&
-        (model.inspectionMethod === 'sampling'
-          ? preview.inspectedQuantity > coveredQuantity
-          : preview.inspectedQuantity !== coveredQuantity)
-          ? 'warning'
-          : 'info'
-      "
+      :tone="previewTone"
       class="inspection-preview"
     >
       {{ model.inspectionMethod === 'sampling' ? '样本总数' : '检查总数' }}：
@@ -150,9 +143,18 @@ import {
   type InboundInspectionDraft,
 } from '../../quality/inbound-inspection';
 const model = defineModel<InboundInspectionDraft>({ required: true });
-defineProps<{ coveredQuantity: number; unit: string; disabled: boolean }>();
+const props = defineProps<{ coveredQuantity: number; unit: string; disabled: boolean }>();
 const emit = defineEmits<{ valid: [boolean] }>();
 const preview = computed(() => inboundInspectionPreview(model.value));
+const previewTone = computed(() => {
+  if (!preview.value) return 'info';
+  if (model.value.inspectionMethod === 'sampling') {
+    if (preview.value.inspectedQuantity > props.coveredQuantity) return 'warning';
+    return 'info';
+  }
+  if (preview.value.inspectedQuantity !== props.coveredQuantity) return 'warning';
+  return 'info';
+});
 const valid = computed(() => inboundInspectionInput(model.value) !== null);
 const changeMethod = (value: string | number | boolean | undefined) => {
   if (!QUALITY_INBOUND_METHODS.includes(value as QualityInboundInspectionInput['inspectionMethod']))

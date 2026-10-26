@@ -21,12 +21,11 @@ export type ProductionReportingAccess = {
 
 export const reportingPhase = (
   status: ProductionBatchStatus,
-): 'execution' | 'history' | 'unavailable' =>
-  status === 'doing'
-    ? 'execution'
-    : ['closing', 'completed', 'terminated'].includes(status)
-      ? 'history'
-      : 'unavailable';
+): 'execution' | 'history' | 'unavailable' => {
+  if (status === 'doing') return 'execution';
+  if (['closing', 'completed', 'terminated'].includes(status)) return 'history';
+  return 'unavailable';
+};
 
 type ReportCorrectionEligibility = {
   canCorrectReport: boolean;
@@ -45,24 +44,14 @@ export const reportCorrectionEligibility = (
   access: ProductionReportingAccess,
 ): ReportCorrectionEligibility => {
   const phase = reportingPhase(batchStatus);
-  const reason = pendingApprovalId
-    ? '结案或产出更正正在审批，状态和报工均已冻结'
-    : phase !== 'execution'
-      ? '任务已经结束执行，员工只读；管理员请使用历史纠错'
-      : !['doing', 'completed'].includes(stepStatus)
-        ? '工序尚未开始或已终止，不能办理执行报工'
-        : !access.canReport && !access.canManageExecution
-          ? `需要「${REPORT_PERMISSION_LABEL}」或「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`
-          : !access.canManageExecution && responsibleUserId !== access.actorId
-            ? '只有当前工序负责人可以办理'
-            : null;
-  const historicalReason = pendingApprovalId
-    ? '结案或产出更正正在审批，状态和报工均已冻结'
-    : phase !== 'history'
-      ? '任务尚未进入结案或批准结束阶段'
-      : !access.canManageExecution
-        ? `历史报工纠错需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`
-        : null;
+  const reason = executionCorrectionBlockedReason(
+    phase,
+    pendingApprovalId,
+    stepStatus,
+    responsibleUserId,
+    access,
+  );
+  const historicalReason = historicalCorrectionBlockedReason(phase, pendingApprovalId, access);
   const historicalCreateBlockedReason =
     historicalReason ??
     (batchStatus === 'closing' ? '任务处于结案阶段，请先撤回任务结束后新增报工' : null);
@@ -92,16 +81,51 @@ export const reportWriteEligibility = (
   );
   const reason =
     correction.correctionBlockedReason ??
-    (stepStatus === 'completed'
-      ? '工序已完成，请重新开工后再报工'
-      : integerQuantity(availableReportQuantity) <= 0
-        ? '本工序剩余报工额度为零，请核对报工记录或等待补产授权生效'
-        : null);
+    newReportBlockedReason(stepStatus, availableReportQuantity);
   return {
     ...correction,
     canReport: reason === null,
     reportBlockedReason: reason,
   };
+};
+
+const executionCorrectionBlockedReason = (
+  phase: ReturnType<typeof reportingPhase>,
+  pendingApprovalId: string | null,
+  stepStatus: BatchStepStatus,
+  responsibleUserId: string | null,
+  access: ProductionReportingAccess,
+): string | null => {
+  if (pendingApprovalId) return '结案或产出更正正在审批，状态和报工均已冻结';
+  if (phase !== 'execution') return '任务已经结束执行，员工只读；管理员请使用历史纠错';
+  if (!['doing', 'completed'].includes(stepStatus)) return '工序尚未开始或已终止，不能办理执行报工';
+  if (!access.canReport && !access.canManageExecution)
+    return `需要「${REPORT_PERMISSION_LABEL}」或「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
+  if (!access.canManageExecution && responsibleUserId !== access.actorId)
+    return '只有当前工序负责人可以办理';
+  return null;
+};
+
+const historicalCorrectionBlockedReason = (
+  phase: ReturnType<typeof reportingPhase>,
+  pendingApprovalId: string | null,
+  access: ProductionReportingAccess,
+): string | null => {
+  if (pendingApprovalId) return '结案或产出更正正在审批，状态和报工均已冻结';
+  if (phase !== 'history') return '任务尚未进入结案或批准结束阶段';
+  if (!access.canManageExecution)
+    return `历史报工纠错需要「${MANAGE_EXECUTION_PERMISSION_LABEL}」权限`;
+  return null;
+};
+
+const newReportBlockedReason = (
+  stepStatus: BatchStepStatus,
+  availableReportQuantity: number | string,
+): string | null => {
+  if (stepStatus === 'completed') return '工序已完成，请重新开工后再报工';
+  if (integerQuantity(availableReportQuantity) <= 0)
+    return '本工序剩余报工额度为零，请核对报工记录或等待补产授权生效';
+  return null;
 };
 
 export const requireReportQuantities = (normalQuantity: number, abnormalQuantity: number): void => {

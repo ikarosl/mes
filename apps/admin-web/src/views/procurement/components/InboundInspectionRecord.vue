@@ -30,15 +30,7 @@
       />
     </el-descriptions-item>
     <el-descriptions-item label="质量结论">
-      <el-tag
-        :type="
-          inspection.releaseDecision === 'released'
-            ? 'success'
-            : inspection.releaseDecision === 'not_released'
-              ? 'danger'
-              : 'warning'
-        "
-      >
+      <el-tag :type="releaseDecisionTag">
         {{ QUALITY_RELEASE_DECISION_LABELS[inspection.releaseDecision] }}
       </el-tag>
     </el-descriptions-item>
@@ -66,6 +58,7 @@
   </el-descriptions>
 </template>
 <script setup lang="ts">
+import { computed } from 'vue';
 import type { QualityInboundInspectionItem } from '@company/contracts';
 import {
   QUALITY_INSPECTION_METHOD_LABELS,
@@ -73,5 +66,10 @@ import {
 } from '@company/constants';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import InspectionQuantity from '../../quality/components/InspectionQuantity.vue';
-defineProps<{ inspection: QualityInboundInspectionItem; roundNo?: number }>();
+const props = defineProps<{ inspection: QualityInboundInspectionItem; roundNo?: number }>();
+const releaseDecisionTag = computed(() => {
+  if (props.inspection.releaseDecision === 'released') return 'success';
+  if (props.inspection.releaseDecision === 'not_released') return 'danger';
+  return 'warning';
+});
 </script>
