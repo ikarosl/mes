@@ -42,6 +42,9 @@
           <span v-if="!group.sourceReport && group.disposition?.processInspectionRecordId"
             >采用结果记录 ID {{ group.disposition.processInspectionRecordId }}</span
           >
+          <span v-if="group.rework?.quantityScope === 'inspection'">
+            {{ INSPECTION_REWORK_QUANTITY_HINT }}
+          </span>
           <el-button
             v-if="group.sourceReport"
             link
@@ -164,7 +167,7 @@
           v-if="group.completedNormalReport"
           class="process-stage"
         >
-          <strong>{{ processingGroupResultLabel(group, 'normal') }}</strong>
+          <strong>{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}</strong>
           <span>{{ group.completedNormalReport.reportNo }}</span>
           <span v-if="group.rework"
             >{{ resultQuantity(group.rework.completedNormalQuantity) }} {{ unit }}</span
@@ -173,14 +176,14 @@
             link
             type="primary"
             @click="$emit('view-report', group.completedNormalReport)"
-            >查看{{ processingGroupResultLabel(group, 'normal') }}</el-button
+            >查看{{ BATCH_STEP_REWORK_RESULT_LABELS.normal }}</el-button
           >
         </div>
         <div
           v-if="group.completedAbnormalReport"
           class="process-stage"
         >
-          <strong>{{ processingGroupResultLabel(group, 'abnormal') }}</strong>
+          <strong>{{ BATCH_STEP_REWORK_RESULT_LABELS.abnormal }}</strong>
           <span>{{ group.completedAbnormalReport.reportNo }}</span>
           <span v-if="group.rework"
             >{{ resultQuantity(group.rework.completedAbnormalQuantity) }} {{ unit }}</span
@@ -189,7 +192,7 @@
             link
             type="primary"
             @click="$emit('view-report', group.completedAbnormalReport)"
-            >查看{{ processingGroupResultLabel(group, 'abnormal') }}</el-button
+            >查看{{ BATCH_STEP_REWORK_RESULT_LABELS.abnormal }}</el-button
           >
         </div>
         <p
@@ -210,7 +213,12 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
-import { BATCH_STEP_ABNORMAL_ORIGIN_LABELS, REWORK_STATUS_LABELS } from '@company/constants';
+import {
+  BATCH_STEP_ABNORMAL_ORIGIN_LABELS,
+  BATCH_STEP_REWORK_RESULT_LABELS,
+  INSPECTION_REWORK_QUANTITY_HINT,
+  REWORK_STATUS_LABELS,
+} from '@company/constants';
 import type {
   BatchStepAbnormalDispositionView,
   BatchStepReportReference,
@@ -227,7 +235,6 @@ import {
   processingGroupSummary,
   processingGroupKey,
   processingGroupSourceLabel,
-  processingGroupResultLabel,
   type AbnormalProcessingGroup,
 } from '../production-report-presentation';
 

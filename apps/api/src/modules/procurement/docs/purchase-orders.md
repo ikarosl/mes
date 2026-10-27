@@ -28,7 +28,7 @@
 
 GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，合法查看权限任一：`procurement:orders:view`、`production:tasks:view`、`production:material-demands:view`、`production:materials:view`。响应为分页关联采购行与逐需求 distinct 采购单数；行计划量明确是不分摊的整行数量。当前需求已关闭、被更正、已履约或基础物料停用都不抹去关联历史。查询按集合处理，禁止逐需求 N+1。
 
-订单写命令均要求 Idempotency-Key，采购主单和补单在实际创建事务内由服务端分配 PO 编号；create 为 `procurement.purchase-order.create.v2`，update 为 `.update.v4`，place 为 `.place.v4`，cancel 为 `.cancel.v3`，整单结束为 `.close.v1`，supplement 为 `.supplement.v6`；行结束为 `procurement.purchase-order-line.close.v2`，行恢复为 `.reopen.v1`。PATCH 同样使用幂等以保证整体替换草稿行的响应不确定时安全重放。application 规范化请求并收窄审计上下文传给 port，平台 executor 与业务、审计复用同一事务。所有写结果为 `{purchaseOrderId,version}`，首次和重放返回同一 codec 快照，再 GET 当前详情。
+订单写命令均要求 Idempotency-Key，采购主单和补单在实际创建事务内由服务端按[统一编号规则](../../../../docs/business-numbering.md)分配采购订单号；create 为 `procurement.purchase-order.create.v2`，update 为 `.update.v4`，place 为 `.place.v4`，cancel 为 `.cancel.v3`，整单结束为 `.close.v1`，supplement 为 `.supplement.v6`；行结束为 `procurement.purchase-order-line.close.v2`，行恢复为 `.reopen.v1`。PATCH 同样使用幂等以保证整体替换草稿行的响应不确定时安全重放。application 规范化请求并收窄审计上下文传给 port，平台 executor 与业务、审计复用同一事务。所有写结果为 `{purchaseOrderId,version}`，首次和重放返回同一 codec 快照，再 GET 当前详情。
 
 ## 当前状态、来源与事务
 

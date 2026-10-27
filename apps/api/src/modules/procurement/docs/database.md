@@ -49,13 +49,13 @@ source 和 supplier 等跨行归属在锁内校验，不借展示查询判断资
 
 | 表 | 类型与关键约束 |
 | --- | --- |
-| procurement_receipt | 到货登记主单；自动 RC、唯一 receipt_no、采购根、真实时间／凭据及创建审计冻结；主表保存一次性作废标记与原因／人／时间，具备修改审计和 version |
+| procurement_receipt | 到货登记主单；按[统一编号规则](../../../../docs/business-numbering.md)生成到货单号、唯一 receipt_no、采购根、真实时间／凭据及创建审计冻结；主表保存一次性作废标记与原因／人／时间，具备修改审计和 version |
 | procurement_receipt_line | 可变聚合；line_no 保存单内登记顺序，仅供内部稳定排序，公开身份使用 id；精确身份及原采购行固定；current_revision/current_round 同到货 FK；不保存目标库存批次，逐笔目标从 inbound_detail 读取；M审计/version |
 | procurement_receipt_revision | 不可变本次到货核实总量；同明细 revision_no 唯一、previous_revision_id 同源、非负 T、同批确认及原因 |
 | procurement_receipt_round | 可变资格；同明细 round_no 唯一；previous/source_allocation_round_id 同到货 FK；起始 revision/starting_quantity；当前 QC；原因及 M审计/version |
 | procurement_receipt_acceptance | 不可变定稿；每 round 唯一、同到货；正常 QC 必填；前后 revision、C、override_reason、previous_acceptance及创建审计 |
 | procurement_receipt_allocation | 不可变去向授权；同轮 line_no 唯一；同到货 round FK、普通 acceptance 同轮组合 FK；正 quantity、去向及原因、termination_reason、创建审计 |
-| procurement_supplier_return | 不可变真实退回；自动 VR、唯一 return_no/allocation_id；同到货 allocation FK、revision、数量／时间／凭据；非人工拒收必须 QC |
+| procurement_supplier_return | 不可变真实退回；按统一编号规则生成供应商退回单号、唯一 return_no/allocation_id；同到货 allocation FK、revision、数量／时间／凭据；非人工拒收必须 QC |
 
 到货主单的作废字段及并发审计由 `procurement_receipt` 自身保存：
 

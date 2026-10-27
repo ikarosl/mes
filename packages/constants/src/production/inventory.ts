@@ -11,8 +11,8 @@ export const INVENTORY_SOURCE_TYPES = [
 
 export const FINISHED_GOODS_INBOUND_SOURCES = ['self_made', 'production_extra'] as const;
 export const FINISHED_GOODS_INBOUND_SOURCE_LABELS = {
-  self_made: '生产流转入库',
-  production_extra: '额外产出入库',
+  self_made: '计划内',
+  production_extra: '计划外',
 } as const;
 export const INVENTORY_ITEM_KINDS = ['material', 'finished_product'] as const;
 export const INVENTORY_ITEM_KIND_LABELS = {

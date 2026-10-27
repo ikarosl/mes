@@ -28,7 +28,7 @@ revision没有检验状态，也没有trigger_type字段；变更前后通过pre
 
 | id | receipt_no | purchase_order_id（展示单号） |
 | --- | --- | --- |
-| RC1 | RC20260922 | PO1（po20260922） |
+| RC1 | 服务端生成的到货单号 | PO1（服务端生成的采购订单号） |
 
 `procurement_receipt_line`：
 

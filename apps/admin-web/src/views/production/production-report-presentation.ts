@@ -10,7 +10,7 @@ import {
   BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS,
   BATCH_STEP_REPORT_SOURCE_KIND_LABELS,
   BATCH_STEP_REWORK_RESULT_LABELS,
-  BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS,
+  INSPECTION_REWORK_QUANTITY_HINT,
   REWORK_STATUS_LABELS,
 } from '@company/constants';
 import { formatQuantity, type StatusTagType } from './production-status';
@@ -34,11 +34,6 @@ export const reportQuantityChange = (quantity: string, report: BatchStepReportVi
 };
 
 export const reportBusinessLabel = (report: BatchStepReportView): string => {
-  if (report.quantityScope === 'inspection') {
-    return Number(report.normalQuantity) > 0
-      ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.normal
-      : BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.abnormal;
-  }
   if (report.sourceKind === 'rework_completion' && report.reworkOrigin) {
     if (report.reportId === report.reworkOrigin.completedNormalReportId)
       return BATCH_STEP_REWORK_RESULT_LABELS.normal;
@@ -90,12 +85,18 @@ export const reportRelations = (
   const relations: ReturnType<typeof reportRelations> = [];
   if (report.reworkOrigin) {
     relations.push({ label: `返工单 ${report.reworkOrigin.reworkNo}`, report: null });
-    relations.push({ label: '来源报工', report: reworkSourceReference(report.reworkOrigin) });
+    const source = reworkSourceReference(report.reworkOrigin);
+    relations.push({
+      label: source ? '来源报工' : `来源处置 ${report.reworkOrigin.abnormalDispositionNo}`,
+      report: source,
+    });
     for (const result of reworkResultReferences(report.reworkOrigin)) {
       if (result.report.reportId !== report.reportId)
         relations.push({ label: result.label, report: result.report });
     }
   }
+  if (report.quantityScope === 'inspection')
+    relations.push({ label: INSPECTION_REWORK_QUANTITY_HINT, report: null });
   if (report.reversalOfReport)
     relations.push({ label: '冲销原单', report: report.reversalOfReport });
   if (report.correctionOfReport)
@@ -156,18 +157,12 @@ export const reworkResultReferences = (
   const abnormal = reworkAbnormalResultReference(rework);
   if (normal)
     references.push({
-      label:
-        rework.quantityScope === 'inspection'
-          ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.normal
-          : BATCH_STEP_REWORK_RESULT_LABELS.normal,
+      label: BATCH_STEP_REWORK_RESULT_LABELS.normal,
       report: normal,
     });
   if (abnormal)
     references.push({
-      label:
-        rework.quantityScope === 'inspection'
-          ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS.abnormal
-          : BATCH_STEP_REWORK_RESULT_LABELS.abnormal,
+      label: BATCH_STEP_REWORK_RESULT_LABELS.abnormal,
       report: abnormal,
     });
   return references;
@@ -265,14 +260,6 @@ export const processingGroupSourceLabel = (group: AbnormalProcessingGroup): stri
     ? `工序专检 ID ${group.disposition.processInspectionId}`
     : '工序专检处置');
 
-export const processingGroupResultLabel = (
-  group: AbnormalProcessingGroup,
-  kind: 'normal' | 'abnormal',
-): string =>
-  group.rework?.quantityScope === 'inspection'
-    ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS[kind]
-    : BATCH_STEP_REWORK_RESULT_LABELS[kind];
-
 export const processingGroupSummary = (group: AbnormalProcessingGroup): string => {
   const parts = [
     `${processingGroupSourceLabel(group)} · 异常 ${formatQuantity(group.disposition?.sourceAbnormalQuantity ?? group.rework?.reworkQuantity)}`,
@@ -283,11 +270,11 @@ export const processingGroupSummary = (group: AbnormalProcessingGroup): string =
     parts.push(`${group.rework.reworkNo} · ${REWORK_STATUS_LABELS[group.rework.status]}`);
   if (group.completedNormalReport)
     parts.push(
-      `${group.completedNormalReport.reportNo} · ${processingGroupResultLabel(group, 'normal')} ${recordedResultQuantity(group.rework?.completedNormalQuantity)}`,
+      `${group.completedNormalReport.reportNo} · ${BATCH_STEP_REWORK_RESULT_LABELS.normal} ${recordedResultQuantity(group.rework?.completedNormalQuantity)}`,
     );
   if (group.completedAbnormalReport)
     parts.push(
-      `${group.completedAbnormalReport.reportNo} · ${processingGroupResultLabel(group, 'abnormal')} ${recordedResultQuantity(group.rework?.completedAbnormalQuantity)}`,
+      `${group.completedAbnormalReport.reportNo} · ${BATCH_STEP_REWORK_RESULT_LABELS.abnormal} ${recordedResultQuantity(group.rework?.completedAbnormalQuantity)}`,
     );
   return parts.join(' → ');
 };

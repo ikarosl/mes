@@ -137,7 +137,7 @@
 状态：已实施，待用户黑盒／UI 验收及正式测试。完整规则见 [API 编号](../apps/api/docs/business-numbering.md) 与 [ADR-0017](adr/0017-business-numbering-and-beijing-time.md)。
 
 - [ ] 手工验收工单、任务、采购、到货、供应商退回、入出库、盘点、报工、返工、补料和审批等编号，核对前缀、北京日期及日序号；供应商批号继续可输入，任务号、盘点号和新库存批号由服务端生成。
-- [ ] 验收物料／成品新建共用 IB 序列、独立新建目标取号、选择已有批次不再取号，以及不同来源、多次入库共用已有库存批次；同请求相同 `clientKey` 共建一个新批次、只取一个 IB，规则见 [Inventory 入库契约](../apps/api/src/modules/inventory/docs/public-contracts.md)。
+- [ ] 验收物料／成品新建共用库存批次编号序列、独立新建目标取号、选择已有批次不再取号，以及不同来源、多次入库共用已有库存批次；同请求相同 `clientKey` 共建一个新批次、只取一个库存批号，规则见 [Inventory 入库契约](../apps/api/src/modules/inventory/docs/public-contracts.md)。
 - [ ] 跨浏览器时区验收北京时间展示、检验／日志日期时间输入及北京时间今日；计划日期等纯日期不偏移，登录过期和缓存 TTL 不受影响。
 - [ ] 迁移编号、手填字段及 contracts／utils 时间夹具，补日切并发、事务回滚、同键重放、全表批号唯一约束及 migration 上下行守卫覆盖。
 

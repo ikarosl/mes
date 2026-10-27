@@ -33,7 +33,7 @@
 
 ### 6. `item_batch`
 
-库存目标批次保留物料／成品互斥身份、服务端 IB 批号及单位。来源集合来自实际入库明细，库批不决定供应商、任务或计划内外类别。其他成品单据场景是 other，库批类别仍为 finished_product，两者不使用同一个来源枚举。
+库存目标批次保留物料／成品互斥身份、服务端生成的库存批号及单位。来源集合来自实际入库明细，库批不决定供应商、任务或计划内外类别。其他成品单据场景是 other，库批类别仍为 finished_product，两者不使用同一个来源枚举。
 
 | 字段 | SQL定义 | 用途 |
 | --- | --- | --- |
@@ -44,7 +44,7 @@
 | `item_code_snapshot` | `VARCHAR(100) NOT NULL` | 建批时编码 |
 | `material_variant_code_snapshot` | `VARCHAR(180) NULL` | 物料版本编码，成品为空 |
 | `unit_snapshot` | `VARCHAR(20) NOT NULL` | 建批单位 |
-| `batch_code` | `VARCHAR(100) NOT NULL` | 全局唯一服务端IB编号 |
+| `batch_code` | `VARCHAR(100) NOT NULL` | 服务端按[统一编号规则](../../../../../docs/business-numbering.md)生成的库存批号，全局唯一 |
 | `source_type` | `VARCHAR(30) NOT NULL` | 物料新批为purchased/other，成品恒finished_product；既有代码保留 |
 | `provider` | `VARCHAR(100) NULL` | 保留采购建批来源描述；其他新批为空，不代表唯一供应商 |
 | `source_work_order_id` | `BIGINT UNSIGNED NULL` | 保留现有列；本期新建路径为空 |
@@ -62,7 +62,7 @@
 
 外键保护 materials、`(material_variant_id,item_id) → material_variants(id,material_id)`、products，以及历史 `source_work_order_id`、`(source_production_batch_id,source_work_order_id)` 和 `(source_production_batch_id,product_id)`。身份 XOR、状态和库批来源代码由 CHECK 保护；已有八项库批来源代码不自动开放未批准场景。
 
-新批只在确认事务真实插入时取得 IB。其他物料新批 source_type=other，其他成品新批 source_type=finished_product；provider、来源工单／任务、production_date、remark 全空，创建／修改人必须提供。本期不开放人工内部批号、生产日期或预建空批次。已有同身份同单位 available 批次可以再次入库，包括零余额批次，不取新 IB，也不重写建批事实。历史生产退料可沿原冻结或停用批次回仓，但不解除状态。
+新批只在确认事务真实插入时取得库存批号。其他物料新批 source_type=other，其他成品新批 source_type=finished_product；provider、来源工单／任务、production_date、remark 全空，创建／修改人必须提供。本期不开放人工内部批号、生产日期或预建空批次。已有同身份同单位 available 批次可以再次入库，包括零余额批次，不取新批号，也不重写建批事实。历史生产退料可沿原冻结或停用批次回仓，但不解除状态。
 
 ### 7. `inventory_transaction`
 
@@ -236,12 +236,12 @@
 
 ### 8. `inbound_order`
 
-公共入库主单承载采购 PI、批准成品 FI、生产退料 TL、其他入库 OI。退料号也只保存在 inbound_no；主单不持有唯一供应商、总数量、通用 business_id 或复制审批状态。
+公共入库主单承载采购入库、批准成品入库、生产退料、其他入库，按对应业务类型统一取号。退料号也只保存在 inbound_no；主单不持有唯一供应商、总数量、通用 business_id 或复制审批状态。
 
 | 字段 | SQL定义 | 用途 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `inbound_no` | `VARCHAR(100) NOT NULL` | 全局唯一入库号；退料TL号也在此保存 |
+| `inbound_no` | `VARCHAR(100) NOT NULL` | 全局唯一入库号；退料单号也在此保存 |
 | `source_type` | `VARCHAR(30) NOT NULL` | purchased / finished_product / return_inbound / other，无默认场景 |
 | `work_order_id` | `BIGINT UNSIGNED NULL` | 批准成品、退料所属工单，其他场景为空 |
 | `production_batch_id` | `BIGINT UNSIGNED NULL` | 批准成品、退料所属任务，其他场景为空 |
@@ -316,7 +316,7 @@ finished_product 要求任务／工单／产品全非空，return_inbound 要求
 
 ### 12. `outbound_order`
 
-公共出库整表归 Inventory。生产领料沿用 PMO，其他出库使用 OO；Production 只提供领料资格及履约。其他出库的 pending_picking 在管理端表达草稿／待确认，不增加数据库同义状态。
+公共出库整表归 Inventory。生产领料与其他出库分别按对应业务类型统一取号；Production 只提供领料资格及履约。其他出库的 pending_picking 在管理端表达草稿／待确认，不增加数据库同义状态。
 
 | 字段 | SQL定义 | 用途 |
 | --- | --- | --- |
@@ -396,7 +396,7 @@ production_material 行必须有原任务／需求／allocation，且仅物料�
 | target_mode | new_batch_key | batch_id | 行规则 |
 | --- | --- | --- | --- |
 | existing | NULL | 非空 | 已有精确身份、单位一致批次；退料只能原批次 |
-| new | trim 后非空，≤100 字符 | 草稿 NULL，确认回填 | 同单同键有效行共建一次 IB 批次，跨单不共用 |
+| new | trim 后非空，≤100 字符 | 草稿 NULL，确认回填 | 同单同键有效行共建一次库存批次并取号，跨单不共用 |
 
 同 new 键有效行的库存对象／精确版本、编码快照及单位必须一致。新目标保存时不产生真实批次；other 新行的 batch_id 必须为空，确认分组建批再统一回填。父单在回填期间仍 pending，因此 CHECK 不能简单限制所有 pending+new 的 batch_id 必空。采购／成品直接确认可以在该事务中先建批再插入已带 batch_id 的 new 行。失败整体回滚，取消不留下空批次。
 

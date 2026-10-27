@@ -1,12 +1,4 @@
 /** 仅为只读报工投影分类，不是持久化状态或命令类型。 */
-export const BATCH_STEP_REPORT_SOURCE_KINDS = [
-  'direct_normal',
-  'direct_abnormal',
-  'direct_mixed',
-  'rework_completion',
-  'reversal',
-] as const;
-
 export const BATCH_STEP_REPORT_SOURCE_KIND_LABELS = {
   direct_normal: '正常报工',
   direct_abnormal: '异常报工',
@@ -22,17 +14,6 @@ export const BATCH_STEP_REWORK_RESULT_LABELS = {
 } as const;
 
 export const BATCH_STEP_ABNORMAL_SOURCE_TYPES = ['report', 'process_inspection'] as const;
-export const BATCH_STEP_ABNORMAL_SOURCE_TYPE_LABELS = {
-  report: '工序报工',
-  process_inspection: '工序专检',
-} as const;
 export const BATCH_STEP_REPORT_QUANTITY_SCOPES = ['production', 'inspection'] as const;
-export const BATCH_STEP_REPORT_QUANTITY_SCOPE_LABELS = {
-  production: '生产报工',
-  inspection: '专检处置',
-} as const;
 
-export const BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS = {
-  normal: '专检返工',
-  abnormal: '专检返工',
-} as const;
+export const INSPECTION_REWORK_QUANTITY_HINT = '专检处置结果不计普通报工汇总';

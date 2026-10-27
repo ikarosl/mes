@@ -1,4 +1,12 @@
-import type { MaterialOutboundItem, OutboundOrderStatus } from '@company/contracts';
+import type {
+  FinishedGoodsInboundSource,
+  MaterialOutboundItem,
+  OutboundOrderStatus,
+} from '@company/contracts';
+
+export const finishedGoodsInboundSourceTagType = (
+  source: FinishedGoodsInboundSource,
+): 'primary' | 'warning' => (source === 'self_made' ? 'primary' : 'warning');
 
 const OUTBOUND_STATUS_HINTS: Record<OutboundOrderStatus, string> = {
   pending_picking: '尚未扣减库存',

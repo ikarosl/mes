@@ -4,9 +4,11 @@
 
 ## 格式与类型
 
-所有已接入的内部业务编号使用 `前缀YYYYMMDD-n`，例如 `WO20260928-1`。日期是实际分配编号时的北京自然日，不使用用户补录的业务发生时间；每种编号类型每日从 1 独立递增，序号不补零、不承诺连续无缺口。
+所有已接入的内部业务编号使用 `前缀YYYYMMDD-n`。日期是实际分配编号时的北京自然日，不使用用户补录的业务发生时间；每种编号类型每日从 1 独立递增，序号不补零、不承诺连续无缺口。
 
-语义类型到前缀的唯一代码映射为 [BUSINESS_NUMBER_PREFIX](../../../packages/constants/src/business-number.ts)。前缀由开发者人工维护，保持稳定且互不重复，不提供动态配置或前缀格式／长度校验。供应商退回使用 VR，生产报工含返工报工统一使用 SR。物料和成品新库批共用 inventory_batch / IB；来源、权限和身份仍由结构化字段判断，不解析编号决定业务行为。
+语义类型到前缀的唯一映射由 [BUSINESS_NUMBER_PREFIX](../../../packages/constants/src/business-number.ts) 维护。前缀取中文业务名称的大写拼音首字母，由开发者人工维护，保持稳定且互不重复，不提供动态配置或前缀格式／长度校验。文档以业务名称或稳定编号类型描述取号规则并引用本章，不复制具体前缀值；编号示例使用前缀占位。
+
+供应商退回按 `supplier_return` 取号，生产报工含返工报工统一按 `step_report` 取号。物料和成品新库批共用 `inventory_batch` 类型与日序列；来源、权限和身份仍由结构化字段判断，不解析编号决定业务行为。
 
 主数据版本编码、单据行号、修订号、审批动作序号、供应商批号和技术 UUID 不进入日序号。编号只由服务端生成；任务、盘点和新库存批次输入不接受手填编号。
 
@@ -35,7 +37,7 @@
 
 全局唯一约束位于 `item_batch.batch_code`。它只防止不同批次重号，不限制多张入库单、多条入库明细引用同一 `item_batch.id`。
 
-入库目标仍区分 `{mode:'new',clientKey}` 与 `{mode:'existing',batchId}`。新目标在实际确认事务创建批次时取 IB；同请求相同 clientKey 只创建／取号一次。已有目标复用原批次和批号，不取 IB。采购／成品入库确认分别生成 PI 或 FI 单号；其他入库／出库首次保存草稿生成 OI／OO，后续确认不重新取单号。其他新批次草稿在确认时才取 IB，取消不建空批次。重复请求按现有幂等重放。具体身份、单位、状态和来源授权校验见 [Inventory 公开能力](../src/modules/inventory/docs/public-contracts.md)。
+入库目标仍区分 `{mode:'new',clientKey}` 与 `{mode:'existing',batchId}`。新目标在实际确认事务创建批次时按 `inventory_batch` 取号；同请求相同 clientKey 只创建／取号一次。已有目标复用原批次和批号，不重新取号。采购／成品入库确认分别按 `purchase_inbound`／`finished_inbound` 取单号；其他入库／出库首次保存草稿分别按 `other_inbound`／`other_outbound` 取单号，后续确认不重新取单号。其他新批次草稿在确认时才取库存批号，取消不建空批次。重复请求按现有幂等重放。具体身份、单位、状态和来源授权校验见 [Inventory 公开能力](../src/modules/inventory/docs/public-contracts.md)。
 
 ## 迁移与验证边界
 

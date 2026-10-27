@@ -26,6 +26,11 @@
           editor.selected.responsibleUserName || editor.selected.responsibleUserId
         }}</el-descriptions-item>
       </el-descriptions>
+      <InlineHint
+        v-if="editor.selected.quantityScope === 'inspection'"
+        class="notice"
+        >{{ INSPECTION_REWORK_QUANTITY_HINT }}</InlineHint
+      >
       <el-alert
         v-if="editor.stale && editor.intentStatus === 'idle'"
         class="notice"
@@ -87,7 +92,7 @@
           />
         </el-form-item>
       </el-form>
-      <InlineHint
+      <InlineHint :tone="'warning'"
         >{{ resultLabels.normal }}与{{
           resultLabels.abnormal
         }}合计必须等于原整笔返工数量；正常与异常的非零数量分别生成报工记录，关联本次返工，不增加普通报工额度。</InlineHint
@@ -121,8 +126,8 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import {
-  BATCH_STEP_REWORK_RESULT_LABELS,
-  BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS,
+  BATCH_STEP_REWORK_RESULT_LABELS as resultLabels,
+  INSPECTION_REWORK_QUANTITY_HINT,
 } from '@company/constants';
 
 import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
@@ -137,11 +142,6 @@ import { formatQuantity } from '../production-status';
 const props = defineProps<{ editor: ReturnType<typeof useProductionReworkCompletion> }>();
 const sourceReport = computed(() =>
   props.editor.selected ? reworkSourceReference(props.editor.selected) : null,
-);
-const resultLabels = computed(() =>
-  props.editor.selected?.quantityScope === 'inspection'
-    ? BATCH_STEP_INSPECTION_REWORK_RESULT_LABELS
-    : BATCH_STEP_REWORK_RESULT_LABELS,
 );
 defineEmits<{ 'view-report': [report: BatchStepReportReference] }>();
 </script>

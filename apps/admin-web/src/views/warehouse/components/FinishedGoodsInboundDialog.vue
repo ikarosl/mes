@@ -46,6 +46,17 @@
                 row.source.sourceType as FinishedGoodsInboundSource
               ]
             }}
+          </div>
+          <div
+            v-if="quantitySummaries[row.rowKey]"
+            class="authorization-basis"
+          >
+            <div>
+              本授权批准量 {{ formatQuantity(row.source.authorizedQuantity) }} {{ row.source.unit }}
+            </div>
+            <div>
+              本授权已入库量 {{ formatQuantity(row.source.receivedQuantity) }} {{ row.source.unit }}
+            </div>
           </div></template
         ></el-table-column
       >
@@ -77,7 +88,7 @@
               ·
             </span>
             <span
-              >可入
+              >本授权可入
               <strong
                 >{{ formatQuantity(quantitySummaries[row.rowKey].allowance) }}
                 {{ row.source.unit }}</strong
@@ -490,6 +501,12 @@ defineExpose({ prepareTargetSwitch, discardDraft, close, isLocked, hasDraft });
 .muted {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.authorization-basis {
+  margin-top: 6px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
+  line-height: 1.7;
 }
 .error {
   color: var(--el-color-danger);

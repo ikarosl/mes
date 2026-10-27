@@ -36,7 +36,10 @@
           :data="group.items"
           row-key="allocationId"
         >
-          <el-table-column width="50">
+          <el-table-column
+            width="44"
+            align="center"
+          >
             <template #default="{ row }">
               <el-checkbox
                 :model-value="isSelected(row.allocationId)"
@@ -51,46 +54,52 @@
           </el-table-column>
           <el-table-column
             label="任务"
-            min-width="125"
+            min-width="160"
           >
             <template #default="{ row }">{{ row.batchNo }}</template>
           </el-table-column>
           <el-table-column
-            label="成品 / 授权来源类别"
-            min-width="205"
+            label="成品"
+            min-width="240"
           >
             <template #default="{ row }">
               <div>{{ row.productCode }} · {{ row.productName }}</div>
-              <div class="muted">
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="授权来源类别"
+            width="128"
+            align="center"
+          >
+            <template #default="{ row }">
+              <el-tag
+                :type="finishedGoodsInboundSourceTagType(row.sourceType)"
+                size="small"
+                effect="light"
+              >
                 {{
                   FINISHED_GOODS_INBOUND_SOURCE_LABELS[row.sourceType as FinishedGoodsInboundSource]
                 }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="批准 / 已入"
+            width="200"
+            align="right"
+          >
+            <template #default="{ row }">
+              <div class="quantity-summary">
+                <strong>{{ formatQuantity(row.authorizedQuantity) }}</strong>
+                <span class="quantity-separator">/</span>
+                <strong>{{ formatQuantity(row.receivedQuantity) }}</strong>
+                <span class="quantity-unit">{{ row.unit }}</span>
               </div>
             </template>
           </el-table-column>
           <el-table-column
-            label="批准 / 历史已入 / 当前剩余"
-            min-width="225"
-          >
-            <template #default="{ row }">
-              <div>批准 {{ formatQuantity(row.authorizedQuantity) }} {{ row.unit }}</div>
-              <div>已入 {{ formatQuantity(row.receivedQuantity) }} {{ row.unit }}</div>
-              <strong>剩余 {{ formatQuantity(row.remainingQuantity) }} {{ row.unit }}</strong>
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="当前资格"
-            min-width="160"
-          >
-            <template #default="{ row }">
-              <span :class="candidateStateClass(row)">
-                {{ candidateStateText(row) }}
-              </span>
-            </template>
-          </el-table-column>
-          <el-table-column
             label="操作"
-            width="190"
+            :width="canViewInspection ? 200 : 110"
             fixed="right"
           >
             <template #default="{ row }">
@@ -111,6 +120,18 @@
                 @click="emit('inspection', row.productionBatchId)"
                 >查看成品质检</el-button
               >
+              <div
+                v-if="!row.canConfirm"
+                class="operation-blocked"
+              >
+                {{ row.blockers.join('；') || '当前不可入库' }}
+              </div>
+              <div
+                v-else-if="selectedTaskId !== null && selectedTaskId !== row.productionBatchId"
+                class="operation-constrained"
+              >
+                需与已选明细同一任务
+              </div>
             </template>
           </el-table-column>
         </el-table>
@@ -124,6 +145,7 @@ import { computed, ref, watch } from 'vue';
 import type { FinishedGoodsInboundCandidate, FinishedGoodsInboundSource } from '@company/contracts';
 import { FINISHED_GOODS_INBOUND_SOURCE_LABELS } from '@company/constants';
 import { formatQuantity } from '../../production/production-status';
+import { finishedGoodsInboundSourceTagType } from '../warehouse-list-presentation';
 import InboundGroupHeader from './InboundGroupHeader.vue';
 
 defineOptions({ name: 'FinishedGoodsInboundCandidateGroups' });
@@ -140,17 +162,6 @@ const emit = defineEmits<{
   open: [source: FinishedGoodsInboundCandidate];
   inspection: [batchId: string];
 }>();
-function candidateStateClass(row: FinishedGoodsInboundCandidate): string {
-  if (!row.canConfirm) return 'error';
-  if (props.selectedTaskId && props.selectedTaskId !== row.productionBatchId) return 'constrained';
-  return 'available';
-}
-function candidateStateText(row: FinishedGoodsInboundCandidate): string {
-  if (!row.canConfirm) return row.blockers.join('；') || '当前不可入库';
-  if (props.selectedTaskId && props.selectedTaskId !== row.productionBatchId)
-    return '需与已选明细同一任务';
-  return '可入库';
-}
 interface WorkOrderPageGroup {
   workOrderId: string;
   workOrderNo: string;
@@ -233,18 +244,38 @@ function toggleWorkOrder(id: string): void {
   max-width: 100%;
   overflow-x: auto;
 }
-.muted {
+.quantity-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.quantity-summary strong {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+  white-space: nowrap;
+}
+.quantity-separator,
+.quantity-unit {
   color: var(--el-text-color-secondary);
+}
+.quantity-unit {
   font-size: 12px;
-  line-height: 1.7;
+  white-space: nowrap;
 }
-.available {
-  color: var(--el-color-success-dark-2);
+.operation-blocked,
+.operation-constrained {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
-.constrained {
+.operation-constrained {
   color: var(--el-color-warning-dark-2);
 }
-.error {
+.operation-blocked {
   color: var(--el-color-danger);
 }
 </style>

@@ -22,7 +22,7 @@
 
 两类确认结果及成功审计通过真实 `inboundDetailId`、`batchId` 和 `transactionId` 关联来源授权，采购明细另含到货行身份；每条入库明细独立生成持久身份和唯一正流水。
 
-目标 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts) 为 `{mode:'new',clientKey}` 或 `{mode:'existing',batchId}`。单内相同 trim 后 clientKey 才共建一次真实批次、取一个 IB；已有批次精确身份和单位一致且 available。采购／批准成品在同事务按 pending→明细／目标→流水→completed 完成，外部一次确认成单，无持久仓库编辑草稿。采购记 purchase_inbound，批准成品记 production_inbound；成品主单／库批中性 finished_product，类别沿明细产出授权追溯。
+目标 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts) 为 `{mode:'new',clientKey}` 或 `{mode:'existing',batchId}`。单内相同 trim 后 clientKey 才共建一次真实批次、按[统一编号规则](../../../../docs/business-numbering.md)取一个库存批号；已有批次精确身份和单位一致且 available。采购／批准成品在同事务按 pending→明细／目标→流水→completed 完成，外部一次确认成单，无持久仓库编辑草稿。采购记 purchase_inbound，批准成品记 production_inbound；成品主单／库批中性 finished_product，类别沿明细产出授权追溯。
 
 `readFinishedTaskAllocationReceipts(batchId,lock)` 返回任务每授权累计真实已入，Production 按类别汇总；`readFinishedAllocationReceipts(ids,lock)` 返回每授权执行量。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 按到货历史全部修订累计，返回到货行 ID、累计实际已入量及每笔真实入库的 allocationId/quantity，不预设一到货一库批。锁内事实读取只对自有主从及匹配正流水当前读，不锁历史 item_batch；展示批号独立读取。目标排他锁仅在实际写入时按完整集合取得。
 
