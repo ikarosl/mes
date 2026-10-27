@@ -1,5 +1,7 @@
 # Quality
 
+来料质检主单仅组织到货分组的方案已确认、尚未实施，组件复用、两表增量及分层分页见[实施计划](docs/incoming-inspection-orders-plan.md)。以下正文仍描述当前检查能力。
+
 Quality 拥有外购来料检验与复核、成品质检及复检的不可变记录和明确放行结论，以及任务工序的现场专检与冲销更正事实。采购实收和到货处置范围属于 Procurement；生产产出草稿、结案审批、批准清单及异常处置属于 Production；实际入库属于 Inventory。
 
 成品检查事实、请求语义及放行资格由[成品检验与放行](docs/finished-inspections.md)维护；来料核实数量、正式授权与建议例外由 Procurement 的[正式清单与整批分配](../procurement/docs/receipt-acceptance.md)维护。[统一检验模型](docs/unified-inspection-model.md)描述来料与成品共用 case/record 的来源边界；[数据库](docs/database.md)为 Quality 数据所有权入口。[工序专检](docs/process-inspections.md)维护独立专检单、结果事实、已处理下限及公开能力。[ADR-0019](../../../../../docs/adr/0019-finished-inspection-measurement-simplification.md)取代旧成品 C/R/S 语义，[ADR-0015](../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)保留其余共同边界。
