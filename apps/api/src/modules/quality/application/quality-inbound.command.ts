@@ -10,7 +10,7 @@ export interface StartQualityInboundCaseInput {
   receiptLineId: string;
   receiptRevisionId: string;
   roundId: string;
-  caseType: QualityInboundCaseType;
+  caseType: Exclude<QualityInboundCaseType, 'inspection_correction'>;
   /** 来源轮次的申报快照，不是质检现场核实的整批数量。 */
   coveredQuantity: number;
   reason: string;

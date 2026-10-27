@@ -118,6 +118,7 @@ const knownIdempotencyScopes = [
   'procurement.purchase-order.supplement.v3',
   'procurement.receipt.confirm.v2',
   'procurement.receipt.correct.v2',
+  'procurement.receipt.review.v3',
   'procurement.receipt.review.v2',
   'procurement.receipt.inspect.v3',
   'procurement.receipt.accept.v2',

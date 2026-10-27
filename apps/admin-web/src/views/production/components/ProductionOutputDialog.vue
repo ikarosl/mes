@@ -189,7 +189,7 @@
                 type="primary"
                 :disabled="busy || unresolved"
                 @click="openFinishedInspection()"
-                >前往成品质检</el-button
+                >{{ inspectionActionLabel }}</el-button
               >
             </div>
             <FinishedInspectionHistory
@@ -603,6 +603,7 @@ const workflowSteps = computed(() => [
   { title: '提交结案审批', note: workflowStep.value === 4 ? '可提交负责人审批' : '完成核对后提交' },
 ]);
 const inspectionActionLabel = computed(() => {
+  if (detail.value && !detail.value.canEdit) return '查看质检记录';
   if (currentRound.value?.status === 'inspecting') return '继续成品质检';
   if (detail.value?.canBeginReinspection) return '前往复检';
   return '前往成品质检';

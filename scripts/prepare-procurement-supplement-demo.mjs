@@ -219,7 +219,6 @@ async function inspect(client, config, receiptLineId, qualifiedQuantity, unquali
     version: line.version,
     roundId: line.currentRound.id,
     roundVersion: line.currentRound.version,
-    caseType: 'initial',
     reason: `${config.marker} 对本次到货实物进行模拟全检`,
   });
   line = await client.request(`/procurement/receipt-lines/${receiptLineId}`);

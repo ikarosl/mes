@@ -90,7 +90,6 @@
         />
       </el-select>
     </el-form-item>
-    <InlineHint class="inspection-preview"> 检验完成后，由仓库核对并办理入库或退回。 </InlineHint>
     <el-form-item
       label="线下检验时间"
       required

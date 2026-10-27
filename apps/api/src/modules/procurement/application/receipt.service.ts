@@ -104,7 +104,12 @@ export class ReceiptService {
     payload: StartReceiptReviewPayload,
     context: IdempotentCommandContext,
   ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload };
+    const body = {
+      version: payload.version,
+      roundId: payload.roundId,
+      roundVersion: payload.roundVersion,
+      reason: payload.reason.trim(),
+    };
     const execution = await this.idempotency.execute({
       scope: START_RECEIPT_REVIEW_SCOPE,
       key: context.idempotencyKey,

@@ -36,7 +36,7 @@ export async function startReceiptReview(
   let round = await lockRound(db, line, payload);
   requireReceiptNotRejected(round.trigger_type);
   const { remaining } = await receiptBalance(db, line, allocations);
-  const transition = planReceiptReview(round.status, remaining, payload.caseType);
+  const transition = planReceiptReview(round.status, remaining);
   if (transition.replaceRound) {
     round = await replaceRound(
       db,
@@ -62,7 +62,7 @@ export async function startReceiptReview(
       receiptLineId: id,
       receiptRevisionId: String(line.current_receipt_revision_id),
       roundId: String(round.id),
-      caseType: payload.caseType,
+      caseType: transition.caseType,
       coveredQuantity: remaining,
       reason: payload.reason,
     },
@@ -75,7 +75,12 @@ export async function startReceiptReview(
     'receipt.review',
     String(line.receipt_id),
     { roundId: payload.roundId },
-    { ...payload, roundId: String(round.id), declaredQuantity: remaining },
+    {
+      ...payload,
+      roundId: String(round.id),
+      declaredQuantity: remaining,
+      caseType: transition.caseType,
+    },
   );
   return receiptResult(line, { roundId: String(round.id), caseIds: [review.id] });
 }

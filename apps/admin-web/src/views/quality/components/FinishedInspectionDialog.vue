@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="detail ? '成品质检 · ' + detail.batchNo : '成品质检'"
+    title="成品质检"
     :width="DialogWidth.xl"
     workbench
     :close-on-click-modal="false"
@@ -43,7 +43,7 @@
             name="current"
           >
             <el-descriptions
-              :column="3"
+              :column="2"
               border
               size="small"
             >
@@ -70,43 +70,60 @@
                 </template>
                 <template v-else>尚未建立</template>
               </el-descriptions-item>
-              <el-descriptions-item label="本轮检验记录">
-                <template v-if="currentInspection">
-                  {{ PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[currentInspection.releaseDecision] }}
-                  · {{ currentInspection.inspectionMethod === 'sampling' ? '样本检查' : '检查' }}
-                  {{ currentInspection.inspectedQuantity }} 件 · 合格
-                  <InspectionQuantity
-                    :value="currentInspection.qualifiedQuantity"
-                    kind="qualified"
-                    unit="件"
-                  />
-                  · 不合格
-                  <InspectionQuantity
-                    :value="currentInspection.unqualifiedQuantity"
-                    kind="unqualified"
-                    unit="件"
-                  />
+              <el-descriptions-item
+                label="送检数量"
+                :span="2"
+              >
+                <template v-if="detail.startingDeclaredRemaining !== null">
+                  <span class="scope-quantity">
+                    <strong>{{ detail.startingDeclaredRemaining }} 件</strong>
+                    <span v-if="quantityFormula">=（{{ quantityFormula }}）</span>
+                    <span v-else>（数量依据待核对）</span>
+                  </span>
                 </template>
-                <template v-else-if="detail.currentRoundInspectionId"
-                  >本轮可沿用已有检验，请到产出清单核对正式引用</template
-                >
-                <template v-else>本轮尚无检验记录</template>
+                <template v-else>待确定</template>
               </el-descriptions-item>
               <el-descriptions-item
-                v-if="detail.currentRoundReason"
                 label="本轮发起原因"
-                :span="3"
+                :span="2"
               >
-                <span class="round-reason">{{ detail.currentRoundReason }}</span>
+                <span class="round-reason">{{ detail.currentRoundReason || '—' }}</span>
               </el-descriptions-item>
             </el-descriptions>
+            <InspectionResultSummary
+              v-if="currentInspection"
+              :method-label="
+                PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS[currentInspection.inspectionMethod]
+              "
+              :decision-label="
+                PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[currentInspection.releaseDecision]
+              "
+              :sampling="currentInspection.inspectionMethod === 'sampling'"
+              :inspected-quantity="currentInspection.inspectedQuantity"
+              :qualified-quantity="currentInspection.qualifiedQuantity"
+              :unqualified-quantity="currentInspection.unqualifiedQuantity"
+              unit="件"
+              class="result-summary"
+            />
+            <InlineHint
+              v-else
+              class="notice"
+            >
+              <template v-if="detail.currentRoundInspectionId"
+                >本轮可沿用已有检验，请到产出清单核对正式引用。</template
+              >
+              <template v-else>本轮尚无检验结果。</template>
+            </InlineHint>
             <InlineHint
               v-if="
                 detail.reinspectionBlockedReason &&
                 !detail.canBeginReinspection &&
                 (requestedReinspection ||
                   detail.stage === 'needs_reinspection' ||
-                  detail.stage === 'not_released')
+                  detail.stage === 'not_released' ||
+                  (detail.currentRevisionId !== null &&
+                    !detail.canStartInspection &&
+                    !detail.canRecordInspection))
               "
               tone="warning"
               class="notice"
@@ -118,13 +135,13 @@
               tone="warning"
               class="notice"
             >
-              尚未保存产出草稿。请先到产出清单保存申报，再开始检验。
+              尚未保存产出草稿。请先到产出清单保存申报，再发起检验。
             </InlineHint>
             <div
               v-if="showReinspectionForm"
               class="reinspection-form"
             >
-              <h3>开始复检</h3>
+              <h3>{{ FINISHED_INSPECTION_NEXT_ACTION_LABELS.start_reinspection }}</h3>
               <InlineHint tone="warning">
                 确认后立即建立新检验轮，<strong>旧定稿剩余入库资格暂停</strong>。
                 本次复检范围为<strong
@@ -143,7 +160,7 @@
                 :disabled="busy || unresolved || Boolean(error)"
               >
                 <el-form-item
-                  label="复检原因"
+                  label="发起原因"
                   required
                 >
                   <el-input
@@ -161,8 +178,6 @@
               v-else
               :detail="detail"
               :inspection="inspection"
-              :declared="inspectionDeclared"
-              :baseline-received="inspectionBaseline"
               :inspection-open="inspectionOpen"
               :inspection-stale="inspectionStale"
               :busy="busy"
@@ -259,7 +274,7 @@
         plain
         :disabled="busy"
         @click="focusReinspection"
-        >开始复检</el-button
+        >{{ FINISHED_INSPECTION_NEXT_ACTION_LABELS.start_reinspection }}</el-button
       >
       <el-button
         v-if="unresolved"
@@ -284,8 +299,10 @@
 import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import {
+  FINISHED_INSPECTION_NEXT_ACTION_LABELS,
   FINISHED_INSPECTION_STAGE_LABELS,
   PERMISSIONS,
+  PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS,
   PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
   PRODUCTION_OUTPUT_ROUND_STATUS_LABELS,
 } from '@company/constants';
@@ -299,10 +316,11 @@ import {
   finishedRoundTagType,
   finishedRoundTagEffect,
   finishedStageTagType,
+  finishedInspectionQuantityFormula,
 } from '../inspection-presentation';
 import FinishedInspectionPanel from './FinishedInspectionPanel.vue';
 import FinishedInspectionHistory from './FinishedInspectionHistory.vue';
-import InspectionQuantity from './InspectionQuantity.vue';
+import InspectionResultSummary from './InspectionResultSummary.vue';
 
 const emit = defineEmits<{ changed: []; 'record-focus-cleared': [] }>();
 const activeTab = ref<'current' | 'history'>('current');
@@ -332,8 +350,6 @@ const {
   focusedRecordId,
   inspection,
   inspectionOpen,
-  inspectionBaseline,
-  inspectionDeclared,
   busy,
   locked,
   inspectionStale,
@@ -342,6 +358,9 @@ const {
 const router = useRouter();
 const auth = useAuthStore();
 const canViewOutput = computed(() => auth.can(PERMISSIONS.production.tasks.view));
+const quantityFormula = computed(() =>
+  detail.value ? finishedInspectionQuantityFormula(detail.value, '件') : null,
+);
 const currentInspection = computed(() => {
   const task = detail.value;
   return task?.currentRoundId && task.latestInspection?.roundId === task.currentRoundId
@@ -354,11 +373,11 @@ const primaryLabel = computed(() => {
   if (inspectionOpen.value) return '保存检验记录';
   switch (detail.value?.nextAction) {
     case 'start_inspection':
-      return '开始本轮检验';
+      return FINISHED_INSPECTION_NEXT_ACTION_LABELS.start_inspection;
     case 'record_inspection':
       return '填写检验结果';
     case 'start_reinspection':
-      return '开始复检';
+      return FINISHED_INSPECTION_NEXT_ACTION_LABELS.start_reinspection;
     case 'save_draft':
       return canViewOutput.value ? '前往保存产出草稿' : '';
     case 'review_output':
@@ -491,6 +510,15 @@ defineExpose({ visible, locked, open, close, focusReinspection, focusRecord });
 }
 .round-tag {
   margin-left: 6px;
+}
+.scope-quantity {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
+.result-summary {
+  margin-top: 12px;
 }
 .notice,
 .history-hint {

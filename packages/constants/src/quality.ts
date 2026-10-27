@@ -1,7 +1,7 @@
-export const QUALITY_INBOUND_CASE_TYPES = [
+/** 新办理排除 inspection_correction；该值仅在历史契约和展示映射中保留。 */
+export const QUALITY_INBOUND_CASE_START_TYPES = [
   'initial',
   'reinspection',
-  'inspection_correction',
   'receipt_correction',
 ] as const;
 export const QUALITY_INSPECTION_METHODS = ['full', 'sampling', 'zero_confirmation'] as const;
@@ -55,18 +55,9 @@ export const FINISHED_INSPECTION_STAGE_LABELS = {
   approved: '已定稿',
   blocked: '当前不可办理',
 } as const;
-export const FINISHED_INSPECTION_NEXT_ACTIONS = [
-  'save_draft',
-  'start_inspection',
-  'record_inspection',
-  'start_reinspection',
-  'review_output',
-  'view_approval',
-  'view_history',
-] as const;
 export const FINISHED_INSPECTION_NEXT_ACTION_LABELS = {
   save_draft: '保存产出草稿',
-  start_inspection: '开始检验',
+  start_inspection: '发起检验',
   record_inspection: '填写结果',
   start_reinspection: '开始复检',
   review_output: '核对产出清单',
@@ -80,9 +71,7 @@ export const PRODUCTION_OUTPUT_RELEASE_DECISIONS = QUALITY_RELEASE_DECISIONS;
 export const PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS = QUALITY_RELEASE_DECISION_LABELS;
 
 export const PROCESS_INSPECTION_METHODS = ['full', 'sampling'] as const;
-export const PROCESS_INSPECTION_STATUSES = ['active', 'reversed'] as const;
 export const PROCESS_INSPECTION_STATUS_LABELS = { active: '有效', reversed: '已冲销' } as const;
-export const PROCESS_INSPECTION_RECORD_TYPES = ['normal', 'reversal'] as const;
 export const PROCESS_INSPECTION_RECORD_TYPE_LABELS = {
   normal: '检查结果',
   reversal: '冲销记录',

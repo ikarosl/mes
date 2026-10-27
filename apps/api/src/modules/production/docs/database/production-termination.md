@@ -73,7 +73,9 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 产出草稿仍为任务唯一可编辑 `production_batch_closeout`：`available_quantity`、`extra_quantity` 是拟批准的累计计划内／外目标，`additional_scrap_quantity` 是本次新增成品报废。每字段为 `0..99999999` 整数，计划内不超过任务计划，计划内外累计目标各自不得低于同任务历史真实已入量。历史工序产品报废只读引用；原材料损耗不计入成品报废。工序正常报工数量按各工序独立事实追溯，结案核对、批准证据和产出更正不使用工序正常报工汇总或差额。计划缺口只比较任务计划与计划内目标，计划外和报废不抵扣。草稿、检验、批准均不直接产生库存流水。
 
-每个 `production_output_round` 在建立时固定前一轮、前批准版、同任务计划内外历史已入基准及申报剩余实物量。首轮在首次保存产出草稿时建立，Quality 明确 `start` 后才能记录；复检由 Quality 入口或保留的 Production 命令共用同一来源写能力，发起时建新轮并直接进入 `inspecting`，无须再执行 `start`。纯定稿更正在发起时建 `pending_inspection` 新轮，可沿用仍适用的旧放行检验。两类新轮都标旧轮 `superseded` 并立即冻结旧剩余授权；复检必须登记新轮检验，同轮检验一条完整范围记录。新检验只覆盖本任务全部尚未入库的送检实物，排除已入和已独立处置报废，不建立范围树。无剩余实物不发起复检；已批准清单更正中如草稿新增未入实物，以当前草稿累计目标减历史已入固定新轮申报剩余量。连续复检无需先取消更正，当前草稿及其原检验引用保留供核对，但旧引用在复检轮无送审资格；新轮明确放行后须由管理员主动改选当前适用记录。取消更正、审批驳回或撤回都不恢复旧授权；可再发起新轮，经原负责人审批取得新授权。
+成品检验的可办理阶段由 Production 控制：首次结案送审前可按轮次资格复检，结案或清单更正送审后冻结开始、登记及复检；撤回或驳回恢复本次草稿办理。已有批准版时，必须先由产线管理员显式开启清单更正，质检才可重新办理；Quality 与 Production 的复检命令均不能隐式开启更正。取消更正后同样关闭检验写入，须重新显式开启更正。清单更正原因属于本次生产更正，后续复检只记录各轮原因，不覆盖根更正原因。
+
+每个 `production_output_round` 在建立时固定前一轮、前批准版、同任务计划内外历史已入基准及申报剩余实物量。首轮在首次保存产出草稿时建立，Quality 明确 `start` 后才能记录；复检由 Quality 入口或保留的 Production 命令共用同一来源写能力，发起时建新轮并直接进入 `inspecting`，无须再执行 `start`。清单更正在发起时建 `pending_inspection` 新轮，可沿用仍适用的旧放行检验，也可按前述资格重新检验。两类新轮都标旧轮 `superseded` 并立即冻结旧剩余授权；复检必须登记新轮检验，同轮检验一条完整范围记录。新检验只覆盖本任务全部尚未入库的送检实物，排除已入和已独立处置报废，不建立范围树。无剩余实物不发起复检；已批准清单更正中如草稿新增未入实物，以当前草稿累计目标减历史已入固定新轮申报剩余量。连续复检无需先取消更正，当前草稿及其原检验引用保留供核对，但旧引用在复检轮无送审资格；新轮明确放行后须由管理员主动改选当前适用记录。取消更正、审批驳回或撤回都不恢复旧授权；后续按当前办理资格经原负责人审批取得新授权。
 
 Quality 的全检／抽检仅记录 G/F，N=G+F 自动派生且普通检查 N>0；不核实整批 C、不生成本次放行量或累计建议。零产出专用 `zero_confirmation` 要求 G=F=N=0 且明确 `released`。普通检验可明确选择 `released/pending_reinspection/not_released`，后两种结论阻断送审与批准。仅在 Production 定稿引用 `full+released` 记录时，比较累计目标 `A+E` 与**原引用检验轮**固定计划内／外已入基准加 G，差额只提示，不阻断草稿保存、送审或审批；抽检不外推整批，也不作整批量差异。沿用旧检验时不使用新定稿轮基准。检验不自动产生报废。审批证据保留检验事实、原轮基准、草稿、物料安排和审批人。已入事实从 Inventory 公开能力读取，不从库存批次余额倒推。
 
@@ -162,7 +164,7 @@ Quality case 以 `finished_round_id` 引用实际检查轮次，record 保存 G/
 | `POST /output/material-review` | 固定物料核对，复用原行动 Writer；tasks:manage-output |
 | `POST /output/draft` | 保存草稿并选择检验依据；tasks:manage-output |
 | `POST /output/submit` | 版本及 submissionToken 送审；tasks:manage-output |
-| `POST /output/corrections` | 指定当前批准版并开启纯定稿更正，立即冻结旧剩余授权；tasks:manage-output |
+| `POST /output/corrections` | 指定当前批准版并显式开启清单更正，立即冻结旧剩余授权；tasks:manage-output |
 | `POST /output/reinspections` | 产线保留入口，复用同一来源能力发起并直接开始复检；tasks:manage-output |
 | `POST /output/corrections/cancel` | 取消未送审更正草稿；tasks:manage-output |
 

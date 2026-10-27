@@ -57,6 +57,8 @@ function outputReinspectionBlockedReason(
   if (!['closing', 'completed', 'terminated'].includes(facts.batchStatus))
     return '任务尚未进入结案阶段，不能办理成品复检';
   if (facts.hasPendingApproval) return '清单正在审批中，请先撤回或驳回';
+  if (facts.approved !== null && !facts.hasCorrection)
+    return '清单已批准，请先由生产侧开启清单更正，再开始复检';
   if (!facts.draft) return '请先保存产出草稿';
   if (!facts.hasInspection) return '当前尚无检验记录，请先完成首次检验';
   if (remaining !== null && remaining <= 0) return '当前批准清单已无剩余实物可复检';

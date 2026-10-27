@@ -53,7 +53,6 @@ export function useReceiptLineAction(
     handoverEvidence = ref(''),
     returnedAt = ref(''),
     returnRemark = ref('');
-  const caseType = ref<StartReceiptReviewPayload['caseType']>('initial');
   const correctedQuantity = ref<number | undefined>(),
     physicalIdentityConfirmed = ref(false);
   const inspection = ref<InboundInspectionDraft>(initialInboundInspection()),
@@ -119,7 +118,6 @@ export function useReceiptLineAction(
       handoverEvidence: handoverEvidence.value,
       returnedAt: returnedAt.value,
       returnRemark: returnRemark.value,
-      caseType: caseType.value,
       physicalIdentityConfirmed: physicalIdentityConfirmed.value,
       inspection: inspection.value,
     });
@@ -220,7 +218,6 @@ export function useReceiptLineAction(
     returnRemark.value = '';
     returnedAt.value = toBeijingISOString(Date.now());
     correctedQuantity.value = Number(target.quantities.receivedQuantity);
-    caseType.value = target.currentRound.status === 'uninspected' ? 'initial' : 'reinspection';
     physicalIdentityConfirmed.value = false;
     inspection.value = initialInboundInspection();
     inspectionValid.value = false;
@@ -302,10 +299,9 @@ export function useReceiptLineAction(
           : '检验记录已保存，本批继续阻断正常定稿及入库',
       );
     } else if (action.value === 'review') {
-      const body = {
+      const body: StartReceiptReviewPayload = {
         version: target.version,
         ...round,
-        caseType: caseType.value,
         reason: reason.value.trim(),
       };
       await command.run(
@@ -369,7 +365,6 @@ export function useReceiptLineAction(
     handoverEvidence,
     returnedAt,
     returnRemark,
-    caseType,
     physicalIdentityConfirmed,
     inspection,
     inspectionValid,

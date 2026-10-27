@@ -134,6 +134,8 @@ function taskReinspectionBlockedReason(row: TaskRow): string | null {
   if (!['closing', 'completed', 'terminated'].includes(row.status))
     return '任务尚未进入结案阶段，不能办理成品复检';
   if (row.pending_approval_id !== null) return '清单正在审批中，请先撤回或驳回';
+  if (row.current_revision_id !== null && row.correction_reason === null)
+    return '清单已批准，请先由生产侧开启清单更正，再开始复检';
   if (row.available_quantity === null) return '请先保存产出草稿';
   if (row.latest_id === null) return '当前尚无检验记录，请先完成首次检验';
   if (row.current_round_status === 'inspecting') return '本轮检验正在填写，请继续登记结果';

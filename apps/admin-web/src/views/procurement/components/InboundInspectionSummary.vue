@@ -2,6 +2,7 @@
   <el-descriptions
     :column="3"
     border
+    size="small"
   >
     <el-descriptions-item label="到货明细"
       >{{ line.receiptNo }} · id:{{ line.id }}</el-descriptions-item

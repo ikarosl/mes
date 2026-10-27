@@ -22,7 +22,6 @@ import {
 } from 'class-validator';
 import {
   PURCHASE_ORDER_MAX_QUANTITY,
-  QUALITY_INBOUND_CASE_TYPES,
   QUALITY_INBOUND_METHODS,
   QUALITY_RELEASE_DECISIONS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
@@ -32,7 +31,6 @@ import {
   RECEIPT_RETURN_REASONS,
 } from '@company/constants';
 import type {
-  QualityInboundCaseType,
   QualityReleaseDecision,
   QualityInboundInspectionMethod,
   ProcurementInboundInspectionQuery,
@@ -139,8 +137,6 @@ export class RevokeReceiptRejectionDto extends ReceiptRoundCommandDto {
 }
 export class StartReceiptReviewDto extends ReceiptRoundCommandDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
-  @IsIn(QUALITY_INBOUND_CASE_TYPES.filter((type) => type !== 'receipt_correction'))
-  caseType!: Exclude<QualityInboundCaseType, 'receipt_correction'>;
 }
 export class InspectReceiptDto extends ReceiptRoundCommandDto {
   @Matches(ID) caseId!: string;

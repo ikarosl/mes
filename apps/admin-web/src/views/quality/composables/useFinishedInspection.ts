@@ -1,12 +1,14 @@
 import { computed, onActivated, onScopeDispose, reactive, ref } from 'vue';
 import { RequestError } from '@company/request';
 import { toBeijingISOString } from '@company/utils';
-import { PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS } from '@company/constants';
+import {
+  FINISHED_INSPECTION_NEXT_ACTION_LABELS,
+  PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
+} from '@company/constants';
 import type {
   BeginFinishedReinspectionPayload,
   FinishedInspectionTaskDetail,
   ProductionOutputInspection,
-  ProductionOutputQuantities,
   RecordFinishedInspectionPayload,
 } from '@company/contracts';
 import { finishedInspectionsApi } from '../../../api/finished-inspections';
@@ -64,12 +66,7 @@ export function useFinishedInspection(
   const inspection = reactive(emptyForm()),
     inspectionOpen = ref(false),
     inspectionVersion = ref<number | null>(null),
-    inspectionBaseline = ref<number | null>(null);
-  const inspectionDeclared = reactive<ProductionOutputQuantities>({
-    availableQuantity: 0,
-    extraQuantity: 0,
-    additionalScrapQuantity: 0,
-  });
+    inspectionBaselineReady = ref(false);
   const read = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -77,7 +74,7 @@ export function useFinishedInspection(
     recordsLoading.value = false;
   });
   const intent = useIdempotentIntent('质检记录');
-  const startIntent = useIdempotentIntent('开始成品质检');
+  const startIntent = useIdempotentIntent('发起成品质检');
   const reinspectionIntent = useIdempotentIntent('开始成品复检');
   let pendingStart: { batchId: string; version: number } | null = null;
   let pendingReinspection: { batchId: string; body: BeginFinishedReinspectionPayload } | null =
@@ -91,7 +88,7 @@ export function useFinishedInspection(
   const inspectionValid = computed(
     () =>
       inspectionFormQuantities(inspection) !== null &&
-      inspectionBaseline.value !== null &&
+      inspectionBaselineReady.value &&
       !!inspection.releaseDecision &&
       (inspection.inspectionMethod !== 'zero_confirmation' || inspection.zeroConfirmed) &&
       !!inspection.inspectedAt &&
@@ -178,7 +175,7 @@ export function useFinishedInspection(
     total.value = 0;
     inspectionOpen.value = false;
     inspectionVersion.value = null;
-    inspectionBaseline.value = null;
+    inspectionBaselineReady.value = false;
     await refresh();
     return visible.value && batchId.value === target;
   }
@@ -194,12 +191,9 @@ export function useFinishedInspection(
   function openInspectionForm() {
     if (!detail.value?.canRecordInspection || !detail.value.declared) return;
     Object.assign(inspection, emptyForm(), { inspectedAt: toBeijingISOString(Date.now()) });
-    Object.assign(inspectionDeclared, detail.value.declared);
     inspectionVersion.value = detail.value.version;
-    inspectionBaseline.value =
-      detail.value.baselinePlannedReceived === null || detail.value.baselineExtraReceived === null
-        ? null
-        : Number(detail.value.baselinePlannedReceived) + Number(detail.value.baselineExtraReceived);
+    inspectionBaselineReady.value =
+      detail.value.baselinePlannedReceived !== null && detail.value.baselineExtraReceived !== null;
     inspectionOpen.value = true;
   }
   async function runStart() {
@@ -262,8 +256,8 @@ export function useFinishedInspection(
     try {
       await RouteMessageBox.confirm(
         '本轮送检范围已在产出草稿保存时固定。确认后进入检验中，可继续填写检查事实。',
-        '开始本轮成品质检',
-        { confirmButtonText: '开始检验' },
+        '发起本轮成品质检',
+        { confirmButtonText: FINISHED_INSPECTION_NEXT_ACTION_LABELS.start_inspection },
       );
     } catch {
       return;
@@ -449,7 +443,6 @@ export function useFinishedInspection(
         resultNote: inspection.resultNote.trim(),
         evidenceReference: inspection.evidenceReference.trim(),
       };
-    if (inspectionBaseline.value === null) return;
     try {
       await RouteMessageBox.confirm(
         `本次${inspection.inspectionMethod === 'sampling' ? '样本' : ''}检查 ${quantities.inspectedQuantity} 件，合格 ${body.qualifiedQuantity} 件，不合格 ${body.unqualifiedQuantity} 件，结论为“${PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS[decision]}”。${decision === 'released' ? '产线管理员仍须核对产出清单。' : '当前结论阻断结案。'}不合格不自动登记报废；保存后不可覆盖，复检另存记录。`,
@@ -530,9 +523,6 @@ export function useFinishedInspection(
     focusedRecordId,
     inspection,
     inspectionOpen,
-    inspectionVersion,
-    inspectionBaseline,
-    inspectionDeclared,
     busy,
     locked,
     inspectionStale,
@@ -540,7 +530,6 @@ export function useFinishedInspection(
     open,
     close,
     refresh,
-    loadRecords,
     focusRecord,
     startInspection,
     beginReinspection,

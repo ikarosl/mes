@@ -24,6 +24,8 @@
 
 全检／抽检都判定当前整批剩余实物资格，样本不单独拆成办理范围。首次和复检都需要明确开始动作，不传部分检验覆盖数量。初检推进当前轮 reviewing；复检创建新轮并使旧轮全部剩余分配退出执行资格。Quality 未完成办理同步 superseded；已完成检查作为事实保留，不授予旧轮执行资格。数据库锁不跨现场检查过程持有。
 
+`start-review` 仅接收行／轮版本、轮次 ID 和发起原因，不接收 `caseType`。Procurement 在锁内按当前轮状态确定办理类型：`uninspected` 沿当前轮发起 `initial`，其他符合复检资格的阶段建立新轮并发起 `reinspection`。不再提供人工选择的“检验更正”分类；已有分类及检查事实继续保留，历史值约束见 [Quality 数据库](../../quality/docs/database.md#检验办理-quality_inspection_case)。
+
 Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据，实际检查数 N=G+F。来料不填整批 C、剔除量或零数量核实。released 进入 awaiting_acceptance；pending_reinspection 进入 reinspection_required；not_released 进入 quality_rejected。后两者继续阻断普通定稿及入库，允许重新发起整批检验或人工拒收。
 
 库管只引用当前轮关联的明确放行记录，填写本轮剩余实物 C 及分配。本轮核对发现数量变化时，同事务追加 T=I+B+C 的 revision，不因此重复质检；Quality 原申报与 G/F 不覆盖。超建议可入量必须保存 overrideReason，所有分配合计=C。详细公式见[正式清单](receipt-acceptance.md)。
@@ -66,5 +68,7 @@ Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据�
 | `/purchase-inbounds/actions/confirm` | `warehouse:inbound:confirm-purchase` |
 
 到货页的登记采购候选和候选详情仅要求 `warehouse:receipts:view`，办理不依赖采购管理页权限；入库页的正式可入候选、归批候选和历史读取统一要求 `warehouse:inbound:view`。查看与动作分别鉴权，目录父子关系不授予后端子权限，完整规则见 [Identity 权限目录](../../identity/docs/database.md#14-permissions)。这些仓储职责的接口继续由 Procurement 校验来源并编排，Quality 与 Inventory 保持各自事实所有权。
+
+检验发起使用 `procurement.receipt.review.v3`，指纹包含到货明细 ID、行版本、轮次 ID／版本和规范化原因，不含服务端派生的办理类型。旧客户端携带 `caseType` 时按未知字段拒绝；换版保留既有办理与检查事实，客户端须结束旧意图并刷新，不将旧请求自动转换为新意图。
 
 所有写入要求 Idempotency-Key；版本与 codec 在 application/idempotency 中集中登记。整单作废使用 `procurement.receipt.void.v3`，指纹包含 receipt ID、主单版本、原因及整单行／轮版本，结果为 `{receiptId,version}`，其中 `version` 是作废后的主单版本。采购入库使用 `procurement.inbound.confirm.v8`，指纹包含备注、各明细的来源行／轮版本、修订、质检、allocation、数量及目标 mode／clientKey 或 batchId；结果按真实 inboundDetailId、batchId 和 transactionId 关联来源行及授权，同键只重放原已确认结果。未知结果冻结原 body/key 重试，不自动换新轮或新ID。成功操作即使后续轮次变化仍只重放原结果。版本切换遵守[平台幂等规则](../../../../docs/idempotency.md#13-scope-版本与开发重置)。

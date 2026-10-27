@@ -2,7 +2,6 @@ import type { ProcurementSupplierSummary } from './purchase-orders.js';
 import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
 import type {
   QualityInboundCaseItem,
-  QualityInboundCaseType,
   QualityInboundInspectionInput,
   QualityInboundInspectionItem,
 } from '../quality/inbound-inspections.js';
@@ -242,7 +241,7 @@ export interface ProcurementInboundInspectionDetail extends Pick<
   | 'currentRound'
   | 'void'
 > {
-  /** 实物范围；累计量仅供录入时解释剩余范围，不含授权数量。 */
+  /** 实物范围；累计量用于解释当前剩余或在途送检范围，不含授权数量和执行明细。 */
   quantities: Pick<
     ReceiptQuantitySummary,
     'receivedQuantity' | 'inboundQuantity' | 'returnedQuantity' | 'unprocessedQuantity'
@@ -313,7 +312,6 @@ export interface StartReceiptReviewPayload {
   version: number;
   roundId: string;
   roundVersion: number;
-  caseType: Exclude<QualityInboundCaseType, 'receipt_correction'>;
   reason: string;
 }
 export interface RejectReceiptLinePayload {

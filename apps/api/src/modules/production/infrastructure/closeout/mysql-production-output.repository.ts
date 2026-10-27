@@ -150,7 +150,10 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
         );
       const state = await this.loadState(db, row, true);
       if (trigger === 'reinspection' && !state.detail.canBeginReinspection)
-        throw new ProductionDomainError('INVALID_STATE', '当前轮次不能再次发起复检，请刷新核对');
+        throw new ProductionDomainError(
+          'INVALID_STATE',
+          state.detail.reinspectionBlockedReason ?? '当前轮次不能再次发起复检，请刷新核对',
+        );
       if (!state.base && trigger === 'reinspection') {
         const draft = state.detail.draft;
         if (
@@ -216,10 +219,11 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
           [context.actorId, roundId],
         );
       await this.writeDraft(db, row.id, nextDraft, context);
-      await db.execute('UPDATE production_batch_closeout SET correction_reason=? WHERE id=?', [
-        payload.reason,
-        row.id,
-      ]);
+      if (trigger === 'finalization_correction')
+        await db.execute('UPDATE production_batch_closeout SET correction_reason=? WHERE id=?', [
+          payload.reason,
+          row.id,
+        ]);
       await this.audit(
         db,
         context,

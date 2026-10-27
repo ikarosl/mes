@@ -42,6 +42,8 @@ Quality 所有 `quality_inspection_record` 是每个任务当前成品轮次剩�
 
 ## 部分已入后的复检与固定范围
 
+开始、登记和复检遵守 Production 的[成品检验办理阶段](../../production/docs/database/production-termination.md#数量质检与更正)。已有批准版时先由生产侧显式开启清单更正；质检入口不代替该业务动作。列表、详情和锁内写命令均须反映来源资格，历史记录仍可查看。
+
 首次轮由 Production 保存产出草稿时建立，`POST /quality/finished-inspections/:batchId/actions/start` 将现有待检轮推进 `inspecting`。`POST /quality/finished-inspections/:batchId/actions/reinspect` 提交 `version/currentRevisionId/reason`，Production 来源在同一事务锁定结案根、核对批准版和真实已入，建立后续轮并直接推进 `inspecting`；不能重复执行首次开始。新轮固定当时计划内／计划外历史已入基准及申报剩余量，旧轮与剩余授权立即失效；旧批准版、旧检验和旧入库事实保留。新的检查覆盖该任务全部剩余送检实物，排除已入和已独立处置报废，不按库存批次拆检验范围。无剩余实物时不能发起复检；已批准清单进入更正后，如当前草稿新增了尚未入库的真实实物，按草稿累计目标减历史已入核对本次范围。连续复检无需先取消更正。
 
 Quality 只在 Production 准备的当前有效轮次执行 record 时一并创建一份 completed case/record，`finished_round_id` 明确关联来源轮次；同轮重复登记拒绝，必须由来源发起下一轮复检。全检／抽检均记录 G/F，普通检查要求 `0<G+F≤99999999`；零产出核实要求 G=F=0 且明确 `released`。Quality 不测整批量、推算抽检整批差异或决定类别分配、报废及入库目标。已入下限、任务上限及有效授权由 Production 和 Inventory 各自校验；Production 的全检定稿提示见上节。

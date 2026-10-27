@@ -45,25 +45,25 @@ export function useInboundInspection(onChanged: () => void) {
     { refreshOnActivated: false },
   );
   const reviewingCase = computed(() => (line.value ? currentReceiptCase(line.value) : undefined));
-  const currentCase = computed(
-    () =>
-      line.value?.cases.find(
-        (record) => record.inspection?.id === line.value?.currentRound.inspectionId,
-      ) ?? null,
-  );
-  const currentInspection = computed(() => currentCase.value?.inspection ?? null);
-  const roundNoForCase = (record: QualityInboundCaseItem | null): number | undefined => {
-    const source = line.value;
-    if (!source || !record) return undefined;
-    if (source.currentRound.id === record.roundId) return source.currentRound.roundNo;
-    return source.rounds.find((round) => round.id === record.roundId)?.roundNo;
-  };
-  const currentCaseRoundNo = computed(() => roundNoForCase(currentCase.value));
   const editingLine = computed(() => {
     const source = actions.line.value;
     return actions.visible.value && source && !('allocations' in source) ? source : null;
   });
   const contextLine = computed(() => editingLine.value ?? line.value);
+  const currentCase = computed(
+    () =>
+      contextLine.value?.cases.find(
+        (record) => record.inspection?.id === contextLine.value?.currentRound.inspectionId,
+      ) ?? null,
+  );
+  const currentInspection = computed(() => currentCase.value?.inspection ?? null);
+  const roundNoForCase = (record: QualityInboundCaseItem | null): number | undefined => {
+    const source = contextLine.value;
+    if (!source || !record) return undefined;
+    if (source.currentRound.id === record.roundId) return source.currentRound.roundNo;
+    return source.rounds.find((round) => round.id === record.roundId)?.roundNo;
+  };
+  const currentCaseRoundNo = computed(() => roundNoForCase(currentCase.value));
   const busy = computed(() => loading.value || actions.loading.value || actions.command.busy.value);
   const blocked = computed(
     () => busy.value || Boolean(error.value) || actions.command.locked.value,

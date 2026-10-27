@@ -16,13 +16,14 @@ export function requireReceiptNotRejected(trigger: ReceiptRoundTrigger): void {
 export function planReceiptReview(
   status: ReceiptRoundStatus,
   remaining: number,
-  caseType: QualityInboundCaseType,
-): { replaceRound: boolean } {
+): {
+  replaceRound: boolean;
+  caseType: Extract<QualityInboundCaseType, 'initial' | 'reinspection'>;
+} {
   if (status === 'reviewing' || remaining <= 0)
     return receiptError('本批正在检查或已无未处置实物', 'RECEIPT_STATE');
-  if (caseType === 'initial' && status !== 'uninspected')
-    return receiptError('已有检验结论，请使用复检或检验更正');
-  return { replaceRound: status !== 'uninspected' };
+  if (status === 'uninspected') return { replaceRound: false, caseType: 'initial' };
+  return { replaceRound: true, caseType: 'reinspection' };
 }
 
 export function requireReceiptCorrectionInput(input: {

@@ -1,6 +1,6 @@
 import { normalizeIncomingInspectionQuantities } from '../domain/inspection-quantity.policy.js';
 import { Inject, Injectable } from '@nestjs/common';
-import { QUALITY_INBOUND_CASE_TYPES } from '@company/constants';
+import { QUALITY_INBOUND_CASE_START_TYPES } from '@company/constants';
 import type {
   PageQuery,
   PageResult,
@@ -56,7 +56,7 @@ export class MysqlQualityInboundRepository
     requireQuantity(input.coveredQuantity, '来源申报数量');
     const reason = requireQualityText(input.reason, '检验原因');
     if (
-      !QUALITY_INBOUND_CASE_TYPES.includes(input.caseType) ||
+      !QUALITY_INBOUND_CASE_START_TYPES.includes(input.caseType) ||
       input.coveredQuantity <= 0 ||
       !input.roundId
     ) {

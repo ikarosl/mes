@@ -29,25 +29,6 @@
       class="inspection-form"
     >
       <div class="form-main">
-        <el-descriptions
-          :column="2"
-          border
-          size="small"
-          class="production-reference"
-        >
-          <el-descriptions-item label="已有入库">
-            <template v-if="baselineReceived !== null">
-              <strong class="quantity-value">{{ baselineReceived }}</strong> 件
-            </template>
-            <template v-else>尚未固定</template>
-          </el-descriptions-item>
-          <el-descriptions-item label="产线申报数量">
-            <strong class="quantity-value">{{ declaredCumulative }}</strong> 件
-          </el-descriptions-item>
-        </el-descriptions>
-        <InlineHint class="form-context">
-          正在填写本轮检验。<strong>现场实测量独立填写</strong>；产线申报仅供核对，保存后不会回写草稿。
-        </InlineHint>
         <h3>检查结果</h3>
         <div class="inspection-fields">
           <el-form-item
@@ -198,7 +179,6 @@ import InlineHint from '../../../components/InlineHint.vue';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import type {
   FinishedInspectionTaskDetail,
-  ProductionOutputQuantities,
   ProductionOutputInspectionMethod,
   ProductionOutputReleaseDecision,
 } from '@company/contracts';
@@ -212,8 +192,6 @@ import {
 import type { ProductionOutputInspectionForm } from '../finished-inspection';
 const props = defineProps<{
   detail: FinishedInspectionTaskDetail;
-  declared: ProductionOutputQuantities;
-  baselineReceived: number | null;
   inspection: ProductionOutputInspectionForm;
   inspectionOpen: boolean;
   inspectionStale: boolean;
@@ -223,13 +201,13 @@ const props = defineProps<{
 }>();
 const handlingHint = computed(() => {
   if (props.detail.canRecordInspection) return '本轮已开始，可继续填写检验结果。';
-  if (props.detail.canStartInspection) return '本轮送检范围已固定；开始检验后可填写检验结果。';
+  if (props.detail.canStartInspection) return '本轮送检范围已固定；发起检验后可填写检验结果。';
   if (props.detail.nextAction === 'review_output')
     return '本轮检验已完成。请返回产出清单核对数量、明确引用本次适用记录并保存，再完成收尾与物料核对后提交审批。';
   if (props.detail.nextAction === 'start_reinspection')
     return '本轮检验结果已留存。需要重新检查时，请开始复检并登记新一轮结果。';
   if (props.detail.nextAction === 'view_approval') return '清单正在审批，检验记录可在历史中查看。';
-  if (props.detail.nextAction === 'save_draft') return '请先保存产出草稿，再开始本轮检验。';
+  if (props.detail.nextAction === 'save_draft') return '请先保存产出草稿，再发起检验。';
   return '检验记录已留存，可在检验历史中查看明细。';
 });
 const isSampling = computed(
@@ -251,9 +229,6 @@ const inspectedTotal = computed(() => {
     ? total
     : '请核对数量';
 });
-const declaredCumulative = computed(
-  () => props.declared.availableQuantity + props.declared.extraQuantity,
-);
 defineEmits<{ change: [Partial<ProductionOutputInspectionForm>] }>();
 </script>
 <style scoped>
@@ -281,18 +256,11 @@ defineEmits<{ change: [Partial<ProductionOutputInspectionForm>] }>();
   color: var(--el-text-color-primary);
   font-size: 15px;
 }
-.form-context {
-  margin-top: 12px;
-  margin-bottom: 16px;
-}
 .form-main {
   min-width: 0;
 }
 .form-main h3:not(:first-child) {
   margin-top: 20px;
-}
-.production-reference :deep(.el-descriptions__label) {
-  width: 120px;
 }
 .quantity-help {
   --hint-strong-color: var(--el-color-primary);

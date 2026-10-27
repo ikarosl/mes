@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="`来料检验${line ? ` · ${line.receiptNo} · id:${line.id}` : ''}`"
+    title="来料检验"
     :width="DialogWidth.xl"
     workbench
     :before-close="beforeClose"
@@ -58,7 +58,7 @@
               border
               size="small"
             >
-              <el-descriptions-item label="当前状态">
+              <el-descriptions-item label="当前办理">
                 <el-tag
                   size="small"
                   :type="receiptLineStageType(contextLine)"
@@ -66,42 +66,63 @@
                   >{{ receiptLineStageLabel(contextLine) }}</el-tag
                 >
               </el-descriptions-item>
+              <el-descriptions-item label="当前处理轮">
+                第 {{ contextLine.currentRound.roundNo }} 轮
+                <el-tag
+                  size="small"
+                  class="round-tag"
+                  :type="receiptRoundTagType(contextLine.currentRound.status)"
+                  :effect="receiptRoundTagEffect(contextLine.currentRound.status)"
+                  >{{ RECEIPT_ROUND_STATUS_LABELS[contextLine.currentRound.status] }}</el-tag
+                >
+              </el-descriptions-item>
               <el-descriptions-item
-                v-if="contextCase?.status === 'reviewing'"
-                label="仓库送检数量"
-                ><strong
-                  >{{ contextCase.coveredQuantity }} {{ contextLine.unit }}</strong
-                ></el-descriptions-item
-              >
-              <el-descriptions-item
-                v-else
-                label="未入库或退回"
-                ><strong
-                  >{{ contextLine.quantities.unprocessedQuantity }} {{ contextLine.unit }}</strong
-                ></el-descriptions-item
-              >
-              <el-descriptions-item
-                :label="inspectionReason.label"
+                :label="contextCase?.status === 'reviewing' ? '送检数量' : '剩余实物'"
                 :span="2"
-                ><span class="record-text">{{ inspectionReason.text }}</span></el-descriptions-item
+              >
+                <span v-if="isReceiptVoided(contextLine)">登记已作废</span>
+                <span
+                  v-else
+                  class="scope-quantity"
+                >
+                  <strong>
+                    {{
+                      contextCase?.status === 'reviewing'
+                        ? contextCase.coveredQuantity
+                        : contextLine.quantities.unprocessedQuantity
+                    }}
+                    {{ contextLine.unit }}
+                  </strong>
+                  <span v-if="quantityFormula">=（{{ quantityFormula }}）</span>
+                  <span v-else>（数量依据待核对）</span>
+                </span>
+              </el-descriptions-item>
+              <el-descriptions-item
+                label="本轮发起原因"
+                :span="2"
+                ><span class="record-text">{{ inspectionReason }}</span></el-descriptions-item
               >
             </el-descriptions>
             <div
               v-if="currentInspection"
-              class="current-record"
+              class="result-summary"
             >
-              <h3>
-                {{
-                  currentCase?.roundId !== line?.currentRound.id
-                    ? '当前采用 · 沿用此前检验'
-                    : '本轮检验记录'
-                }}
-              </h3>
-              <InboundInspectionRecord
-                :inspection="currentInspection"
-                :round-no="currentCaseRoundNo"
+              <p class="result-source">{{ inspectionSource }}</p>
+              <InspectionResultSummary
+                :method-label="QUALITY_INSPECTION_METHOD_LABELS[currentInspection.inspectionMethod]"
+                :decision-label="QUALITY_RELEASE_DECISION_LABELS[currentInspection.releaseDecision]"
+                :sampling="currentInspection.inspectionMethod === 'sampling'"
+                :inspected-quantity="currentInspection.inspectedQuantity"
+                :qualified-quantity="currentInspection.qualifiedQuantity"
+                :unqualified-quantity="currentInspection.unqualifiedQuantity"
+                :unit="contextLine.unit"
               />
             </div>
+            <InlineHint
+              v-else
+              class="notice"
+              >当前尚无检验结果。</InlineHint
+            >
             <InlineHint
               v-if="!actionOpen"
               :tone="statusTone"
@@ -113,7 +134,7 @@
               v-loading="actionLoading"
               class="action-form"
             >
-              <h3>{{ caseType === 'initial' ? '发起检验' : '开始复检 / 更正' }}</h3>
+              <h3>{{ initialInspection ? '发起检验' : '开始复检' }}</h3>
               <InlineHint tone="warning">
                 确认后本批全部剩余实物
                 <strong
@@ -126,20 +147,6 @@
                 :disabled="blocked || stale"
                 @submit.prevent="actions.confirm"
               >
-                <el-form-item
-                  v-if="caseType !== 'initial'"
-                  label="办理原因类型"
-                  required
-                >
-                  <el-radio-group v-model="caseType">
-                    <el-radio value="reinspection">{{
-                      QUALITY_INBOUND_CASE_TYPE_LABELS.reinspection
-                    }}</el-radio>
-                    <el-radio value="inspection_correction">{{
-                      QUALITY_INBOUND_CASE_TYPE_LABELS.inspection_correction
-                    }}</el-radio>
-                  </el-radio-group>
-                </el-form-item>
                 <el-form-item
                   label="发起原因"
                   required
@@ -160,14 +167,6 @@
               class="action-form"
             >
               <h3>填写检验结果</h3>
-              <InlineHint
-                v-if="hasDisposal"
-                class="notice"
-              >
-                已入库 {{ contextLine.quantities.inboundQuantity }} {{ contextLine.unit }}、已退回
-                {{ contextLine.quantities.returnedQuantity }}
-                {{ contextLine.unit }}；仓库送检数量已扣除这两部分。
-              </InlineHint>
               <InboundInspectionFields
                 v-model="inspection"
                 :covered-quantity="Number(caseRecord.coveredQuantity)"
@@ -288,8 +287,11 @@ import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import {
   PERMISSIONS,
+  RECEIPT_ROUND_STATUS_LABELS,
   QUALITY_INBOUND_CASE_TYPE_LABELS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
+  QUALITY_INSPECTION_METHOD_LABELS,
+  QUALITY_RELEASE_DECISION_LABELS,
 } from '@company/constants';
 import { useAuthStore } from '../../../stores/auth';
 import { DialogWidth } from '../../../utils/dialog';
@@ -302,12 +304,15 @@ import {
   receiptLineStageLabel,
   receiptLineStageType,
   receiptLineStageEffect,
+  receiptRoundTagType,
+  receiptRoundTagEffect,
 } from '../receipt-round-presentation';
 import { useInboundInspection } from '../composables/useInboundInspection';
+import { incomingInspectionQuantityFormula } from '../../quality/inspection-presentation';
 import InboundInspectionSummary from './InboundInspectionSummary.vue';
 import InboundInspectionFields from './InboundInspectionFields.vue';
 import InboundInspectionHistory from './InboundInspectionHistory.vue';
-import InboundInspectionRecord from './InboundInspectionRecord.vue';
+import InspectionResultSummary from '../../quality/components/InspectionResultSummary.vue';
 import ReceiptVoidNotice from './ReceiptVoidNotice.vue';
 
 const emit = defineEmits<{ changed: []; 'record-focus-cleared': [] }>();
@@ -345,7 +350,6 @@ const {
   loading: actionLoading,
   action,
   stale,
-  caseType,
   reason,
   caseRecord,
   inspection,
@@ -359,19 +363,26 @@ const contextCase = computed(() => {
   if (actionOpen.value && action.value === 'inspect') return caseRecord.value;
   return source.cases.find((record) => record.roundId === source.currentRound.id) ?? null;
 });
+const quantityFormula = computed(() =>
+  contextLine.value
+    ? incomingInspectionQuantityFormula(contextLine.value, contextCase.value)
+    : null,
+);
 const inspectionReason = computed(() => {
   const record = contextCase.value;
-  if (record?.caseType === 'reinspection')
-    return { label: '复检原因', text: record.reason.trim() || '-' };
+  if (!record?.reason.trim()) return '—';
   if (record?.caseType === 'inspection_correction')
-    return { label: '更正原因', text: record.reason.trim() || '-' };
-  return { label: '检验原因', text: '-' };
+    return `${QUALITY_INBOUND_CASE_TYPE_LABELS.inspection_correction}：${record.reason.trim()}`;
+  return record.reason.trim();
 });
-const hasDisposal = computed(
-  () =>
-    Number(contextLine.value?.quantities.inboundQuantity) > 0 ||
-    Number(contextLine.value?.quantities.returnedQuantity) > 0,
-);
+const inspectionSource = computed(() => {
+  if (currentCase.value?.roundId === contextLine.value?.currentRound.id)
+    return '当前结果 · 本轮检验';
+  if (currentCaseRoundNo.value !== undefined)
+    return `当前采用 · 沿用第 ${currentCaseRoundNo.value} 轮检验`;
+  return '当前采用 · 沿用此前检验（来源处理轮待确定）';
+});
+const initialInspection = computed(() => contextLine.value?.currentRound.status === 'uninspected');
 const statusHint = computed(() => {
   const source = line.value;
   if (!source) return '';
@@ -405,7 +416,10 @@ const statusTone = computed(() =>
 const primaryLabel = computed(() => {
   if (activeTab.value === 'history') return '返回本次检验';
   if (!line.value) return '';
-  if (actionOpen.value) return action.value === 'inspect' ? '保存检验记录' : '确认发起检验 / 复检';
+  if (actionOpen.value) {
+    if (action.value === 'inspect') return '保存检验记录';
+    return initialInspection.value ? '发起检验' : '确认开始复检';
+  }
   if (reviewingCase.value) return '填写检验结果';
   if (canReviewReceipt(line.value))
     return line.value.currentRound.status === 'uninspected' ? '发起检验' : '开始复检';
@@ -458,11 +472,26 @@ defineExpose({
   margin-top: 12px;
   margin-bottom: 12px;
 }
-.current-record,
+.result-summary {
+  margin-top: 12px;
+}
+.result-source {
+  margin: 0 0 8px;
+  color: var(--el-text-color-regular);
+  font-size: 14px;
+}
+.round-tag {
+  margin-left: 6px;
+}
+.scope-quantity {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px;
+}
 .action-form {
   margin-top: 20px;
 }
-.current-record h3,
 .action-form h3 {
   margin: 0 0 12px;
   font-size: 15px;
