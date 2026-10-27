@@ -100,7 +100,7 @@ const knownIdempotencyScopes = [
   'procurement.inbound.confirm.v6',
   'production.batch.create.v9',
   'production.finished-inbound.confirm.v3',
-  'production.work-order.create.v4',
+  'production.work-order.create.v5',
   'procurement.receipt.correct.v3',
   'procurement.receipt.void.v3',
   'procurement.receipt.void.v2',

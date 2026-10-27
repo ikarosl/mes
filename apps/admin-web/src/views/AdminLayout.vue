@@ -206,6 +206,11 @@ const all = [
   { title: '用户管理', path: '/system/users', permission: PERMISSIONS.system.users.view },
   { title: '角色管理', path: '/system/roles', permission: PERMISSIONS.system.roles.view },
   {
+    title: '业务人员配置',
+    path: '/system/user-candidates',
+    permission: PERMISSIONS.system.userCandidates.view,
+  },
+  {
     title: '权限管理',
     path: '/system/permissions',
     permission: PERMISSIONS.system.permissions.view,

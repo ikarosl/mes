@@ -2,7 +2,7 @@
 
 > [返回 Identity 文档](../README.md)。
 
-Identity 主数据适用[公共审计列规则中的例外](../../../../../../docs/database-conventions.md#统一审计规则)，各表沿用下列字段。人工管理命令的事务日志要求见[认证与管理边界](../README.md#认证与管理边界)。
+`departments/users/roles/permissions` 适用[公共审计列规则中的例外](../../../../../../docs/database-conventions.md#统一审计规则)，沿用下列字段；新增人员配置使用完整配置审计列，不扩大例外范围。人工管理命令的事务日志要求见[认证与管理边界](../README.md#认证与管理边界)。
 
 ## 1.1 `departments`
 
@@ -135,3 +135,32 @@ Identity 主数据适用[公共审计列规则中的例外](../../../../../../do
 | `created_at`      | `DATETIME`        | 创建时间              |
 
 约束：`UNIQUE (jti)`；索引 `(user_id, revoked_at, expires_at)`；`user_id -> users.id ON DELETE CASCADE`。
+
+## 1.8 `user_candidate_configs`
+
+职责：保存受控业务场景的当前候选角色集合根；场景与资格语义由[业务人员候选](user-candidates.md)所有。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED` | 自增主键 |
+| `scene_code` | `VARCHAR(100)` | 场景稳定自然键，永久唯一 |
+| `version` | `INT` | 非负乐观版本，默认 `0`；API 首次保存为 `1` |
+| `created_by` | `BIGINT UNSIGNED` | 创建人，可空，引用 `users.id` |
+| `created_at` | `DATETIME` | 创建时间，默认当前时间 |
+| `updated_by` | `BIGINT UNSIGNED` | 最近配置人，可空，引用 `users.id` |
+| `updated_at` | `DATETIME` | 最近修改时间，自动更新 |
+| `is_deleted` | `TINYINT` | 默认 `0` |
+| `deleted_by` | `BIGINT UNSIGNED` | 删除人，可空，引用 `users.id` |
+| `deleted_at` | `DATETIME` | 删除时间，可空 |
+
+约束：`UNIQUE (scene_code)` 不包含删除标志；`CHECK (version >= 0)`；未删除时删除人、删除时间均为空，删除时二者均非空。当前不开放配置删除接口。场景是可扩展的代码目录引用，不建立数据库枚举 CHECK；应用只允许已登记场景。
+
+## 1.9 `user_candidate_config_roles`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `config_id` | `BIGINT UNSIGNED` | 配置根 ID |
+| `role_id` | `BIGINT UNSIGNED` | 候选角色 ID |
+| `created_at` | `DATETIME` | 关联创建时间，默认当前时间 |
+
+约束：`PRIMARY KEY (config_id, role_id)`；索引 `(role_id, config_id)` 支持角色引用检查。`config_id -> user_candidate_configs.id ON DELETE CASCADE`；`role_id -> roles.id` 禁止物理删除被引用角色；软删除保护由 Identity 管理命令在当前事务中执行。纯关联表不保存用户名单或另一份角色条件，配置变更的前后集合由同事务 `operation_logs` 追溯。

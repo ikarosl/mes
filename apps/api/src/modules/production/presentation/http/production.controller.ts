@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, Res, UseFilters } from '@nestjs/common';
-import type { ProductionBatchStartRecord } from '@company/contracts';
+import type { ProductionBatchStartRecord, UserOption } from '@company/contracts';
 import { PERMISSIONS } from '@company/constants';
 import type {
   CommandContext,
@@ -50,6 +50,11 @@ export class ProductionController {
   @RequirePermission([PERMISSIONS.production.tasks.view])
   workOrderOptions() {
     return this.service.listWorkOrderOptions();
+  }
+  @Get('work-orders/owner-options')
+  @RequirePermission([PERMISSIONS.production.orders.view])
+  workOrderOwnerOptions(): Promise<UserOption[]> {
+    return this.service.listWorkOrderOwnerOptions();
   }
   @Get('work-orders/:workOrderId')
   @RequirePermission(PERMISSIONS.production.orders.view)

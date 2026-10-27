@@ -59,6 +59,8 @@ export interface WorkOrderItem {
   customerName: string | null;
   qualityLevel: string | null;
   workOrderOwnerId: string | null;
+  /** 历史引用的当前显示姓名，包含已停用或软删除用户。 */
+  ownerName: string | null;
   planStartDate: string | null;
   planEndDate: string | null;
   /** 有效任务计划合计，排除 cancelled/terminated。 */

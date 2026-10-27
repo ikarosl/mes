@@ -13,6 +13,13 @@
 - [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，使用显式路线和自动编号夹具；恢复 `tests/integration/inventory/migrations/inventory-item-balance-migration.mysql.test.ts` 在当前完整迁移链上的历史投影回填及 down/up，以合法公共入库来源准备流水，不截断迁移链规避来源约束。
 - [ ] 恢复管理端相邻 TODO 中的仓储子页办理、异常处理弹窗、批准产出完工资格、菜单路由上下文及任务创建数量／日期保护；废弃的产品默认路线与自动选路行为不作为恢复目标。
 
+## 业务人员配置与工单负责人：待验收
+
+状态：已实施，待用户验收及正式测试。Identity 维护已登记场景的角色候选配置，首期接入工单负责人。规则由 [Identity](../apps/api/src/modules/identity/docs/user-candidates.md) 和 [工单与任务](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)维护；任务负责人、工序派工及审批资格检查时点不在本次扩展范围。
+
+- [ ] 联合验收配置管理、工单候选及保存／下达资格，覆盖多角色去重、空配置、人员及角色失效、配置冲突、历史负责人展示和普通角色权限。
+- [ ] 正式测试授权后补配置与角色成员变更的并发边界、事务审计回滚、幂等重放、HTTP 鉴权与迁移上下行覆盖；应用检查和启动验证不代替这些测试。
+
 ## 工序专检与异常处理：待验收
 
 状态：已实施，待用户验收及正式测试。边界见 [ADR-0021](adr/0021-process-inspection-and-abnormal-disposition.md)，规则由 [Quality](../apps/api/src/modules/quality/README.md)与 [Production](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)维护。

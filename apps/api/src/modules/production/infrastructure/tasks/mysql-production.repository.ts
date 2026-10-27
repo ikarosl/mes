@@ -1,4 +1,7 @@
-import type { WorkOrderReleaseContext } from '../../application/ports/production.repository.js';
+import type {
+  WorkOrderReleaseContext,
+  WorkOrderUpdateContext,
+} from '../../application/ports/production.repository.js';
 import { Injectable } from '@nestjs/common';
 import type {
   CreateProductionBatchPayload,
@@ -64,6 +67,12 @@ export class MysqlProductionRepository extends ProductionRepository {
     audit: CommandContext,
   ): Promise<WorkOrderDetail> {
     return this.workOrders.update(id, payload, product, audit);
+  }
+  withWorkOrderUpdateTransaction<T>(
+    workOrderId: string,
+    action: (workOrder: WorkOrderUpdateContext) => Promise<T>,
+  ): Promise<T> {
+    return this.workOrders.withUpdateTransaction(workOrderId, action);
   }
   withWorkOrderReleaseTransaction<T>(
     workOrderId: string,

@@ -75,7 +75,7 @@ export const RECORD_CLOSEOUT_MATERIAL_LOSS_SCOPE =
   'production.closeout.material-loss.record.v1' as const;
 
 /** 服务端按北京时间日期分配不可修改的工单号。 */
-export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v4' as const;
+export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v5' as const;
 
 /** 依据当前专检结果承接部分不合格量，并原子维护专检消费下限。 */
 export const ACCEPT_PROCESS_INSPECTION_SCOPE = 'production.process-inspection.accept.v1' as const;

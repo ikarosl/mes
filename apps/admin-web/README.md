@@ -9,6 +9,7 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 - [HTTP 错误处理](docs/http-error-handling.md)：认证、重试、消息去重和已知限制。
 - [采购与入库](docs/procurement-inbound.md)、[来料检验与定稿](docs/incoming-inspection-adoption.md)、[成品质检与产出](docs/finished-inspections.md)、[工序专检与生产处理](docs/process-inspections.md)：专题前端约束。
 - [其他入出库](docs/other-inventory-orders.md)：草稿、精确库存对象、新批次组、库存候选、整单确认和未知结果保护。
+- [业务人员配置与工单负责人](docs/business-user-candidates.md)：角色配置草稿、并发核对及人员候选与历史姓名的边界。
 - [成品产出清单、复检与入库操作手册](../../docs/manuals/finished-output-inspection-inbound.md)：使用步骤和当前限制。
 
 ## 验证

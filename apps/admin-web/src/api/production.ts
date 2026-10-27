@@ -114,6 +114,7 @@ import type {
   ConfigureMaterialDemandsPayload,
   AddManualMaterialDemandsPayload,
   AddManualMaterialDemandsResult,
+  UserOption,
 } from '@company/contracts';
 import {
   IDEMPOTENCY_KEY_HEADER,
@@ -219,6 +220,13 @@ export const productionApi = {
   /** 分页查询生产工单 */
   listOrders: (params: WorkOrderQuery) =>
     request<PageResult<WorkOrderItem>>({ url: '/production/work-orders', params }),
+
+  workOrderOwnerOptions: (signal?: AbortSignal) =>
+    request<UserOption[]>({
+      url: '/production/work-orders/owner-options',
+      signal,
+      skipErrorHandling: true,
+    }),
 
   /** 任务表单工单候选：完整返回 released/doing 且仍有余量的工单，前端本地过滤 */
   workOrderOptions: () =>

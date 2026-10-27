@@ -8,6 +8,7 @@ import LoginPage from '../views/LoginPage.vue';
 import DashboardPage from '../views/DashboardPage.vue';
 import UsersPage from '../views/system/UsersPage.vue';
 import RolesPage from '../views/system/RolesPage.vue';
+import SystemUserCandidates from '../views/system/SystemUserCandidates.vue';
 import PermissionsPage from '../views/system/PermissionsPage.vue';
 import LogsPage from '../views/system/LogsPage.vue';
 import NoPermissionPage from '../views/NoPermissionPage.vue';
@@ -112,6 +113,14 @@ export const router = createRouter({
           RolesPage,
           PERMISSIONS.system.roles.view,
           'RolesPage',
+        ),
+        page(
+          'system/user-candidates',
+          'system-user-candidates',
+          '业务人员配置',
+          SystemUserCandidates,
+          PERMISSIONS.system.userCandidates.view,
+          'SystemUserCandidates',
         ),
         page(
           'system/permissions',

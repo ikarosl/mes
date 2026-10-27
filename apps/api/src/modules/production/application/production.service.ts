@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import type {
   CreateProductionBatchPayload,
   CreateWorkOrderPayload,
+  PageResult,
   ProductionBatchDetail,
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
@@ -12,7 +13,9 @@ import type {
   UpdateProductionBatchPayload,
   UpdateBatchStepExecutionPayload,
   UpdateWorkOrderPayload,
+  UserOption,
   WorkOrderDetail,
+  WorkOrderItem,
   WorkOrderQuery,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
@@ -30,6 +33,7 @@ import {
 } from '../../product/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
+import { ProductionWorkOrderOwnerService } from './production-work-order-owner.service.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
 import {
   CREATE_BATCH_IDEMPOTENCY_SCOPE,
@@ -45,14 +49,26 @@ export class ProductionService {
     private readonly products: ProductSnapshotQuery,
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
+    private readonly workOrderOwners: ProductionWorkOrderOwnerService,
     private readonly productDefinitions?: ProductProductionDefinitionCommand,
   ) {}
 
-  listWorkOrders(query: WorkOrderQuery) {
-    return this.production.listWorkOrders(query);
+  async listWorkOrders(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>> {
+    const result = await this.production.listWorkOrders(query);
+    const names = await this.resolveUserNames(result.items.map((order) => order.workOrderOwnerId));
+    return {
+      ...result,
+      items: result.items.map((order) => ({
+        ...order,
+        ownerName: order.workOrderOwnerId ? (names.get(order.workOrderOwnerId) ?? null) : null,
+      })),
+    };
   }
   listWorkOrderOptions() {
     return this.production.listWorkOrderOptions();
+  }
+  listWorkOrderOwnerOptions(): Promise<UserOption[]> {
+    return this.workOrderOwners.listOptions();
   }
   async getWorkOrder(id: string) {
     return this.enrichWorkOrder(await this.production.getWorkOrder(id));
@@ -110,7 +126,7 @@ export class ProductionService {
       request: { body },
       resultCodec: workOrderCreateResultCodec,
       handler: async () => {
-        if (body.workOrderOwnerId) await this.requireActiveUser(body.workOrderOwnerId);
+        await this.workOrderOwners.requireEligible(body.workOrderOwnerId);
         const product = this.requireProduct(
           await this.products.getProductionProduct(body.productId),
         );
@@ -122,23 +138,28 @@ export class ProductionService {
     return execution.result;
   }
   async updateWorkOrder(id: string, payload: UpdateWorkOrderPayload, audit: CommandContext) {
-    if (payload.workOrderOwnerId !== undefined)
-      await this.requireActiveUser(payload.workOrderOwnerId);
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
-    const product =
-      payload.productId === undefined
-        ? undefined
-        : this.requireProduct(await this.products.getProductionProduct(payload.productId!));
-    return this.enrichWorkOrder(
-      await this.production.updateWorkOrder(id, this.cleanVersioned(payload), product, audit),
+    const workOrder = await this.production.withWorkOrderUpdateTransaction(
+      id,
+      async ({ workOrderOwnerId }) => {
+        const ownerId =
+          payload.workOrderOwnerId === undefined ? workOrderOwnerId : payload.workOrderOwnerId;
+        await this.workOrderOwners.requireEligible(ownerId);
+        const product =
+          payload.productId === undefined
+            ? undefined
+            : this.requireProduct(await this.products.getProductionProduct(payload.productId));
+        return this.production.updateWorkOrder(id, this.cleanVersioned(payload), product, audit);
+      },
     );
+    return this.enrichWorkOrder(workOrder);
   }
   async releaseWorkOrder(id: string, version: number, audit: CommandContext) {
     const workOrder = await this.production.withWorkOrderReleaseTransaction(
       id,
       async ({ productId, workOrderOwnerId }) => {
-        // 读取锁定工单的负责人，不信任之前保存草稿时的账号校验。
-        await this.requireActiveUser(workOrderOwnerId);
+        // 读取锁定工单的负责人，重新核验当前场景配置及角色成员资格。
+        await this.workOrderOwners.requireEligible(workOrderOwnerId);
         const product = this.requireProduct(await this.products.getProductionProduct(productId));
         return this.production.releaseWorkOrder(id, version, product, audit);
       },
@@ -294,9 +315,16 @@ export class ProductionService {
     );
   }
   private async enrichWorkOrder(workOrder: WorkOrderDetail): Promise<WorkOrderDetail> {
-    const names = await this.resolveUserNames([workOrder.cancelledBy, workOrder.closedBy]);
+    const names = await this.resolveUserNames([
+      workOrder.workOrderOwnerId,
+      workOrder.cancelledBy,
+      workOrder.closedBy,
+    ]);
     return {
       ...workOrder,
+      ownerName: workOrder.workOrderOwnerId
+        ? (names.get(workOrder.workOrderOwnerId) ?? null)
+        : null,
       cancelledByName: workOrder.cancelledBy ? (names.get(workOrder.cancelledBy) ?? null) : null,
       closedByName: workOrder.closedBy ? (names.get(workOrder.closedBy) ?? null) : null,
       batches: await this.enrichBatches(workOrder.batches ?? []),

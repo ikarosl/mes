@@ -46,6 +46,8 @@ const allowedTables = new Set([
   'user_roles',
   'role_permissions',
   'refresh_tokens',
+  'user_candidate_configs',
+  'user_candidate_config_roles',
   'operation_logs',
   'http_idempotency_records',
   'technical_files',

@@ -201,7 +201,7 @@
           label="负责人"
           width="110"
         >
-          <template #default="{ row }">{{ getOwnerName(row.workOrderOwnerId) }}</template>
+          <template #default="{ row }">{{ row.ownerName || row.workOrderOwnerId || '-' }}</template>
         </el-table-column>
         <el-table-column
           label="客户名称"
@@ -333,12 +333,9 @@
       :editing-order-id="editingOrderId"
       :product-options="productSource.options.value"
       :product-options-status="productSource.status.value"
-      :user-options="userSource.options.value"
-      :user-options-status="userSource.status.value"
       :submitting="submitting"
       @update:visible="handleOrderFormDialogClose"
       @refresh-products="productSource.refresh"
-      @refresh-users="userSource.refresh"
       @save="submitOrder"
     />
 
@@ -347,7 +344,6 @@
       :visible="detailDialogVisible"
       :order="activeOrder"
       :loading="detailLoading"
-      :user-options="userSource.options.value"
       @update:visible="handleDetailDialogClose"
       @view-research-order="(id) => openDetail({ id })"
       @next-research-round="openNextResearchRound"
@@ -386,7 +382,6 @@ import { formatDateForDisplay, toDateInputValue } from '../../utils/date';
 import { deadlinePresentation } from './production-task-presentation';
 import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
 import { useProductOptions } from '../../composables/options/useProductOptions';
-import { useUserOptions } from '../../composables/options/useUserOptions';
 import { useTableActionColumn } from '../../composables/useTableActionColumn';
 import { ORDER_STATUS_META, formatQuantity, orderStatusMeta } from './production-status';
 import { useWorkOrdersList } from './composables/useWorkOrdersList';
@@ -418,14 +413,11 @@ const { tablePanel, actionColumnWidth } = useTableActionColumn(
   '.order-row-actions, .order-actions-heading',
 );
 
-/** 页面持有的候选实例：产品（筛选 + 工单弹窗）、负责人（工单/详情弹窗） */
+/** 产品筛选和工单表单共用本页的产品候选；负责人候选由工单表单独立持有。 */
 const productSource = useProductOptions();
-const userSource = useUserOptions();
 
 /** 工单产品候选：仅成品 */
 const finishedProducts = computed(() => productSource.options.value);
-const getOwnerName = (ownerId: string | null | undefined): string =>
-  userSource.options.value.find((user) => user.id === ownerId)?.displayName ?? '-';
 const formatProduct = (product: ProductOption): string =>
   `${product.itemCode} / ${product.productName}`;
 const formatWorkOrderType = (orderType: WorkOrderItem['orderType']): string =>
@@ -671,7 +663,6 @@ onActivated(() => {
   if (hasActivated) void loadOrders();
   hasActivated = true;
   void productSource.refresh();
-  void userSource.refresh();
 });
 </script>
 
