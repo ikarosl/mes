@@ -18,6 +18,7 @@
 - [成品分次入库伪结构与数据示例](finished-inbound-redesign-proposal.md)：已确认模型的职责对照、实际批号与分次入库示例；实施验证及验收由路线图维护
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
+- [到货与来料查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：采购主单或质检主单下的到货分页、按需完整明细及精确定位
 - [前端组件复用审查](frontend-component-reuse-review.md)：静态重复证据、组件／composable 边界及保留差异；仅记录，未批准实施
 - [用户提示语语义核对](user-facing-copy-review.md)：尚未完成的 DTO 业务字段映射与履约术语核对
 - [审批接入边界](approval-design.md)

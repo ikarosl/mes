@@ -1,3 +1,5 @@
+export const PROCUREMENT_RECEIPT_MAX_LINES = 100;
+
 export const SUPPLIER_RETURN_REASON_LABELS = {
   quality: '质量退回',
   excess: '超发退回',

@@ -12,14 +12,9 @@
         :title="(voidRecord ?? receipt.lines[0]?.void)?.reason"
         >{{ RECEIPT_ROUND_STATUS_LABELS.voided }}</el-tag
       >
-      <span class="document-meta"
-        >{{ quantityScope }} {{ lineCount ?? receipt.lines.length }} 条到货明细</span
-      >
+      <span class="document-meta">本单共 {{ lineCount ?? receipt.lines.length }} 条到货明细</span>
       <span class="supplier-name">供应商 {{ receipt.supplierName }}</span>
-      <slot
-        name="receipt-meta"
-        :receipt="receipt"
-      />
+      <slot name="receipt-meta" />
     </div>
     <div
       v-if="showLines"
@@ -30,9 +25,7 @@
           {{
             receipt.receiptNo
           }}
-          {{
-            quantityScope
-          }}到货明细
+          到货明细
         </caption>
         <colgroup>
           <col style="width: 90px" />
@@ -50,10 +43,19 @@
           <tr
             v-for="row in receipt.lines"
             :key="rowId(row)"
+            :data-receipt-line-id="rowId(row)"
             class="line-row"
             :class="{ highlighted: highlightedLineId === rowId(row) }"
           >
-            <td class="receipt-line-id">到货 id:{{ rowId(row) }}</td>
+            <td class="receipt-line-id">
+              到货 id:{{ rowId(row) }}
+              <el-tag
+                v-if="highlightedLineId === rowId(row)"
+                size="small"
+                effect="plain"
+                >当前定位</el-tag
+              >
+            </td>
             <td>
               <strong class="material-name">{{ row.itemName }}</strong>
               <div class="material-version">{{ row.materialVariantCode }}</div>
@@ -83,7 +85,6 @@ withDefaults(
     receipt: ReceiptWorklistReceipt<T>;
     rowId: (row: T) => string;
     highlightedLineId?: string;
-    quantityScope: string;
     lineCount?: number;
     showLines?: boolean;
     voidRecord?: ProcurementReceiptVoidItem | null;
@@ -92,7 +93,7 @@ withDefaults(
 );
 defineSlots<{
   'receipt-title'(): unknown;
-  'receipt-meta'(props: { receipt: ReceiptWorklistReceipt<T> }): unknown;
+  'receipt-meta'(): unknown;
   'material-detail'(props: { row: T }): unknown;
   'column-widths'(): unknown;
   'column-headings'(): unknown;

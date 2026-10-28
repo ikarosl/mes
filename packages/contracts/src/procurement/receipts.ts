@@ -1,4 +1,5 @@
-import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
+import type { PurchaseOrderStatus } from './purchase-orders.js';
+import type { PageQuery, PageResult, ReasonedVersionedCommand } from '../common.js';
 import type {
   QualityInboundCaseItem,
   QualityInboundInspectionInput,
@@ -48,11 +49,37 @@ export interface ReceiptRoundItem {
   createdBy: string;
   createdAt: string;
 }
-export interface ProcurementReceiptQuery extends PageQuery {
-  awaitingAcceptance?: 'yes';
+export interface ProcurementReceiptPurchaseOrderQuery extends PageQuery {
   keyword?: string;
+  awaitingAcceptance?: 'yes';
   supplierId?: string;
-  purchaseOrderId?: string;
+}
+/** 只有已登记到货的采购主单；计数不受列表关键词影响。 */
+export interface ProcurementReceiptPurchaseOrderItem {
+  id: string;
+  purchaseNo: string;
+  supplierId: string;
+  supplierName: string;
+  status: PurchaseOrderStatus;
+  receiptCount: number;
+  /** 所有未作废到货中当前待定稿的明细数。 */
+  awaitingAcceptanceCount: number;
+  createdAt: string;
+  orderedAt: string | null;
+  remark: string | null;
+}
+export interface ProcurementReceiptPurchaseOrderReceiptPage extends PageResult<ProcurementReceiptItem> {
+  purchaseOrder: ProcurementReceiptPurchaseOrderItem;
+}
+export interface ProcurementReceiptWorklistLines {
+  receipt: ProcurementReceiptItem;
+  /** 单张到货完整轻量行，最多 100 条；不受父列表筛选影响。 */
+  items: ProcurementReceiptLineListItem[];
+}
+export interface ProcurementReceiptLineLocation {
+  purchaseOrderId: string;
+  receiptId: string;
+  receiptLineId: string;
 }
 export interface ProcurementReceiptItem {
   void: ProcurementReceiptVoidItem | null;
@@ -205,10 +232,7 @@ export interface ProcurementReceiptLineIndexItem extends Pick<
 export interface ProcurementReceiptListSource {
   void: ProcurementReceiptVoidItem | null;
   receiptId: string;
-  receiptNo: string;
   purchaseOrderId: string;
-  purchaseNo: string;
-  supplierName: string;
   itemName: string;
   materialVariantCode: string;
   unit: string;
@@ -219,9 +243,7 @@ export interface ProcurementReceiptLineListItem
     Pick<
       ProcurementReceiptLineOverview,
       'id' | 'supplierBatchCode' | 'currentRound' | 'quantities'
-    > {
-  receivedAt: string;
-}
+    > {}
 /** 质检详情及录入核对；不携带仓库分配、执行明细或历史预览。 */
 export interface ProcurementInboundInspectionDetail extends Pick<
   ProcurementReceiptLineOverview,

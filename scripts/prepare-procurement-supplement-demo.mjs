@@ -184,7 +184,7 @@ async function original(client, config, refs, scenario, plannedQuantity, message
         itemId: refs.itemId,
         materialVariantId: refs.materialVariantId,
         plannedQuantity,
-        taxExclusiveAmount: '原采购整行总额待约定',
+        taxExclusiveAmount: '原采购无税单价待约定',
         taxInclusiveAmount: null,
         demandIds: [],
       },
@@ -588,16 +588,20 @@ function orderSummary(order) {
 
 async function buildReport(client, config) {
   const matching = await markedOrders(client, config.marker);
+  const receiptPurchaseOrderIds = new Set(
+    (await allPages(client, '/procurement/receipt-purchase-orders'))
+      .filter((order) => order.remark?.includes(config.marker))
+      .map((order) => order.id),
+  );
   const orders = [];
   const receipts = [];
   const candidates = [];
   for (const row of matching) {
     const order = await getOrder(client, row.id);
     orders.push(orderSummary(order));
-    const registrations = await allPages(
-      client,
-      `/procurement/receipts?purchaseOrderId=${order.id}`,
-    );
+    const registrations = receiptPurchaseOrderIds.has(order.id)
+      ? await allPages(client, `/procurement/receipt-purchase-orders/${order.id}/receipts`)
+      : [];
     for (const registration of registrations) {
       const detail = await client.request(`/procurement/receipts/${registration.id}`);
       const lines = [];

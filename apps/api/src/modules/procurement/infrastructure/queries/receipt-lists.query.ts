@@ -1,9 +1,6 @@
 import { allocationRemaining } from './receipt-allocation.query.js';
 import type {
   PageResult,
-  ProcurementReceiptQuery,
-  ProcurementReceiptItem,
-  ProcurementReceiptLineListItem,
   ProcurementInboundReleaseQuery,
   ProcurementInboundReleaseItem,
 } from '@company/contracts';
@@ -11,40 +8,16 @@ import type { MaterialVariantQuery } from '../../../product/public.js';
 import type { Db } from '../mysql-purchase-order.shared.js';
 import {
   type ReadRow,
-  RECEIPT_COLUMNS,
   RECEIPT_LINE_FROM,
-  receiptSelect,
-  lineSelect,
-  readCurrentRounds,
   LINE_COLUMNS,
-  RECEIPT_LIST_SOURCE_COLUMNS,
-  RECEIPT_LINE_LIST_ORDER,
-  mapReceiptListSource,
-  mapReceipt,
-  mapRound,
   pageInput,
   slots,
   text,
   nullableText,
   date,
 } from './receipt-read.shared.js';
-import { readReceiptQuantitySummaries } from './receipt-quantities.query.js';
 
-const RECEIPT_KEYWORD_LINE_SELECT = `SELECT 1 FROM procurement_receipt_line search_line
-  JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id
-  JOIN procurement_order search_order ON search_order.id=search_order_line.purchase_order_id
-  JOIN procurement_supplier search_supplier ON search_supplier.id=search_order.supplier_id
-  JOIN materials search_material ON search_material.id=search_line.item_id
-  WHERE search_line.receipt_id=r.id AND (
-    search_supplier.supplier_name LIKE ? OR search_material.material_name LIKE ?
-    OR search_order_line.item_code_snapshot LIKE ?
-    OR search_order_line.material_variant_code_snapshot LIKE ?
-  )`;
-
-function filters(
-  query: { keyword?: string; supplierId?: string; purchaseOrderId?: string },
-  line = false,
-) {
+function filters(query: { keyword?: string; supplierId?: string; purchaseOrderId?: string }) {
   const where = ['1=1'];
   const params: Array<string | number> = [];
   if (query.supplierId) {
@@ -56,91 +29,13 @@ function filters(
     params.push(query.purchaseOrderId);
   }
   if (query.keyword?.trim()) {
-    if (line)
-      where.push(
-        '(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ? OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?)',
-      );
-    else
-      where.push(
-        `(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR EXISTS(${RECEIPT_KEYWORD_LINE_SELECT}))`,
-      );
+    where.push(
+      '(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ? OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?)',
+    );
     params.push(...Array<string>(6).fill(`%${query.keyword.trim()}%`));
   }
   return { where, params };
 }
-export async function listReceipts(
-  db: Db,
-  query: ProcurementReceiptQuery,
-): Promise<PageResult<ProcurementReceiptItem>> {
-  const { where, params } = filters(query);
-  if (query.awaitingAcceptance === 'yes')
-    where.push(
-      'r.is_voided=0',
-      "EXISTS(SELECT 1 FROM procurement_receipt_line pending_line JOIN procurement_receipt_round pending_round ON pending_round.id=pending_line.current_round_id WHERE pending_line.receipt_id=r.id AND pending_round.status='awaiting_acceptance')",
-    );
-  const { page, pageSize } = pageInput(query);
-  const [[count]] = await db.query<ReadRow[]>(
-    `${receiptSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
-    params,
-  );
-  const [rows] = await db.query<ReadRow[]>(
-    `${receiptSelect(RECEIPT_COLUMNS)}
-    WHERE ${where.join(' AND ')} ORDER BY r.received_at DESC,r.id DESC LIMIT ? OFFSET ?`,
-    [...params, pageSize, (page - 1) * pageSize],
-  );
-  return {
-    items: rows.map(mapReceipt),
-    total: Number(count?.total ?? 0),
-    page,
-    pageSize,
-  };
-}
-
-export async function listReceiptLines(
-  db: Db,
-  query: ProcurementReceiptQuery,
-): Promise<PageResult<ProcurementReceiptLineListItem>> {
-  const { where, params } = filters(query, true);
-  if (query.awaitingAcceptance === 'yes')
-    where.push(
-      'r.is_voided=0',
-      "EXISTS(SELECT 1 FROM procurement_receipt_round pending_round WHERE pending_round.id=line.current_round_id AND pending_round.status='awaiting_acceptance')",
-    );
-  const { page, pageSize } = pageInput(query);
-  const [[count]] = await db.query<ReadRow[]>(
-    `${lineSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
-    params,
-  );
-  const [rows] = await db.query<ReadRow[]>(
-    `${lineSelect(RECEIPT_LIST_SOURCE_COLUMNS + ',line.id,line.supplier_batch_code,r.received_at')}
-    WHERE ${where.join(' AND ')}
-    ORDER BY ${RECEIPT_LINE_LIST_ORDER} LIMIT ? OFFSET ?`,
-    [...params, pageSize, (page - 1) * pageSize],
-  );
-  const ids = rows.map((row) => text(row.id));
-  const currentRounds = await readCurrentRounds(db, ids);
-  const quantities = await readReceiptQuantitySummaries(db, ids, currentRounds);
-  return {
-    items: rows.map((row) => {
-      const id = text(row.id);
-      const currentRound = currentRounds.get(id);
-      const summary = quantities.get(id);
-      if (!currentRound || !summary) throw new Error('到货明细缺少当前轮次或数量投影');
-      return {
-        ...mapReceiptListSource(row),
-        id,
-        supplierBatchCode: nullableText(row.supplier_batch_code),
-        receivedAt: date(row.received_at),
-        currentRound: mapRound(currentRound),
-        quantities: summary,
-      };
-    }),
-    total: Number(count?.total ?? 0),
-    page,
-    pageSize,
-  };
-}
-
 export async function listInboundReleases(
   db: Db,
   variants: MaterialVariantQuery,
@@ -158,7 +53,7 @@ export async function listInboundReleases(
     materialIds: materials.map((r) => text(r.item_id)),
   });
   if (!eligible.length) return empty;
-  const selectedFilters = filters(query, true);
+  const selectedFilters = filters(query);
   const where = selectedFilters.where;
   const params = selectedFilters.params;
   where.push(

@@ -57,7 +57,7 @@
 | item_id / material_variant_id | ID | FK materials(id)；组合 FK material_variants(id,material_id) |
 | item_code_snapshot / material_variant_code_snapshot / unit_snapshot | VARCHAR(100)／VARCHAR(180)／VARCHAR(20) | 身份编码及单位快照 |
 | planned_quantity | INT，CHECK 1..99999999 | 本行独立计划采购量，不分摊需求 |
-| tax_exclusive_amount / tax_inclusive_amount | VARCHAR(100) NULL | 无税金额／含税金额，均为手填整行总金额文本 |
+| tax_exclusive_amount / tax_inclusive_amount | VARCHAR(100) NULL | 无税金额／含税金额，均为按采购单位手填的单价文本 |
 | status | VARCHAR(30) DEFAULT draft，CHECK draft／open／closed／cancelled | 本行采购跟进状态 |
 | origin_order_line_id | ID NULL，自 FK | 补单原采购行 |
 | origin_receipt_line_id | ID NULL | 与原采购行组合 FK procurement_receipt_line(id,purchase_order_line_id) |
@@ -67,7 +67,7 @@
 
 唯一键为 `(purchase_order_id,line_no)`、`(purchase_order_id,item_id,material_variant_id)`、`(id,purchase_order_id)`、`(id,item_id,material_variant_id)`；业务索引为 `(origin_order_line_id,id)`。CHECK 要求两个 origin ID 同时空或同时非空，原采购行与 supplement_evidence 同时空或同时非空且说明有效；existing_receipt 必须有两个原来源。补因决定履约方式的跨表关系仍由命令核验，不能只由本行 CHECK 证明。
 
-两项金额由应用 trim，省略、null 或空文本统一为 NULL，不解析数值或参与计算。它们不是数量或库存成本字段，正式下单后与计划一起冻结；补单只保存此次输入，缺省为 NULL，不复制原行金额。`trg_procurement_order_line_amounts_frozen` 以逐字节、NULL 安全比较拒绝非草稿行、非草稿根或曾下单根的金额变化；现有身份、来源和计划冻结继续由命令锁内核验。完整输入语义由[采购订单](purchase-orders.md#明细整行总金额)维护。
+两项金额由应用 trim，省略、null 或空文本统一为 NULL，不解析数值或参与计算。它们不是数量或库存成本字段，正式下单后与计划一起冻结；补单只保存此次输入，缺省为 NULL，不复制原行金额。`trg_procurement_order_line_amounts_frozen` 以逐字节、NULL 安全比较拒绝非草稿行、非草稿根或曾下单根的金额变化；现有身份、来源和计划冻结继续由命令锁内核验。完整输入语义由[采购订单](purchase-orders.md#明细采购单位单价)维护。
 
 ### procurement_order_line_source
 

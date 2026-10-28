@@ -25,7 +25,7 @@ import {
 import { ProcurementDomainExceptionFilter } from './procurement-domain-exception.filter.js';
 import { PurchaseOrderIdDto, PurchaseOrderQueryDto } from './purchase-order.dto.js';
 import {
-  ReceiptListQueryDto,
+  ReceiptPurchaseOrdersQueryDto,
   ReceiptReleaseQueryDto,
   ReceiptHistoryPathDto,
   ConfirmProcurementReceiptDto,
@@ -47,15 +47,30 @@ export class ProcurementReceiptController {
     private readonly query: ProcurementReceiptQuery,
     private readonly service: ReceiptService,
   ) {}
-  @Get('receipts')
+  @Get('receipt-purchase-orders')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  list(@Query() query: ReceiptListQueryDto) {
-    return this.query.listReceipts(query);
+  listPurchaseOrders(@Query() query: ReceiptPurchaseOrdersQueryDto) {
+    return this.query.listReceiptPurchaseOrders(query);
   }
-  @Get('receipt-lines')
+  @Get('receipt-purchase-orders/:id')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  listLines(@Query() query: ReceiptListQueryDto) {
-    return this.query.listReceiptLines(query);
+  purchaseOrder(@Param() { id }: PurchaseOrderIdDto) {
+    return this.query.getReceiptPurchaseOrder(id);
+  }
+  @Get('receipt-purchase-orders/:id/receipts')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
+  purchaseOrderReceipts(@Param() { id }: PurchaseOrderIdDto, @Query() query: PageQueryDto) {
+    return this.query.listPurchaseOrderReceipts(id, query);
+  }
+  @Get('receipts/:id/worklist-lines')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
+  worklistLines(@Param() { id }: PurchaseOrderIdDto) {
+    return this.query.receiptWorklistLines(id);
+  }
+  @Get('receipt-lines/:id/location')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
+  locateLine(@Param() { id }: PurchaseOrderIdDto) {
+    return this.query.locateReceiptLine(id);
   }
   @Get('receipts/:id')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)

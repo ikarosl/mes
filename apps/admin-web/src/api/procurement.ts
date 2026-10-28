@@ -34,8 +34,11 @@ import type {
   ProcurementDemandResolution,
   RelatedPurchasesQuery,
   RelatedPurchasesResult,
-  ProcurementReceiptQuery,
-  ProcurementReceiptLineListItem,
+  ProcurementReceiptPurchaseOrderQuery,
+  ProcurementReceiptPurchaseOrderItem,
+  ProcurementReceiptPurchaseOrderReceiptPage,
+  ProcurementReceiptWorklistLines,
+  ProcurementReceiptLineLocation,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
   ProcurementReceiptAcceptanceContext,
@@ -122,11 +125,39 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
-  listReceiptLines: (
-    params: ProcurementReceiptQuery,
+  listReceiptPurchaseOrders: (
+    params: ProcurementReceiptPurchaseOrderQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ProcurementReceiptLineListItem>> =>
-    request({ url: '/procurement/receipt-lines', params, signal, skipErrorHandling: true }),
+  ): Promise<PageResult<ProcurementReceiptPurchaseOrderItem>> =>
+    request({
+      url: '/procurement/receipt-purchase-orders',
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
+  getReceiptPurchaseOrder: (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ProcurementReceiptPurchaseOrderItem> =>
+    request({ url: `/procurement/receipt-purchase-orders/${id}`, signal, skipErrorHandling: true }),
+  listPurchaseOrderReceipts: (
+    id: string,
+    params: PageQuery,
+    signal?: AbortSignal,
+  ): Promise<ProcurementReceiptPurchaseOrderReceiptPage> =>
+    request({
+      url: `/procurement/receipt-purchase-orders/${id}/receipts`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
+  receiptWorklistLines: (
+    id: string,
+    signal?: AbortSignal,
+  ): Promise<ProcurementReceiptWorklistLines> =>
+    request({ url: `/procurement/receipts/${id}/worklist-lines`, signal, skipErrorHandling: true }),
+  locateReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLineLocation> =>
+    request({ url: `/procurement/receipt-lines/${id}/location`, signal, skipErrorHandling: true }),
   getReceipt: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptDetail> =>
     request({ url: `/procurement/receipts/${id}`, signal, skipErrorHandling: true }),
   getReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>

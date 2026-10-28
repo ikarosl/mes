@@ -3,7 +3,7 @@ import { withTransaction } from '@company/database';
 import type { Pool } from 'mysql2/promise';
 import type {
   PageQuery,
-  ProcurementReceiptQuery as ReceiptListQuery,
+  ProcurementReceiptPurchaseOrderQuery,
   ProcurementInboundReleaseQuery,
   ReceiptHistoryKind,
   PurchaseOrderQuery,
@@ -20,7 +20,7 @@ import { ProcurementDomainError } from '../domain/procurement.errors.js';
 import { receiptVoidBlockedReason } from '../domain/receipt-void.policy.js';
 import { readReceiptDependentPurchases } from './mysql-receipt-void.shared.js';
 import {
-  readReceiptVoidingHeader,
+  readReceiptSummary,
   readReceiptHeader,
   readReceiptLine,
   readReceiptLineIndex,
@@ -31,11 +31,14 @@ import {
   readInspectionCase,
   readInspectionReceiptLine,
 } from './queries/receipt-inspection-detail.query.js';
+import { listInboundReleases } from './queries/receipt-lists.query.js';
 import {
-  listReceipts,
-  listReceiptLines,
-  listInboundReleases,
-} from './queries/receipt-lists.query.js';
+  listReceiptPurchaseOrders,
+  readReceiptPurchaseOrder,
+  listPurchaseOrderReceipts,
+  readReceiptWorklistLines,
+  locateReceiptLine,
+} from './queries/receipt-purchase-orders.query.js';
 import { readReceiptHistory } from './queries/receipt-history.query.js';
 import { listReceiptOrderOptions, getPurchaseOrder } from './queries/purchase-order.query.js';
 import { type ReadRow, pageInput } from './queries/receipt-read.shared.js';
@@ -49,11 +52,20 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   ) {
     super();
   }
-  listReceipts(query: ReceiptListQuery) {
-    return withTransaction(this.pool, (db) => listReceipts(db, query));
+  listReceiptPurchaseOrders(query: ProcurementReceiptPurchaseOrderQuery) {
+    return withTransaction(this.pool, (db) => listReceiptPurchaseOrders(db, query));
   }
-  listReceiptLines(query: ReceiptListQuery) {
-    return withTransaction(this.pool, (db) => listReceiptLines(db, query));
+  getReceiptPurchaseOrder(id: string) {
+    return withTransaction(this.pool, (db) => readReceiptPurchaseOrder(db, id));
+  }
+  listPurchaseOrderReceipts(id: string, query: PageQuery) {
+    return withTransaction(this.pool, (db) => listPurchaseOrderReceipts(db, id, query));
+  }
+  receiptWorklistLines(id: string) {
+    return withTransaction(this.pool, (db) => readReceiptWorklistLines(db, id));
+  }
+  locateReceiptLine(id: string) {
+    return withTransaction(this.pool, (db) => locateReceiptLine(db, id));
   }
   getReceipt(id: string): Promise<ProcurementReceiptDetail> {
     return withTransaction(this.pool, async (db) => {
@@ -63,7 +75,7 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   }
   getReceiptVoiding(id: string): Promise<ProcurementReceiptVoidingDetail> {
     return withTransaction(this.pool, async (db) => {
-      const receipt = await readReceiptVoidingHeader(db, id);
+      const receipt = await readReceiptSummary(db, id);
       const items = await readReceiptLineOverviews(db, id);
       const blockedReason = receiptVoidBlockedReason({
         isVoided: receipt.void !== null,

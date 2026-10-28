@@ -206,14 +206,14 @@
                   <el-input
                     v-model="draft.taxExclusiveAmount"
                     :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
-                    placeholder="本次明细整行总额（选填）"
+                    placeholder="按采购单位填写单价（选填）"
                   />
                 </el-form-item>
                 <el-form-item label="含税金额">
                   <el-input
                     v-model="draft.taxInclusiveAmount"
                     :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
-                    placeholder="本次明细整行总额（选填）"
+                    placeholder="按采购单位填写单价（选填）"
                   />
                 </el-form-item>
                 <el-form-item

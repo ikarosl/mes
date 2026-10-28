@@ -363,11 +363,17 @@ async function report(client, config) {
   const purchases = (await allPages(client, '/procurement/purchase-orders')).filter((row) =>
     row.remark?.includes(config.marker),
   );
+  const receiptPurchaseOrderIds = new Set(
+    (await allPages(client, '/procurement/receipt-purchase-orders'))
+      .filter((order) => order.remark?.includes(config.marker))
+      .map((order) => order.id),
+  );
   const receipts = [];
   for (const purchase of purchases)
-    receipts.push(
-      ...(await allPages(client, `/procurement/receipts?purchaseOrderId=${purchase.id}`)),
-    );
+    if (receiptPurchaseOrderIds.has(purchase.id))
+      receipts.push(
+        ...(await allPages(client, `/procurement/receipt-purchase-orders/${purchase.id}/receipts`)),
+      );
   const summaries = [];
   for (const group of groups) {
     const page = await client.request(`${groupPath}/${group.id}/receipts?page=1&pageSize=10`);

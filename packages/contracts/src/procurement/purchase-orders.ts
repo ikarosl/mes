@@ -108,7 +108,9 @@ export interface PurchaseOrderLineSource {
 }
 export interface PurchaseOrderLine {
   fulfillmentMode: PurchaseFulfillmentMode;
+  /** 按采购单位记录的无税单价文本，仅展示、不参与计算。 */
   taxExclusiveAmount: string | null;
+  /** 按采购单位记录的含税单价文本，仅展示、不参与计算。 */
   taxInclusiveAmount: string | null;
   id: string;
   lineNo: number;
@@ -135,7 +137,9 @@ export interface PurchaseOrderDetail extends PurchaseOrderItem {
   items: PurchaseOrderLine[];
 }
 export interface PurchaseOrderDraftLine {
+  /** 按采购单位记录的无税单价文本，未填写时为空，不参与计算。 */
   taxExclusiveAmount?: string | null;
+  /** 按采购单位记录的含税单价文本，未填写时为空，不参与计算。 */
   taxInclusiveAmount?: string | null;
   itemId: string;
   materialVariantId: string;
@@ -157,7 +161,9 @@ export type ClosePurchaseOrderLinePayload = ReasonedVersionedCommand;
 export type ReopenPurchaseOrderLinePayload = ReasonedVersionedCommand;
 /** 同一原采购单、同一补因；各行独立保留原采购行、真实到货及补购说明。 */
 export interface CreatePurchaseOrderSupplementLinePayload {
+  /** 按采购单位记录的无税单价文本，未填写时为空，不参与计算。 */
   taxExclusiveAmount?: string | null;
+  /** 按采购单位记录的含税单价文本，未填写时为空，不参与计算。 */
   taxInclusiveAmount?: string | null;
   originOrderLineId: string;
   originReceiptLineId: string;

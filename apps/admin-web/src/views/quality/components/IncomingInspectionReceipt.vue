@@ -6,7 +6,6 @@
   >
     <ReceiptWorklistReceiptGroup
       :receipt="{
-        receiptId: receipt.receiptId,
         receiptNo: receipt.receiptNo,
         supplierName: receipt.supplierName,
         lines: state?.items ?? [],
@@ -16,7 +15,6 @@
       :line-count="receipt.lineCount"
       :void-record="receipt.void"
       :show-lines="expanded && Boolean(state?.loaded) && !state?.error"
-      quantity-scope="本单共"
     >
       <template #receipt-title>
         <button

@@ -1,5 +1,6 @@
 -- Procurement state samples only. No receipt, quality, allocation or inventory facts are fabricated.
 -- Only missing remark markers are inserted; reruns preserve samples that retain their leading marker.
+-- Amount texts record unit prices for the purchase unit; long digits and trailing zeros remain unchanged.
 SET @purchase_status_demo_actor = (
   SELECT id FROM users WHERE username='admin' AND deleted_at IS NULL LIMIT 1
 );

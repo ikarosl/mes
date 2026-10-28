@@ -22,6 +22,7 @@ import {
 } from 'class-validator';
 import {
   PURCHASE_ORDER_MAX_QUANTITY,
+  PROCUREMENT_RECEIPT_MAX_LINES,
   QUALITY_INBOUND_METHODS,
   QUALITY_RELEASE_DECISIONS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
@@ -48,11 +49,11 @@ class ReceiptSourceQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(ID) supplierId?: string;
 }
-export class ReceiptListQueryDto extends ReceiptSourceQueryDto {
+export class ReceiptPurchaseOrdersQueryDto extends ReceiptSourceQueryDto {
   @IsOptional() @IsIn(['yes']) awaitingAcceptance?: 'yes';
-  @IsOptional() @Matches(ID) purchaseOrderId?: string;
 }
-export class ReceiptReleaseQueryDto extends ReceiptListQueryDto {
+export class ReceiptReleaseQueryDto extends ReceiptSourceQueryDto {
+  @IsOptional() @Matches(ID) purchaseOrderId?: string;
   @IsOptional() @Matches(ID) receiptLineId?: string;
   @IsOptional()
   @Transform(csv)
@@ -80,7 +81,7 @@ export class ConfirmProcurementReceiptDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(100)
+  @ArrayMaxSize(PROCUREMENT_RECEIPT_MAX_LINES)
   @ValidateNested({ each: true })
   @Type(() => ConfirmReceiptDetailDto)
   details!: ConfirmReceiptDetailDto[];
@@ -96,7 +97,7 @@ export class VoidProcurementReceiptDto extends PurchaseOrderVersionDto {
   @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
   @IsArray()
   @ArrayMinSize(1)
-  @ArrayMaxSize(100)
+  @ArrayMaxSize(PROCUREMENT_RECEIPT_MAX_LINES)
   @ArrayUnique((line: ReceiptVoidLineVersionDto) => line.receiptLineId)
   @ValidateNested({ each: true })
   @Type(() => ReceiptVoidLineVersionDto)

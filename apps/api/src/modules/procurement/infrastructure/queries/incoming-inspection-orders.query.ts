@@ -1,4 +1,4 @@
-import { QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS } from '@company/constants';
+import { PROCUREMENT_RECEIPT_MAX_LINES } from '@company/constants';
 import type {
   PageQuery,
   PageResult,
@@ -174,9 +174,9 @@ export async function readIncomingInspectionReceiptLines(
   if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
   const [lineRows] = await db.query<ReadRow[]>(
     'SELECT id FROM procurement_receipt_line WHERE receipt_id=? ORDER BY line_no,id LIMIT ?',
-    [receiptId, QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS + 1],
+    [receiptId, PROCUREMENT_RECEIPT_MAX_LINES + 1],
   );
-  if (lineRows.length > QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS)
+  if (lineRows.length > PROCUREMENT_RECEIPT_MAX_LINES)
     throw new QualityCommandError('INVALID_STATE', '到货明细超过单据读取上限，请联系管理员核对');
   const ids = lineRows.map((line) => text(line.id));
   const lines = await readInspectionWorklistRows(db, ids);

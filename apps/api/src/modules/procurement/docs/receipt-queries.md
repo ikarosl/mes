@@ -6,10 +6,13 @@
 
 | GET路径（省略/api） | 权限 | 内容 |
 | --- | --- | --- |
-| /procurement/receipts | warehouse:receipts:view | 主单分页 |
+| /procurement/receipt-purchase-orders | warehouse:receipts:view | 有到货的采购主单分页，筛选及完整计数见[分层查询](#采购到货分层查询) |
+| /procurement/receipt-purchase-orders/:id | warehouse:receipts:view | 精确采购主单头，供页外定位及刷新 |
+| /procurement/receipt-purchase-orders/:id/receipts | warehouse:receipts:view | 指定采购单的完整到货范围分页，附当前 purchaseOrder 头 |
+| /procurement/receipts/:id/worklist-lines | warehouse:receipts:view | 单张到货头和完整轻量处置行，最多 100 行 |
 | /procurement/receipts/:id | warehouse:receipts:view | 主单登记信息和完整明细目录，用于到货工作台选行 |
 | /procurement/receipts/:id/voiding | warehouse:receipts:view | 整单作废弹窗的完整行集合、版本及资格预览 |
-| /procurement/receipt-lines | warehouse:receipts:view | 跨主单到货行分页，返回当前轮次与数量摘要 |
+| /procurement/receipt-lines/:id/location | warehouse:receipts:view | 精确解析真实采购主单、到货主单及明细 ID，不扫描列表页 |
 | /procurement/receipt-lines/:id | warehouse:receipts:view | 当前选中明细的来源、数量、当前轮及有效分配，用于到货处置与提交前核对 |
 | /procurement/receipt-lines/:id/acceptance-context | warehouse:receipts:view | 定稿弹窗的当前明细、明确引用的检验及来源轮号、同检验执行量和采购默认拆分参考 |
 | /procurement/receipt-order-options[/:id] | warehouse:receipts:view | 到货页登记使用的已下单采购候选和候选详情，不要求采购管理页权限 |
@@ -24,19 +27,31 @@
 
 到货登记与处置使用仓储到货查看权限，URL 和事实所有者保持 Procurement。来料质检使用专用来源详情与检验权限；采购订单详情、入库或质检页面的导航分别按目标页面授权，不因显示来源单号隐式授予完整采购、仓储或 Quality 能力。权限目录及 any-of 规则见 [Identity](../../identity/docs/database.md#14-permissions)。
 
-分页默认10、上限100，批量ID最多100且不重复。所有筛选在窗口截取前执行，排序含稳定ID。供应商按来源采购行所属主单关联；到货主单列表、详情及作废预览返回唯一 supplierId/supplierName，不返回供应商集合。供应商筛选直接限定采购主单，详情仍展示该到货全部明细。
+分页默认10、上限100，批量ID最多100且不重复。所有筛选在窗口截取前执行，排序含稳定ID。供应商按来源采购行所属主单关联；采购及到货头、详情及作废预览返回唯一 supplierId/supplierName，不返回供应商集合。供应商筛选直接限定采购主单，详情仍展示该到货全部明细。
 
 `/procurement/receipt-order-options` 返回 `PageResult<ProcurementReceiptOrderOption>`，只包含已下单且仍有进行中新到货行的采购单；候选直接包含主单 supplierId/supplierName，候选详情保留完整采购行，不附供应商集合或逐单请求补齐名称。主单契约见[采购订单](purchase-orders.md#主单供应商与单工单来源)。
 
-`/procurement/receipts` 的 `items` 和 `total` 始终以到货主单计数；`/procurement/receipt-lines` 的 `items` 和 `total` 始终以到货行计数。两个列表共用 `ReceiptListQueryDto`：`page`、`pageSize`、`keyword`、`awaitingAcceptance=yes`、`purchaseOrderId` 和 `supplierId`。供应商筛选使用来源采购主单，主单待定稿筛选以存在匹配行判断，不把多个匹配行扩成多张主单；行待定稿筛选只匹配该行当前轮状态。`keyword` 匹配到货单号、采购单号、主单供应商、当前物料名、采购行物料编码和精确版本编码；主单通过明细 `EXISTS` 命中物料，`total` 仍不重复。筛选先于分页；行列表按到货时间降序、主单 ID 降序、行号升序、行 ID 升序稳定排序。
+## 采购到货分层查询
 
-行列表返回 `PageResult<ProcurementReceiptLineListItem>`。每条只含行及主单身份、物料与供应商展示字段、完整 `currentRound`、完整 `quantities`；不装载 `rounds`、`cases`、`allocations` 等历史或详情数组。单行详情及作废预览的 `purchaseOrderLineNo` 取登记来源 `procurement_order_line.line_no`；`purchaseOrderLineId` 保留为定位采购行的 ID。到货明细只以 `id`／`receiptLineId` 公开识别；到货列表／详情、来料列表／详情、补单候选和入库候选不查询、映射或返回到货 `lineNo`／`receiptLineNo`。数据库 `procurement_receipt_line.line_no` 仍保存登记顺序并用于到货列表和整单详情的稳定排序，不作为公开定位字段。列表只返回实际展示、分组及操作定位需要的字段，不返回基础物料编码、采购行 ID／行号、物料／精确版本 ID 或供应商 ID；基础编码仍参与服务端关键词匹配。当前页批量读取轮次、修订、当前正式分配和实际入退事实，数量口径与详情共用同一投影；需要完整来源或历史时按行 ID 读取详情及独立历史分页。
+工作列表按“采购主单分页 → 所属到货分页 → 单张到货完整轻量行”读取。两层分页分别默认 10、最大 100，`total` 分别计采购主单及指定采购单的到货数，不计物料行；第三层完整有界，不另设行分页或行 total。父摘要按当前页父 ID 批量聚合，子目录只装载当前到货页，不预读全部子项再分页。传输契约统一见 [receipts.ts](../../../../../../packages/contracts/src/procurement/receipts.ts)，仓库和质检分别使用自己的场景入口。
 
-到货主单列表及作废预览返回主单 `version`；主单、到货行列表及来源详情返回 `void: {reason,createdBy,createdAt}|null`，从主表 `is_voided` 及 `void_reason/voided_by/voided_at` 映射，没有独立作废记录 ID。一般到货列表保留作废登记及其终止轮；待定稿筛选不包含作废行。`/:id/voiding` 独立返回 `ProcurementReceiptVoidingDetail`，包含主单、完整行概况及 `voiding: {canVoid,blockedReason,lines:[{receiptLineId,version,roundId,roundVersion}]}`；`items` 和 `voiding.lines` 始终为同一主单完整集合，不受其他列表分页影响。预览读取同一快照下的主单版本、真实入退和非 cancelled 补单来源引用，不装载分配明细、检验、采购行指标或历史。所有状态下的作废资格均按[到货所有者规则](receipts.md#整单到货登记作废)核验，命令再在锁内检查主单版本、全单集合及行／轮版本，不以预览替代写入校验。
+`GET /procurement/receipt-purchase-orders` 接受 `keyword/awaitingAcceptance=yes/supplierId/page/pageSize`，返回 `PageResult<ProcurementReceiptPurchaseOrderItem>`，仅列至少有一张到货的采购单，包含已有作废到货的采购单。按采购创建时间及 ID 倒序分页；头部 `receiptCount` 为本采购单全部到货数，`awaitingAcceptanceCount` 为全部未作废到货中当前待定稿明细数，两项完整计数不随关键词或当前页裁剪。
+
+父筛选在 count 与分页前，以同一真实到货明细的 `EXISTS` 同时核对 keyword、待定稿及供应商条件，不将不同来源各自命中拼成一次匹配，也不重复父单。供应商取采购主单；keyword 覆盖采购单号、到货单号、供应商和物料名称／编码／精确版本。待定稿要求未作废来源的当前轮处于待定稿，不以历史检查或旧轮授权推断。
+
+`GET /procurement/receipt-purchase-orders/:id/receipts` 只接受公共分页，返回 `ProcurementReceiptPurchaseOrderReceiptPage={purchaseOrder,...PageResult<ProcurementReceiptItem>}`。它在真实父 ID 的全部到货范围内按到货时间及 ID 倒序分页，包含作废来源，不继承父列表的关键词、供应商或待定稿筛选；各张到货的完整行数及待定稿数也不按父命中行裁剪。精确主单头与子页中的 `purchaseOrder` 使用同一头部契约；不存在或尚无到货的采购主单返回 `404 RECEIPT_NOT_FOUND`。
+
+`GET /procurement/receipts/:id/worklist-lines` 返回 `ProcurementReceiptWorklistLines={receipt,items}`。items 为该张到货完整的 `ProcurementReceiptLineListItem[]`，按登记顺序和 ID 稳定读取，最多 100 行；包含已处理完和作废来源，不按父筛选再次裁掉物料。超过单据上限返回 `409 RECEIPT_STATE`，不能截取前 100 行冒充完整到货。每条只含明细及归属 ID、物料／精确版本／单位、供应商批号、完整 `currentRound` 和 `quantities`，不装载历史数组、检验事实、分配详情或逐笔入退明细。数量与单行详情共用投影，批量聚合限定于本次到货行集合，不逐行请求完整详情。
+
+`GET /procurement/receipt-lines/:id/location` 返回 `{purchaseOrderId,receiptId,receiptLineId}`，沿真实来源精确解析，不受当前列表条件或分页窗口影响，不存在返回 `404 RECEIPT_NOT_FOUND`。宿主可据此读取精确父头和单张到货，在页外独立展示；不扫描全部父页或子页，也不把定位对象计入分页 total。各层组合读取分别保持自身同一只读快照，独立请求不承诺同一时点；提交资格仍由详情及命令锁内复核。
+
+单行详情及作废预览的 `purchaseOrderLineNo` 取登记来源 `procurement_order_line.line_no`；`purchaseOrderLineId` 保留为采购行定位 ID。到货明细只以 `id`／`receiptLineId` 公开识别；到货、来料、补单及入库候选不返回到货 `lineNo`／`receiptLineNo`。数据库 `procurement_receipt_line.line_no` 保存登记顺序用于稳定排序，不作为公开定位字段。轻量行只返回展示及操作定位字段，不返回基础物料编码、采购行 ID／行号、物料／精确版本 ID 或供应商 ID；基础编码仍参与服务端关键词匹配，完整来源与历史按真实行 ID 独立读取。
+
+到货头及作废预览返回主单 `version`；主单、轻量行及来源详情返回 `void: {reason,createdBy,createdAt}|null`，从主表 `is_voided` 及 `void_reason/voided_by/voided_at` 映射，没有独立作废记录 ID。到货目录保留作废登记及其终止轮；父待定稿筛选不由作废行命中。`/:id/voiding` 独立返回 `ProcurementReceiptVoidingDetail`，包含主单、完整行概况及 `voiding: {canVoid,blockedReason,lines:[{receiptLineId,version,roundId,roundVersion}]}`；`items` 和 `voiding.lines` 始终为同一主单完整集合，不受其他列表分页影响。预览读取同一快照下的主单版本、真实入退和非 cancelled 补单来源引用，不装载分配明细、检验、采购行指标或历史。所有状态下的作废资格均按[到货所有者规则](receipts.md#整单到货登记作废)核验，命令再在锁内检查主单版本、全单集合及行／轮版本，不以预览替代写入校验。
 
 ## 工作列表的查询复用
 
-到货行列表与单张到货的检验物料投影共用 `ProcurementReceiptListSource`，基础来源关联、字段清单及身份映射由 `receipt-read.shared` 维护。到货页面按明细服务端分页，前端采购／到货分块只组织当前页；来料主页面按持久[质检主单](#来料质检主单查询)分页，再独立读取到货目录与单到货完整物料，两者不能共用明细 total 或筛选裁剪假设。
+单张到货轻量处置行与检验物料投影共用 `ProcurementReceiptListSource`，基础来源关联、字段清单及身份映射由 `receipt-read.shared` 维护。轻量行保留 receiptId/purchaseOrderId 核对真实归属，采购单号、到货单号、供应商及到货时间由所属头部表达，不逐行重复返回。采购到货以采购主单分页，来料以持久[质检主单](#来料质检主单查询)分页，再各自读取所属到货目录和完整物料；两者的父身份、筛选和 total 分别由所属契约决定，不能共享可变查询上下文。
 
 到货列表读取处置数量和完整当前轮次，检验物料投影只读取实物剩余、当前轮摘要和当前检验引用。两种读取分别鉴权，只查询自身投影需要的字段；复用来源不增加质检页的仓库详情或历史读取，也不将展示字段作为写命令资格。
 
@@ -120,7 +135,7 @@
 
 ## 到货物料行检验投影
 
-`GET /quality/inbound-inspection-orders/receipts/:receiptId/lines` 返回 `QualityIncomingInspectionReceiptLines={receipt,items}`，items 为本到货完整的 `ProcurementInboundInspectionLineItem[]`，最多 100 条，不另设物料 total 或行分页。同一行的历次检查不增加物料条目；未检、人工拒收、已处理完及已作废来源都保留其真实行身份。每项只返回行及来源主单身份、物料与供应商展示字段、stage、`currentRound={roundNo,status,triggerType}`、`quantities={unprocessedQuantity}`、当前检验摘要及其来源轮号，不装载历史集合、完整检验事实或历史计数。作废前完成的检验仍由精确 case、来源详情和历史分页读取，已失效的 reviewing 办理不能继续提交。
+`GET /quality/inbound-inspection-orders/receipts/:receiptId/lines` 返回 `QualityIncomingInspectionReceiptLines={receipt,items}`，items 为本到货完整的 `ProcurementInboundInspectionLineItem[]`，最多 100 条，不另设物料 total 或行分页。同一行的历次检查不增加物料条目；未检、人工拒收、已处理完及已作废来源都保留其真实行身份。每项只返回明细及归属 ID、物料／精确版本／单位、stage、`currentRound={roundNo,status,triggerType}`、`quantities={unprocessedQuantity}`、当前检验摘要及其来源轮号，不装载历史集合、完整检验事实或历史计数。作废前完成的检验仍由精确 case、来源详情和历史分页读取，已失效的 reviewing 办理不能继续提交。
 
 `currentCase` 优先指向当前轮 inspectionId 明确采用的真实办理；当前没有采用结果时，仅查当前轮的 reviewing 办理；两者皆无时为 null，不以历史最大 ID 充当当前依据。摘要只含 id/status 和 `inspection={id,releaseDecision}|null`，currentCaseRoundNo 为该办理真实发起轮号。isInherited 仅在该结果被当前轮明确采用、且发起轮不同于当前轮时为 true。旧轮可已被替代而结果仍被新轮明确引用；旧轮状态不能代替采用关系，也不授予写入资格。
 

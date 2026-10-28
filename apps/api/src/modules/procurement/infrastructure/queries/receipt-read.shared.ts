@@ -51,19 +51,15 @@ export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line
   pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,
   line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,po.supplier_id,supplier.supplier_name,
   ${RECEIPT_VOID_COLUMNS}`;
-/** 两个按到货明细分页的工作列表共用来源、排序和映射。 */
-export const RECEIPT_LIST_SOURCE_COLUMNS = `line.receipt_id,r.receipt_no,line.purchase_order_id,po.purchase_no,
-  supplier.supplier_name,material.material_name,pol.material_variant_code_snapshot,pol.unit_snapshot,
+/** 采购到货与来料检验的完整轻量明细共用展示来源。 */
+export const RECEIPT_LIST_SOURCE_COLUMNS = `line.receipt_id,line.purchase_order_id,
+  material.material_name,pol.material_variant_code_snapshot,pol.unit_snapshot,
   ${RECEIPT_VOID_COLUMNS}`;
-export const RECEIPT_LINE_LIST_ORDER = 'r.received_at DESC,r.id DESC,line.line_no ASC,line.id ASC';
 export function mapReceiptListSource(row: ReadRow): ProcurementReceiptListSource {
   return {
     void: mapReceiptVoid(row),
     receiptId: text(row.receipt_id),
-    receiptNo: text(row.receipt_no),
     purchaseOrderId: text(row.purchase_order_id),
-    purchaseNo: text(row.purchase_no),
-    supplierName: text(row.supplier_name),
     itemName: text(row.material_name),
     materialVariantCode: text(row.material_variant_code_snapshot),
     unit: text(row.unit_snapshot),

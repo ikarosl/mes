@@ -37,10 +37,7 @@ import {
   mapAllocation,
 } from './receipt-read.shared.js';
 
-export async function readReceiptVoidingHeader(
-  db: Db,
-  id: string,
-): Promise<ProcurementReceiptItem> {
+export async function readReceiptSummary(db: Db, id: string): Promise<ProcurementReceiptItem> {
   const [[row]] = await db.query<ReadRow[]>(`${receiptSelect(RECEIPT_COLUMNS)} WHERE r.id=?`, [id]);
   if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
   return mapReceipt(row);

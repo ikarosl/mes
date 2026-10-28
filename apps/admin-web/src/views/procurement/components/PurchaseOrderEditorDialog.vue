@@ -105,7 +105,7 @@
         >
       </div>
       <p class="help">
-        采购数量独立填写，不分摊到需求；金额填写每条明细的整行总额，正式下单后冻结。
+        采购数量独立填写，不分摊到需求；金额按采购单位填写单价，正式下单后冻结。
         同物料及精确版本只保留一行，不同供应商请另建采购单。
         <template v-if="supplement">补单来源固定，原采购行或原到货选错须取消草稿后重建。</template>
       </p>
@@ -191,7 +191,7 @@
             <el-input
               v-model="row.taxExclusiveAmount"
               :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
-              placeholder="整行总额（选填）"
+              placeholder="按采购单位填写单价（选填）"
               :aria-label="`${row.itemName || '本行'}无税金额`"
             />
           </template>
@@ -204,7 +204,7 @@
             <el-input
               v-model="row.taxInclusiveAmount"
               :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
-              placeholder="整行总额（选填）"
+              placeholder="按采购单位填写单价（选填）"
               :aria-label="`${row.itemName || '本行'}含税金额`"
             />
           </template>

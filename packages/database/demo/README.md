@@ -59,7 +59,7 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 | `[demo-purchase-state-ordered]` | 已下单，三行进行中 | 逐行结束、最后一行使主单结束、恢复任一行使主单恢复、整单结束；核对主行状态及通用操作日志中的原因 |
 | `[demo-purchase-state-cancel]` | 已下单，三行进行中 | 无到货整单取消；也可先结束部分行再取消，核对已取消不可恢复及通用操作日志中的原因 |
 
-每张样例单只有一个主单供应商：草稿与结束／恢复样例为演示共批供应商甲，取消样例为乙。三行依次使用 `demo-stock-multi-v1-A` 10 根、`demo-stock-multi-v1-B` 15 根及 `demo-stock-meter-v1-A` 5 米，保持同单精确物料版本唯一。首行两项金额含超 JavaScript 安全精度的长文本及尾零，其他行为空，供核对文本保存及正式冻结，不作税额运算。
+每张样例单只有一个主单供应商：草稿与结束／恢复样例为演示共批供应商甲，取消样例为乙。三行依次使用 `demo-stock-multi-v1-A` 10 根、`demo-stock-multi-v1-B` 15 根及 `demo-stock-meter-v1-A` 5 米，保持同单精确物料版本唯一。首行两项采购单位单价含超 JavaScript 安全精度的长文本及尾零，其他行为空，供核对文本保存及正式冻结，不作税额运算。
 
 样例只提供采购跟进场景，不包含实际到货。重新加载 demo 不恢复已取消／已结束的样例，也不覆盖采购编辑；标记位于备注开头，手动移除标记后再次加载会按缺失样例补建。需要再次验证可新建独立备料单。
 
@@ -127,6 +127,21 @@ ALLOW_DEMO_SEED=1 PROCUREMENT_SUPPLEMENT_DEMO_TAG='<已有来源tag>' node scrip
 `prepare-history` 复用 `source-quality-returned-history`，要求其候选当前待退为 0、真实质量已退为 2，创建 `quality-history-receipt-draft` 草稿并保留供采购员手工下单。已有同场景标记时不追加；失败不盲目重试。报告提供实际采购单／行及原到货 ID。人工验收核对当前轮仅可入 8、历史已退 2 时仍可按原到货新建和下单；处理轮变化不改已建补单来源，采购员手动决定补购量，不以待退或累计补单量封顶。
 
 该模式只通过正式 API 补充演示数据，不修改已有单据、实际退回或库存事实。
+
+## 采购到货分层列表的人工验收准备
+
+完成 `db:init`、显式加载 demo 并启动 API 后，使用[到货分层准备脚本](../../../scripts/prepare-procurement-receipt-demo.mjs)。采购、到货、检验和作废均通过正式 API 形成，不直接写业务表，不属于正式测试集。
+
+```bash
+ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-receipt-demo.mjs prepare
+ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-receipt-demo.mjs report
+```
+
+默认模式 report 只读业务状态。脚本使用初始化管理员环境凭证，不输出密码或令牌；要求非 production 环境及 `ALLOW_DEMO_SEED=1`。API 默认 `http://127.0.0.1:3002/api`，可通过 `PROCUREMENT_RECEIPT_DEMO_API_BASE_URL` 指定；远程地址额外要求 HTTPS 和 `PROCUREMENT_RECEIPT_DEMO_ALLOW_REMOTE=1`，脚本不进入初始化、部署或 CI 自动链路。
+
+默认备注标记为 `[demo-procurement-receipts-v1]`；设置 1～40 位字母、数字、下划线或连字符的 `PROCUREMENT_RECEIPT_DEMO_TAG` 后，标记为 `[demo-procurement-receipts-v1:<tag>]`。同标记已有采购时 prepare 不续写、不补缺，先用 report 核对；失败保留已提交事实且不自动重试，重新准备使用新 TAG。用户办理后统计可与初始值不同，`initialReadinessIssues` 仅对照初始样例，不表示用户验收或正式测试通过。
+
+初始样例为 12 张甲／乙供应商交替的采购主单、23 张到货：`purchase-12` 有 12 张到货，其余各一张；最旧的 `large-1` 含完整 100 行，另有 4 条待定稿、1 条检查中明细及 1 张作废到货。用于核对两层深页、完整物料、作废保留、筛选后子集合不裁剪及页外定位。`single-11` 仅 B 版本待定稿、A 版本待检，可用 A 版本关键词与待定稿同时筛选，核对不能跨明细拼接命中；`single-1` 在默认父第 2 页，`large-1` 在所属到货第 2 页，报告提供真实单号及 ID 供精确定位。
 
 ## 来料质检分组的人工验收准备
 

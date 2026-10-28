@@ -1,9 +1,11 @@
 import type {
   PageQuery,
   PageResult,
-  ProcurementReceiptQuery as ReceiptListQuery,
-  ProcurementReceiptItem,
-  ProcurementReceiptLineListItem,
+  ProcurementReceiptPurchaseOrderQuery,
+  ProcurementReceiptPurchaseOrderItem,
+  ProcurementReceiptPurchaseOrderReceiptPage,
+  ProcurementReceiptWorklistLines,
+  ProcurementReceiptLineLocation,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
   ProcurementReceiptAcceptanceContext,
@@ -20,10 +22,16 @@ import type {
 } from '@company/contracts';
 
 export abstract class ProcurementReceiptQuery {
-  abstract listReceipts(query: ReceiptListQuery): Promise<PageResult<ProcurementReceiptItem>>;
-  abstract listReceiptLines(
-    query: ReceiptListQuery,
-  ): Promise<PageResult<ProcurementReceiptLineListItem>>;
+  abstract listReceiptPurchaseOrders(
+    query: ProcurementReceiptPurchaseOrderQuery,
+  ): Promise<PageResult<ProcurementReceiptPurchaseOrderItem>>;
+  abstract getReceiptPurchaseOrder(id: string): Promise<ProcurementReceiptPurchaseOrderItem>;
+  abstract listPurchaseOrderReceipts(
+    id: string,
+    query: PageQuery,
+  ): Promise<ProcurementReceiptPurchaseOrderReceiptPage>;
+  abstract receiptWorklistLines(id: string): Promise<ProcurementReceiptWorklistLines>;
+  abstract locateReceiptLine(id: string): Promise<ProcurementReceiptLineLocation>;
   abstract getReceipt(id: string): Promise<ProcurementReceiptDetail>;
   abstract getReceiptLine(id: string): Promise<ProcurementReceiptLine>;
   abstract getReceiptAcceptanceContext(id: string): Promise<ProcurementReceiptAcceptanceContext>;

@@ -15,7 +15,7 @@
 
 表均按公共审计、整数数量、FK/组合FK、并发和不可变规则设计。Quality source_kind与显式来源组互斥；结果冗余稳定来源ID仅用于组合FK，由case约束一致。采购原采购行及原到货身份固定，物流归属由到货自身采购行确定；超量补购只追溯来源，质量补发另有自己的到货。两类补单只保存原采购行、原到货明细及建单依据，不引用仓库分配，取舍见 [ADR-0025](adr/0025-supplement-receipt-line-basis.md)。
 
-采购供应商唯一存于 Procurement 主单；到货、来料和库存来源展示沿固定采购行所属主单解析，Quality 不增供应商存储。采购行只保存本行无税／含税整行金额文本，金额不进入库存或检验资格，见 [ADR-0026](adr/0026-purchase-order-supplier-and-amounts.md)及[采购数据库](../apps/api/src/modules/procurement/docs/database.md)。来料分组和外购实际入库仍可跨供应商；Inventory 已确认名称快照、既有批次 provider 和审计历史不随存储层级变化回写。
+采购供应商唯一存于 Procurement 主单；到货、来料和库存来源展示沿固定采购行所属主单解析，Quality 不增供应商存储。采购行只保存按本行采购单位填写的无税／含税单价文本，金额不进入库存或检验资格，见 [ADR-0026](adr/0026-purchase-order-supplier-and-amounts.md)及[采购数据库](../apps/api/src/modules/procurement/docs/database.md)。来料分组和外购实际入库仍可跨供应商；Inventory 已确认名称快照、既有批次 provider 和审计历史不随存储层级变化回写。
 
 ## 事务和当前依据
 

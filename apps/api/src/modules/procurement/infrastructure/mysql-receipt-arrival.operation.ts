@@ -1,3 +1,4 @@
+import { PROCUREMENT_RECEIPT_MAX_LINES } from '@company/constants';
 import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import type { PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
@@ -27,7 +28,7 @@ export const confirmReceiptArrival = async (
     return receiptError('只有已下单且尚未结束的采购单可以新增到货', 'RECEIPT_STATE');
   const lines = await readLines(connection, payload.purchaseOrderId, true);
   const selectedIds = sortedIds(payload.details.map((detail) => detail.purchaseOrderLineId));
-  if (!payload.details.length || payload.details.length > 100)
+  if (!payload.details.length || payload.details.length > PROCUREMENT_RECEIPT_MAX_LINES)
     return receiptError('到货必须提供 1 至 100 个明细');
   const selected = selectedIds.map((id) => {
     const line = lines.find((row) => String(row.id) === id);
