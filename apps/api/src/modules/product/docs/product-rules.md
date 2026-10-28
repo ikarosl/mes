@@ -115,7 +115,7 @@ Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生�
 | `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view` |
 | `/process-steps/options` | 工序及工艺路线配置 | `product:processes:view`、`product:routes:view` |
 | `/process-routes/options` | 工艺路线及生产工单／任务 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
-| `/users/options` | 工艺路线及生产工单／任务的负责人候选 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/users/options` | 工艺路线及生产任务的负责人候选 | `product:routes:view`、`production:tasks:view` |
 
 目录来源、分组及逐接口授权规则由 [Identity](../../identity/docs/database.md#14-permissions)维护；候选读取不授予主数据编辑、采购、生产或库存写入资格。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
 

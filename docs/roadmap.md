@@ -12,6 +12,7 @@
 - [ ] 恢复 API 相邻 TODO 中的任务创建／取消锁序、结案损耗、正式产出资格、路线上下文快照及 BOM 资格保护，核对幂等重放、权限与当前来源互斥规则。
 - [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，使用显式路线和自动编号夹具；恢复 `tests/integration/inventory/migrations/inventory-item-balance-migration.mysql.test.ts` 在当前完整迁移链上的历史投影回填及 down/up，以合法公共入库来源准备流水，不截断迁移链规避来源约束。
 - [ ] 恢复管理端相邻 TODO 中的仓储子页办理、异常处理弹窗、批准产出完工资格、菜单路由上下文及任务创建数量／日期保护；废弃的产品默认路线与自动选路行为不作为恢复目标。
+- [ ] 恢复[请求层 TODO](../packages/request/src/__tests__/request.test.ts)中的写请求禁止传输自动重试边界，覆盖携带幂等键、残留旧配置、网络／超时／5xx、401 认证恢复例外及原请求手动恢复；不恢复旧的自动写重试能力。
 
 ## 业务人员配置与工单负责人：待验收
 
@@ -463,6 +464,7 @@
 - [ ] SOP候选只取第1页100条：修复 `useProductionBatchesList` 的候选完备性，取齐分页或提供远程搜索与已选ID解析；验收101条以上文件和历史已选回显。
 - [ ] 缓存任务页未消费新定位：从出库阻断跳转时，ProductionTasksPage需应用新的route.query.keyword、重置分页并查询，不能仅在onMounted处理；保留尚未提交草稿，当前可手动搜索。
 - [ ] HTTP超时提示优先级：`handleHttpError`先判status=0，ECONNABORTED被提示为普通网络错误；按[错误处理边界](../apps/admin-web/docs/http-error-handling.md#121-超时当前会优先被识别为网络错误)区分超时，验收后补相邻用例。
+- [ ] 生产写意图恢复：工单／任务创建和物料分配仍可能在重放前被当前候选或余量校验阻断；领料损耗申报／确认未完整保留首次载荷及版本，未知结果后的编辑、关闭和重开保护不足。按[写意图边界](../apps/admin-web/docs/architecture.md#5-写意图与错误)补首次请求快照、未知状态保护及可达的原请求恢复入口，验收响应丢失后候选／版本变化、改输入和关闭重开。取消前端自动写重试不代表这些存量缺口已修复。
 
 ## 正式上线前运维手册：待补齐
 

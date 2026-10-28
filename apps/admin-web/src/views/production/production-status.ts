@@ -111,18 +111,3 @@ export const formatQuantityDifference = (value: string | null | undefined): stri
   const amount = Number(value);
   return `${amount > 0 ? '+' : ''}${formatQuantity(value)}`;
 };
-
-/** 工单剩余可分配数量 */
-export const getWorkOrderRemaining = (order: {
-  plannedQuantity: string | number;
-  assignedQuantity: string | number;
-}): number => Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0);
-
-/** 根据用户选项解析负责人显示名 */
-export const resolveOwnerName = (
-  ownerId: string | null | undefined,
-  users: Array<{ id: string; displayName: string }>,
-): string => {
-  if (!ownerId) return '-';
-  return users.find((user) => user.id === ownerId)?.displayName ?? '-';
-};

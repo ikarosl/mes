@@ -54,8 +54,6 @@ export const finishedInspectionsApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
   beginReinspection: (batchId: string, data: BeginFinishedReinspectionPayload, key: string) =>
@@ -64,8 +62,6 @@ export const finishedInspectionsApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
   record: (batchId: string, data: RecordFinishedInspectionPayload, key: string) =>
@@ -74,8 +70,6 @@ export const finishedInspectionsApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
 };

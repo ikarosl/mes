@@ -6,9 +6,7 @@ import {
   STEP_STATUS_META,
   batchStatusMeta,
   formatQuantity,
-  getWorkOrderRemaining,
   orderStatusMeta,
-  resolveOwnerName,
   stepStatusMeta,
 } from '../production-status';
 import {
@@ -52,22 +50,5 @@ describe('production-status', () => {
     expect(formatQuantity(null)).toBe('0');
     expect(formatQuantity(undefined)).toBe('0');
     expect(formatQuantity('abc')).toBe('-');
-  });
-
-  it('getWorkOrderRemaining 计算工单剩余可分配数量', () => {
-    expect(getWorkOrderRemaining({ plannedQuantity: '100', assignedQuantity: '40' })).toBe(60);
-    expect(getWorkOrderRemaining({ plannedQuantity: '100', assignedQuantity: '100' })).toBe(0);
-    expect(getWorkOrderRemaining({ plannedQuantity: '50', assignedQuantity: '80' })).toBe(0);
-  });
-
-  it('resolveOwnerName 解析负责人显示名', () => {
-    const users = [
-      { id: 'u1', displayName: '张三' },
-      { id: 'u2', displayName: '李四' },
-    ];
-    expect(resolveOwnerName('u1', users)).toBe('张三');
-    expect(resolveOwnerName('missing', users)).toBe('-');
-    expect(resolveOwnerName(null, users)).toBe('-');
-    expect(resolveOwnerName(undefined, users)).toBe('-');
   });
 });

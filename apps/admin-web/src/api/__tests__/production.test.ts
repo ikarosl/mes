@@ -238,7 +238,7 @@ describe('productionApi', () => {
     });
   });
 
-  it('creates a batch under a work order with idempotency key and unsafe retry', async () => {
+  it('creates a batch under a work order with the supplied idempotency key', async () => {
     const { productionApi } = await import('../production');
 
     await productionApi.createOrderBatch('1', { plannedQuantity: 50 }, 'k1-uuid');
@@ -248,8 +248,6 @@ describe('productionApi', () => {
       method: 'POST',
       data: { plannedQuantity: 50 },
       headers: { 'Idempotency-Key': 'k1-uuid' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
   });
 
@@ -342,8 +340,6 @@ describe('productionApi', () => {
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'configure-key' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
   });
 
@@ -369,8 +365,6 @@ describe('productionApi', () => {
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'manual-key' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
   });
 
@@ -383,8 +377,6 @@ describe('productionApi', () => {
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'allocation-key' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
   });
 
@@ -398,7 +390,7 @@ describe('productionApi', () => {
     });
   });
 
-  it('creates production material outbound with unsafe retry under the same key', async () => {
+  it('creates production material outbound with the supplied idempotency key', async () => {
     const { productionApi } = await import('../production');
     const data = { details: [{ allocationId: '9', outboundQuantity: 2 }], remark: null };
     request.mockResolvedValueOnce({
@@ -417,8 +409,6 @@ describe('productionApi', () => {
       method: 'POST',
       data,
       headers: { 'Idempotency-Key': 'outbound-key' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
   });
 
@@ -457,8 +447,6 @@ describe('productionApi', () => {
         method: 'POST',
         data: { version: 0 },
         headers: { 'Idempotency-Key': 'confirm-key' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
       },
       {
         url: '/production/material-outbounds/9/actions/cancel',
@@ -560,8 +548,6 @@ describe('productionApi', () => {
         method: 'POST',
         data: { version: 4, closeoutVersion: null },
         headers: { 'Idempotency-Key': 'k2-uuid' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
         skipErrorHandling: true,
       },
     ]);
@@ -593,8 +579,6 @@ describe('productionApi', () => {
         method: 'POST',
         data: createBody,
         headers: { 'Idempotency-Key': 'report-key' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
       },
       {
         url: '/production/batches/1/step-records/9/reports/12/actions/reverse',
@@ -606,8 +590,6 @@ describe('productionApi', () => {
         method: 'POST',
         data: correctBody,
         headers: { 'Idempotency-Key': 'correct-key' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
       },
     ]);
   });
@@ -650,8 +632,6 @@ describe('productionApi', () => {
         method: 'POST',
         data: { version: 0, dispositionVersion: 0 },
         headers: { 'Idempotency-Key': 'supplement-key' },
-        retryIdempotentWrite: true,
-        retryTimes: 2,
       },
     ]);
   });

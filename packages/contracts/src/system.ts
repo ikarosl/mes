@@ -1,3 +1,4 @@
+import type { UserCandidateSceneCode } from '@company/constants';
 import type { PageQuery, PermissionType, OperationResult } from './common.js';
 
 export interface SystemUserListItem {
@@ -168,7 +169,7 @@ export interface UserOption {
   displayName: string;
 }
 
-export type UserCandidateSceneCode = 'production.work_order_owner';
+export type { UserCandidateSceneCode };
 
 export interface UserCandidateConfigItem {
   sceneCode: UserCandidateSceneCode;

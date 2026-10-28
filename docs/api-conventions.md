@@ -107,7 +107,7 @@ interface PageResult<T> {
 - 幂等键统一来自 `Idempotency-Key`，长度 1—150，不在 body 重复定义。是否必填由具体端点声明；未启用端点（含匿名及文件上传）收到此头必须在副作用前返回 `400 IDEMPOTENCY_NOT_SUPPORTED`，不能静默执行。
 - 同键同规范化请求返回原成功结果；同键不同内容返回 `409 IDEMPOTENCY_CONFLICT`，瞬态存储错误为 `503 IDEMPOTENCY_STORAGE_RETRYABLE`，损坏的已存结果为 `500 IDEMPOTENCY_RESULT_CORRUPT`；非法头为 `400 VALIDATION_ERROR`。未预期代码异常保持 `500 INTERNAL_SERVER_ERROR`，不因发生在幂等链中而改写错误来源。
 - 每个端点声明参与指纹的语义 path/query/body/version 及最短保证窗口。前端意图签名覆盖同组输入；同一次未确认结果的重试复用原键和请求，改内容或成功后重新操作使用新键，不能在每次 API 调用随机换键。
-- 管理端在首次正式提交生成 `crypto.randomUUID()`，不预领取、不以 payload hash 代替键。无响应、断网及 502/503/504 保留原意图；明确普通 500 不自动重试。硬刷新目前不能恢复待提交意图，仅保存 key 或 hash 不构成恢复闭环。
+- 管理端在首次正式提交生成 `crypto.randomUUID()`，不预领取、不以 payload hash 代替键。写请求结果未知时保留原意图，传输失败不自动重试；手动恢复与认证恢复例外遵守[客户端 HTTP 规则](../apps/admin-web/docs/http-error-handling.md#4-基础请求与重试)。硬刷新目前不能恢复待提交意图，仅保存 key 或 hash 不构成恢复闭环。
 - DTO、鉴权和请求头校验先于登记；当前只保存成功结果，成功状态码由端点固定，响应 requestId 等易变头按本次请求生成。失败不缓存；重放不新增业务成功审计。
 - 启用范围以 scope 常量和 `@IdempotentEndpoint` 声明为准，见[当前启用范围](../apps/api/docs/idempotency.md#1-当前启用范围)。只有原子登记、业务执行和结果持久化闭环完成后才启用；外部存储、HTTP 或消息副作用不能仅套 MySQL executor 宣称幂等。
 

@@ -451,12 +451,8 @@ export class ProductController {
     return this.service.replaceRouteSteps(id, body.items, audit);
   }
   @Get('users/options')
-  // 跨页面选项授权：工艺路线页（默认负责人）、生产工单/任务页（负责人下拉）任一视图权限即可读取
-  @RequirePermission([
-    PERMISSIONS.product.routes.view,
-    PERMISSIONS.production.orders.view,
-    PERMISSIONS.production.tasks.view,
-  ])
+  // 跨页面选项授权：工艺路线页（默认负责人）、生产任务页（负责人下拉）任一视图权限即可读取
+  @RequirePermission([PERMISSIONS.product.routes.view, PERMISSIONS.production.tasks.view])
   userOptions() {
     return this.service.listUserOptions();
   }

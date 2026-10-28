@@ -168,8 +168,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   listPurchaseInbounds: (params: PurchaseInboundOrderQuery, signal?: AbortSignal) =>
     request<PageResult<PurchaseInboundOrderItem>>({
@@ -295,8 +293,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   /** 分页查询生产批次 */
@@ -357,8 +353,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
   submitDemandCorrection: (
@@ -372,8 +366,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   beginBatchCloseout: (id: string, data: BeginBatchCloseoutPayload, idempotencyKey: string) =>
     request<BatchCloseoutCommandResult>({
@@ -382,8 +374,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   handleBatchCloseoutItem: (
     id: string,
@@ -396,8 +386,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   getProductionOutput: (id: string) =>
     request<ProductionOutputDetail>({
@@ -415,8 +403,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   reviewProductionOutputMaterial: (
     id: string,
@@ -429,8 +415,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   saveProductionOutput: (id: string, data: SaveProductionOutputPayload, idempotencyKey: string) =>
     request<ProductionOutputCommandResult>({
@@ -439,8 +423,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   submitProductionOutput: (
     id: string,
@@ -453,8 +435,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   beginProductionOutputCorrection: (
     id: string,
@@ -467,8 +447,6 @@ export const productionApi = {
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   cancelProductionOutputCorrection: (id: string, version: number, idempotencyKey: string) =>
     request<ProductionOutputCommandResult>({
@@ -477,8 +455,6 @@ export const productionApi = {
       data: { version },
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
       skipErrorHandling: true,
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   /** 取消任务前读取服务端实时影响摘要；提交时后端仍会再次校验。 */
   getBatchCancellationCheck: (id: string) =>
@@ -531,8 +507,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
     if (result?.configured !== true)
       throw new RequestError('服务器未返回完整的需求配置结果，请重试本次操作以核对结果。', 502);
@@ -548,8 +522,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
     const expectedCount = data.requirements.reduce(
       (count, requirement) => count + requirement.splits.length,
@@ -584,8 +556,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   releaseMaterialAllocation: (batchId: string, allocationId: string, version: number) =>
@@ -605,8 +575,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
     if (
       !result?.outbound ||
@@ -658,8 +626,6 @@ export const productionApi = {
       method: 'POST',
       data: { version },
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   cancelMaterialOutbound: (outboundId: string, data: CancelMaterialOutboundPayload) =>
@@ -836,8 +802,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
 
@@ -851,8 +815,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
 
@@ -867,8 +829,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   reverseStepReport: (
@@ -895,8 +855,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   createHistoricalStepReport: (
@@ -910,8 +868,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   reverseHistoricalStepReport: (
@@ -938,8 +894,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   previewBatchReverseStepReports: (
@@ -964,8 +918,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     }),
 
@@ -1002,8 +954,6 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 
   listSupplementCandidates: (dispositionId: string) =>
@@ -1036,7 +986,5 @@ export const productionApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
 };

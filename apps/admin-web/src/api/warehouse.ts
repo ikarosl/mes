@@ -75,8 +75,6 @@ export const warehouseApi = {
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   confirmMaterialLoss: (scrapId: string, version: number, idempotencyKey: string) =>
     request<MaterialLossItem>({
@@ -84,8 +82,6 @@ export const warehouseApi = {
       method: 'POST',
       data: { version },
       headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     }),
   cancelMaterialLoss: (scrapId: string, data: CancelMaterialLossPayload) =>
     request<MaterialLossItem>({

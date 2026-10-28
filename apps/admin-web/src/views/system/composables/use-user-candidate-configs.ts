@@ -201,7 +201,7 @@ export function useUserCandidateConfigs(): UserCandidateConfigs {
     !draft.conflict &&
     !draft.needsReview &&
     !hasUnavailableRoles(draft) &&
-    isDirty(draft);
+    (draft.basis.configId === null || isDirty(draft));
 
   const saveConfig = async (draft: UserCandidateConfigDraft): Promise<void> => {
     if (!canSave(draft)) return;

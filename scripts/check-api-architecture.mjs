@@ -364,13 +364,11 @@ const checks = [
     message: 'IdempotencyKeyGuard 只能定义在项目级 infrastructure/idempotency 中',
     exclude: ['apps/api/src/infrastructure/idempotency/idempotency-key.guard.ts'],
   },
-  // 管理端只有已完成后端闭环的 API wrapper 可发送幂等头并开启非安全方法重试。
+  // 管理端只有已完成后端闭环的 API wrapper 可发送幂等头。
   {
     directory: 'apps/admin-web/src',
-    pattern:
-      /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:|\bretryIdempotentWrite\s*:)/,
-    message:
-      '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryIdempotentWrite；新增调用必须先登记后端幂等契约',
+    pattern: /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:)/,
+    message: '只有已登记的 API wrapper 可设置 Idempotency-Key；新增调用必须先登记后端幂等契约',
     exclude: [
       'apps/admin-web/src/api/other-inventory.ts',
       'apps/admin-web/src/api/production.ts',

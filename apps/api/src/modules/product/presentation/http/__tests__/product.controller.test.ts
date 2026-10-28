@@ -237,11 +237,7 @@ describe('Product options cross-page authorization contract', () => {
       PERMISSIONS.production.orders.view,
       PERMISSIONS.production.tasks.view,
     ],
-    userOptions: [
-      PERMISSIONS.product.routes.view,
-      PERMISSIONS.production.orders.view,
-      PERMISSIONS.production.tasks.view,
-    ],
+    userOptions: [PERMISSIONS.product.routes.view, PERMISSIONS.production.tasks.view],
   };
 
   it('declares an any-of permission set on every options endpoint', () => {
@@ -272,7 +268,7 @@ describe('Product options cross-page authorization contract', () => {
       {
         page: '生产工单',
         permission: PERMISSIONS.production.orders.view,
-        endpoints: ['productOptions', 'routeOptions', 'userOptions'],
+        endpoints: ['productOptions', 'routeOptions'],
       },
       {
         page: '生产任务',
