@@ -537,7 +537,7 @@ function openFinishedInspection(action = ''): void {
 async function goToInspection(): Promise<void> {
   if (!props.batchId || busy.value || unresolved.value || !canViewFinishedInspections.value) return;
   navigationVisible.value = false;
-  // 保持 editor 存活，由路由缓存隐藏弹窗；返回后刷新依据并保留原输入。
+  // 保持 editor 存活，由路由缓存隐藏弹窗并保留原输入。
   await router.push({
     name: 'quality-finished-inspections',
     query: {

@@ -1,4 +1,4 @@
-import { computed, nextTick, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type {
   PurchaseExcessReceiptCandidate,
   PurchaseOrderLine,
@@ -287,16 +287,6 @@ export function usePurchaseOrderSupplementSelection(context: SupplementSelection
     if (!visible.value) return;
     if (disabled) read.invalidate();
     else void load();
-  });
-  let activatedOnce = false;
-  onActivated(async () => {
-    if (!activatedOnce) {
-      activatedOnce = true;
-      return;
-    }
-    // 先等读取守卫及父窗上下文恢复，再刷新当前页，保留临时选择。
-    await nextTick();
-    if (read.isActive() && visible.value && !context.disabled() && !loading.value) await load();
   });
   return {
     visible,

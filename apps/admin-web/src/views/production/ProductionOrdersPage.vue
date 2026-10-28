@@ -349,6 +349,7 @@
       :loading="detailLoading"
       :user-options="userSource.options.value"
       @update:visible="handleDetailDialogClose"
+      @refresh="refreshOrderDetail"
       @view-research-order="(id) => openDetail({ id })"
       @next-research-round="openNextResearchRound"
     />
@@ -365,7 +366,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { approvedUsableQuantity, plannedOutputGapText } from './production-output-quantity';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
@@ -467,6 +468,7 @@ const {
   detailDialogVisible,
   detailLoading,
   openDetail,
+  refreshDetail: refreshOrderDetail,
   openEdit,
   openNextResearchRound,
   closeDetail: handleDetailDialogClose,
@@ -664,12 +666,8 @@ const hasMoreActions = (row: WorkOrderItem): boolean =>
   canCancelOrder(row) ||
   canStartNextResearchRound(row);
 
-let hasActivated = false;
-onMounted(loadPageData);
-/** 页面重新激活：刷新页面可见候选（产品筛选 + 弹窗消费者）；正式列表由 onMounted 首访加载 */
-onActivated(() => {
-  if (hasActivated) void loadOrders();
-  hasActivated = true;
+onMounted(() => {
+  void loadPageData();
   void productSource.refresh();
   void userSource.refresh();
 });

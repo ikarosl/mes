@@ -415,7 +415,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ReturnOrderBatchOption,
@@ -655,10 +655,6 @@ function closeCreate() {
 }
 
 onMounted(loadRows);
-onActivated(() => {
-  void loadRows();
-  if (createVisible.value) void refreshOptions();
-});
 </script>
 
 <style scoped>

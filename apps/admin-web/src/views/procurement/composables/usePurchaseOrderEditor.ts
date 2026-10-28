@@ -1,4 +1,4 @@
-import { computed, onActivated, ref } from 'vue';
+import { computed, ref } from 'vue';
 import type {
   CreatePurchaseOrderPayload,
   MaterialOption,
@@ -531,9 +531,6 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       target ? '采购草稿已保存' : '采购草稿已创建',
     );
   };
-  onActivated(() => {
-    if (visible.value && !command.locked.value) void refresh();
-  });
   return {
     visible,
     loading,

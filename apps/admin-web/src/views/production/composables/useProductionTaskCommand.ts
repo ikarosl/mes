@@ -1,4 +1,4 @@
-import { computed, onActivated, onScopeDispose, ref, shallowRef, watch } from 'vue';
+import { computed, onScopeDispose, ref, shallowRef, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import {
   useIdempotentIntent,
@@ -188,9 +188,6 @@ export function useProductionTaskCommand<TCheck, TBody, TResult>(
     },
     { immediate: true },
   );
-  onActivated(() => {
-    if (props.visible) void load();
-  });
   const route = useRoute();
   onScopeDispose(useTabsStore().registerCloseGuard(String(route.name), () => close()));
   return {

@@ -543,13 +543,16 @@ function refreshActive(): void {
   }
 }
 let navigating = false;
+let consumedLocation: string | null | undefined;
 let pendingLocation: string | null | undefined;
 async function locate(id: string | null | undefined): Promise<void> {
   if (!pageActive) {
     pendingLocation = id;
     return;
   }
+  if (id === consumedLocation) return;
   if (!id) {
+    consumedLocation = id;
     if (navigating) {
       pendingLocation = null;
       return;
@@ -561,6 +564,7 @@ async function locate(id: string | null | undefined): Promise<void> {
     pendingLocation = id;
     return;
   }
+  consumedLocation = id;
   if (id === locatedInboundId.value && view.value === 'history') return;
   navigating = true;
   try {
@@ -602,8 +606,7 @@ onMounted(() => {
 watch(
   () => props.active,
   (active) => {
-    if (active) refreshActive();
-    else {
+    if (!active) {
       candidateRead.invalidate();
       historyLoadSequence++;
       list.cancelList();
@@ -611,19 +614,14 @@ watch(
     }
   },
 );
-let activated = false;
 onActivated(() => {
   pageActive = true;
   const hasPendingLocation = pendingLocation !== undefined;
-  let locatingNewTarget = false;
   if (hasPendingLocation) {
     const next = pendingLocation;
     pendingLocation = undefined;
-    locatingNewTarget = !!next && (next !== locatedInboundId.value || view.value !== 'history');
     void locate(next);
   }
-  if (activated && props.active && !locatingNewTarget) refreshActive();
-  activated = true;
 });
 onDeactivated(() => {
   pageActive = false;

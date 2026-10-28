@@ -29,7 +29,7 @@
               text
               circle
               :loading="contextLoading"
-              @click="refreshCurrent"
+              @click="refreshPage"
             />
           </el-tooltip>
         </template>
@@ -550,7 +550,7 @@ import {
   PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS,
 } from '@company/constants';
 import type { BatchStepExecutionRecordItem } from '@company/contracts';
-import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../composables/requests/usePageInitialLoad';
 import { useTabsStore } from '../../stores/tabs';
 import { EMessage } from '../../utils/message';
 import TableToolbar from '../../components/TableToolbar.vue';
@@ -947,12 +947,16 @@ const locateRequestedBatch = useProductionExecutionLocation({
   selectBatch,
   openStep: openInspectionAcceptance,
 });
+const refreshPage = async (): Promise<void> => {
+  await refreshCurrent();
+  await locateRequestedBatch(true);
+};
 const unregister = useTabsStore().registerCloseGuard(String(route.name), async () => {
   if (completionPending.value) return false;
   return canChangeTarget();
 });
 onScopeDispose(unregister);
-usePageActivationRefresh(async () => {
+usePageInitialLoad(async () => {
   await refreshCurrent();
   await locateRequestedBatch();
 });

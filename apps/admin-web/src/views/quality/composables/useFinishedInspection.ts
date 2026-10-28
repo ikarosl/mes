@@ -1,4 +1,4 @@
-import { computed, onActivated, onScopeDispose, reactive, ref } from 'vue';
+import { computed, onScopeDispose, reactive, ref } from 'vue';
 import { RequestError } from '@company/request';
 import { toBeijingISOString } from '@company/utils';
 import {
@@ -504,9 +504,6 @@ export function useFinishedInspection(
     page.value = 1;
     await loadRecords();
   }
-  onActivated(() => {
-    if (visible.value && !submitting.value) void refresh();
-  });
   return {
     visible,
     detail,

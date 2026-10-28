@@ -6,7 +6,7 @@ import type {
 } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { EMessage } from '../../../utils/message';
 
 export function usePurchaseOrdersList(
@@ -68,7 +68,7 @@ export function usePurchaseOrdersList(
     pageSize.value = value;
     await search();
   };
-  usePageActivationRefresh(load);
+  usePageInitialLoad(load);
   return {
     query,
     rows,

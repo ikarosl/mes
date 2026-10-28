@@ -300,10 +300,9 @@
         >关闭</el-button
       >
       <el-button
-        v-if="readError && !line"
         :disabled="loading || command.locked.value"
-        @click="loadContext"
-        >重新读取依据</el-button
+        @click="line ? check() : loadContext()"
+        >核对当前依据</el-button
       >
       <el-button
         v-if="command.status.value === 'pending'"
@@ -372,6 +371,7 @@ const {
   open,
   close,
   confirm,
+  check,
   loadContext,
 } = useReceiptAcceptance((result) => emit('saved', result));
 const evidenceExpanded = ref(false);

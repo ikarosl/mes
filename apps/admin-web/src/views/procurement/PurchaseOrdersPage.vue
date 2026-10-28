@@ -62,6 +62,11 @@
             :icon="Plus"
             @click="create('stock')"
             >独立备料采购</el-button
+          ><el-button
+            v-if="hasExplicitEntry()"
+            :disabled="blocked"
+            @click="retryLocation"
+            >重新读取定位</el-button
           ></template
         >
         <template #tools
@@ -697,6 +702,10 @@ const goSourceReceipt = async (id: string) => {
   if (canAccessRoute({ name: 'procurement-receipts' }) && (await releaseDialogs()))
     await router.push({ name: 'procurement-receipts', query: { receiptLineId: id } });
 };
+const retryLocation = (): void => {
+  consumed = '';
+  void locate();
+};
 const locate = async (): Promise<void> => {
   const revision = routeRevision;
   const current = (): boolean => isCurrent(revision);
@@ -711,26 +720,11 @@ const locate = async (): Promise<void> => {
   const token = locateToken(query);
   const orderId = query.purchaseOrderId;
   const demandId = query.demandId;
-  if (!orderId && !demandId) return;
-  if (token === consumed) {
-    if (
-      editor.value?.visible ||
-      actions.value?.visible ||
-      supplement.value?.visible ||
-      supplements.value?.visible ||
-      receiptRecords.value?.visible
-    )
-      return;
-    if (!orderId) return;
-    if (
-      expansion.focusedId.value === orderId &&
-      focusedLineId.value === (query.purchaseOrderLineId ?? '')
-    ) {
-      if (expansion.expanded.value.includes(orderId))
-        await scrollLocation(orderId, query.purchaseOrderLineId, current);
-      return;
-    }
+  if (!orderId && !demandId) {
+    consumed = token;
+    return;
   }
+  if (token === consumed) return;
   const reason =
     query.supplementReason === 'excess_purchase' || query.supplementReason === 'quality_replacement'
       ? query.supplementReason

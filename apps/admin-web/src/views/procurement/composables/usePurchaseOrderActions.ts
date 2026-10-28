@@ -1,4 +1,4 @@
-import { computed, onActivated, ref } from 'vue';
+import { computed, ref } from 'vue';
 import type { PurchaseOrderDetail, PurchaseOrderLine } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -181,9 +181,6 @@ export function usePurchaseOrderActions(
       );
     }
   };
-  onActivated(() => {
-    if (visible.value && !command.locked.value) void load();
-  });
   return {
     visible,
     detail,

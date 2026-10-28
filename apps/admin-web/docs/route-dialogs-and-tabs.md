@@ -14,7 +14,7 @@ Dialog 和短时确认框只遮罩 `AdminLayout` 的 `.content`，不阻断菜�
 
 所有 Dialog（编辑、详情、选择）及 MessageBox（确认、输入提示）均禁止点击弹窗外区域或遮罩关闭，由 `RouteDialog` 和 `RouteMessageBox` 强制设置 `closeOnClickModal=false`，调用方不得开启。关闭按钮、取消、提交成功及 Esc 继续遵守各场景原有的关闭保护。
 
-切换标签关闭短时 MessageBox，保留编辑 Dialog 及草稿；返回后是否读取由资源所有者及已批准的刷新策略决定，不以缓存候选保证当前业务资格。候选、列表与详情的触发边界，以及报工／追溯的短延时刷新与失败差异见[架构 §6](architecture.md#6-生命周期与定向刷新)，不得为减少渲染直接禁用 KeepAlive。
+切换标签关闭短时 MessageBox，保留编辑 Dialog 及草稿；缓存返回的读取规则、明确定位与办理核验边界见[架构 §6](architecture.md#6-生命周期与定向刷新)，不得为减少渲染直接禁用 KeepAlive。
 
 有草稿或未确认写意图的 editor 使用 `useTabsStore().registerCloseGuard(routeName, async () => boolean)`，在 `onScopeDispose` 注销。同页可注册多个 guard，全部允许才移出缓存；检查也覆盖非活动标签。提交中返回 false，脏草稿／未知结果须明确确认放弃。普通路由切换不执行关闭 guard，也不丢弃意图。
 

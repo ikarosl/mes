@@ -1,4 +1,4 @@
-import { onActivated, reactive, ref, watch } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import type {
   BatchStepExecutionRecordItem,
   BatchStepScrapRecordView,
@@ -145,11 +145,6 @@ export const useProductionStepScrapDetails = (options: StepScrapDetailsOptions =
     void refresh();
   };
   if (options.contextId) watch(options.contextId, close, { flush: 'sync' });
-  let hasActivated = false;
-  onActivated(() => {
-    if (hasActivated && visible.value) void refresh();
-    hasActivated = true;
-  });
   return reactive({
     visible,
     loading,

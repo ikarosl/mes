@@ -2,7 +2,7 @@ import { reactive, ref } from 'vue';
 import type { SupplierItem } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { EMessage } from '../../../utils/message';
 
 export function useSuppliersList() {
@@ -52,7 +52,7 @@ export function useSuppliersList() {
     await search();
   };
 
-  usePageActivationRefresh(load);
+  usePageInitialLoad(load);
   return {
     query,
     rows,

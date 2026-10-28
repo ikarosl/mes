@@ -710,7 +710,6 @@ const beforeClose = (): void => {
 };
 onActivated(() => {
   active.value = true;
-  if (visible.value && !loading.value && !childOpen.value) void load();
 });
 onDeactivated(() => {
   active.value = false;

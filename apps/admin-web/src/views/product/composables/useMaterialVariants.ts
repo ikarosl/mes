@@ -7,6 +7,7 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 export function useMaterialVariants(materialId: () => string, snapshotRevision: () => number) {
   const variants = ref<MaterialVariantItem[]>([]);
   const loading = ref(false);
+  const ready = ref(false);
   const errorMessage = ref<string | null>(null);
   const reads = useLatestReadRequest(() => (loading.value = false));
 
@@ -18,6 +19,7 @@ export function useMaterialVariants(materialId: () => string, snapshotRevision: 
       () => materialId() === targetId && snapshotRevision() === revision,
     );
     loading.value = true;
+    ready.value = false;
     variants.value = [];
     errorMessage.value = null;
     try {
@@ -25,7 +27,10 @@ export function useMaterialVariants(materialId: () => string, snapshotRevision: 
         signal,
         skipErrorHandling: true,
       });
-      if (isCurrent()) variants.value = result;
+      if (isCurrent()) {
+        variants.value = result;
+        ready.value = true;
+      }
     } catch (error) {
       if (!isCurrent()) return;
       errorMessage.value =
@@ -37,5 +42,5 @@ export function useMaterialVariants(materialId: () => string, snapshotRevision: 
 
   watch([materialId, snapshotRevision], () => void load(), { immediate: true });
 
-  return { variants, loading, errorMessage, load };
+  return { variants, loading, ready, errorMessage, load };
 }

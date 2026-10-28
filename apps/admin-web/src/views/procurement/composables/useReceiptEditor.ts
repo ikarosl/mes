@@ -1,4 +1,4 @@
-import { computed, onActivated, ref } from 'vue';
+import { computed, ref } from 'vue';
 import type {
   ConfirmProcurementReceiptPayload,
   ProcurementReceiptCommandResult,
@@ -262,12 +262,6 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     pageSize.value = value;
     await search();
   };
-  onActivated(() => {
-    if (visible.value && !command.locked.value) {
-      if (order.value) void checkOrder();
-      else void loadOrders();
-    }
-  });
   return {
     visible,
     loading,

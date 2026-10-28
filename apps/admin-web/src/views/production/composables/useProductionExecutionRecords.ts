@@ -89,7 +89,7 @@ export const useProductionExecutionRecords = () => {
         await selectBatch(selectedBatchId.value);
       } else {
         clearCurrentDetails();
-        // 激活刷新不能因分页窗口变化自动换任务或关闭尚未确认的写意图。
+        // 同页刷新不能因分页窗口变化自动换任务或关闭尚未确认的写意图。
         if (options.preserveSelection && selectedBatchId.value) {
           await selectBatch(selectedBatchId.value);
           return isCurrent() ? result.total : null;

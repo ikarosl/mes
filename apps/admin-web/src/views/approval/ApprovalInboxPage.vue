@@ -157,7 +157,11 @@
       :visible="detailVisible"
       :detail="detail"
       :submitting="submitting"
+      refreshable
+      :refreshing="detailLoading"
+      :refresh-error="detailError"
       @update:visible="detailVisible = $event"
+      @refresh="refreshDetail"
       @approve="approve"
       @reject="reject"
       @withdraw="withdraw"
@@ -166,8 +170,9 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, onDeactivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { RequestError } from '@company/request';
 import { Refresh } from '@element-plus/icons-vue';
 import {
   APPROVAL_INSTANCE_STATUS_LABELS,
@@ -223,6 +228,9 @@ const statusOptions = APPROVAL_INSTANCE_STATUSES.map((value) => ({
 }));
 const detailVisible = ref(false);
 const detail = ref<ApprovalInstanceDetail | null>(null);
+const detailId = ref<string | null>(null);
+const detailLoading = ref(false);
+const detailError = ref('');
 const submitting = ref(false);
 let detailRequestToken = 0;
 
@@ -237,23 +245,39 @@ const statusMeta = (status: ApprovalInstanceStatus) => {
   } as const;
 };
 
-const openDetail = async (id: string): Promise<void> => {
+const refreshDetail = async (): Promise<void> => {
+  const id = detailId.value;
+  if (!detailVisible.value || !id || submitting.value) return;
   const token = ++detailRequestToken;
-  detail.value = null;
-  detailVisible.value = true;
+  detailLoading.value = true;
+  detailError.value = '';
   try {
     const result = await approvalApi.instance(id);
     if (token === detailRequestToken) detail.value = result;
   } catch (error) {
     if (token !== detailRequestToken) return;
-    detailVisible.value = false;
+    detailError.value = '审批详情刷新失败，请重试后再操作。';
+    if (!detail.value || (error instanceof RequestError && [403, 404].includes(error.status))) {
+      detail.value = null;
+      detailVisible.value = false;
+    }
     EMessage.error(error, '审批详情加载失败');
+  } finally {
+    if (token === detailRequestToken) detailLoading.value = false;
   }
+};
+
+const openDetail = async (id: string): Promise<void> => {
+  if (submitting.value) return;
+  detailId.value = id;
+  detail.value = null;
+  detailVisible.value = true;
+  await refreshDetail();
 };
 
 const execute = async (kind: 'approve' | 'reject' | 'withdraw', comment: string): Promise<void> => {
   const current = detail.value;
-  if (!current || submitting.value) return;
+  if (!current || submitting.value || detailLoading.value || detailError.value) return;
   const token = detailRequestToken;
   submitting.value = true;
   try {
@@ -309,6 +333,9 @@ watch(detailVisible, (visible) => {
   if (visible) return;
   ++detailRequestToken;
   detail.value = null;
+  detailId.value = null;
+  detailLoading.value = false;
+  detailError.value = '';
   if (route.name === 'approval-inbox' && route.query.instanceId) {
     const query = { ...route.query };
     delete query.instanceId;
@@ -318,21 +345,34 @@ watch(detailVisible, (visible) => {
   }
 });
 
+let acceptedRouteTarget: { instanceId: string; subjectId: string } | null = null;
 watch(
-  () => [route.query.instanceId, route.query.subjectId],
-  ([instanceId, subjectId]) => {
-    if (route.name !== 'approval-inbox') return;
-    query.subjectId = typeof subjectId === 'string' ? subjectId : '';
-    if (query.subjectId) {
-      query.scope = 'all';
-      query.status = '';
+  () => [route.name, route.query.instanceId, route.query.subjectId] as const,
+  ([name, instance, subject]) => {
+    if (name !== 'approval-inbox') return;
+    const target = {
+      instanceId: typeof instance === 'string' ? instance : '',
+      subjectId: typeof subject === 'string' ? subject : '',
+    };
+    const previous = acceptedRouteTarget;
+    acceptedRouteTarget = target;
+    if (!previous || previous.subjectId !== target.subjectId) {
+      query.subjectId = target.subjectId;
+      if (query.subjectId) {
+        query.scope = 'all';
+        query.status = '';
+      }
+      void search();
     }
-    if (typeof instanceId === 'string') void openDetail(instanceId);
-    void search();
+    if (target.instanceId && previous?.instanceId !== target.instanceId)
+      void openDetail(target.instanceId);
   },
   { immediate: true },
 );
-onActivated(() => void load());
+onDeactivated(() => {
+  ++detailRequestToken;
+  detailLoading.value = false;
+});
 </script>
 
 <style scoped>

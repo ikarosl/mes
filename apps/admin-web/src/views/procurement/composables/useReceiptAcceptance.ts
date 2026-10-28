@@ -373,9 +373,6 @@ export function useReceiptAcceptance(
   };
   onActivated(() => {
     active.value = true;
-    if (!visible.value || command.locked.value) return;
-    if (line.value) void check();
-    else if (!stale.value) void loadContext();
   });
   onDeactivated(() => {
     active.value = false;
@@ -409,6 +406,7 @@ export function useReceiptAcceptance(
     open,
     close,
     confirm,
+    check,
     loadContext,
   };
 }

@@ -79,7 +79,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { onActivated, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import type {
   PurchaseOrderItem,
   PurchaseOrderStatus,
@@ -171,9 +171,6 @@ const close = (): void => {
 };
 watch(visible, (value) => {
   if (!value) read.invalidate();
-});
-onActivated(() => {
-  if (visible.value) void load();
 });
 defineExpose({ open, close, visible });
 </script>

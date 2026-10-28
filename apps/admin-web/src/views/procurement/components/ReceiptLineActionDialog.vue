@@ -152,6 +152,10 @@
         @click="close"
         >关闭</el-button
       ><el-button
+        :disabled="loading || command.locked.value"
+        @click="check()"
+        >核对当前依据</el-button
+      ><el-button
         v-if="command.status.value === 'pending'"
         type="primary"
         :loading="command.busy.value"
@@ -199,6 +203,7 @@ const {
   command,
   open,
   close,
+  check,
   confirm,
 } = useReceiptLineAction((result) => emit('saved', result));
 const line = computed(() =>

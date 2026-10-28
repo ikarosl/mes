@@ -5,6 +5,7 @@ import axios, {
   type InternalAxiosRequestConfig,
 } from 'axios';
 import { IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
+import { installReadConcurrency } from './read-concurrency.js';
 
 export interface RetryRequestConfig extends AxiosRequestConfig {
   retryTimes?: number;
@@ -85,6 +86,7 @@ export const createRequestClient = (
   options: {
     baseURL?: string;
     timeoutMs?: number;
+    maxConcurrentReads?: number;
     onLoadingChange?: (loading: boolean) => void;
   } = {},
 ) => {
@@ -94,6 +96,8 @@ export const createRequestClient = (
     options.onLoadingChange?.(loadingCount > 0);
   };
   const client = axios.create({ baseURL: options.baseURL, timeout: options.timeoutMs ?? 10_000 });
+  if (options.maxConcurrentReads !== undefined)
+    installReadConcurrency(client, options.maxConcurrentReads);
   client.interceptors.request.use((config) => {
     loading(1);
     return config;

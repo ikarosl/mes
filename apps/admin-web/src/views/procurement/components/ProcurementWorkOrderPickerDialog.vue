@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import type { ProcurementDemandWorkOrder } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
@@ -116,7 +116,4 @@ watch(
     } else read.invalidate();
   },
 );
-onActivated(() => {
-  if (props.visible) void load();
-});
 </script>

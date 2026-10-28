@@ -603,7 +603,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type {
   ReceiptRevisionItem,
@@ -783,9 +783,6 @@ const goInbound = async (id: string): Promise<void> => {
 };
 watch(visible, (value) => {
   if (!value) read.invalidate();
-});
-onActivated(() => {
-  if (visible.value) void load();
 });
 
 defineExpose({ open, close, visible, locked: computed(() => false) });

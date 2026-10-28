@@ -257,7 +257,7 @@ import { Refresh } from '@element-plus/icons-vue';
 import { BATCH_STEP_STATUS_LABELS, PRODUCTION_WORKER_TASK_STATUSES } from '@company/constants';
 import type { BatchStepReportView, ProductionWorkerTaskItem } from '@company/contracts';
 import { productionApi } from '../../api/production';
-import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../composables/requests/usePageInitialLoad';
 import { useLatestRequest } from '../../composables/requests/useLatestRequest';
 import { useTabsStore } from '../../stores/tabs';
 import TableToolbar from '../../components/TableToolbar.vue';
@@ -431,7 +431,7 @@ onActivated(() => {
 });
 onDeactivated(invalidateNavigation);
 onScopeDispose(invalidateNavigation);
-usePageActivationRefresh(reload);
+usePageInitialLoad(reload);
 </script>
 
 <style scoped>

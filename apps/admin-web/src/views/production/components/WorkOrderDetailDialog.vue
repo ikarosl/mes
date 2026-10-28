@@ -288,6 +288,14 @@
         </div>
       </section>
     </template>
+    <template #footer>
+      <el-button @click="$emit('update:visible', false)">关闭</el-button>
+      <el-button
+        :loading="loading"
+        @click="$emit('refresh')"
+        >刷新详情</el-button
+      >
+    </template>
   </el-dialog>
 </template>
 
@@ -316,6 +324,7 @@ const props = defineProps<{
 
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
+  (e: 'refresh'): void;
   (e: 'view-research-order', id: string): void;
   (e: 'next-research-round', order: WorkOrderDetail): void;
 }>();

@@ -161,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import type { BatchStepReportReference, BatchStepReportView } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
@@ -277,11 +277,6 @@ watch(
     void loadReports();
   },
 );
-let hasActivated = false;
-onActivated(() => {
-  if (hasActivated) void loadReports();
-  hasActivated = true;
-});
 defineExpose({ refresh: loadReports });
 </script>
 

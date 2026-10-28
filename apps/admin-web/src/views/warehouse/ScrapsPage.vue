@@ -295,7 +295,7 @@
 
 <script setup lang="ts">
 import { MATERIAL_LOSS_PURPOSE_LABELS } from '@company/constants';
-import { computed, onActivated, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   MaterialLossBatchOption,
@@ -509,7 +509,6 @@ const statusTag = (status: ScrapStatus) => {
   return 'warning';
 };
 onMounted(loadRows);
-onActivated(loadRows);
 </script>
 
 <style scoped>

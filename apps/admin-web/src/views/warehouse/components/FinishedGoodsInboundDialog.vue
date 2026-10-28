@@ -472,14 +472,11 @@ watch(
   (active) => {
     if (!active) {
       invalidateOpenedReads();
-    } else refreshOpenedContext();
+    }
   },
 );
-let activated = false;
 onActivated(() => {
   pageActive = true;
-  if (activated) refreshOpenedContext();
-  activated = true;
 });
 onDeactivated(() => {
   pageActive = false;

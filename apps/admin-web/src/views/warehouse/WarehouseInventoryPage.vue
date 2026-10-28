@@ -555,8 +555,17 @@
             ></el-table
           ></template
         >
-      </div></el-dialog
-    >
+      </div>
+      <template #footer>
+        <el-button
+          :loading="detailLoading"
+          :disabled="!selectedBatchId"
+          @click="selectedBatchId && openDetail(selectedBatchId, detailOpenedFromRoute)"
+          >刷新</el-button
+        >
+        <el-button @click="detailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup lang="ts">
@@ -684,6 +693,7 @@ const requestedBatchId = computed(() =>
     : null,
 );
 let detailOpenedFromRoute = false;
+let consumedBatchId: string | null = null;
 const openDetail = async (id: string, selectBatchTab = false): Promise<void> => {
   if (!detailReads.isActive()) return;
   selectedBatchId.value = id;
@@ -720,14 +730,18 @@ watch(
     }
   },
 );
-watch(
-  requestedBatchId,
-  (id) => {
-    if (id) void openDetail(id, true);
-    else if (detailOpenedFromRoute && detailLoading.value) detailReads.invalidate();
-  },
-  { immediate: true },
-);
+const locateBatch = (id: string | null): void => {
+  if (route.name !== 'warehouse-inventory') return;
+  if (!id) {
+    consumedBatchId = null;
+    if (detailOpenedFromRoute && detailLoading.value) detailReads.invalidate();
+    return;
+  }
+  if (id === consumedBatchId || !detailReads.isActive()) return;
+  consumedBatchId = id;
+  void openDetail(id, true);
+};
+watch(requestedBatchId, locateBatch, { immediate: true });
 const demandTypeLabel = (type: DemandType): string => DEMAND_GENERATION_GROUP_TYPE_LABELS[type];
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
@@ -750,19 +764,8 @@ const refreshCurrentView = () => {
   return batchList.value.load();
 };
 onMounted(refreshCurrentView);
-let activated = false;
 onActivated(() => {
-  if (!activated) {
-    activated = true;
-    return;
-  }
-  void refreshCurrentView();
-  const requestedId = requestedBatchId.value;
-  if (requestedId && selectedBatchId.value !== requestedId) {
-    void openDetail(requestedId, true);
-  } else if (detailVisible.value && !detail.value && selectedBatchId.value) {
-    void openDetail(selectedBatchId.value, requestedId === selectedBatchId.value);
-  }
+  locateBatch(requestedBatchId.value);
 });
 watch(viewMode, refreshCurrentView);
 </script>

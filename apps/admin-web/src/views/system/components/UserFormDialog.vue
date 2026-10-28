@@ -100,7 +100,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, reactive } from 'vue';
+import { computed, reactive } from 'vue';
 import { SYSTEM_STATUS } from '@company/constants';
 import type { SystemRoleOption } from '@company/contracts';
 import { useDepartmentOptions } from '../../../composables/options/useDepartmentOptions';
@@ -143,11 +143,6 @@ const handleOpen = (): void => {
   void departmentSource.refresh();
   if (!props.editingUserId) emit('refresh-roles');
 };
-
-/** 缓存页重新激活且弹窗仍打开：重新刷新自持的部门候选（architecture.md §6 仍打开的弹窗自持刷新） */
-onActivated(() => {
-  if (props.visible) void departmentSource.refresh();
-});
 
 const initialForm = (): UserFormValue => ({
   username: '',

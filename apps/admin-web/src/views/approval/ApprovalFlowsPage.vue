@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, onMounted, ref } from 'vue';
+import { onMounted, ref } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import type {
   ApprovalFlowDetail,
@@ -234,10 +234,6 @@ const publish = async (payload: SaveApprovalFlowDraft): Promise<void> => {
 
 onMounted(() => {
   void loadScenes();
-});
-onActivated(() => {
-  void loadScenes();
-  if (editorVisible.value) void Promise.all([loadRoleOptions(), loadUserOptions()]);
 });
 </script>
 

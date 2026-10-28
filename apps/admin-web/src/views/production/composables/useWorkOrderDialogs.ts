@@ -1,4 +1,4 @@
-import { onActivated, onBeforeUnmount, onDeactivated, ref, type Ref } from 'vue';
+import { onBeforeUnmount, onDeactivated, ref, type Ref } from 'vue';
 import type { WorkOrderDetail, WorkOrderItem } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { EMessage } from '../../../utils/message';
@@ -20,6 +20,7 @@ export const useWorkOrderDialogs = (options: {
   endRow: (id: string) => void;
 }) => {
   const activeOrder = ref<WorkOrderDetail | null>(null);
+  const detailOrderId = ref<string | null>(null);
   const detailDialogVisible = ref(false);
   const detailLoading = ref(false);
   let generation = 0;
@@ -35,18 +36,19 @@ export const useWorkOrderDialogs = (options: {
     if (!visible) {
       invalidate();
       activeOrder.value = null;
+      detailOrderId.value = null;
     }
   };
 
-  const openDetail = async (row: Pick<WorkOrderItem, 'id'>) => {
+  const refreshDetail = async (): Promise<void> => {
+    const orderId = detailOrderId.value;
+    if (!detailDialogVisible.value || !orderId) return;
     const request = ++generation;
-    detailDialogVisible.value = true;
     detailLoading.value = true;
-    activeOrder.value = null;
     try {
-      const response = await productionApi.getOrder(row.id);
+      const response = await productionApi.getOrder(orderId);
       if (request !== generation || !detailDialogVisible.value) return;
-      activeOrder.value = requireWorkOrderDetail(response, row.id);
+      activeOrder.value = requireWorkOrderDetail(response, orderId);
     } catch (error) {
       if (request === generation) EMessage.error(error, '工单详情查询失败');
     } finally {
@@ -54,11 +56,12 @@ export const useWorkOrderDialogs = (options: {
     }
   };
 
-  onActivated(() => {
-    if (detailDialogVisible.value && activeOrder.value) {
-      void openDetail({ id: activeOrder.value.id });
-    }
-  });
+  const openDetail = async (row: Pick<WorkOrderItem, 'id'>): Promise<void> => {
+    detailOrderId.value = row.id;
+    detailDialogVisible.value = true;
+    activeOrder.value = null;
+    await refreshDetail();
+  };
 
   const openForm = async (row: WorkOrderItem, nextRound: boolean) => {
     if (!options.beginRow(row.id)) return;
@@ -98,6 +101,7 @@ export const useWorkOrderDialogs = (options: {
     detailDialogVisible,
     detailLoading,
     openDetail,
+    refreshDetail,
     closeDetail,
     invalidate,
     openEdit: (row: WorkOrderItem) => openForm(row, false),

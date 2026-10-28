@@ -147,7 +147,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
@@ -221,11 +221,6 @@ watch(
     );
   },
 );
-
-/** 页面重新激活且弹窗打开时刷新未绑定候选（不重载步骤行，保留 localSteps 草稿） */
-onActivated(() => {
-  if (props.visible) refreshDialogOptions();
-});
 
 const addStep = (): void => {
   localSteps.value.push({

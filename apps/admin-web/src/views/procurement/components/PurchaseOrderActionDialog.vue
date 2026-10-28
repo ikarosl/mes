@@ -183,10 +183,9 @@
         >关闭</el-button
       >
       <el-button
-        v-if="readError"
-        :disabled="command.locked.value"
+        :disabled="loading || command.locked.value"
         @click="retryLoad"
-        >重新加载</el-button
+        >刷新依据</el-button
       >
       <el-button
         v-if="command.status.value === 'pending'"

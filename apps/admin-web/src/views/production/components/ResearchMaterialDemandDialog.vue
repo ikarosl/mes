@@ -139,7 +139,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { computed, onActivated, onScopeDispose, ref, watch } from 'vue';
+import { computed, onScopeDispose, ref, watch } from 'vue';
 import type {
   AddManualMaterialDemandsPayload,
   MaterialOption,
@@ -343,9 +343,6 @@ watch(
     }
   },
 );
-onActivated(() => {
-  if (props.visible && !unresolved.value) void searchMaterials();
-});
 </script>
 <style scoped>
 .research-demand-form {

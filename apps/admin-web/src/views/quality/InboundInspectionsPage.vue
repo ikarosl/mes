@@ -266,11 +266,11 @@ async function locate(): Promise<void> {
   const lineId = typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : '';
   const caseId = typeof route.query.caseId === 'string' ? route.query.caseId : '';
   const token = JSON.stringify([lineId, caseId]);
-  const sameDetail =
-    detail.value?.visible &&
-    (!lineId || detail.value.openedLineId === lineId) &&
-    detail.value.openedCaseId === caseId;
-  if ((!lineId && !caseId) || (token === consumed && (navigating || sameDetail))) return;
+  if (!lineId && !caseId) {
+    consumed = token;
+    return;
+  }
+  if (token === consumed) return;
   if (navigating) {
     pendingLocate = true;
     return;

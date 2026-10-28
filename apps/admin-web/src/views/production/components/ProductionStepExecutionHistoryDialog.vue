@@ -91,7 +91,7 @@
 </template>
 
 <script setup lang="ts">
-import { onActivated, ref, watch } from 'vue';
+import { ref, watch } from 'vue';
 import type { BatchStepStatus, ProductionStepExecutionHistoryItem } from '@company/contracts';
 import {
   BATCH_STEP_STATUS_LABELS,
@@ -180,9 +180,6 @@ watch(
     void load();
   },
 );
-onActivated(() => {
-  if (props.modelValue) void load();
-});
 </script>
 
 <style scoped>

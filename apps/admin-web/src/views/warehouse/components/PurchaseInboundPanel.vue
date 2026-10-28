@@ -604,6 +604,7 @@ function retryHistoryLocation(): void {
   if (id && !locatedOnPage.value) void history.loadDetail(id);
 }
 let navigating = false;
+let consumedLocation = '';
 let pendingLocation: readonly [string | null | undefined, string | null | undefined] | null = null;
 async function locate(
   inboundId: string | null | undefined,
@@ -613,7 +614,10 @@ async function locate(
     pendingLocation = [inboundId, receiptLineId];
     return;
   }
+  const token = JSON.stringify([inboundId ?? '', receiptLineId ?? '']);
+  if (token === consumedLocation) return;
   if (!inboundId && !receiptLineId) {
+    consumedLocation = token;
     pendingLocation = null;
     if (locationOrigin.value === 'route') {
       historyLoadSequence += 1;
@@ -636,6 +640,7 @@ async function locate(
     (!inboundId && receiptLineId === releases.query.receiptLineId && view.value === 'releases')
   )
     return;
+  consumedLocation = token;
   const restore = async () => {
     if (route.name !== 'warehouse-inbound') return;
     if (route.query.inboundId !== inboundId && route.query.receiptLineId !== receiptLineId) return;
@@ -703,22 +708,18 @@ onMounted(() => {
 watch(
   () => props.active,
   (active) => {
-    if (active) void refreshActive();
-    else {
+    if (!active) {
       historyLoadSequence += 1;
       history.cancelList();
       history.closeDetail();
     }
   },
 );
-let activated = false;
 onActivated(() => {
   pageActive.value = true;
   const next = pendingLocation;
   pendingLocation = null;
   if (next) void locate(next[0], next[1]);
-  else if (activated && props.active) void refreshActive();
-  activated = true;
 });
 onDeactivated(() => {
   pageActive.value = false;

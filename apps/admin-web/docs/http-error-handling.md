@@ -8,6 +8,8 @@ API wrapper 统一使用 [httpClient](../src/api/http.ts)。启动时先配置�
 
 ## 4. 基础请求与重试
 
+管理端共享客户端通过 `maxConcurrentReads: 4` 限制 GET／HEAD 的实际并发，超出部分排队。写请求及登录、续期不占只读名额，不按时间窗口丢弃请求或共用不同资源结果。排队取消、超时起算及重试释放规则由 [request 包](../../../packages/request/README.md)维护；业务页面仍负责目标身份与请求代际校验。
+
 | 请求 | 可自动重试的失败 |
 | --- | --- |
 | GET／HEAD／OPTIONS | 无响应或 HTTP ≥500 |

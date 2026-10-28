@@ -25,6 +25,14 @@
         >重新加载</el-button
       >
     </div>
+    <div v-else-if="!ready">
+      <span>物料版本尚未加载</span>
+      <el-button
+        class="retry-button"
+        @click="load"
+        >加载版本</el-button
+      >
+    </div>
     <el-table
       v-else
       :data="variants"
@@ -87,7 +95,7 @@ const props = defineProps<{
 }>();
 defineEmits<{ (event: 'change-status', variant: MaterialVariantItem): void }>();
 
-const { variants, loading, errorMessage, load } = useMaterialVariants(
+const { variants, loading, ready, errorMessage, load } = useMaterialVariants(
   () => props.materialId,
   () => props.snapshotRevision,
 );

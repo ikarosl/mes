@@ -94,7 +94,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, reactive, watch } from 'vue';
+import { computed, reactive, watch } from 'vue';
 import type { ProductCategoryPayload, ProductItemKind } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
@@ -149,7 +149,7 @@ const setForm = (row: {
   });
 };
 
-/** 弹窗自持父分类候选：打开、重新激活、下拉展开时刷新；失败保留上次成功（P2a） */
+/** 弹窗自持父分类候选，打开或展开下拉时刷新，失败保留上次成功结果。 */
 const categorySource = useProductCategoryOptions();
 const parentOptions = computed(() =>
   categorySource.options.value.filter(
@@ -165,10 +165,6 @@ watch(
     if (visible) void categorySource.refresh();
   },
 );
-onActivated(() => {
-  if (props.visible) void categorySource.refresh();
-});
-
 const handleSubmit = (): void => {
   if (!form.categoryCode.trim() || !form.categoryName.trim()) {
     EMessage.warning('请填写分类编码和分类名称');

@@ -198,7 +198,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type { ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
@@ -337,7 +337,7 @@ const reloadLatest = async (): Promise<void> => {
   }
 };
 
-/** 下拉展开 / 页面激活：只刷新候选，不重载 BOM 明细（避免覆盖用户草稿行） */
+/** 下拉展开只刷新候选，不重载 BOM 明细，避免覆盖用户草稿行。 */
 const refreshCandidates = (): void => {
   if (!props.product) return;
   void refreshOptions(props.product.id);
@@ -352,11 +352,6 @@ const retryNow = (): void => {
   }
   refreshCandidates();
 };
-
-/** 页面重新激活且弹窗打开时只刷新候选（不重试明细，不覆盖草稿行） */
-onActivated(() => {
-  if (props.visible && props.product) void refreshOptions(props.product.id);
-});
 
 const addRow = (): void => {
   localRows.value.push({

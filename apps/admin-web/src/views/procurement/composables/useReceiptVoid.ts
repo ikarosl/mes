@@ -1,4 +1,4 @@
-import { computed, onActivated, ref } from 'vue';
+import { computed, ref } from 'vue';
 import type {
   ProcurementReceiptVoidingDetail,
   VoidProcurementReceiptCommandResult,
@@ -175,9 +175,6 @@ export function useReceiptVoid(
       '整张到货登记已作废，历史记录已保留',
     );
   };
-  onActivated(() => {
-    if (visible.value && !command.locked.value) void load();
-  });
   return {
     visible,
     loading,

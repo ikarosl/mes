@@ -292,7 +292,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, reactive, ref, watch } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
 import type {
   ProcessRouteOption,
   ProductionBatchDetail,
@@ -372,20 +372,13 @@ const onOpen = (): void => {
   emit('refresh-sop-files');
 };
 
-/** 打开（props.visible 变 true）：执行 onOpen；页面激活时若弹窗仍打开则再次定向刷新 */
+/** 打开时读取候选，不因恢复缓存页覆盖本次填写的上下文。 */
 watch(
   () => props.visible,
   (visible) => {
     if (visible) onOpen();
   },
 );
-
-onActivated(() => {
-  if (props.visible) {
-    if (!props.editingTaskId) void routeSource.refresh();
-    void workOrderSource.refresh();
-  }
-});
 
 const form = reactive(initialForm());
 const {

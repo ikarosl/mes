@@ -23,6 +23,14 @@
       </section>
 
       <el-alert
+        v-if="refreshError"
+        type="error"
+        :closable="false"
+        show-icon
+        :title="refreshError"
+      />
+
+      <el-alert
         v-if="detail.blocked"
         type="warning"
         :closable="false"
@@ -280,6 +288,7 @@
             v-if="detail.canApprove"
             type="success"
             :loading="submitting"
+            :disabled="refreshing || !!refreshError"
             @click="approve"
             >通过当前节点</el-button
           >
@@ -287,12 +296,14 @@
             v-if="detail.canApprove"
             type="danger"
             :loading="submitting"
+            :disabled="refreshing || !!refreshError"
             @click="reject"
             >驳回申请</el-button
           >
           <el-button
             v-if="detail.canWithdraw"
             :loading="submitting"
+            :disabled="refreshing || !!refreshError"
             @click="withdraw"
             >撤回申请</el-button
           >
@@ -312,6 +323,13 @@
     />
     <template #footer>
       <el-button @click="$emit('update:visible', false)">关闭</el-button>
+      <el-button
+        v-if="refreshable"
+        :loading="refreshing"
+        :disabled="submitting"
+        @click="$emit('refresh')"
+        >刷新详情</el-button
+      >
     </template>
   </el-dialog>
 </template>
@@ -346,10 +364,14 @@ const props = defineProps<{
   visible: boolean;
   detail: ApprovalInstanceDetail | null;
   submitting: boolean;
+  refreshable?: boolean;
+  refreshing?: boolean;
+  refreshError?: string;
 }>();
 
 const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
+  (event: 'refresh'): void;
   (event: 'approve', comment: string): void;
   (event: 'reject', comment: string): void;
   (event: 'withdraw', comment: string): void;

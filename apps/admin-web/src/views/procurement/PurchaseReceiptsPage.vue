@@ -40,6 +40,10 @@
             :icon="Plus"
             @click="create()"
             >记录到货</el-button
+          ><el-button
+            v-if="route.query.receiptId || route.query.receiptLineId || route.query.purchaseOrderId"
+            @click="retryLocation"
+            >重新读取定位</el-button
           ></template
         >
       </ReceiptLinesTable>
@@ -179,6 +183,10 @@ const saved = async (id: string): Promise<void> => {
 let consumed = '',
   accepted: Record<string, string> = {};
 let routeRevision = 0;
+const retryLocation = (): void => {
+  consumed = '';
+  void locate();
+};
 const locate = async (): Promise<void> => {
   const revision = routeRevision;
   if (route.name !== 'procurement-receipts') return;
@@ -189,15 +197,11 @@ const locate = async (): Promise<void> => {
   const orderId =
     typeof route.query.purchaseOrderId === 'string' ? route.query.purchaseOrderId : '';
   const token = JSON.stringify([receiptId, lineId, orderId]);
-  const sameDetail =
-    detail.value?.visible &&
-    (!receiptId || detail.value.openedReceiptId === receiptId) &&
-    (!lineId || detail.value.openedLineId === lineId);
-  if (
-    (!receiptId && !lineId && !orderId) ||
-    (token === consumed && (navigating || (orderId ? editor.value?.visible : sameDetail)))
-  )
+  if (!receiptId && !lineId && !orderId) {
+    consumed = token;
     return;
+  }
+  if (token === consumed) return;
   if (navigating) {
     pendingLocate = true;
     return;

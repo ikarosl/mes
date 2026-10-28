@@ -217,7 +217,7 @@
               class="expanded-panel"
             >
               <MaterialVariantsPanel
-                v-if="materialDetailsReady && isMaterialViewActive"
+                v-if="materialDetailsReady && viewMode === 'materials'"
                 :key="material.id"
                 :material-id="material.id"
                 :snapshot-revision="materials.snapshotRevision.value"
@@ -693,20 +693,11 @@ onMounted(() => {
   void loadActive();
   void categorySource.refresh();
 });
-let hasActivated = false;
 onActivated(() => {
   pageActive.value = true;
-  // KeepAlive 首次挂载也会激活；初次加载由 onMounted 负责。
-  if (!hasActivated) {
-    hasActivated = true;
-    return;
-  }
-  void loadActive();
-  void categorySource.refresh();
 });
 onDeactivated(() => {
   pageActive.value = false;
-  materialDetailsReady.value = false;
   materials.invalidate();
 });
 </script>

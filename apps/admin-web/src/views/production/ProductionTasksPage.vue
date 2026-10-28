@@ -440,7 +440,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue';
 import TableToolbar from '../../components/TableToolbar.vue';
@@ -629,7 +629,9 @@ let locatingRouteOutput = false;
 async function locateOutput(): Promise<void> {
   if (route.name !== 'production-tasks' || locatingRouteOutput) return;
   const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
+  if (!id) acceptedOutput = '';
   if (!/^[1-9]\d*$/.test(id)) return;
+  if (acceptedOutput === id) return;
   locatingRouteOutput = true;
   try {
     await nextTick();
@@ -1128,10 +1130,6 @@ onMounted(() => {
   const keyword = route.query.keyword;
   if (typeof keyword === 'string') query.keyword = keyword;
   void loadPageData();
-});
-/** 页面重新激活仅处理产出定位；候选由实际使用入口按需读取。 */
-onActivated(() => {
-  void locateOutput();
 });
 </script>
 

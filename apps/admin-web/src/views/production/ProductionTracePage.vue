@@ -535,7 +535,7 @@
 
 <script setup lang="ts">
 import { reactive, ref, watch } from 'vue';
-import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../composables/requests/usePageInitialLoad';
 import { useRouteAccess } from '../../composables/useRouteAccess';
 import ProductionOutputDialog from './components/ProductionOutputDialog.vue';
 import ProductionStepProgress from './components/ProductionStepProgress.vue';
@@ -646,7 +646,7 @@ const refresh = async () => {
   else await runSearch();
 };
 
-usePageActivationRefresh(refresh);
+usePageInitialLoad(refresh);
 </script>
 
 <style scoped>

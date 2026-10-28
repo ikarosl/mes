@@ -1,4 +1,4 @@
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type {
   BatchCloseoutDetail,
   BatchCloseoutItemKind,
@@ -342,11 +342,6 @@ export function useBatchCloseout(
     },
     { immediate: true },
   );
-  let activated = false;
-  onActivated(() => {
-    if (activated && !submitting.value && !batchHandling.value && !unresolved.value) void load();
-    activated = true;
-  });
   return {
     check,
     detail,

@@ -51,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type { MaterialOption, MaterialVariantItem } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useRefreshableOptions } from '../../../composables/options/useRefreshableOptions';
@@ -128,12 +128,6 @@ watch(
   },
   { immediate: true },
 );
-const refresh = async (): Promise<void> => {
-  await Promise.all([materials.refresh(), variants.refresh()]);
-};
-onActivated(() => {
-  void refresh();
-});
 void materials.refresh();
 </script>
 

@@ -429,7 +429,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   StockCheckCandidateItem,
@@ -758,7 +758,6 @@ function closeDetail() {
 }
 
 onMounted(loadRows);
-onActivated(loadRows);
 </script>
 
 <style scoped>

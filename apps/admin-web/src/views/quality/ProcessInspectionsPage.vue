@@ -27,7 +27,12 @@
         ><template #actions
           ><InlineHint
             >每个任务工序一行，进入后登记检查或处理已有记录。累计仅含有效结果，不代表独立实物覆盖量。</InlineHint
-          ></template
+          >
+          <el-button
+            v-if="typeof route.query.inspectionId === 'string'"
+            @click="retryLocation"
+            >重新读取定位检查</el-button
+          > </template
         ><template #tools
           ><el-button
             :icon="Refresh"
@@ -156,7 +161,7 @@ import InspectionQuantity from './components/InspectionQuantity.vue';
 import ProcessInspectionStepDialog from './components/ProcessInspectionStepDialog.vue';
 import { processInspectionsApi } from '../../api/process-inspections';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
-import { usePageActivationRefresh } from '../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../composables/requests/usePageInitialLoad';
 import { formatDateTimeForDisplay } from '../../utils/date';
 defineOptions({ name: 'ProcessInspectionsPage' });
 const keyword = ref(''),
@@ -214,22 +219,28 @@ async function changePageSize(value: number): Promise<void> {
   pageSize.value = value;
   await search();
 }
-usePageActivationRefresh(load);
+usePageInitialLoad(load);
 const route = useRoute(),
   router = useRouter();
 let locating = false;
+let consumedInspectionId = '';
+function retryLocation(): void {
+  consumedInspectionId = '';
+  void locate();
+}
 async function locate(): Promise<void> {
-  if (
-    route.name !== 'quality-process-inspections' ||
-    typeof route.query.inspectionId !== 'string' ||
-    locating
-  )
+  if (route.name !== 'quality-process-inspections') return;
+  if (typeof route.query.inspectionId !== 'string') {
+    consumedInspectionId = '';
     return;
+  }
   const id = route.query.inspectionId;
+  if (locating || id === consumedInspectionId) return;
   locating = true;
   try {
     await nextTick();
     if (route.name !== 'quality-process-inspections' || route.query.inspectionId !== id) return;
+    consumedInspectionId = id;
     const opened = await dialog.value?.openInspection(id);
     if (opened && route.name === 'quality-process-inspections' && route.query.inspectionId === id) {
       const query = { ...route.query };

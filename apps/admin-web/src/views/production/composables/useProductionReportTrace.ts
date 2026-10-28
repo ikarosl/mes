@@ -1,4 +1,4 @@
-import { onActivated, reactive, ref, watch } from 'vue';
+import { reactive, ref, watch } from 'vue';
 import type { BatchStepReportDetail, BatchStepReportReference } from '@company/contracts';
 import { productionApi } from '../../../api/production';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -68,11 +68,6 @@ export const useProductionReportTrace = (options: ProductionReportTraceOptions =
     void refresh();
   };
   if (options.contextId) watch(options.contextId, close, { flush: 'sync' });
-  let hasActivated = false;
-  onActivated(() => {
-    if (hasActivated && visible.value) void refresh();
-    hasActivated = true;
-  });
   return reactive({
     visible,
     loading,

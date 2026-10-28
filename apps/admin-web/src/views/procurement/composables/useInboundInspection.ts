@@ -1,4 +1,4 @@
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type {
   ProcurementInboundInspectionDetail,
   QualityInboundCaseItem,
@@ -33,17 +33,14 @@ export function useInboundInspection(onChanged: () => void) {
     recordsLoading.value = false;
   });
 
-  const actions = useReceiptLineAction(
-    async (result) => {
-      onChanged();
-      if (!visible.value || result.receiptLineId !== lineId.value) return;
-      const latest = await loadDetail();
-      recordsLoaded.value = false;
-      if (activeTab.value === 'history') void loadRecords();
-      return latest ?? undefined;
-    },
-    { refreshOnActivated: false },
-  );
+  const actions = useReceiptLineAction(async (result) => {
+    onChanged();
+    if (!visible.value || result.receiptLineId !== lineId.value) return;
+    const latest = await loadDetail();
+    recordsLoaded.value = false;
+    if (activeTab.value === 'history') void loadRecords();
+    return latest ?? undefined;
+  });
   const reviewingCase = computed(() => (line.value ? currentReceiptCase(line.value) : undefined));
   const editingLine = computed(() => {
     const source = actions.line.value;
@@ -226,9 +223,6 @@ export function useInboundInspection(onChanged: () => void) {
     },
     { flush: 'sync' },
   );
-  onActivated(() => {
-    if (visible.value) void refresh();
-  });
   return {
     visible,
     lineId,

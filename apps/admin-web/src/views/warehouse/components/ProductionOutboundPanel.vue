@@ -471,11 +471,8 @@ const escapeHtml = (value: string): string =>
   );
 
 onMounted(loadRows);
-let activated = false;
 onActivated(() => {
   pageActive.value = true;
-  if (activated) void loadRows();
-  activated = true;
 });
 onDeactivated(() => (pageActive.value = false));
 watch(detailVisible, (visible) => {

@@ -8,11 +8,13 @@ export function useProductionExecutionLocation(options: {
   selectedBatchId: Readonly<Ref<string | null>>;
   selectBatch: (batchId: string) => Promise<void>;
   openStep: (stepId: string) => Promise<boolean>;
-}): () => Promise<void> {
+}): (force?: boolean) => Promise<void> {
   const route = useRoute(),
     router = useRouter();
   let locating = false;
-  const locate = async (): Promise<void> => {
+  let acceptedTarget = '';
+  const locate = async (force = false): Promise<void> => {
+    if (route.name === 'production-execution-records' && !route.query.batchId) acceptedTarget = '';
     if (
       route.name !== 'production-execution-records' ||
       typeof route.query.batchId !== 'string' ||
@@ -22,10 +24,19 @@ export function useProductionExecutionLocation(options: {
       return;
     const batchId = route.query.batchId;
     const stepId = typeof route.query.stepId === 'string' ? route.query.stepId : null;
+    const target = `${batchId}:${stepId ?? ''}`;
+    if (!force && acceptedTarget === target) return;
     locating = true;
     try {
       await nextTick();
-      if (options.loading.value || route.name !== 'production-execution-records') return;
+      if (
+        options.loading.value ||
+        route.name !== 'production-execution-records' ||
+        route.query.batchId !== batchId ||
+        (typeof route.query.stepId === 'string' ? route.query.stepId : null) !== stepId
+      )
+        return;
+      acceptedTarget = target;
       await options.selectBatch(batchId);
       if (
         options.selectedBatchId.value !== batchId ||
@@ -46,6 +57,13 @@ export function useProductionExecutionLocation(options: {
       }
     } finally {
       locating = false;
+      if (
+        route.name === 'production-execution-records' &&
+        typeof route.query.batchId === 'string' &&
+        (route.query.batchId !== batchId ||
+          (typeof route.query.stepId === 'string' ? route.query.stepId : null) !== stepId)
+      )
+        void locate().catch((error: unknown) => EMessage.error(error, '生产任务定位失败'));
     }
   };
   watch(

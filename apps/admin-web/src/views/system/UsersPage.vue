@@ -254,7 +254,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onActivated, onMounted, ref } from 'vue';
+import { nextTick, onMounted, ref } from 'vue';
 import { Filter, Key, Plus, Refresh } from '@element-plus/icons-vue';
 import { PERMISSIONS, SYSTEM_STATUS } from '@company/constants';
 import type { SystemUserListItem } from '@company/contracts';
@@ -278,7 +278,7 @@ defineOptions({ name: 'UsersPage' });
 const auth = useAuthStore();
 /**
  * 角色候选由页面持有：岗位筛选、列表角色名、用户表单与分配角色弹窗共享（T1 提升到页面），
- * 页面激活只刷新角色；部门候选唯一消费者是用户表单弹窗，由弹窗自持（见 UserFormDialog）。
+ * 部门候选唯一消费者是用户表单弹窗，由弹窗自持（见 UserFormDialog）。
  */
 const { options: roleOptions, refresh: refreshRoles } = useRoleOptions();
 const {
@@ -441,9 +441,8 @@ const focusFirstFilter = async (): Promise<void> => {
   document.querySelector<HTMLInputElement>('.query-panel input')?.focus();
 };
 
-onMounted(loadUsers);
-/** 页面激活：只刷新页面持有的角色候选；部门候选由用户表单弹窗自持（T1） */
-onActivated(() => {
+onMounted(() => {
+  void loadUsers();
   void refreshRoles();
 });
 </script>

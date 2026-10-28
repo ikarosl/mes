@@ -3,7 +3,7 @@ import {
   inboundInspectionInput,
   type InboundInspectionDraft,
 } from '../../quality/inbound-inspection';
-import { computed, onActivated, ref } from 'vue';
+import { computed, ref } from 'vue';
 import type {
   CorrectReceiptLinePayload,
   ProcurementReceiptCommandResult,
@@ -39,7 +39,6 @@ export function useReceiptLineAction(
     result: ProcurementReceiptCommandResult,
   ) =>
     void | ProcurementInboundInspectionDetail | Promise<void | ProcurementInboundInspectionDetail>,
-  options: { refreshOnActivated?: boolean } = {},
 ) {
   const visible = ref(false),
     loading = ref(false),
@@ -349,10 +348,6 @@ export function useReceiptLineAction(
       );
     }
   };
-  onActivated(() => {
-    if (options.refreshOnActivated !== false && visible.value && !command.locked.value)
-      void check();
-  });
   return {
     visible,
     loading,

@@ -1,4 +1,4 @@
-import { computed, nextTick, onActivated, ref } from 'vue';
+import { computed, ref } from 'vue';
 import type {
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderDetail,
@@ -354,17 +354,6 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       submittingCheck.value = false;
     }
   };
-  let activatedOnce = false;
-  onActivated(async () => {
-    if (!activatedOnce) {
-      activatedOnce = true;
-      return;
-    }
-    // 嵌套 KeepAlive hook 的转发顺序可能先于读取守卫恢复 active。
-    await nextTick();
-    if (read.isActive() && visible.value && !editingLocked.value && !orderLoading.value)
-      await refreshOrder();
-  });
   return {
     visible,
     order,

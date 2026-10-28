@@ -227,7 +227,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
 import type {
   ProcurementDemandCandidate,
   ProcurementDemandResolution,
@@ -485,9 +485,6 @@ watch(
     void refreshAll();
   },
 );
-onActivated(() => {
-  if (props.visible) void refreshAll();
-});
 </script>
 
 <style scoped>

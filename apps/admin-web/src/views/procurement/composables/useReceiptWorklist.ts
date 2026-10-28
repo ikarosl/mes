@@ -1,7 +1,7 @@
 import { ref, shallowRef } from 'vue';
 import type { PageQuery, PageResult } from '@company/contracts';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { EMessage } from '../../../utils/message';
 
 /** 两个到货工作列表共用读取生命周期；筛选和端点由各自消费方持有。 */
@@ -52,6 +52,6 @@ export function useReceiptWorklist<T>(options: {
     pageSize.value = value;
     await search();
   };
-  usePageActivationRefresh(load);
+  usePageInitialLoad(load);
   return { rows, page, pageSize, total, loading, load, search, reset, changePage, changePageSize };
 }

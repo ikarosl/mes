@@ -2,7 +2,7 @@ import { ref } from 'vue';
 import type { FinishedInspectionTaskItem, FinishedInspectionTaskQuery } from '@company/contracts';
 import { finishedInspectionsApi } from '../../../api/finished-inspections';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { usePageActivationRefresh } from '../../../composables/requests/usePageActivationRefresh';
+import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { EMessage } from '../../../utils/message';
 export function useFinishedInspectionsList() {
   const keyword = ref(''),
@@ -56,7 +56,7 @@ export function useFinishedInspectionsList() {
     pageSize.value = value;
     await search();
   };
-  usePageActivationRefresh(load);
+  usePageInitialLoad(load);
   return {
     keyword,
     stage,

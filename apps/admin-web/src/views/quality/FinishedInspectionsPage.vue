@@ -326,10 +326,14 @@ function revealTask(id: string) {
 let navigating = false;
 let openedBatchId = '';
 let openedRecordId = '';
+let consumedLocation = '';
+const locationToken = (id: string, recordId = '', action = ''): string =>
+  JSON.stringify([id, recordId, action]);
 async function openTask(id: string) {
   if (!(await navigate(id))) return;
   accepted = id;
   acceptedRecordId = '';
+  consumedLocation = locationToken(id);
   if (route.query.batchId !== id || route.query.inspectionId || route.query.action) {
     const query = { ...route.query };
     query.batchId = id;
@@ -342,6 +346,7 @@ async function openRecord(batchId: string, recordId: string) {
   if (!(await navigate(batchId, 'record', recordId))) return;
   accepted = batchId;
   acceptedRecordId = recordId;
+  consumedLocation = locationToken(batchId, recordId);
   if (
     route.query.batchId !== batchId ||
     route.query.inspectionId !== recordId ||
@@ -379,6 +384,7 @@ let acceptedRecordId = '';
 async function clearRecordLocation() {
   openedRecordId = '';
   acceptedRecordId = '';
+  consumedLocation = locationToken(openedBatchId);
   if (route.query.batchId !== openedBatchId || !route.query.inspectionId) return;
   const query = { ...route.query };
   delete query.inspectionId;
@@ -388,17 +394,28 @@ async function consumeReinspectionAction(id: string) {
   if (route.query.batchId !== id || route.query.action !== 'reinspect') return;
   const query = { ...route.query };
   delete query.action;
+  consumedLocation = locationToken(
+    id,
+    typeof query.inspectionId === 'string' ? query.inspectionId : '',
+  );
   await router.replace({ name: 'quality-finished-inspections', query });
 }
 async function locate() {
   if (route.name !== 'quality-finished-inspections') return;
   await nextTick();
+  if (route.name !== 'quality-finished-inspections') return;
   const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
   const recordId = typeof route.query.inspectionId === 'string' ? route.query.inspectionId : '';
   let action: 'record' | 'reinspect' | undefined;
   if (recordId) action = 'record';
   else if (route.query.action === 'reinspect') action = 'reinspect';
-  if (!id || navigating) return;
+  const token = locationToken(id, recordId, action === 'reinspect' ? action : '');
+  if (!id) {
+    consumedLocation = token;
+    return;
+  }
+  if (navigating || token === consumedLocation) return;
+  consumedLocation = token;
   if (openedBatchId === id && openedRecordId === recordId && detail.value?.visible) {
     if (action === 'reinspect') detail.value.focusReinspection();
     accepted = id;
@@ -421,6 +438,7 @@ async function locate() {
     delete query.batchId;
     delete query.inspectionId;
     delete query.action;
+    consumedLocation = locationToken(accepted, acceptedRecordId);
     await router.replace({
       query: {
         ...query,

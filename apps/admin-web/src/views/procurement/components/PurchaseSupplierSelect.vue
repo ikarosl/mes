@@ -26,7 +26,7 @@
   </el-select>
 </template>
 <script setup lang="ts">
-import { computed, onActivated, watch } from 'vue';
+import { computed, watch } from 'vue';
 import { useSupplierOptions } from '../../../composables/options/useSupplierOptions';
 const props = defineProps<{
   supplierId: string;
@@ -54,7 +54,4 @@ watch(
 function opened(value: boolean) {
   if (value) void suppliers.refresh();
 }
-onActivated(() => {
-  void suppliers.refresh();
-});
 </script>

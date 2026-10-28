@@ -1,4 +1,4 @@
-import { computed, nextTick, onActivated, ref, shallowRef, watch } from 'vue';
+import { computed, ref, shallowRef, watch } from 'vue';
 import type { PurchaseOrderDetail, PurchaseOrderLineReceiptRecordPage } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -133,16 +133,6 @@ export function usePurchaseOrderLineReceiptRecords() {
     },
     { flush: 'sync' },
   );
-  let activatedOnce = false;
-  onActivated(async () => {
-    if (!activatedOnce) {
-      activatedOnce = true;
-      return;
-    }
-    // 嵌套 KeepAlive 的读取守卫先恢复激活，再刷新仍打开的本行记录。
-    await nextTick();
-    if (read.isActive() && visible.value && !loading.value) await load();
-  });
 
   return {
     visible,
