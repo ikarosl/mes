@@ -53,8 +53,6 @@ import type {
   ProcurementReceiptCommandResult,
   ConfirmReceiptAcceptancePayload,
   ReceiptAcceptanceItem,
-  ProcurementInboundInspectionQuery,
-  ProcurementInboundInspectionLineItem,
   ProcurementInboundInspectionCaseDetail,
   PageQuery,
   ReceiptRevisionItem,
@@ -278,19 +276,6 @@ export const procurementApi = {
     request({
       url: `/procurement/receipt-lines/${id}/inbounds`,
       params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  listInspections: (
-    params: ProcurementInboundInspectionQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<ProcurementInboundInspectionLineItem>> =>
-    request({
-      url: '/quality/inbound-inspections',
-      params: {
-        ...params,
-        receiptLineIds: params.receiptLineIds?.length ? params.receiptLineIds.join(',') : undefined,
-      },
       signal,
       skipErrorHandling: true,
     }),

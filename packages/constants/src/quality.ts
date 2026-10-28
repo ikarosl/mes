@@ -33,6 +33,19 @@ export const QUALITY_INBOUND_CASE_STATUS_LABELS = {
   superseded: '已失效',
 } as const;
 export const QUALITY_INBOUND_TEXT_MAX_LENGTH = 4000;
+/** 单次分组命令的到货数量上限，不限制主单累计关联数。 */
+export const QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS = 100;
+export const QUALITY_INCOMING_INSPECTION_ORDER_REMARK_MAX_LENGTH = 500;
+export const QUALITY_INCOMING_INSPECTION_RECEIPT_ASSOCIATIONS = [
+  'unassigned',
+  'assigned',
+  'all',
+] as const;
+export const QUALITY_INCOMING_INSPECTION_RECEIPT_ASSOCIATION_LABELS = {
+  unassigned: '未关联到货',
+  assigned: '已关联到货',
+  all: '全部到货',
+} as const;
 export const FINISHED_INSPECTION_STAGES = [
   'awaiting_draft',
   'awaiting_start',

@@ -27,6 +27,7 @@ export const PERMISSIONS = {
     },
     inboundInspections: {
       view: 'quality:inbound-inspections:view',
+      manage: 'quality:inbound-inspections:manage',
       review: 'quality:inbound-inspections:review',
       inspect: 'quality:inbound-inspections:inspect',
     },

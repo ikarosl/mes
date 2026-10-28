@@ -9,5 +9,6 @@ export * from './notification.js';
 export * from './procurement/index.js';
 export * from './quality/inspection.js';
 export * from './quality/inbound-inspections.js';
+export * from './quality/incoming-inspection-orders.js';
 export * from './quality/finished-inspections.js';
 export * from './quality/process-inspections.js';

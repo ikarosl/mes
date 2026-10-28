@@ -211,6 +211,7 @@ JOIN permissions p ON p.code IN (
   'dashboard:view',
   'quality:view',
   'quality:inbound-inspections:view',
+  'quality:inbound-inspections:manage',
   'quality:inbound-inspections:review',
   'quality:inbound-inspections:inspect',
   'quality:finished-inspections:view',

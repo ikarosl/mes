@@ -29,9 +29,9 @@
     <div class="list-hint">
       <InlineHint
         >本页
-        <strong>{{ rows.length }}</strong> 条到货明细，按采购单、到货单分组（同单可跨页）。<slot
-          name="hint"
-      /></InlineHint>
+        <strong>{{ rows.length }}</strong>
+        条到货明细，按采购单、到货单分组（同单可跨页）。</InlineHint
+      >
     </div>
     <el-empty
       v-if="!groups.length && !loading"
@@ -61,83 +61,33 @@
           }}</span>
         </button>
         <span class="document-meta">本页含本单 {{ purchase.lines.length }} 条到货明细</span>
-        <slot
-          name="purchase-summary"
-          :lines="purchase.lines"
-        />
       </div>
       <div v-if="!collapsedPurchases.has(purchase.purchaseOrderId)">
-        <div
+        <ReceiptWorklistReceiptGroup
           v-for="receipt in purchase.receipts"
           :key="receipt.receiptId"
-          class="receipt-group"
+          :receipt="receipt"
+          :row-id="rowId"
+          quantity-scope="本页"
         >
-          <div class="receipt-heading">
-            <strong>到货单 {{ receipt.receiptNo }}</strong>
-            <el-tag
-              v-if="receipt.lines[0].void"
-              type="danger"
-              effect="plain"
-              size="small"
-              :title="receipt.lines[0].void.reason"
-              >{{ RECEIPT_ROUND_STATUS_LABELS.voided }}</el-tag
-            >
-            <span class="document-meta">本页 {{ receipt.lines.length }} 条到货明细</span>
-            <slot
+          <template #receipt-meta="scope"
+            ><slot
               name="receipt-meta"
-              :receipt="receipt"
-            />
-          </div>
-          <div class="receipt-table-scroll">
-            <table class="receipt-table">
-              <caption class="visually-hidden">
-                {{
-                  receipt.receiptNo
-                }}
-                本页到货明细
-              </caption>
-              <colgroup>
-                <col style="width: 90px" />
-                <col style="width: 210px" />
-                <col style="width: 150px" />
-                <slot name="column-widths" />
-              </colgroup>
-              <thead>
-                <tr>
-                  <th scope="col">明细 ID</th>
-                  <th scope="col">物料 / 精确版本</th>
-                  <th scope="col">供应商</th>
-                  <slot name="column-headings" />
-                </tr>
-              </thead>
-              <tbody>
-                <tr
-                  v-for="row in receipt.lines"
-                  :key="rowId(row)"
-                  class="line-row"
-                  :class="{ highlighted: highlightedLineId === rowId(row) }"
-                >
-                  <td class="receipt-line-id">到货 id:{{ rowId(row) }}</td>
-                  <td>
-                    <strong class="material-name">{{ row.itemName }}</strong>
-                    <div class="material-version">{{ row.materialVariantCode }}</div>
-                  </td>
-                  <td>
-                    <div class="supplier-name">{{ row.supplierName }}</div>
-                    <slot
-                      name="supplier-detail"
-                      :row="row"
-                    />
-                  </td>
-                  <slot
-                    name="row"
-                    :row="row"
-                  />
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
+              v-bind="scope"
+          /></template>
+          <template #supplier-detail="scope"
+            ><slot
+              name="supplier-detail"
+              v-bind="scope"
+          /></template>
+          <template #column-widths><slot name="column-widths" /></template>
+          <template #column-headings><slot name="column-headings" /></template>
+          <template #row="scope"
+            ><slot
+              name="row"
+              v-bind="scope"
+          /></template>
+        </ReceiptWorklistReceiptGroup>
       </div>
     </section>
   </div>
@@ -146,9 +96,9 @@
 import { computed, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
 import type { ProcurementReceiptListSource } from '@company/contracts';
-import { RECEIPT_ROUND_STATUS_LABELS } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import InlineHint from '../../../components/InlineHint.vue';
+import ReceiptWorklistReceiptGroup from './ReceiptWorklistReceiptGroup.vue';
 import {
   groupReceiptWorklist,
   type ReceiptWorklistHandle,
@@ -161,13 +111,10 @@ const props = defineProps<{
   rowId: (row: T) => string;
   loading: boolean;
   emptyText: string;
-  highlightedLineId?: string;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
 defineSlots<{
   actions(): unknown;
-  hint(): unknown;
-  'purchase-summary'(props: { lines: T[] }): unknown;
   'receipt-meta'(props: { receipt: ReceiptWorklistReceipt<T> }): unknown;
   'supplier-detail'(props: { row: T }): unknown;
   'column-widths'(): unknown;
@@ -192,16 +139,7 @@ function expandPage(): void {
 function collapsePage(): void {
   collapsedPurchases.value = new Set(groups.value.map((group) => group.purchaseOrderId));
 }
-function revealLine(id: string): void {
-  const group = groups.value.find((purchase) =>
-    purchase.lines.some((row) => props.rowId(row) === id),
-  );
-  if (!group) return;
-  const next = new Set(collapsedPurchases.value);
-  next.delete(group.purchaseOrderId);
-  collapsedPurchases.value = next;
-}
-defineExpose<ReceiptWorklistHandle>({ expandPage, revealLine });
+defineExpose<ReceiptWorklistHandle>({ expandPage });
 </script>
 <style scoped>
 .receipt-worklist {
@@ -216,8 +154,7 @@ defineExpose<ReceiptWorklistHandle>({ expandPage, revealLine });
   border-radius: 8px;
   overflow: hidden;
 }
-.document-heading,
-.receipt-heading {
+.document-heading {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -236,62 +173,5 @@ defineExpose<ReceiptWorklistHandle>({ expandPage, revealLine });
 .document-meta {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.receipt-group + .receipt-group {
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-.receipt-table-scroll {
-  overflow-x: auto;
-}
-.receipt-table {
-  width: 100%;
-  min-width: 1080px;
-  table-layout: fixed;
-  border-collapse: separate;
-  border-spacing: 0;
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-}
-.receipt-table :deep(th),
-.receipt-table :deep(td) {
-  padding: 10px 12px;
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  text-align: left;
-  vertical-align: middle;
-  overflow-wrap: anywhere;
-}
-.receipt-table :deep(thead th) {
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-secondary);
-  font-weight: 600;
-}
-.line-row:hover :deep(td) {
-  background: var(--el-fill-color);
-}
-.line-row.highlighted > td:first-child {
-  box-shadow: inset 3px 0 var(--el-color-primary);
-}
-.material-name {
-  display: block;
-  font-weight: 600;
-}
-.material-version {
-  margin-top: 4px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-  overflow-wrap: anywhere;
-}
-.receipt-line-id {
-  font-weight: 600;
-}
-.visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
 }
 </style>

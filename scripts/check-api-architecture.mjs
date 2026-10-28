@@ -52,6 +52,9 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
+  'quality.incoming-inspection-order.create.v1',
+  'quality.incoming-inspection-order.associations.v1',
+  'quality.incoming-inspection-order.remark.v1',
   'quality.process-inspection.create.v1',
   'quality.process-inspection.correct.v1',
   'quality.process-inspection.reverse.v1',
@@ -287,10 +290,12 @@ const checks = [
       'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
       'apps/api/src/modules/procurement/application/purchase-order.service.ts',
       'apps/api/src/modules/procurement/application/receipt.service.ts',
+      'apps/api/src/modules/procurement/application/incoming-inspection-order.service.ts',
       'apps/api/src/modules/quality/application/finished-inspection.service.ts',
       'apps/api/src/modules/quality/application/process-inspection.service.ts',
       'apps/api/src/modules/procurement/presentation/http/purchase-order.controller.ts',
       'apps/api/src/modules/procurement/presentation/http/receipt.controller.ts',
+      'apps/api/src/modules/procurement/presentation/http/incoming-inspection-order.controller.ts',
       'apps/api/src/modules/quality/presentation/http/finished-inspection.controller.ts',
       'apps/api/src/modules/quality/presentation/http/process-inspection.controller.ts',
       'apps/api/src/modules/production/application/production.service.ts',
@@ -336,6 +341,7 @@ const checks = [
       'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
       'apps/api/src/modules/procurement/application/purchase-order.service.ts',
       'apps/api/src/modules/procurement/application/receipt.service.ts',
+      'apps/api/src/modules/procurement/application/incoming-inspection-order.service.ts',
       'apps/api/src/modules/quality/application/finished-inspection.service.ts',
       'apps/api/src/modules/quality/application/process-inspection.service.ts',
       'apps/api/src/modules/production/application/production.service.ts',
@@ -381,6 +387,7 @@ const checks = [
       'apps/admin-web/src/api/warehouse.ts',
       'apps/admin-web/src/api/procurement.ts',
       'apps/admin-web/src/api/procurement-inbounds.ts',
+      'apps/admin-web/src/api/incoming-inspection-orders.ts',
     ],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常

@@ -3,30 +3,15 @@
     <div class="query-panel">
       <el-form
         inline
-        @submit.prevent="searchAndExpand"
+        @submit.prevent="search"
       >
-        <el-form-item label="到货 / 采购 / 物料">
+        <el-form-item label="质检 / 到货 / 采购 / 物料">
           <el-input
             v-model="keyword"
             clearable
             maxlength="100"
-            placeholder="输入单号、名称或版本"
+            placeholder="单号、供应商、名称或版本"
           />
-        </el-form-item>
-        <el-form-item label="当前阶段">
-          <el-select
-            v-model="stage"
-            clearable
-            placeholder="全部"
-            style="width: 170px"
-          >
-            <el-option
-              v-for="value in inspectionStages"
-              :key="value"
-              :value="value"
-              :label="RECEIPT_LINE_STAGE_LABELS[value]"
-            />
-          </el-select>
         </el-form-item>
         <el-form-item>
           <el-button
@@ -35,178 +20,348 @@
             :loading="loading"
             >查询</el-button
           >
-          <el-button @click="resetAndExpand">重置</el-button>
+          <el-button @click="reset">重置</el-button>
         </el-form-item>
       </el-form>
     </div>
     <div class="table-panel">
-      <ReceiptWorklist
-        ref="worklist"
-        :rows="rows"
-        :row-id="(row) => row.receiptLineId"
-        :loading="loading"
-        :highlighted-line-id="highlightedLineId"
-        empty-text="当前筛选下暂无来料检验明细"
-        @refresh="load"
+      <TableToolbar>
+        <template #actions
+          ><el-button
+            type="primary"
+            @click="createOrder"
+            >新建质检主单</el-button
+          ></template
+        >
+        <template #tools>
+          <el-button
+            text
+            @click="expandPage"
+            >展开当前页主单</el-button
+          >
+          <el-button
+            text
+            @click="collapsePage"
+            >收起当前页主单</el-button
+          >
+          <el-button
+            :icon="Refresh"
+            text
+            circle
+            :loading="loading"
+            aria-label="刷新质检主单"
+            @click="load"
+          />
+        </template>
+      </TableToolbar>
+      <div class="list-hint"></div>
+      <el-alert
+        v-if="error"
+        :title="error"
+        type="error"
+        :closable="false"
+        show-icon
+        class="list-notice"
+      />
+      <div
+        v-if="focusedLineId || locationError || locationLoading"
+        class="location-bar"
       >
-        <template #hint><strong>放行后仍需库管定稿。</strong></template>
-        <template #purchase-summary="{ lines }"
-          ><span class="document-counts">{{ inspectionSummary(lines) }}</span></template
+        <span v-if="locationLoading">正在定位当前到货归属…</span>
+        <span v-else-if="locationError">{{ locationError }}</span>
+        <span v-else>当前定位：到货明细 id:{{ focusedLineId }}</span>
+        <el-button
+          v-if="locationError"
+          link
+          type="primary"
+          @click="list.revealLine(detail?.openedLineId ?? focusedLineId)"
+          >重试列表定位</el-button
         >
-        <template #column-widths
-          ><col style="width: 110px" />
-          <col style="width: 175px" />
-          <col style="width: 200px" />
-          <col style="width: 145px"
-        /></template>
-        <template #column-headings
-          ><th scope="col">剩余实物</th>
-          <th scope="col">当前阶段</th>
-          <th scope="col">检验记录 / 结论</th>
-          <th scope="col">下一步</th></template
+        <el-button
+          link
+          type="primary"
+          @click="clearLocation"
+          >清除列表定位</el-button
         >
-        <template #row="{ row: line }">
-          <td>{{ Number(line.quantities.unprocessedQuantity) }} {{ line.unit }}</td>
-          <td>
+      </div>
+      <section
+        v-if="focusedReceipt && !focusedIsInPage"
+        class="document-block located-block"
+      >
+        <div class="document-heading">
+          <div class="order-identity located-identity">
+            <span class="order-title">
+              <template v-if="focusedOrder"
+                >质检单 <span class="order-number">{{ focusedOrder.inspectionNo }}</span></template
+              >
+              <template v-else>未关联质检主单</template>
+            </span>
             <el-tag
               size="small"
-              :type="receiptLineStageType(line)"
-              :effect="receiptLineStageEffect(line)"
-              >{{ receiptLineStageLabel(line) }}</el-tag
+              effect="plain"
+              >当前定位</el-tag
             >
-            <span class="round-reference">当前处理第 {{ line.currentRound.roundNo }} 轮</span>
-          </td>
-          <td>
-            <div class="inspection-result">
-              <template v-if="line.currentCase?.inspection">
-                <el-button
-                  class="inspection-id-link"
-                  link
-                  type="primary"
-                  @click="openLine(line.receiptLineId, line.currentCase.id)"
-                  >检验记录 ID {{ line.currentCase.inspection.id }}</el-button
+            <p
+              v-if="focusedOrder?.remark"
+              class="order-remark"
+            >
+              <span class="remark-label">主单备注</span>{{ focusedOrder.remark }}
+            </p>
+          </div>
+          <span class="document-meta">此到货不在当前目录页，不计入分页总数</span>
+        </div>
+        <div class="receipt-directory located-directory">
+          <div class="receipt-tree">
+            <IncomingInspectionReceipt
+              :receipt="focusedReceipt.receipt"
+              :state="focusedReceipt"
+              :expanded="focusedExpanded"
+              :highlighted-line-id="focusedLineId"
+              @toggle="focusedExpanded = !focusedExpanded"
+              @retry="list.revealLine(focusedLineId)"
+              @associate="changeAssociation"
+              @open="openLine"
+            />
+          </div>
+        </div>
+      </section>
+      <div
+        v-loading="loading"
+        class="order-list"
+      >
+        <el-empty
+          v-if="!groups.length && !loading && !error"
+          description="当前筛选下暂无质检主单，可新建并选择未关联到货"
+          :image-size="72"
+        />
+        <section
+          v-for="group in groups"
+          :key="group.order.id"
+          class="document-block"
+        >
+          <div class="document-heading">
+            <div class="order-identity">
+              <button
+                class="order-disclosure"
+                type="button"
+                :aria-expanded="expandedOrders.has(group.order.id)"
+                @click="toggleOrder(group)"
+              >
+                <span class="order-fold-icon">
+                  <el-icon
+                    :class="{ 'is-expanded': expandedOrders.has(group.order.id) }"
+                    aria-hidden="true"
+                    ><ArrowRight
+                  /></el-icon>
+                </span>
+                <span class="order-title"
+                  >质检单 <span class="order-number">{{ group.order.inspectionNo }}</span></span
                 >
-                <span>{{
-                  QUALITY_RELEASE_DECISION_LABELS[line.currentCase.inspection.releaseDecision]
-                }}</span>
-                <span class="reference-note"
-                  >{{ line.isInherited ? '当前采用 · 沿用此前检验' : '当前采用'
-                  }}<template v-if="line.isInherited && line.currentCaseRoundNo !== null">
-                    · 来源第 {{ line.currentCaseRoundNo }} 轮</template
-                  ></span
-                >
-              </template>
-              <span
-                v-else
-                class="muted"
-                >{{
-                  line.currentCase?.status === 'reviewing'
-                    ? '本轮正在检查，尚无检验记录'
-                    : '本轮尚无检验记录'
-                }}</span
+              </button>
+              <p
+                v-if="group.order.remark"
+                class="order-remark"
+              >
+                <span class="remark-label">主单备注</span>{{ group.order.remark }}
+              </p>
+              <span class="document-meta"
+                >创建于 {{ formatDateTimeForDisplay(group.order.createdAt) }}</span
               >
             </div>
-          </td>
-          <td>
-            <el-button
-              link
-              type="primary"
-              @click="openLine(line.receiptLineId)"
-              >{{ lineAction(line) }}</el-button
+            <div class="order-actions">
+              <el-button
+                link
+                type="primary"
+                @click="manageOrder(group.order)"
+                >调整关联</el-button
+              >
+              <el-button
+                link
+                type="primary"
+                @click="editRemark(group.order)"
+                >编辑备注</el-button
+              >
+            </div>
+          </div>
+          <div
+            v-if="expandedOrders.has(group.order.id)"
+            v-loading="group.loading"
+            class="receipt-directory"
+          >
+            <div
+              v-if="group.error"
+              class="directory-error"
             >
-          </td>
-        </template>
-      </ReceiptWorklist>
+              <InlineHint tone="danger">{{ group.error }}</InlineHint
+              ><el-button
+                link
+                type="primary"
+                @click="loadReceipts(group)"
+                >重新读取到货目录</el-button
+              >
+            </div>
+            <template v-else>
+              <el-empty
+                v-if="group.loaded && !group.receipts.length"
+                description="本页没有关联到货；空主单与编号继续保留"
+                :image-size="56"
+              />
+              <div
+                v-if="group.receipts.length"
+                class="receipt-tree"
+              >
+                <IncomingInspectionReceipt
+                  v-for="receipt in group.receipts"
+                  :key="receipt.receiptId"
+                  :receipt="receipt"
+                  :state="group.lines[receipt.receiptId]"
+                  :expanded="group.expandedReceipts.has(receipt.receiptId)"
+                  :highlighted-line-id="focusedLineId"
+                  @toggle="toggleReceipt(group, receipt)"
+                  @retry="loadLines(group, receipt)"
+                  @associate="changeAssociation"
+                  @open="openLine"
+                />
+              </div>
+            </template>
+            <PaginationFooter
+              class="receipt-pagination"
+              :total="group.total"
+              :current-page="group.page"
+              :page-size="10"
+              :show-page-size="false"
+              :disabled="group.loading"
+              total-suffix="张关联到货"
+              @page-change="changeReceiptPage(group, $event)"
+            />
+          </div>
+        </section>
+      </div>
       <PaginationFooter
         :total="total"
         :current-page="page"
         :page-size="pageSize"
-        total-suffix="条到货明细"
+        total-suffix="张质检主单"
+        :disabled="loading"
         @page-change="changePage"
         @update:page-size="changePageSize"
       />
     </div>
     <InboundInspectionDetailDialog
       ref="detail"
+      allow-association
       @changed="load"
       @record-focus-cleared="clearRecordLocation"
+      @change-association="changeAssociationById"
+    />
+    <IncomingInspectionOrderAssociationDialog
+      ref="association"
+      @changed="load"
     />
   </section>
 </template>
 <script setup lang="ts">
 import { nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import type { ProcurementInboundInspectionLineItem } from '@company/contracts';
-import {
-  QUALITY_RELEASE_DECISION_LABELS,
-  RECEIPT_LINE_STAGE_LABELS,
-  RECEIPT_LINE_STAGES,
-} from '@company/constants';
+import { ArrowRight, Refresh } from '@element-plus/icons-vue';
+import type {
+  QualityIncomingInspectionOrderItem,
+  QualityIncomingInspectionReceiptItem,
+} from '@company/contracts';
 import PaginationFooter from '../../components/PaginationFooter.vue';
-import ReceiptWorklist from '../procurement/components/ReceiptWorklist.vue';
-import type { ReceiptWorklistHandle } from '../procurement/receipt-worklist';
+import TableToolbar from '../../components/TableToolbar.vue';
+import InlineHint from '../../components/InlineHint.vue';
 import { EMessage } from '../../utils/message';
+import { formatDateTimeForDisplay } from '../../utils/date';
 import { useTabsStore } from '../../stores/tabs';
-import { useInboundInspectionsList } from '../procurement/composables/useInboundInspectionsList';
-import {
-  receiptLineStageLabel,
-  receiptLineStageType,
-  receiptLineStageEffect,
-} from '../procurement/receipt-round-presentation';
+import { useIncomingInspectionOrders } from './composables/useIncomingInspectionOrders';
+import IncomingInspectionReceipt from './components/IncomingInspectionReceipt.vue';
+import IncomingInspectionOrderAssociationDialog from './components/IncomingInspectionOrderAssociationDialog.vue';
 import InboundInspectionDetailDialog from '../procurement/components/InboundInspectionDetailDialog.vue';
 
 defineOptions({ name: 'InboundInspectionsPage' });
 const route = useRoute(),
   router = useRouter();
-const inspectionStages = RECEIPT_LINE_STAGES.filter((value) => value !== 'voided');
+const list = useIncomingInspectionOrders();
 const {
   keyword,
-  stage,
-  rows,
+  groups,
+  expandedOrders,
   page,
   pageSize,
   total,
   loading,
+  error,
+  focusedReceipt,
+  focusedOrder,
+  focusedLineId,
+  focusedIsInPage,
+  locationLoading,
+  locationError,
   load,
   search,
   reset,
   changePage,
   changePageSize,
-} = useInboundInspectionsList();
+  toggleOrder,
+  toggleReceipt,
+  loadReceipts,
+  loadLines,
+  changeReceiptPage,
+  expandPage,
+  collapsePage,
+} = list;
 const detail = ref<InstanceType<typeof InboundInspectionDetailDialog>>();
-const worklist = ref<ReceiptWorklistHandle>();
-const highlightedLineId = ref('');
-function inspectionSummary(lines: ProcurementInboundInspectionLineItem[]): string {
-  let pending = 0,
-    reviewing = 0,
-    blocked = 0;
-  for (const row of lines) {
-    if (row.stage === 'uninspected' || row.stage === 'reinspection_required') pending += 1;
-    if (row.stage === 'reviewing') reviewing += 1;
-    if (row.stage === 'quality_rejected') blocked += 1;
+const association = ref<InstanceType<typeof IncomingInspectionOrderAssociationDialog>>();
+const focusedExpanded = ref(true);
+async function createOrder(): Promise<void> {
+  await association.value?.open('create');
+}
+async function manageOrder(order: QualityIncomingInspectionOrderItem): Promise<void> {
+  await association.value?.open('manage', order);
+}
+async function editRemark(order: QualityIncomingInspectionOrderItem): Promise<void> {
+  await association.value?.open('remark', order);
+}
+async function changeAssociation(receipt: QualityIncomingInspectionReceiptItem): Promise<void> {
+  await association.value?.open('move', undefined, receipt);
+}
+async function changeAssociationById(receiptId: string): Promise<void> {
+  const findReceipt = () => {
+    if (focusedReceipt.value?.receipt.receiptId === receiptId) return focusedReceipt.value.receipt;
+    return groups.value
+      .flatMap((group) => group.receipts)
+      .find((receipt) => receipt.receiptId === receiptId);
+  };
+  let receipt = findReceipt();
+  if (!receipt && detail.value?.openedLineId) {
+    await list.revealLine(detail.value.openedLineId);
+    receipt = findReceipt();
   }
-  return `本页待检 / 待复检 ${pending} 条 · 检验中 ${reviewing} 条 · 质量阻断 ${blocked} 条`;
+  if (!receipt) {
+    EMessage.warning('到货归属尚未定位，请重试列表定位后再调整关联。');
+    return;
+  }
+  await association.value?.open('move', undefined, receipt);
 }
-const lineAction = (item: ProcurementInboundInspectionLineItem): string => {
-  if (item.stage === 'completed' || item.stage === 'manual_rejection') return '查看详情';
-  if (item.stage === 'uninspected' || item.stage === 'reinspection_required')
-    return '查看 / 核对待检';
-  if (item.stage === 'reviewing') return '查看 / 填写结果';
-  return '查看详情';
-};
-async function searchAndExpand() {
-  await search();
-  worklist.value?.expandPage();
+async function clearLocation(): Promise<void> {
+  list.clearLocation();
+  accepted = {};
+  consumed = JSON.stringify(['', '']);
+  const query = { ...route.query };
+  delete query.receiptLineId;
+  delete query.caseId;
+  await router.replace({ query });
 }
-async function resetAndExpand() {
-  await reset();
-  worklist.value?.expandPage();
-}
-function revealLine(id: string): void {
-  if (!rows.value.some((line) => line.receiptLineId === id)) return;
-  worklist.value?.revealLine(id);
-  highlightedLineId.value = id;
-}
+watch(
+  () => detail.value?.openedLineId,
+  (id) => {
+    if (id && route.name === 'quality-inbound-inspections') {
+      focusedExpanded.value = true;
+      void list.revealLine(id);
+    }
+  },
+);
 onScopeDispose(
   useTabsStore().registerCloseGuard(
     'quality-inbound-inspections',
@@ -228,7 +383,6 @@ async function navigate(id: string, caseId = '', matches = () => true): Promise<
   try {
     if (detail.value?.visible && !(await detail.value.close())) return false;
     if (!matches()) return false;
-    revealLine(id);
     return (await detail.value?.open(id, caseId)) ?? false;
   } finally {
     navigating = false;
@@ -318,35 +472,159 @@ onActivated(() => {
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
 }
-.muted {
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
+.list-hint {
+  padding: 2px 16px 12px;
 }
-.document-counts {
-  font-size: 13px;
+.list-notice {
+  margin: 0 16px 12px;
+  width: auto;
+}
+.order-list {
+  min-width: 0;
+  min-height: 160px;
+}
+.document-block {
+  min-width: 0;
+  margin: 0 16px 18px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.document-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 8px 20px;
+  padding: 12px 16px;
+  background: var(--el-fill-color-light);
+  border-bottom: 1px solid var(--el-border-color-lighter);
   color: var(--el-text-color-primary);
+  font-size: 14px;
 }
-.round-reference,
-.reference-note {
+.document-meta {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+  white-space: nowrap;
+}
+.order-identity {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px 20px;
+  min-width: 0;
+}
+.order-title {
+  font-size: 14px;
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.order-number {
+  color: var(--el-color-primary);
+  font-weight: 500;
+}
+.order-disclosure {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  max-width: 100%;
+  min-height: 32px;
+  margin-left: -4px;
+  padding: 3px 4px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--el-text-color-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.order-disclosure:hover {
+  background: var(--el-fill-color);
+}
+.order-disclosure:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: 2px;
+}
+.order-fold-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+  flex: 0 0 14px;
+  height: 14px;
+  color: var(--el-text-color-regular);
+}
+.order-fold-icon .el-icon {
+  font-size: 14px;
+}
+.order-fold-icon .is-expanded {
+  transform: rotate(90deg);
+}
+.order-actions {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-left: auto;
+}
+.order-actions :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+.order-remark {
+  flex: 1 1 160px;
+  min-width: 0;
+  margin: 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.remark-label {
+  margin-right: 10px;
   color: var(--el-text-color-secondary);
   font-size: 12px;
 }
-.round-reference {
-  display: block;
-  margin-top: 5px;
+.receipt-directory {
+  min-width: 0;
+  min-height: 56px;
+  padding: 16px 16px 0 24px;
 }
-.inspection-result {
+.receipt-tree {
+  min-width: 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--el-border-color);
+}
+.receipt-pagination {
+  justify-content: space-between;
+  margin-top: 12px;
+  margin-left: 17px;
+  padding-right: 0;
+  padding-left: 0;
+  border-top: 1px solid var(--el-border-color-lighter);
+}
+.receipt-pagination :deep(.total-text) {
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.directory-error {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 3px;
+  align-items: center;
+  gap: 12px;
+  padding: 0 0 4px 17px;
 }
-.inspection-id-link {
-  height: auto;
-  padding: 0;
-  font-weight: 600;
-  text-align: left;
-  white-space: normal;
-  overflow-wrap: anywhere;
+.location-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 0 16px 12px;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.located-block {
+  border-color: var(--el-color-primary-light-5);
+}
+.located-directory {
+  padding-bottom: 16px;
 }
 </style>

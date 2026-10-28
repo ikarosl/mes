@@ -13,7 +13,6 @@ interface ReceiptWorklistPurchase<T extends ProcurementReceiptListSource> {
 }
 export interface ReceiptWorklistHandle {
   expandPage(): void;
-  revealLine(id: string): void;
 }
 
 /** 仅组织当前分页窗口，不计算整单统计或改变明细顺序。 */

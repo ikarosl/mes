@@ -27,20 +27,7 @@ source_allocation_round_id 仅定位新轮需要核对的既有采购终止依�
 
 ## 正式清单及分配字段
 
-acceptance 不可变，每轮至多一份。id/receipt_line_id/round_id 为同源身份；inspection_record_id 必须是当前明确放行记录；before_receipt_revision_id/after_receipt_revision_id 固化核对前后版本；confirmed_scope_quantity 是本轮尚未处置核实量 C；previous_acceptance_id 连接同到货前版；override_reason 保存偏离检查建议的依据；remark/created_by/at 固化核对说明及责任人。
-
-allocation 不可变字段：
-
-| 字段 | 含义／条件 |
-| --- | --- |
-| id / receipt_line_id / round_id / line_no | 执行授权身份；同轮行号唯一，同到货组合 FK |
-| acceptance_id | 正常分配必填；人工拒收为 NULL，依据直接来自 manual_rejection 轮 |
-| disposition / quantity | inbound、return、pending；quantity 为正整数，正常分配合计=C |
-| return_reason | return 必填 quality/excess/procurement_termination/manual_rejection；其他去向为空 |
-| termination_reason | 已指定采购终止的约束；拒收／撤销／复检不能顺带清除；仅终止或人工拒收退回允许 |
-| remark / created_by / created_at | 分配说明及不可变审计 |
-
-数据库用组合 FK 保证普通分配与 acceptance 同到货同轮，CHECK 限定 acceptance 为空仅限 manual_rejection 退回；不以空关联制造普通可入依据。触发器拒绝更新、删除授权行。不存 scope 状态、父子节点、quality_partition、已入／已退累计或剩余额。
+正式清单和分配的完整字段、类型、键、同源组合 FK 及不可变触发器见[到货链表设计](database/receipts.md#procurement_receipt_acceptance)。acceptance 保存本轮核实 C、实际引用 QC、核对前后实收版本及偏离依据；allocation 保存具体去向及正数授权。正常分配须引用同到货同轮 acceptance，只有真实 manual_rejection 轮的退回可以没有普通清单；采购身份始终沿原到货解析。不保存范围树、已入／已退累计或可写余额。
 
 ## 数量与建议
 

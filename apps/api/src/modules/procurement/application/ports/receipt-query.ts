@@ -11,8 +11,6 @@ import type {
   ProcurementInboundInspectionDetail,
   ProcurementInboundReleaseQuery,
   ProcurementInboundReleaseItem,
-  ProcurementInboundInspectionQuery,
-  ProcurementInboundInspectionLineItem,
   ProcurementInboundInspectionCaseDetail,
   ReceiptHistoryKind,
   ReceiptHistoryItem,
@@ -34,9 +32,6 @@ export abstract class ProcurementReceiptQuery {
   abstract listInboundReleases(
     query: ProcurementInboundReleaseQuery,
   ): Promise<PageResult<ProcurementInboundReleaseItem>>;
-  abstract listInspections(
-    query: ProcurementInboundInspectionQuery,
-  ): Promise<PageResult<ProcurementInboundInspectionLineItem>>;
   abstract getInspection(caseId: string): Promise<ProcurementInboundInspectionCaseDetail>;
   abstract history(
     id: string,

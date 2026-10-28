@@ -31,6 +31,8 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'quality_inspection_record',
     'quality_process_inspection',
     'quality_process_inspection_record',
+    'quality_incoming_inspection_order',
+    'quality_incoming_inspection_order_receipt',
   ]),
   inventory: Object.freeze([
     'item_batch',
@@ -203,6 +205,17 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'source_kind',
       ],
       quality_inspection_record: ['id', 'receipt_line_id', 'case_id', 'release_decision'],
+      quality_incoming_inspection_order: [
+        'id',
+        'inspection_no',
+        'remark',
+        'created_by',
+        'created_at',
+        'updated_by',
+        'updated_at',
+        'version',
+      ],
+      quality_incoming_inspection_order_receipt: ['inspection_order_id', 'receipt_id'],
 
       materials: ['id', 'material_name'],
       production_item_demand: [

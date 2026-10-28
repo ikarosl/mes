@@ -27,7 +27,6 @@ import { PurchaseOrderIdDto, PurchaseOrderQueryDto } from './purchase-order.dto.
 import {
   ReceiptListQueryDto,
   ReceiptReleaseQueryDto,
-  InboundInspectionQueryDto,
   ReceiptHistoryPathDto,
   ConfirmProcurementReceiptDto,
   CorrectReceiptDto,
@@ -215,11 +214,6 @@ export class ProcurementReceiptController {
 @UseFilters(ProcurementDomainExceptionFilter)
 export class ProcurementInboundInspectionController {
   constructor(private readonly query: ProcurementReceiptQuery) {}
-  @Get()
-  @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
-  list(@Query() query: InboundInspectionQueryDto) {
-    return this.query.listInspections(query);
-  }
   @Get('receipt-lines/:id')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   line(@Param() { id }: PurchaseOrderIdDto) {

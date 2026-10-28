@@ -22,7 +22,7 @@
 | `production-001` | `production` | 产品资料、工单与任务、独立报工记录查看、用料分配、产出及审批处理；库存仅查看 |
 | `warehouse-001` | `warehouse` | 采购到货及整单登记作废、库存查询、出入库、退料、领料损耗和盘点 |
 | `procurement-001` | `procurement` | 供应商和采购单，不办理到货、质检或库存记账 |
-| `quality-001` | `quality` | 来料检验与复核、成品质检、工序专检，不办理库存记账 |
+| `quality-001` | `quality` | 来料分组管理、检验与复核、成品质检、工序专检，不办理库存记账 |
 | `other-inbound-001` | `demo-other-inbound` | 仅办理其他入库 |
 | `other-outbound-001` | `demo-other-outbound` | 仅办理其他出库 |
 
@@ -125,6 +125,25 @@ ALLOW_DEMO_SEED=1 PROCUREMENT_SUPPLEMENT_DEMO_TAG='<已有来源tag>' node scrip
 `prepare-history` 复用 `source-quality-returned-history`，要求其候选当前待退为 0、真实质量已退为 2，创建 `quality-history-receipt-draft` 草稿并保留供采购员手工下单。已有同场景标记时不追加；失败不盲目重试。报告提供实际采购单／行及原到货 ID。人工验收核对当前轮仅可入 8、历史已退 2 时仍可按原到货新建和下单；处理轮变化不改已建补单来源，采购员手动决定补购量，不以待退或累计补单量封顶。
 
 该模式只通过正式 API 补充演示数据，不修改已有单据、实际退回或库存事实。
+
+## 来料质检分组的人工验收准备
+
+完成 `db:init`、显式加载 demo 并启动本地 API 后，使用[来料分组准备脚本](../../../scripts/prepare-incoming-inspection-demo.mjs)。采购、到货、检查、分组、定稿、实际入库／退回及作废均通过正式 API 形成，不直接写业务表，不属于正式测试集。
+
+```bash
+ALLOW_DEMO_SEED=1 node scripts/prepare-incoming-inspection-demo.mjs prepare
+ALLOW_DEMO_SEED=1 node scripts/prepare-incoming-inspection-demo.mjs report
+```
+
+默认模式 report 只读业务状态。脚本使用初始化管理员环境凭证，不输出密码或令牌；要求非 production 环境和 `ALLOW_DEMO_SEED=1`。API 默认 `http://127.0.0.1:3002/api`，可通过 `INCOMING_INSPECTION_DEMO_API_BASE_URL` 指定；远程地址额外要求 HTTPS 和 `INCOMING_INSPECTION_DEMO_ALLOW_REMOTE=1`。脚本不进入初始化、部署或 CI 自动链路。
+
+默认备注标记为 `[demo-incoming-group-v1]`，可设置 1～40 位字母、数字、下划线或连字符的 `INCOMING_INSPECTION_DEMO_TAG` 建立独立样例组。发现已有同标记单据时仅报告，不覆盖手工办理后的状态、不续做部分流程；失败保留已成功事实，不自动换键重试，可先运行 report 核对，再用新 TAG 准备另一组。
+
+一次准备建立 2 张分别属于不同供应商的采购、25 张到货及 12 张质检主单：大组关联 12 张跨采购到货，含一张 100 行到货；另含检查中已真实移出再移回的来源、已完成检查但未分组、空主单、关联后作废以及未分组作废来源。主单和大组到货均超过默认一页。报告返回真实单号、ID、版本与关联数，供跨页、精确历史、两窗口旧版本冲突及草稿保持的人工核对；这些数据存在不代表验收或并发测试通过。
+
+上述 25 张到货中的 `single-8` 全检 5 合格、定稿可入 5 并实际入库 5；`single-9` 全检 4 合格／1 不合格、定稿可入 4／质量待退 1，再实际入库 4 并退回 1。两者均通过真实执行使剩余实物为零，用于核对 completed 阶段和真实入退聚合，包含正式分配、Inventory 入库／批次／正流水及供应商退回事实；不以直接改轮次状态制造已处理完样例，不额外增加到货或质检主单。
+
+显式重跑 demo 后 `quality-001` 获得分组管理权限。自定义角色仍须明确授权，分组管理不自动授予原检查动作或仓储权限；业务边界见[Quality 分组主单](../../../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)。
 
 ## BOM 审批演示
 

@@ -201,7 +201,7 @@ export interface ProcurementReceiptLineIndexItem extends Pick<
   /** 仅用于目录展示，不代表办理资格；superseded 保留异常当前轮的展示兜底。 */
   stage: ReceiptLineStage | 'superseded';
 }
-/** 到货与来料工作列表共用的来源展示；分页单位始终为到货明细。 */
+/** 到货与来料复用来源投影；分页层级由列表契约决定。 */
 export interface ProcurementReceiptListSource {
   void: ProcurementReceiptVoidItem | null;
   receiptId: string;
@@ -353,12 +353,6 @@ export interface ProcurementReceiptCommandResult {
   caseIds: string[];
   inspectionId: string | null;
   supplierReturnId: string | null;
-}
-export interface ProcurementInboundInspectionQuery extends PageQuery {
-  stage?: ReceiptLineStage;
-  keyword?: string;
-  supplierId?: string;
-  receiptLineIds?: string[];
 }
 export interface ProcurementInboundInspectionCaseSummary extends Pick<
   QualityInboundCaseItem,

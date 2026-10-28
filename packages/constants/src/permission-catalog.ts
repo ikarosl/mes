@@ -931,6 +931,16 @@ export const PERMISSION_CATALOG = [
     apiPath: null,
   },
   {
+    code: PERMISSIONS.quality.inboundInspections.manage,
+    name: '管理来料质检分组',
+    parentCode: PERMISSIONS.quality.inboundInspections.view,
+    type: 'button',
+    routePath: null,
+    sortOrder: 30,
+    apiMethod: null,
+    apiPath: null,
+  },
+  {
     code: PERMISSIONS.quality.processInspections.view,
     name: '工序专检',
     parentCode: PERMISSIONS.quality.view,

@@ -223,7 +223,7 @@ const emit = defineEmits<{
 }>();
 const auth = useAuthStore();
 const worklist = ref<ReceiptWorklistHandle>();
-defineExpose<Pick<ReceiptWorklistHandle, 'expandPage'>>({
+defineExpose<ReceiptWorklistHandle>({
   expandPage: () => worklist.value?.expandPage(),
 });
 const hasInbound = (row: ProcurementReceiptLineListItem): boolean =>

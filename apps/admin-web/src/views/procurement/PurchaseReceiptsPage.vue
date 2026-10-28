@@ -97,7 +97,7 @@ const {
   changePage,
   changePageSize,
 } = useReceiptsList();
-const worklist = ref<Pick<ReceiptWorklistHandle, 'expandPage'>>();
+const worklist = ref<ReceiptWorklistHandle>();
 async function searchAndExpand(): Promise<void> {
   await search();
   worklist.value?.expandPage();

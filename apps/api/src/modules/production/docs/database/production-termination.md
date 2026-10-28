@@ -131,7 +131,41 @@ Quality case 以 `finished_round_id` 引用实际检查轮次，record 保存 G/
 
 ### `production_output_round` 与 `production_output_allocation`
 
-轮次基准、起始身份、前轮和前版不可修改，仅 `status/version` 按命令推进；状态为 `pending_inspection → inspecting → pending_finalization → reviewing → finalized`，开始后续轮次可使旧轮进入 `superseded`。取消或驳回的轮次不恢复为已定稿。每轮至多一版批准，版每类别至多一条正整数授权。授权不可更新或删除，已执行进度按 Inventory 事实派生，不存可变余额。`allocation` 以 `revision_id/round_id/closeout_id` 组合 FK 锚定来源。
+两表均由 Production 所有，使用 InnoDB、`utf8mb4_0900_ai_ci`。ID 与引用为 `BIGINT UNSIGNED`，除显式 NULL 外均非空，`id` 为自增主键，时间为北京时间 DATETIME。完整数量和授权语义见上方[数量、质检与更正](#数量质检与更正)，不从表值域推断未开放的操作。
+
+`production_output_round` 保存每轮起始依据与当前办理资格：
+
+| 字段 | 类型／约束 | 含义 |
+| --- | --- | --- |
+| closeout_id | ID，FK production_batch_closeout(id) | 所属收尾根 |
+| round_no | INT，CHECK >0 | 同根递增轮号 |
+| previous_round_id | ID NULL | 同根前轮，组合自 FK |
+| trigger_type | VARCHAR(30)，CHECK initial／reinspection／finalization_correction | 初轮、复检或清单更正 |
+| base_revision_id | ID NULL | 建轮时前批准版，与 closeout_id 组合 FK production_output_revision |
+| source_version | INT，CHECK >=0 | 建轮时产出草稿版本快照 |
+| baseline_planned_received / baseline_extra_received | INT，各自 CHECK 0..99999999 | 建轮时计划内／外真实已入基准 |
+| starting_declared_remaining | INT，CHECK 0..99999999 | 建轮时申报剩余实物量快照 |
+| status | VARCHAR(30)，CHECK 封闭值域 | pending_inspection／inspecting／pending_finalization／reviewing／finalized／superseded |
+| reason | TEXT NULL，非空时 CHECK trim 后非空 | 本轮原因，不覆盖根清单更正原因 |
+| created_by / updated_by | ID，分别 FK users(id) | 创建及最近修改人 |
+| created_at / updated_at | DATETIME DEFAULT CURRENT_TIMESTAMP，后者自动随更新推进 | 创建及修改时间 |
+| version | INT DEFAULT 0，CHECK >=0 | 本轮乐观锁 |
+
+唯一键为 `(closeout_id,round_no)`、`(id,closeout_id)`，列表索引为 `(closeout_id,status,id)`；前轮 FK 为 `(previous_round_id,closeout_id)→本表(id,closeout_id)`，前版 FK 为 `(base_revision_id,closeout_id)→production_output_revision(id,closeout_id)`，各自及人员引用有支撑索引。谱系 CHECK 要求第 1 轮无前轮及前版，第 2 轮起必须有前轮；是否允许引用前版由具体命令校验。
+
+UPDATE 触发器冻结 closeout_id、round_no、previous_round_id、trigger_type、base_revision_id、source_version、三个起始数量和创建审计；状态与可变审计按命令推进。正常状态路径为 `pending_inspection → inspecting → pending_finalization → reviewing → finalized`，开始后续轮次可使旧轮进入 superseded。取消或驳回不恢复旧轮的已定稿资格，每轮至多一份批准版由 revision 的唯一约束保证。
+
+`production_output_allocation` 保存批准后每类正数剩余授权：
+
+| 字段 | 类型／约束 | 含义 |
+| --- | --- | --- |
+| revision_id / round_id / closeout_id | ID | 组合 FK production_output_revision(id,round_id,closeout_id) |
+| category | VARCHAR(30)，CHECK self_made／production_extra | 计划内／计划外成品授权类别 |
+| quantity | INT，CHECK 1..99999999 | 批准时该类别剩余授权，零量不建行 |
+| remark | TEXT NULL，非空时 CHECK trim 后非空 | 批准授权说明 |
+| created_by / created_at | ID，FK users(id)／DATETIME DEFAULT CURRENT_TIMESTAMP | 最终批准人及创建时间 |
+
+唯一键为 `(revision_id,category)`、`(id,revision_id,closeout_id,category)`；索引为 `(round_id,closeout_id,id)`，来源组合 FK 和人员 FK 有支撑索引。UPDATE／DELETE 触发器禁止覆盖授权，不含 version、可变审计或软删除。每版每类最多一行，已执行进度沿 Inventory 事实派生，不存可变余额。
 
 ### `production_output_revision`
 

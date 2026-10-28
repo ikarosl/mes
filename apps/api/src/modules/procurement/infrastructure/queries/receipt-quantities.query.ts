@@ -13,14 +13,21 @@ const receiptReturnTotalsSelect = (where = '', includeQualityQuantity = true): s
       : ''
   }
   FROM procurement_supplier_return ${where} GROUP BY receipt_line_id`;
-/** 供分页前的阶段筛选使用；与实物数量投影共用库存流水及退回事实。 */
-export const receiptPhysicalQuantityJoins = (): string =>
+/** 当前页或单张到货的有界投影；占位符参数按入库、退回各传一次行 ID 集合。 */
+export const receiptPhysicalQuantityJoins = (lineIds: readonly string[]): string =>
   `JOIN procurement_receipt_revision current_revision
     ON current_revision.id=line.current_receipt_revision_id AND current_revision.receipt_line_id=line.id
-  LEFT JOIN (${receiptInboundTotalsSelect()}) physical_inbound ON physical_inbound.receipt_line_id=line.id
-  LEFT JOIN (${receiptReturnTotalsSelect()}) physical_returns ON physical_returns.receipt_line_id=line.id`;
+  LEFT JOIN (${receiptInboundTotalsSelect(`AND detail.procurement_receipt_line_id IN (${slots(lineIds)})`)}) physical_inbound ON physical_inbound.receipt_line_id=line.id
+  LEFT JOIN (${receiptReturnTotalsSelect(`WHERE receipt_line_id IN (${slots(lineIds)})`)}) physical_returns ON physical_returns.receipt_line_id=line.id`;
 export const RECEIPT_UNPROCESSED_QUANTITY =
   '(current_revision.received_quantity-COALESCE(physical_inbound.quantity,0)-COALESCE(physical_returns.quantity,0))';
+
+/** Correlated sums keep pre-pagination stage eligibility limited to each actual source line. */
+export const receiptUnprocessedQuantityForLine = (lineAlias = 'line'): string =>
+  `((SELECT stage_revision.received_quantity FROM procurement_receipt_revision stage_revision
+      WHERE stage_revision.id=${lineAlias}.current_receipt_revision_id AND stage_revision.receipt_line_id=${lineAlias}.id)
+    -(${inboundFactSelect('COALESCE(SUM(tx.quantity),0)')} AND detail.procurement_receipt_line_id=${lineAlias}.id)
+    -(SELECT COALESCE(SUM(stage_return.returned_quantity),0) FROM procurement_supplier_return stage_return WHERE stage_return.receipt_line_id=${lineAlias}.id))`;
 
 /** 目录仅判断是否仍有实物；按指定到货行汇总真实已入与已退之和，不读取修订或质量分量。 */
 export async function readReceiptProcessedQuantities(

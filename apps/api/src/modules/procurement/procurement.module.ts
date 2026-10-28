@@ -23,6 +23,12 @@ import { SupplierRepository } from './application/ports/supplier.repository.js';
 import { SupplierService } from './application/supplier.service.js';
 import { MysqlSupplierRepository } from './infrastructure/mysql-supplier.repository.js';
 import { SupplierController } from './presentation/http/supplier.controller.js';
+import { IncomingInspectionOrderController } from './presentation/http/incoming-inspection-order.controller.js';
+import { IncomingInspectionOrderService } from './application/incoming-inspection-order.service.js';
+import { IncomingInspectionOrderQuery } from './application/ports/incoming-inspection-order.query.js';
+import { IncomingInspectionOrderRepository } from './application/ports/incoming-inspection-order.repository.js';
+import { MysqlIncomingInspectionOrderQuery } from './infrastructure/mysql-incoming-inspection-order.query.js';
+import { MysqlIncomingInspectionOrderRepository } from './infrastructure/mysql-incoming-inspection-order.repository.js';
 
 @Module({
   imports: [
@@ -34,12 +40,19 @@ import { SupplierController } from './presentation/http/supplier.controller.js';
     QualityModule,
   ],
   controllers: [
+    IncomingInspectionOrderController,
     SupplierController,
     PurchaseOrderController,
     ProcurementReceiptController,
     ProcurementInboundInspectionController,
   ],
   providers: [
+    IncomingInspectionOrderService,
+    { provide: IncomingInspectionOrderQuery, useClass: MysqlIncomingInspectionOrderQuery },
+    {
+      provide: IncomingInspectionOrderRepository,
+      useClass: MysqlIncomingInspectionOrderRepository,
+    },
     ProcurementQuery,
     ReceiptService,
     { provide: ProcurementReceiptRepository, useClass: MysqlProcurementReceiptRepository },

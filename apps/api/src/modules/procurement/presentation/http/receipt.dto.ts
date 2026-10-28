@@ -26,14 +26,12 @@ import {
   QUALITY_RELEASE_DECISIONS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
   RECEIPT_HISTORY_KINDS,
-  RECEIPT_LINE_STAGES,
   RECEIPT_ALLOCATION_DISPOSITIONS,
   RECEIPT_RETURN_REASONS,
 } from '@company/constants';
 import type {
   QualityReleaseDecision,
   QualityInboundInspectionMethod,
-  ProcurementInboundInspectionQuery,
   ReceiptHistoryKind,
   ReceiptAllocationDisposition,
   ReceiptReturnReason,
@@ -64,22 +62,6 @@ export class ReceiptReleaseQueryDto extends ReceiptListQueryDto {
   @ArrayUnique()
   @Matches(ID, { each: true })
   allocationIds?: string[];
-}
-export class InboundInspectionQueryDto
-  extends ReceiptSourceQueryDto
-  implements ProcurementInboundInspectionQuery
-{
-  @IsOptional()
-  @IsIn(RECEIPT_LINE_STAGES)
-  stage?: ProcurementInboundInspectionQuery['stage'];
-  @IsOptional()
-  @Transform(csv)
-  @IsArray()
-  @ArrayMinSize(1)
-  @ArrayMaxSize(100)
-  @ArrayUnique()
-  @Matches(ID, { each: true })
-  receiptLineIds?: string[];
 }
 export class ReceiptHistoryPathDto extends PurchaseOrderIdDto {
   @IsIn(RECEIPT_HISTORY_KINDS) historyKind!: ReceiptHistoryKind;

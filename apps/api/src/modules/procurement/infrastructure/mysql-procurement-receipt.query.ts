@@ -5,7 +5,6 @@ import type {
   PageQuery,
   ProcurementReceiptQuery as ReceiptListQuery,
   ProcurementInboundReleaseQuery,
-  ProcurementInboundInspectionQuery,
   ReceiptHistoryKind,
   PurchaseOrderQuery,
   ProcurementReceiptDetail,
@@ -36,7 +35,6 @@ import {
   listReceipts,
   listReceiptLines,
   listInboundReleases,
-  listInspections,
 } from './queries/receipt-lists.query.js';
 import { readReceiptHistory } from './queries/receipt-history.query.js';
 import { listReceiptOrderOptions, getPurchaseOrder } from './queries/purchase-order.query.js';
@@ -106,9 +104,6 @@ export class MysqlProcurementReceiptQuery extends ProcurementReceiptQuery {
   }
   listInboundReleases(query: ProcurementInboundReleaseQuery) {
     return withTransaction(this.pool, (db) => listInboundReleases(db, this.variants, query));
-  }
-  listInspections(query: ProcurementInboundInspectionQuery) {
-    return withTransaction(this.pool, (db) => listInspections(db, query));
   }
   getInspection(caseId: string) {
     return withTransaction(this.pool, (db) => readInspectionCase(db, this.quality, caseId));

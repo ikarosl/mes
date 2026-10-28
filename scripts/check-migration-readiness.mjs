@@ -25,6 +25,8 @@ const allowedTables = new Set([
   'quality_finished_inspection',
   'quality_inspection_case',
   'quality_inspection_record',
+  'quality_incoming_inspection_order',
+  'quality_incoming_inspection_order_receipt',
   'quality_process_inspection',
   'quality_process_inspection_record',
   'procurement_receipt_acceptance',

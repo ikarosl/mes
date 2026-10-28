@@ -204,6 +204,12 @@ down 在任何永久 DDL 前拒绝已有质量补单：仅原到货无法确定�
 
 down 在事务内移除新权限及其角色关联，其他目录与授权保持原有内容。回滚应用与目录须同版，不将此迁移文件存在视为已执行或用户验收通过；共享读取和写入边界见 [Production](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#http-读取权限与消费者)。
 
+### 202610280001：来料质检分组主单
+
+先部署 schema，再启用分组写入口；升级和回退期间暂停来料分组、相关编号分配及角色授权编辑，并按通用要求切换匹配应用。up 新增 Quality 主单与当前到货关系两表、扩展平台 `incoming_inspection_order` 编号类型 CHECK，并发布 `quality:inbound-inspections:manage`。已有到货、逐来源检验与仓库事实不改写，不回填猜测分组；既有角色不自动授权，通配管理员沿用原规则，演示质检角色通过显式 demo 入口恢复。
+
+down 的临时守卫在任何永久 DDL 前要求主单表、关联表以及 `business_number_daily_sequence` 中该编号类型全部为空；即使已移走全部到货，仍存在空主单或已发编号时也拒绝回退，不通过删除关系丢失稳定编号和审计依据。守卫通过后先删关系再删主单，恢复编号 CHECK，最后事务删除管理权限及其角色关联；其他到货、检查、数量与库存不变。DDL 失败继续按通用规则保持停写并核对实际结构及登记，不能声称整体回滚。当前表和边界见[Quality 分组表设计](../../../apps/api/src/modules/quality/docs/database.md#来料分组主单-quality_incoming_inspection_order)。
+
 ## 验证边界
 
 - 空库 fresh 验证应用全量迁移后再次运行，核对无待执行或校验和冲突；`db:init` 不能替代迁移验证。

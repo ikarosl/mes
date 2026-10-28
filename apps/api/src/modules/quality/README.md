@@ -1,6 +1,6 @@
 # Quality
 
-来料质检主单仅组织到货分组的方案已确认、尚未实施，组件复用、两表增量及分层分页见[实施计划](docs/incoming-inspection-orders-plan.md)。以下正文仍描述当前检查能力。
+来料[质检分组主单](docs/incoming-inspection-orders.md)按完整到货组织工作，可调整关联且不设流程状态；分组与逐来源检查事实分别保存。两表设计见[数据库](docs/database.md)，两层分页及按需读取见[Procurement 查询](../procurement/docs/receipt-queries.md#来料质检主单查询)。
 
 Quality 拥有外购来料检验与复核、成品质检及复检的不可变记录和明确放行结论，以及任务工序的现场专检与冲销更正事实。采购实收和到货处置范围属于 Procurement；生产产出草稿、结案审批、批准清单及异常处置属于 Production；实际入库属于 Inventory。
 

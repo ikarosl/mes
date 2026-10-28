@@ -243,6 +243,12 @@
         >操作结果尚未确认，请先核对并原样重试。</span
       >
       <el-button
+        v-if="allowAssociation && line"
+        :disabled="command.busy.value"
+        @click="emit('change-association', line.receiptId)"
+        >调整到货归属</el-button
+      >
+      <el-button
         v-if="line && auth.can(PERMISSIONS.warehouse.receipts.view)"
         :disabled="command.busy.value"
         @click="goReceipt"
@@ -315,7 +321,13 @@ import InboundInspectionHistory from './InboundInspectionHistory.vue';
 import InspectionResultSummary from '../../quality/components/InspectionResultSummary.vue';
 import ReceiptVoidNotice from './ReceiptVoidNotice.vue';
 
-const emit = defineEmits<{ changed: []; 'record-focus-cleared': [] }>();
+defineOptions({ name: 'InboundInspectionDetailDialog' });
+withDefaults(defineProps<{ allowAssociation?: boolean }>(), { allowAssociation: false });
+const emit = defineEmits<{
+  changed: [];
+  'record-focus-cleared': [];
+  'change-association': [receiptId: string];
+}>();
 const auth = useAuthStore(),
   router = useRouter();
 const editor = useInboundInspection(() => emit('changed'));

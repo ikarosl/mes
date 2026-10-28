@@ -18,11 +18,17 @@ import { DatabaseModule } from '../../infrastructure/database/database.module.js
 import { QualityInboundCommand } from './application/quality-inbound.command.js';
 import { QualityInboundQuery } from './application/quality-inbound.query.js';
 import { MysqlQualityInboundRepository } from './infrastructure/mysql-quality-inbound.repository.js';
+import { QualityIncomingInspectionOrderCommand } from './application/quality-incoming-inspection-order.command.js';
+import { MysqlIncomingInspectionOrderCommand } from './infrastructure/mysql-incoming-inspection-order.command.js';
 
 @Module({
   imports: [DatabaseModule, IdempotencyModule, IdentityModule],
   controllers: [FinishedInspectionController, ProcessInspectionController],
   providers: [
+    {
+      provide: QualityIncomingInspectionOrderCommand,
+      useClass: MysqlIncomingInspectionOrderCommand,
+    },
     ProcessInspectionService,
     { provide: QualityProcessInspectionQuery, useExisting: ProcessInspectionService },
     QualityProcessInspectionSourceRegistry,
@@ -39,6 +45,7 @@ import { MysqlQualityInboundRepository } from './infrastructure/mysql-quality-in
     { provide: QualityInboundQuery, useExisting: MysqlQualityInboundRepository },
   ],
   exports: [
+    QualityIncomingInspectionOrderCommand,
     QualityProcessInspectionCommand,
     QualityProcessInspectionQuery,
     QualityProcessInspectionSourceRegistry,
