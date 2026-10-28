@@ -21,6 +21,11 @@
         min-width="180"
       />
       <el-table-column
+        prop="supplierName"
+        label="供应商"
+        min-width="160"
+      />
+      <el-table-column
         label="补单原因"
         width="125"
         ><template #default="{ row }"

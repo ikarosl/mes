@@ -2,6 +2,8 @@
 
 状态：Accepted。当前任务用料规则见 [Production 工单设计](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)与[需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md)，产出与数量分别见[结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)和 [Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)。本文保留业务选择及取代范围，验收事项见[路线图](../roadmap.md)。
 
+本文任务与物料第 4 项及与 ADR-0013 的关系中沿用的逐行采购供应商规则，由 [ADR-0026](0026-purchase-order-supplier-and-amounts.md) 的主单唯一供应商取代；任务供应商提示、锁版及其他用料边界保持。
+
 ## 任务与物料
 
 1. BOM 继续由 Product 所有，只作为批量工单创建任务和生成初始需求的技术依据。研发仅凭有效成品和必要计划资料创建任务，不要求 BOM 或其审批，不复制路线、工序或虚构 BOM 基础。

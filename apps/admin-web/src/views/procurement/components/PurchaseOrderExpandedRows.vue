@@ -29,9 +29,10 @@
       </div>
     </div>
     <div
-      v-if="detail?.supplementReason === 'excess_purchase' || detail?.remark"
+      v-if="detail"
       class="line-metadata"
     >
+      <span>供应商：{{ detail.supplierName }}</span>
       <template v-if="detail?.supplementReason === 'excess_purchase'">
         <span
           v-if="excessOrigin"

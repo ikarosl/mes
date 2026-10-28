@@ -3,11 +3,13 @@ import type { ProcurementReceiptListSource } from '@company/contracts';
 export interface ReceiptWorklistReceipt<T extends ProcurementReceiptListSource> {
   receiptId: string;
   receiptNo: string;
+  supplierName: string;
   lines: T[];
 }
 interface ReceiptWorklistPurchase<T extends ProcurementReceiptListSource> {
   purchaseOrderId: string;
   purchaseNo: string;
+  supplierName: string;
   lines: T[];
   receipts: ReceiptWorklistReceipt<T>[];
 }
@@ -27,6 +29,7 @@ export function groupReceiptWorklist<T extends ProcurementReceiptListSource>(
       purchase = {
         purchaseOrderId: row.purchaseOrderId,
         purchaseNo: row.purchaseNo,
+        supplierName: row.supplierName,
         lines: [],
         receipts: [],
       };
@@ -35,7 +38,12 @@ export function groupReceiptWorklist<T extends ProcurementReceiptListSource>(
     purchase.lines.push(row);
     let receipt = receipts.get(row.receiptId);
     if (!receipt) {
-      receipt = { receiptId: row.receiptId, receiptNo: row.receiptNo, lines: [] };
+      receipt = {
+        receiptId: row.receiptId,
+        receiptNo: row.receiptNo,
+        supplierName: row.supplierName,
+        lines: [],
+      };
       receipts.set(row.receiptId, receipt);
       purchase.receipts.push(receipt);
     }

@@ -13,7 +13,7 @@
 - [产品范围](product-scope.md)
 - [路线图](roadmap.md)
 - [未解决冲突索引](documentation-conflicts.md)：当前状态、双方证据、影响和待处理问题；不新增业务规则
-- [采购与外购物料入库质检业务设计](procurement-inbound-design.md)（逐行供应商、单工单需求采购）
+- [采购与外购物料入库质检业务设计](procurement-inbound-design.md)（主单唯一供应商、单工单需求采购）
 - [采购到入库技术设计](procurement-inbound-technical-design.md)：当前表结构、状态及公开契约
 - [成品分次入库伪结构与数据示例](finished-inbound-redesign-proposal.md)：已确认模型的职责对照、实际批号与分次入库示例；实施验证及验收由路线图维护
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
@@ -60,7 +60,7 @@
 
 ## ADR
 
-全局方向决策（0001—0005）保留在根目录；模块决策（0008—0010、0012）的当前规则由所属模块完整维护；跨模块决策（0006、0007、0011、0013—0015、0019—0020）保留共同边界，各模块维护其执行细节。已实现不表示决策作废，也不等于用户验收通过；部分取代与未解决冲突继续显式保留。
+全局方向决策（0001—0005）保留在根目录；模块决策（0008—0010、0012）的当前规则由所属模块完整维护；跨模块决策保留共同边界，各模块维护其执行细节。已实现不表示决策作废，也不等于用户验收通过；部分取代与未解决冲突继续显式保留。
 
 - [ADR 目录](adr/)
 - [工单、BOM 与顺序多级审批的业务边界](adr/0006-approval-workflow-boundaries.md)
@@ -86,3 +86,4 @@
 - [补单历史来源与到货采购归属](adr/0023-supplement-source-and-receipt-ownership.md)：超量仅补购、质量独立到货及来源被替代后的继续办理
 - [质量补单分配依据的人工更正（已被 ADR-0025 取代）](adr/0024-quality-supplement-basis-correction.md)：分配引用更正方案的历史决策
 - [两类采购补单统一关联到货明细](adr/0025-supplement-receipt-line-basis.md)：采购来源与仓库分配解耦，质量补发独立到货
+- [采购主单统一供应商与明细金额边界](adr/0026-purchase-order-supplier-and-amounts.md)：取代逐行供应商，保留后续跨供应商分组与实际入库

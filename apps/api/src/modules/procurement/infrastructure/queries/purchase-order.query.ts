@@ -1,7 +1,6 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import type {
   PurchaseOrderQuery,
-  ProcurementSupplierSummary,
   ProcurementReceiptOrderOption,
   PurchaseOrderItem,
   PurchaseOrderLine,
@@ -22,34 +21,16 @@ import {
   idsSql,
   orderError,
   readSourceIds,
-  sortedIds,
 } from '../mysql-purchase-order.shared.js';
 
-type OrderDisplayRow = OrderRow & { work_order_no: string | null; line_count: number };
-const ORDER_DISPLAY_SELECT = `SELECT o.id,o.purchase_no,o.work_order_id,o.source_type,o.supplement_reason,o.status,o.remark,o.version,o.ordered_at,o.created_at,o.updated_at,w.work_order_no,(SELECT COUNT(*) FROM procurement_order_line l WHERE l.purchase_order_id=o.id) line_count FROM procurement_order o LEFT JOIN work_orders w ON w.id=o.work_order_id`;
-const readOrderSuppliers = async (
-  db: Db,
-  ids: string[],
-): Promise<Map<string, ProcurementSupplierSummary[]>> => {
-  const result = new Map<string, ProcurementSupplierSummary[]>();
-  if (!ids.length) return result;
-  const [rows] = await db.query<
-    (RowDataPacket & { purchase_order_id: number; supplier_id: number; supplier_name: string })[]
-  >(
-    `SELECT DISTINCT l.purchase_order_id,l.supplier_id,s.supplier_name FROM procurement_order_line l JOIN procurement_supplier s ON s.id=l.supplier_id WHERE l.purchase_order_id IN (${idsSql(ids)}) ORDER BY l.purchase_order_id,l.supplier_id`,
-    ids,
-  );
-  for (const row of rows) {
-    const id = String(row.purchase_order_id);
-    result.set(id, [
-      ...(result.get(id) ?? []),
-      { id: String(row.supplier_id), supplierName: row.supplier_name },
-    ]);
-  }
-  return result;
+type OrderDisplayRow = OrderRow & {
+  work_order_no: string | null;
+  line_count: number;
+  supplier_name: string;
 };
+const ORDER_DISPLAY_SELECT = `SELECT o.id,o.purchase_no,o.supplier_id,s.supplier_name,o.work_order_id,o.source_type,o.supplement_reason,o.status,o.remark,o.version,o.ordered_at,o.created_at,o.updated_at,w.work_order_no,(SELECT COUNT(*) FROM procurement_order_line l WHERE l.purchase_order_id=o.id) line_count FROM procurement_order o JOIN procurement_supplier s ON s.id=o.supplier_id LEFT JOIN work_orders w ON w.id=o.work_order_id`;
 const LINE_COLUMNS =
-  'l.id,l.purchase_order_id,l.supplier_id,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.supplement_evidence,l.fulfillment_mode';
+  'l.id,l.purchase_order_id,l.tax_exclusive_amount,l.tax_inclusive_amount,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.supplement_evidence,l.fulfillment_mode';
 
 export const listPurchaseOrders = async (
   db: Db,
@@ -62,15 +43,11 @@ export const listPurchaseOrders = async (
     );
   const params: Array<string | number> = [];
   if (query.keyword) {
-    where.push(
-      '(o.purchase_no LIKE ? OR EXISTS(SELECT 1 FROM procurement_order_line search_line JOIN procurement_supplier search_supplier ON search_supplier.id=search_line.supplier_id WHERE search_line.purchase_order_id=o.id AND search_supplier.supplier_name LIKE ?))',
-    );
+    where.push('(o.purchase_no LIKE ? OR s.supplier_name LIKE ?)');
     params.push(`%${query.keyword}%`, `%${query.keyword}%`);
   }
   if (query.supplierId) {
-    where.push(
-      'EXISTS(SELECT 1 FROM procurement_order_line filter_line WHERE filter_line.purchase_order_id=o.id AND filter_line.supplier_id=?)',
-    );
+    where.push('o.supplier_id=?');
     params.push(query.supplierId);
   }
   if (query.status) {
@@ -100,7 +77,7 @@ export const listPurchaseOrders = async (
     );
   }
   const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-    `SELECT COUNT(*) total FROM procurement_order o WHERE ${where.join(' AND ')}`,
+    `SELECT COUNT(*) total FROM procurement_order o JOIN procurement_supplier s ON s.id=o.supplier_id WHERE ${where.join(' AND ')}`,
     params,
   );
   const [rows] = await db.query<OrderDisplayRow[]>(
@@ -119,22 +96,11 @@ export const listReceiptOrderOptions = async (
   db: Db,
   query: PurchaseOrderQuery & { page: number; pageSize: number },
 ): Promise<PageResult<ProcurementReceiptOrderOption>> => {
-  const orders = await listPurchaseOrders(db, {
+  return listPurchaseOrders(db, {
     ...query,
     status: 'ordered',
     onlyNewArrival: true,
   });
-  const suppliers = await readOrderSuppliers(
-    db,
-    orders.items.map((order) => order.id),
-  );
-  return {
-    ...orders,
-    items: orders.items.map((order) => ({
-      ...order,
-      suppliers: suppliers.get(order.id) ?? [],
-    })),
-  };
 };
 
 export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrderDetail> => {
@@ -143,15 +109,13 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
   const [lines] = await db.query<
     (OrderLineRow & {
       material_name: string;
-      supplier_name: string;
       origin_order_id: number | null;
       origin_purchase_no: string | null;
       origin_receipt_no: string | null;
     })[]
   >(
-    `SELECT ${LINE_COLUMNS},m.material_name,s.supplier_name,origin.purchase_order_id origin_order_id,original.purchase_no origin_purchase_no,origin_receipt.receipt_no origin_receipt_no
+    `SELECT ${LINE_COLUMNS},m.material_name,origin.purchase_order_id origin_order_id,original.purchase_no origin_purchase_no,origin_receipt.receipt_no origin_receipt_no
      FROM procurement_order_line l JOIN materials m ON m.id=l.item_id
-     JOIN procurement_supplier s ON s.id=l.supplier_id
      LEFT JOIN procurement_order_line origin ON origin.id=l.origin_order_line_id
      LEFT JOIN procurement_order original ON original.id=origin.purchase_order_id
      LEFT JOIN procurement_receipt_line origin_receipt_line ON origin_receipt_line.id=l.origin_receipt_line_id
@@ -164,21 +128,16 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
     db,
     lines.filter((row) => row.fulfillment_mode !== 'existing_receipt').map((row) => String(row.id)),
   );
-  const suppliers = new Map(lines.map((row) => [String(row.supplier_id), row.supplier_name]));
   return {
     ...mapOrder(order),
-    suppliers: sortedIds([...suppliers.keys()]).map((supplierId) => ({
-      id: supplierId,
-      supplierName: suppliers.get(supplierId)!,
-    })),
     canCancel:
       (order.status === 'draft' || order.status === 'ordered') &&
       !(await hasOrderReceiptFacts(db, id)),
     items: lines.map((row) => ({
       id: String(row.id),
       lineNo: row.line_no,
-      supplierId: String(row.supplier_id),
-      supplierName: row.supplier_name,
+      taxExclusiveAmount: row.tax_exclusive_amount,
+      taxInclusiveAmount: row.tax_inclusive_amount,
       itemId: String(row.item_id),
       itemCode: row.item_code_snapshot,
       itemName: row.material_name,
@@ -271,13 +230,14 @@ export const listRelatedPurchases = async (
     (OrderLineRow & {
       purchase_no: string;
       order_status: PurchaseOrderItem['status'];
+      supplier_id: number;
       supplier_name: string;
       supplement_reason: PurchaseOrderItem['supplementReason'];
     })[]
   >(
-    `SELECT ${LINE_COLUMNS},o.purchase_no,o.status order_status,o.supplement_reason,s.supplier_name
+    `SELECT ${LINE_COLUMNS},o.purchase_no,o.status order_status,o.supplement_reason,o.supplier_id,s.supplier_name
      FROM procurement_order_line l JOIN procurement_order o ON o.id=l.purchase_order_id
-     JOIN procurement_supplier s ON s.id=l.supplier_id WHERE ${filter}
+     JOIN procurement_supplier s ON s.id=o.supplier_id WHERE ${filter}
      ORDER BY o.created_at DESC,o.id DESC,l.line_no,l.id LIMIT ? OFFSET ?`,
     [...ids, query.pageSize, (query.page - 1) * query.pageSize],
   );

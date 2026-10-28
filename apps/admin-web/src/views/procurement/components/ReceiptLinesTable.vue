@@ -30,7 +30,7 @@
         >作废整单</el-button
       >
     </template>
-    <template #supplier-detail="{ row }"
+    <template #material-detail="{ row }"
       ><div class="secondary">批号 {{ row.supplierBatchCode || '未填写' }}</div></template
     >
     <template #column-widths

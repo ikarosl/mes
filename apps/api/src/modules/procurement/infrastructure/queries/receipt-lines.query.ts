@@ -28,7 +28,6 @@ import {
   receiptLineSourceSelect,
   receiptSelect,
   readCurrentRounds,
-  readReceiptSuppliers,
   text,
   nullableText,
   mapReceipt,
@@ -44,7 +43,7 @@ export async function readReceiptVoidingHeader(
 ): Promise<ProcurementReceiptItem> {
   const [[row]] = await db.query<ReadRow[]>(`${receiptSelect(RECEIPT_COLUMNS)} WHERE r.id=?`, [id]);
   if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
-  return mapReceipt(row, (await readReceiptSuppliers(db, [id])).get(id) ?? []);
+  return mapReceipt(row);
 }
 
 export async function readReceiptHeader(

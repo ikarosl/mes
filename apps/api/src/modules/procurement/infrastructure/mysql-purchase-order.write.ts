@@ -17,7 +17,6 @@ import {
   type OrderLineRow,
   orderError,
   idsSql,
-  sortedIds,
   hasOrderReceiptFacts,
 } from './mysql-purchase-order.shared.js';
 
@@ -28,9 +27,6 @@ export const requireSupplier = async (connection: PoolConnection, id: string) =>
   );
   if (!row)
     orderError('供应商不存在或已删除', PROCUREMENT_ERROR_CODES.procurementSourceUnavailable);
-};
-export const requireSuppliers = async (connection: PoolConnection, ids: string[]) => {
-  for (const id of sortedIds(ids)) await requireSupplier(connection, id);
 };
 export const assertSources = (
   lines: PurchaseOrderDraftLine[],
@@ -60,9 +56,10 @@ export const insertOrder = async (
   supplement: PurchaseOrderSupplementReason | null = null,
 ): Promise<string> => {
   const [result] = await connection.execute<ResultSetHeader>(
-    'INSERT INTO procurement_order(purchase_no,work_order_id,source_type,supplement_reason,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,?)',
+    'INSERT INTO procurement_order(purchase_no,supplier_id,work_order_id,source_type,supplement_reason,remark,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?)',
     [
       await allocateBusinessNumber(connection, 'purchase_order'),
+      payload.supplierId,
       payload.workOrderId,
       payload.sourceType,
       supplement,
@@ -92,17 +89,18 @@ export const insertLines = async (
     const ref = map.get(`${line.itemId}:${line.materialVariantId}`);
     if (!ref) return orderError('采购物料资格已变化');
     const [result] = await connection.execute<ResultSetHeader>(
-      `INSERT INTO procurement_order_line(purchase_order_id,line_no,supplier_id,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,planned_quantity,origin_order_line_id,supplement_evidence,origin_receipt_line_id,fulfillment_mode,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO procurement_order_line(purchase_order_id,line_no,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,planned_quantity,tax_exclusive_amount,tax_inclusive_amount,origin_order_line_id,supplement_evidence,origin_receipt_line_id,fulfillment_mode,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         index + 1,
-        line.supplierId,
         line.itemId,
         line.materialVariantId,
         ref.itemCode,
         ref.materialVariantCode,
         ref.unit,
         line.plannedQuantity,
+        line.taxExclusiveAmount ?? null,
+        line.taxInclusiveAmount ?? null,
         origin?.lineId ?? null,
         origin?.evidence ?? null,
         origin?.receiptLineId ?? null,

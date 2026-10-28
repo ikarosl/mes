@@ -1,4 +1,3 @@
-import type { ProcurementSupplierSummary } from './purchase-orders.js';
 import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
 import type {
   QualityInboundCaseItem,
@@ -63,7 +62,8 @@ export interface ProcurementReceiptItem {
   receiptNo: string;
   purchaseOrderId: string;
   purchaseNo: string;
-  suppliers: ProcurementSupplierSummary[];
+  supplierId: string;
+  supplierName: string;
   receivedAt: string;
   handoverEvidence: string;
   remark: string | null;
@@ -253,7 +253,15 @@ export interface ProcurementInboundInspectionDetail extends Pick<
 }
 export interface ProcurementReceiptDetail extends Pick<
   ProcurementReceiptItem,
-  'void' | 'id' | 'receiptNo' | 'purchaseNo' | 'receivedAt' | 'handoverEvidence' | 'remark'
+  | 'void'
+  | 'id'
+  | 'receiptNo'
+  | 'purchaseNo'
+  | 'supplierId'
+  | 'supplierName'
+  | 'receivedAt'
+  | 'handoverEvidence'
+  | 'remark'
 > {
   items: ProcurementReceiptLineIndexItem[];
 }

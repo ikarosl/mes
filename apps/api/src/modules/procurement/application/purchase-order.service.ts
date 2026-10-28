@@ -28,7 +28,10 @@ import type {
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { MaterialVariantQuery } from '../../product/public.js';
 import { ProductionProcurementQuery } from '../../production/public.js';
-import { normalizePurchaseDraft } from '../domain/purchase-order.policy.js';
+import {
+  normalizePurchaseDraft,
+  normalizePurchaseAmountText,
+} from '../domain/purchase-order.policy.js';
 import { PurchaseOrderRepository } from './ports/purchase-order.repository.js';
 import {
   CREATE_PURCHASE_ORDER_SCOPE,
@@ -255,7 +258,11 @@ export class PurchaseOrderService {
     const body = {
       supplementReason: payload.supplementReason,
       items: payload.items.map((item) => ({
-        ...item,
+        originOrderLineId: item.originOrderLineId,
+        originReceiptLineId: item.originReceiptLineId,
+        plannedQuantity: item.plannedQuantity,
+        taxExclusiveAmount: normalizePurchaseAmountText(item.taxExclusiveAmount),
+        taxInclusiveAmount: normalizePurchaseAmountText(item.taxInclusiveAmount),
         supplementEvidence: item.supplementEvidence.trim(),
       })),
       remark: payload.remark?.trim() || null,

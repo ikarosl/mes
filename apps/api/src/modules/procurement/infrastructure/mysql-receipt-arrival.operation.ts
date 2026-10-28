@@ -8,7 +8,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
 import type { ProductInventoryEligibility } from '../../product/public.js';
 import { readOrder, readLines, sortedIds } from './mysql-purchase-order.shared.js';
-import { requireSuppliers } from './mysql-purchase-order.write.js';
+import { requireSupplier } from './mysql-purchase-order.write.js';
 import { insertRevision, auditReceipt } from './mysql-receipt.shared.js';
 import { receiptError } from '../domain/procurement.errors.js';
 import { requireQuantity, requireAggregateQuantity } from '../domain/receipt-quantity.policy.js';
@@ -41,10 +41,7 @@ export const confirmReceiptArrival = async (
     }
     return { line };
   });
-  await requireSuppliers(
-    connection,
-    selected.map(({ line }) => String(line.supplier_id)),
-  );
+  await requireSupplier(connection, String(order.supplier_id));
   const eligibility = await product.requirePurchasableReferences({
     references: selected.map(({ line }) => ({
       itemId: String(line.item_id),

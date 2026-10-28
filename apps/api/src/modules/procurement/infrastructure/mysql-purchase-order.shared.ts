@@ -12,6 +12,7 @@ export type Db = Pool | PoolConnection;
 export type OrderRow = RowDataPacket & {
   id: number;
   purchase_no: string;
+  supplier_id: number;
   work_order_id: number | null;
   source_type: PurchaseOrderItem['sourceType'];
   supplement_reason: PurchaseOrderItem['supplementReason'];
@@ -26,7 +27,8 @@ export type OrderLineRow = RowDataPacket & {
   fulfillment_mode: PurchaseFulfillmentMode;
   id: number;
   purchase_order_id: number;
-  supplier_id: number;
+  tax_exclusive_amount: string | null;
+  tax_inclusive_amount: string | null;
   line_no: number;
   item_id: number;
   material_variant_id: number;
@@ -92,10 +94,12 @@ export const readSourceIds = async (
   return map;
 };
 export const mapOrder = (
-  row: OrderRow & { work_order_no: string | null; line_count: number },
+  row: OrderRow & { work_order_no: string | null; line_count: number; supplier_name: string },
 ): PurchaseOrderItem => ({
   id: String(row.id),
   purchaseNo: row.purchase_no,
+  supplierId: String(row.supplier_id),
+  supplierName: row.supplier_name,
   workOrderId: row.work_order_id === null ? null : String(row.work_order_id),
   workOrderNo: row.work_order_no,
   sourceType: row.source_type,

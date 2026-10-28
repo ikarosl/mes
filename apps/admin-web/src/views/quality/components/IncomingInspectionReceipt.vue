@@ -8,6 +8,7 @@
       :receipt="{
         receiptId: receipt.receiptId,
         receiptNo: receipt.receiptNo,
+        supplierName: receipt.supplierName,
         lines: state?.items ?? [],
       }"
       :row-id="(row) => row.receiptLineId"
@@ -37,9 +38,6 @@
       <template #receipt-meta>
         <div class="receipt-source-meta">
           <span class="source-meta">采购单 {{ receipt.purchaseNo }}</span>
-          <span class="source-meta">{{
-            receipt.suppliers.map((supplier) => supplier.supplierName).join('、')
-          }}</span>
         </div>
         <div class="receipt-actions">
           <el-button

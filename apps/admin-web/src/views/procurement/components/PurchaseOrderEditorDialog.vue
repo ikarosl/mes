@@ -29,7 +29,7 @@
     />
     <el-alert
       v-if="supplement"
-      title="此单为独立补单；供应商、物料和需求来源沿用原采购行，本窗口只调整采购数量及备注。"
+      title="此单为独立补单；供应商沿用原采购主单，物料和需求来源固定，可调整采购数量、金额及备注。"
       type="info"
       :closable="false"
       class="notice"
@@ -40,6 +40,21 @@
       label-width="100px"
       @submit.prevent="save"
     >
+      <el-form-item
+        label="供应商"
+        required
+      >
+        <strong v-if="supplement">{{ supplierName }}</strong>
+        <PurchaseSupplierSelect
+          v-else
+          v-model:supplier-id="supplierId"
+          :supplier-name="supplierName"
+          :disabled="command.locked.value"
+          :refresh-token="supplierRefreshToken"
+          class="order-supplier"
+          @ready="supplierReady = $event"
+        />
+      </el-form-item>
       <el-form-item
         v-if="sourceType === 'demand'"
         label="所属工单"
@@ -90,7 +105,8 @@
         >
       </div>
       <p class="help">
-        采购数量独立填写，不分摊到需求；正式下单后不提供常规编辑。
+        采购数量独立填写，不分摊到需求；金额填写每条明细的整行总额，正式下单后冻结。
+        同物料及精确版本只保留一行，不同供应商请另建采购单。
         <template v-if="supplement">补单来源固定，原采购行或原到货选错须取消草稿后重建。</template>
       </p>
       <el-table
@@ -150,18 +166,6 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="实际供应商"
-          min-width="260"
-          ><template #default="{ row }">
-            <PurchaseSupplierSelect
-              v-model:supplier-id="row.supplierId"
-              :supplier-name="row.supplierName"
-              :disabled="supplement || command.locked.value"
-              :refresh-token="supplierRefreshToken"
-              @ready="row.supplierReady = $event"
-            /> </template
-        ></el-table-column>
-        <el-table-column
           label="采购数量"
           width="210"
           ><template #default="{ row }"
@@ -179,6 +183,32 @@
           label="单位"
           width="75"
         />
+        <el-table-column
+          label="无税金额"
+          min-width="180"
+        >
+          <template #default="{ row }">
+            <el-input
+              v-model="row.taxExclusiveAmount"
+              :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+              placeholder="整行总额（选填）"
+              :aria-label="`${row.itemName || '本行'}无税金额`"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="含税金额"
+          min-width="180"
+        >
+          <template #default="{ row }">
+            <el-input
+              v-model="row.taxInclusiveAmount"
+              :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+              placeholder="整行总额（选填）"
+              :aria-label="`${row.itemName || '本行'}含税金额`"
+            />
+          </template>
+        </el-table-column>
         <el-table-column
           label="关联需求"
           width="105"
@@ -199,28 +229,14 @@
         <el-table-column
           v-if="!supplement"
           label="操作"
-          width="260"
-          ><template #default="{ row, $index }"
+          width="80"
+          fixed="right"
+          ><template #default="{ $index }"
             ><el-button
               link
               type="danger"
               @click="rows.splice($index, 1)"
               >移除</el-button
-            >
-            <el-button
-              link
-              type="primary"
-              :disabled="loading || command.locked.value"
-              @click="addPurchaseRow(row)"
-              >添加采购行</el-button
-            >
-            <el-button
-              v-if="sourceType === 'demand' && row.sources.length > 1"
-              link
-              type="primary"
-              :disabled="loading || command.locked.value"
-              @click="splitRow(row)"
-              >分开采购</el-button
             >
           </template></el-table-column
         >
@@ -254,7 +270,6 @@
     :selected-ids="pickerSelectedIds"
     :already-added-ids="pickerAlreadyAddedIds"
     :other-row-ids="pickerOtherRowIds"
-    :move-source-ids="pickerMoveSourceIds"
     :disabled="loading || command.locked.value"
     :work-order-id="workOrderId"
     :item-id="sourceRow?.itemId"
@@ -268,7 +283,11 @@
 </template>
 
 <script setup lang="ts">
-import { PURCHASE_ORDER_SOURCE_TYPE_LABELS, PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
+import {
+  PURCHASE_ORDER_SOURCE_TYPE_LABELS,
+  PURCHASE_ORDER_MAX_QUANTITY,
+  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+} from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { usePurchaseOrderEditor } from '../composables/usePurchaseOrderEditor';
 import ProcurementDemandPickerDialog from './ProcurementDemandPickerDialog.vue';
@@ -289,14 +308,14 @@ const {
   workOrderPickerVisible,
   sourceRow,
   pickerSelectedIds,
-  pickerMoveSourceIds,
   pickerAlreadyAddedIds,
   pickerOtherRowIds,
   supplierRefreshToken,
+  supplierId,
+  supplierName,
+  supplierReady,
   selectWorkOrder,
   selectSources,
-  splitRow,
-  addPurchaseRow,
   remark,
   original,
   rows,
@@ -336,5 +355,9 @@ defineExpose({ open, close, visible, locked: command.locked });
 }
 .el-input-number {
   width: 180px;
+}
+.order-supplier {
+  width: 360px;
+  max-width: 100%;
 }
 </style>

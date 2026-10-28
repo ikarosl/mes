@@ -5,7 +5,6 @@ import type {
   ProcurementReceiptItem,
   ProcurementReceiptVoidItem,
   ProcurementReceiptListSource,
-  ProcurementSupplierSummary,
   ReceiptRevisionItem,
   ReceiptRoundItem,
   ReceiptAllocationItem,
@@ -26,10 +25,10 @@ export const pageInput = (query: PageQuery) => ({
 });
 export const slots = (ids: readonly string[]) => ids.map(() => '?').join(',');
 export const receiptSelect = (columns: string) =>
-  `SELECT ${columns} FROM procurement_receipt r JOIN procurement_order po ON po.id=r.purchase_order_id`;
+  `SELECT ${columns} FROM procurement_receipt r JOIN procurement_order po ON po.id=r.purchase_order_id JOIN procurement_supplier supplier ON supplier.id=po.supplier_id`;
 export const RECEIPT_VOID_COLUMNS = `r.is_voided,r.void_reason,
   r.voided_by void_created_by,r.voided_at void_created_at`;
-export const RECEIPT_HEADER_COLUMNS = `r.id,r.receipt_no,po.purchase_no,r.received_at,r.handover_evidence,r.remark,
+export const RECEIPT_HEADER_COLUMNS = `r.id,r.receipt_no,po.purchase_no,po.supplier_id,supplier.supplier_name,r.received_at,r.handover_evidence,r.remark,
   ${RECEIPT_VOID_COLUMNS}`;
 export const RECEIPT_COLUMNS = `${RECEIPT_HEADER_COLUMNS},r.purchase_order_id,r.created_at,r.version,
   (SELECT COUNT(*) FROM procurement_receipt_line pending_line JOIN procurement_receipt_round pending_round ON pending_round.id=pending_line.current_round_id WHERE pending_line.receipt_id=r.id AND pending_round.status='awaiting_acceptance') awaiting_acceptance_count,
@@ -37,10 +36,10 @@ export const RECEIPT_COLUMNS = `${RECEIPT_HEADER_COLUMNS},r.purchase_order_id,r.
 /** 只共享本模块来源骨架；跨模块展示关联在完整 SELECT 中声明，便于核验字段与用途。 */
 const RECEIPT_LINE_SOURCE_FROM = `FROM procurement_receipt_line line
   JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
-  JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id`;
+  JOIN procurement_order po ON po.id=line.purchase_order_id
+  JOIN procurement_supplier supplier ON supplier.id=po.supplier_id`;
 export const RECEIPT_LINE_FROM = `${RECEIPT_LINE_SOURCE_FROM}
-  JOIN procurement_receipt r ON r.id=line.receipt_id
-  JOIN procurement_order po ON po.id=line.purchase_order_id`;
+  JOIN procurement_receipt r ON r.id=line.receipt_id`;
 export const receiptLineSourceSelect = (
   columns: string,
 ): string => `SELECT ${columns} ${RECEIPT_LINE_SOURCE_FROM}
@@ -50,7 +49,7 @@ export const lineSelect = (columns: string): string => `SELECT ${columns} ${RECE
 export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,pol.line_no purchase_order_line_no,
   line.item_id,pol.item_code_snapshot,material.material_name,line.material_variant_id,pol.material_variant_code_snapshot,
   pol.unit_snapshot,line.supplier_batch_code,line.current_receipt_revision_id,
-  line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,pol.supplier_id,supplier.supplier_name,
+  line.over_receipt_note,line.version,line.current_round_id,r.receipt_no,po.purchase_no,po.supplier_id,supplier.supplier_name,
   ${RECEIPT_VOID_COLUMNS}`;
 /** 两个按到货明细分页的工作列表共用来源、排序和映射。 */
 export const RECEIPT_LIST_SOURCE_COLUMNS = `line.receipt_id,r.receipt_no,line.purchase_order_id,po.purchase_no,
@@ -102,21 +101,19 @@ export function mapReceiptHeader(row: ReadRow): Omit<ProcurementReceiptDetail, '
     id: text(row.id),
     receiptNo: text(row.receipt_no),
     purchaseNo: text(row.purchase_no),
+    supplierId: text(row.supplier_id),
+    supplierName: text(row.supplier_name),
     receivedAt: date(row.received_at),
     handoverEvidence: text(row.handover_evidence),
     remark: nullableText(row.remark),
   };
 }
-export function mapReceipt(
-  row: ReadRow,
-  suppliers: ProcurementSupplierSummary[],
-): ProcurementReceiptItem {
+export function mapReceipt(row: ReadRow): ProcurementReceiptItem {
   return {
     ...mapReceiptHeader(row),
     version: Number(row.version),
     awaitingAcceptanceCount: Number(row.awaiting_acceptance_count ?? 0),
     purchaseOrderId: text(row.purchase_order_id),
-    suppliers,
     createdAt: date(row.created_at),
     lineCount: Number(row.line_count),
   };
@@ -214,27 +211,4 @@ export function mapInbound(row: ReadRow): ReceiptInboundHistoryItem {
     quantity: text(row.quantity),
     confirmedAt: date(row.inbound_at),
   };
-}
-
-export async function readReceiptSuppliers(
-  db: Db,
-  ids: string[],
-): Promise<Map<string, ProcurementSupplierSummary[]>> {
-  const result = new Map<string, ProcurementSupplierSummary[]>();
-  if (!ids.length) return result;
-  const [rows] = await db.query<ReadRow[]>(
-    `SELECT DISTINCT line.receipt_id,pol.supplier_id,supplier.supplier_name
-    FROM procurement_receipt_line line JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
-    JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
-    WHERE line.receipt_id IN (${slots(ids)}) ORDER BY line.receipt_id,pol.supplier_id`,
-    ids,
-  );
-  for (const row of rows) {
-    const id = text(row.receipt_id);
-    result.set(id, [
-      ...(result.get(id) ?? []),
-      { id: text(row.supplier_id), supplierName: text(row.supplier_name) },
-    ]);
-  }
-  return result;
 }

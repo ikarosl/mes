@@ -50,7 +50,7 @@ Inventory 用该事实及自己当前已完成生产领料核对未预留量，�
 
 库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、授权单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 
-外购入库列表和详情的主单供应商摘要使用 `suppliers` 集合，逐明细的 `supplierId` 从真实采购来源读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。
+外购入库列表和详情的主单供应商摘要使用 `suppliers` 集合，逐明细的 `supplierId` 沿真实到货采购行所属的采购主单读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。采购供应商存储层级调整不回写已确认 inbound_detail 名称快照或既有 item_batch.provider 文本。
 
 `InventoryInboundRepository` 提供入库/库存历史查询。库存批次列表、详情和名称关键词使用同一名称来源：物料按公共规则读当前名称；成品优先保留有效入库来源中首条工单的冻结名称，没有工单来源时按 `product_id` 读取 `products.product_name`，不因成品停用或软删除丢失历史展示，也不由名称补造工单或任务。
 

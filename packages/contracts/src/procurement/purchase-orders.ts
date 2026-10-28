@@ -78,13 +78,11 @@ export interface PurchaseQualityReplacementCandidate extends PurchaseSupplementR
     plannedQuantity: string;
   }>;
 }
-export interface ProcurementSupplierSummary {
-  id: string;
-  supplierName: string;
-}
 export interface PurchaseOrderItem {
   id: string;
   purchaseNo: string;
+  supplierId: string;
+  supplierName: string;
   workOrderId: string | null;
   workOrderNo: string | null;
   sourceType: PurchaseOrderSourceType;
@@ -97,9 +95,7 @@ export interface PurchaseOrderItem {
   createdAt: string;
   updatedAt: string;
 }
-export interface ProcurementReceiptOrderOption extends PurchaseOrderItem {
-  suppliers: ProcurementSupplierSummary[];
-}
+export type ProcurementReceiptOrderOption = PurchaseOrderItem;
 export interface PurchaseOrderLineSource {
   demandId: string;
   workOrderId: string;
@@ -112,8 +108,8 @@ export interface PurchaseOrderLineSource {
 }
 export interface PurchaseOrderLine {
   fulfillmentMode: PurchaseFulfillmentMode;
-  supplierId: string;
-  supplierName: string;
+  taxExclusiveAmount: string | null;
+  taxInclusiveAmount: string | null;
   id: string;
   lineNo: number;
   itemId: string;
@@ -135,18 +131,19 @@ export interface PurchaseOrderLine {
   quantities: ReceiptQuantitySummary | null;
 }
 export interface PurchaseOrderDetail extends PurchaseOrderItem {
-  suppliers: ProcurementSupplierSummary[];
   canCancel: boolean;
   items: PurchaseOrderLine[];
 }
 export interface PurchaseOrderDraftLine {
-  supplierId: string;
+  taxExclusiveAmount?: string | null;
+  taxInclusiveAmount?: string | null;
   itemId: string;
   materialVariantId: string;
   plannedQuantity: number;
   demandIds: string[];
 }
 export interface CreatePurchaseOrderPayload {
+  supplierId: string;
   workOrderId: string | null;
   sourceType: PurchaseOrderSourceType;
   remark?: string | null;
@@ -160,6 +157,8 @@ export type ClosePurchaseOrderLinePayload = ReasonedVersionedCommand;
 export type ReopenPurchaseOrderLinePayload = ReasonedVersionedCommand;
 /** 同一原采购单、同一补因；各行独立保留原采购行、真实到货及补购说明。 */
 export interface CreatePurchaseOrderSupplementLinePayload {
+  taxExclusiveAmount?: string | null;
+  taxInclusiveAmount?: string | null;
   originOrderLineId: string;
   originReceiptLineId: string;
   plannedQuantity: number;

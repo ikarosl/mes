@@ -133,8 +133,11 @@ export const confirmReceiptInbound = async (
       return receiptError('到货采购来源归属已变化', 'RECEIPT_STATE');
     selected.push({ detail, line, row, purchaseLine });
   }
+  const orderSuppliers = new Map(
+    orders.map((order) => [String(order.id), String(order.supplier_id)]),
+  );
   const supplierIds = sortedIds(
-    selected.map(({ purchaseLine }) => String(purchaseLine.supplier_id)),
+    selected.map(({ line }) => orderSuppliers.get(String(line.purchase_order_id))!),
   );
   const [suppliers] = await connection.query<
     (RowDataPacket & { id: number; supplier_name: string })[]
@@ -175,7 +178,7 @@ export const confirmReceiptInbound = async (
       itemCode: purchaseLine.item_code_snapshot,
       materialVariantCode: purchaseLine.material_variant_code_snapshot,
       unit: purchaseLine.unit_snapshot,
-      supplierNameSnapshot: supplierNames.get(String(purchaseLine.supplier_id))!,
+      supplierNameSnapshot: supplierNames.get(orderSuppliers.get(String(line.purchase_order_id))!)!,
       quantity: String(detail.quantity),
       target: detail.target,
     };

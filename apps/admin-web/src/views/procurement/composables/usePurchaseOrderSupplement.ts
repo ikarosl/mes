@@ -4,7 +4,11 @@ import type {
   PurchaseOrderDetail,
   PurchaseOrderSupplementReason,
 } from '@company/contracts';
-import { PURCHASE_ORDER_MAX_LINES, PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
+import {
+  PURCHASE_ORDER_MAX_LINES,
+  PURCHASE_ORDER_MAX_QUANTITY,
+  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+} from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
@@ -19,6 +23,8 @@ import { useProcurementCommand } from './useProcurementCommand';
 
 export interface SupplementDraftLine extends SupplementBasisChoice {
   quantity: number | undefined;
+  taxExclusiveAmount: string;
+  taxInclusiveAmount: string;
   evidence: string;
   basisError: boolean;
 }
@@ -86,6 +92,8 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
           Number.isInteger(draft.quantity) &&
           Number(draft.quantity) > 0 &&
           Number(draft.quantity) <= PURCHASE_ORDER_MAX_QUANTITY &&
+          draft.taxExclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
+          draft.taxInclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
           Boolean(draft.evidence.trim()),
       ),
   );
@@ -171,6 +179,8 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       ...choices.map((choice) => ({
         ...copySupplementBasis(choice),
         quantity: undefined,
+        taxExclusiveAmount: '',
+        taxInclusiveAmount: '',
         evidence: '',
         basisError: false,
       })),
@@ -339,6 +349,8 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
               ? draft.selectedExcess!.id
               : draft.selectedQuality!.receiptLineId,
           plannedQuantity: Number(draft.quantity),
+          taxExclusiveAmount: draft.taxExclusiveAmount.trim() || null,
+          taxInclusiveAmount: draft.taxInclusiveAmount.trim() || null,
           supplementEvidence: draft.evidence.trim(),
         })),
         remark: remark.value.trim() || null,

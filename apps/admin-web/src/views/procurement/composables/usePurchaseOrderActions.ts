@@ -44,6 +44,8 @@ export function usePurchaseOrderActions(
         if (
           latest.id !== basis.id ||
           latest.purchaseNo !== basis.purchaseNo ||
+          latest.supplierId !== basis.supplierId ||
+          latest.supplierName !== basis.supplierName ||
           latest.version !== basis.version ||
           latest.status !== basis.status ||
           (action.value === 'cancel' && latest.canCancel !== basis.canCancel) ||
@@ -55,7 +57,8 @@ export function usePurchaseOrderActions(
               next.version !== line.version ||
               next.status !== line.status ||
               next.plannedQuantity !== line.plannedQuantity ||
-              next.supplierId !== line.supplierId ||
+              next.taxExclusiveAmount !== line.taxExclusiveAmount ||
+              next.taxInclusiveAmount !== line.taxInclusiveAmount ||
               next.itemId !== line.itemId ||
               next.materialVariantId !== line.materialVariantId ||
               next.fulfillmentMode !== line.fulfillmentMode

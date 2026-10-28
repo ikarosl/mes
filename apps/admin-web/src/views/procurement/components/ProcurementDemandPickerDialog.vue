@@ -1,23 +1,18 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="moveSourceIds ? '选择分开采购的需求' : '选择采购需求'"
+    title="选择采购需求"
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
     @update:model-value="$emit('update:visible', $event)"
   >
     <el-alert
-      :title="
-        moveSourceIds
-          ? '选中的需求将移到新行，请分别核对两行采购数量。'
-          : '仅选择当前工单的需求，可跨任务、跨页选择。采购数量另行填写，不分摊到需求。'
-      "
+      title="仅选择当前工单的需求，可跨任务、跨页选择。相同物料及精确版本合为一行，采购数量与金额另行填写。"
       type="info"
       :closable="false"
     />
     <el-form
-      v-if="!moveSourceIds"
       inline
       class="picker-search"
       @submit.prevent="search"
@@ -60,10 +55,7 @@
       >
     </div>
     <div class="selection-summary">
-      <strong>
-        已选 {{ selected.size }} / {{ PURCHASE_ORDER_MAX_DEMANDS }} 条
-        {{ moveSourceIds ? '（原行须至少保留 1 条需求）' : '（跨页保留）' }}
-      </strong>
+      <strong> 已选 {{ selected.size }} / {{ PURCHASE_ORDER_MAX_DEMANDS }} 条 （跨页保留） </strong>
       <el-tag
         v-for="entry in selected.values()"
         :key="entry.demandId"
@@ -91,9 +83,7 @@
         class="work-order-group"
       >
         <h4>
-          任务 {{ batch.no }}{{ moveSourceIds ? '' : '（当前页）'
-          }}<el-button
-            v-if="!moveSourceIds"
+          任务 {{ batch.no }}（当前页）<el-button
             link
             type="primary"
             @click="filterGroup(batch.id, batch.no)"
@@ -114,8 +104,6 @@
                 :disabled="
                   disabled ||
                   alreadyAdded.has(row.demandId) ||
-                  moveBlocked.has(row.demandId) ||
-                  (!!moveSourceIds && !moveSourceIds.includes(row.demandId)) ||
                   (!!materialVariantId && row.materialVariantId !== materialVariantId)
                 "
                 @change="toggle(row)" /></template
@@ -126,17 +114,7 @@
           >
             <template #default="{ row }">
               <el-tag
-                v-if="moveBlocked.has(row.demandId)"
-                type="danger"
-                >{{ moveBlocked.get(row.demandId) }}</el-tag
-              >
-              <el-tag
-                v-else-if="moveSourceIds"
-                type="info"
-                >原行需求</el-tag
-              >
-              <el-tag
-                v-else-if="alreadyAdded.has(row.demandId)"
+                v-if="alreadyAdded.has(row.demandId)"
                 type="info"
                 >已添加</el-tag
               >
@@ -200,7 +178,6 @@
       </section>
     </div>
     <PaginationFooter
-      v-if="!moveSourceIds"
       :total="total"
       :current-page="page"
       :page-size="pageSize"
@@ -212,15 +189,9 @@
       <el-button
         type="primary"
         :loading="resolving"
-        :disabled="
-          disabled ||
-          !selected.size ||
-          loading ||
-          hasAlreadyAddedSelection ||
-          (!!moveSourceIds && selected.size >= moveSourceIds.length)
-        "
+        :disabled="disabled || !selected.size || loading || hasAlreadyAddedSelection"
         @click="confirm"
-        >{{ moveSourceIds ? '核对并移到新行' : '核对并采用所选需求' }}</el-button
+        >核对并采用所选需求</el-button
       >
     </template>
   </el-dialog>
@@ -251,7 +222,6 @@ const props = defineProps<{
   selectedIds: string[];
   alreadyAddedIds: string[];
   otherRowIds: string[];
-  moveSourceIds?: string[];
   disabled: boolean;
   workOrderId: string;
   itemId?: string;
@@ -272,7 +242,6 @@ const demandType = ref<DemandType | ''>(''),
   groupFilterLabel = ref('');
 const rows = ref<ProcurementDemandCandidate[]>([]);
 const selected = ref(new Map<string, ProcurementDemandResolution>());
-const moveBlocked = ref(new Map<string, string>());
 const alreadyAdded = computed(() => new Set(props.alreadyAddedIds));
 const otherRows = computed(() => new Set(props.otherRowIds));
 const hasAlreadyAddedSelection = computed(() =>
@@ -301,27 +270,6 @@ const load = async (): Promise<void> => {
   const current = read.begin(() => props.visible);
   loading.value = true;
   try {
-    if (props.moveSourceIds) {
-      const result = await procurementApi.resolveDemands(
-        props.workOrderId,
-        props.moveSourceIds,
-        current.signal,
-      );
-      if (current.isCurrent()) {
-        rows.value = result.flatMap((entry) => (entry.demand ? [entry.demand] : []));
-        moveBlocked.value = new Map(
-          result
-            .filter((entry) => !entry.eligible || !entry.demand)
-            .map((entry) => [entry.demandId, entry.blockedReason ?? '当前不可采购']),
-        );
-        total.value = rows.value.length;
-        if (rows.value.length !== props.moveSourceIds.length) {
-          EMessage.warning('部分原行需求当前不可采购，请核对原行关联');
-        }
-      }
-      return;
-    }
-    moveBlocked.value = new Map();
     const result = await procurementApi.demandCandidates(
       {
         keyword: keyword.value.trim() || undefined,
@@ -351,27 +299,13 @@ const resolveSelection = async (): Promise<ProcurementDemandCandidate[] | null> 
     return null;
   }
   const ids = [...selected.value.keys()];
-  if (
-    props.moveSourceIds &&
-    (ids.length >= props.moveSourceIds.length ||
-      ids.some((id) => !props.moveSourceIds?.includes(id)))
-  ) {
-    EMessage.warning('请选择原行的部分需求，原行须至少保留 1 条');
-    return null;
-  }
   const current = resolutionRead.begin(() => props.visible);
   if (!ids.length) return [];
   resolving.value = true;
   try {
     const result = await procurementApi.resolveDemands(props.workOrderId, ids, current.signal);
     if (!current.isCurrent()) return null;
-    if (
-      props.disabled ||
-      ids.some((id) => alreadyAdded.value.has(id)) ||
-      (props.moveSourceIds &&
-        (ids.length >= props.moveSourceIds.length ||
-          ids.some((id) => !props.moveSourceIds?.includes(id))))
-    ) {
+    if (props.disabled || ids.some((id) => alreadyAdded.value.has(id))) {
       EMessage.warning('草稿已变化，请核对已选需求后再继续');
       return null;
     }
@@ -406,8 +340,6 @@ const toggle = (row: ProcurementDemandCandidate): void => {
   if (
     props.disabled ||
     alreadyAdded.value.has(row.demandId) ||
-    moveBlocked.value.has(row.demandId) ||
-    (props.moveSourceIds && !props.moveSourceIds.includes(row.demandId)) ||
     (props.materialVariantId && row.materialVariantId !== props.materialVariantId)
   )
     return;
@@ -459,7 +391,7 @@ const confirm = async (): Promise<void> => {
   }
 };
 watch(
-  () => [props.alreadyAddedIds, props.disabled, props.moveSourceIds],
+  () => [props.alreadyAddedIds, props.disabled],
   () => resolutionRead.invalidate(),
   { flush: 'sync' },
 );
@@ -478,7 +410,6 @@ watch(
         { demandId, demand: null, eligible: false, blockedReason: '待核对' },
       ]),
     );
-    moveBlocked.value = new Map();
     page.value = 1;
     batchId.value = undefined;
     keyword.value = '';

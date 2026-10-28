@@ -86,7 +86,7 @@ export function usePurchaseOrderLineReceiptRecords() {
       lineId: line.id,
       itemName: line.itemName,
       materialVariantCode: line.materialVariantCode,
-      supplierName: line.supplierName,
+      supplierName: order.supplierName,
       unit: line.unit,
     };
     keyword.value = '';

@@ -67,7 +67,7 @@ export async function loadPurchaseInboundSources(
   return sources;
 }
 
-/** Supplier identity follows the purchase line frozen on the source receipt line. */
+/** Supplier identity follows the purchase order frozen on the source receipt line. */
 export async function loadPurchaseInboundSupplierIds(
   db: Pool | PoolConnection,
   detailIds: string[],
@@ -77,12 +77,13 @@ export async function loadPurchaseInboundSupplierIds(
   const [rows] = await db.query<
     (RowDataPacket & { inbound_detail_id: number; supplier_id: number })[]
   >(
-    `SELECT detail.id inbound_detail_id,source_line.supplier_id
+    `SELECT detail.id inbound_detail_id,source_order.supplier_id
      FROM inbound_detail detail
      JOIN procurement_receipt_line receipt_line ON receipt_line.id=detail.procurement_receipt_line_id
      JOIN procurement_receipt_allocation allocation ON allocation.id=detail.procurement_allocation_id
        AND allocation.receipt_line_id=receipt_line.id
      JOIN procurement_order_line source_line ON source_line.id=receipt_line.purchase_order_line_id
+     JOIN procurement_order source_order ON source_order.id=source_line.purchase_order_id
      WHERE detail.id IN (${detailIds.map(() => '?').join(',')})`,
     detailIds,
   );

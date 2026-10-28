@@ -79,11 +79,6 @@
       </template>
     </el-table-column>
     <el-table-column
-      prop="supplierName"
-      label="实际供应商"
-      min-width="160"
-    />
-    <el-table-column
       label="物料 / 精确版本"
       min-width="190"
     >
@@ -108,6 +103,18 @@
         >{{ Number(row.plannedQuantity) }} {{ row.unit }}</template
       ></el-table-column
     >
+    <el-table-column
+      label="无税金额"
+      min-width="160"
+    >
+      <template #default="{ row }">{{ row.taxExclusiveAmount ?? '—' }}</template>
+    </el-table-column>
+    <el-table-column
+      label="含税金额"
+      min-width="160"
+    >
+      <template #default="{ row }">{{ row.taxInclusiveAmount ?? '—' }}</template>
+    </el-table-column>
     <el-table-column
       v-if="order.supplementReason !== 'excess_purchase'"
       label="累计到货"

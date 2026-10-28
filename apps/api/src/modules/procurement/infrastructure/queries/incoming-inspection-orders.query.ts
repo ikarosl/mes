@@ -26,7 +26,6 @@ import {
   mapReceiptVoid,
   nullableText,
   pageInput,
-  readReceiptSuppliers,
   text,
 } from './receipt-read.shared.js';
 
@@ -36,9 +35,10 @@ const orderSelect = (columns: string) =>
   `SELECT ${columns} FROM quality_incoming_inspection_order o`;
 const receiptSelect = (columns: string) => `SELECT ${columns} FROM procurement_receipt r
   JOIN procurement_order po ON po.id=r.purchase_order_id
+  JOIN procurement_supplier supplier ON supplier.id=po.supplier_id
   LEFT JOIN quality_incoming_inspection_order_receipt link ON link.receipt_id=r.id
   LEFT JOIN quality_incoming_inspection_order o ON o.id=link.inspection_order_id`;
-const RECEIPT_COLUMNS = `r.id receipt_id,r.receipt_no,r.purchase_order_id,po.purchase_no,r.received_at,
+const RECEIPT_COLUMNS = `r.id receipt_id,r.receipt_no,r.purchase_order_id,po.purchase_no,po.supplier_id,supplier.supplier_name,r.received_at,
   ${RECEIPT_VOID_COLUMNS},o.id order_id,o.inspection_no,o.version order_version,
   (SELECT COUNT(*) FROM procurement_receipt_line counted_line WHERE counted_line.receipt_id=r.id) line_count`;
 const sourceSelect = (
@@ -48,19 +48,20 @@ const sourceSelect = (
   JOIN procurement_order po ON po.id=r.purchase_order_id
   JOIN procurement_receipt_line line ON line.receipt_id=r.id
   JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
-  JOIN procurement_supplier supplier ON supplier.id=pol.supplier_id
+  JOIN procurement_supplier supplier ON supplier.id=po.supplier_id
   JOIN materials material ON material.id=line.item_id`;
 const stageSourceSelect = (withSupplier: boolean) => `SELECT 1
   FROM quality_incoming_inspection_order_receipt search_link
   JOIN procurement_receipt r ON r.id=search_link.receipt_id
   JOIN procurement_receipt_line line ON line.receipt_id=r.id
   JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id
-  ${withSupplier ? 'JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id' : ''}`;
+  ${withSupplier ? 'JOIN procurement_order po ON po.id=r.purchase_order_id' : ''}`;
 const SOURCE_KEYWORD = `(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ?
   OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?)`;
 const CANDIDATE_KEYWORD_LINES = `SELECT 1 FROM procurement_receipt_line search_line
   JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id
-  JOIN procurement_supplier search_supplier ON search_supplier.id=search_order_line.supplier_id
+  JOIN procurement_order search_order ON search_order.id=search_order_line.purchase_order_id
+  JOIN procurement_supplier search_supplier ON search_supplier.id=search_order.supplier_id
   JOIN materials search_material ON search_material.id=search_line.item_id
   WHERE search_line.receipt_id=r.id AND (search_supplier.supplier_name LIKE ? OR search_material.material_name LIKE ?
     OR search_order_line.item_code_snapshot LIKE ? OR search_order_line.material_variant_code_snapshot LIKE ?)`;
@@ -80,7 +81,7 @@ export async function listIncomingInspectionOrders(
   if (query.stage || query.supplierId) {
     const sourceWhere = ['search_link.inspection_order_id=o.id'];
     if (query.supplierId) {
-      sourceWhere.push('pol.supplier_id=?');
+      sourceWhere.push('po.supplier_id=?');
       params.push(query.supplierId);
     }
     if (query.stage) {
@@ -129,7 +130,7 @@ export async function listIncomingInspectionOrderReceipts(
   );
   return {
     order,
-    items: await mapReceipts(db, rows),
+    items: mapReceipts(rows),
     total: Number(count?.total ?? 0),
     page,
     pageSize,
@@ -160,7 +161,7 @@ export async function listIncomingInspectionReceiptCandidates(
     `${receiptSelect(RECEIPT_COLUMNS)} WHERE ${where.join(' AND ')} ORDER BY r.id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
-  return { items: await mapReceipts(db, rows), total: Number(count?.total ?? 0), page, pageSize };
+  return { items: mapReceipts(rows), total: Number(count?.total ?? 0), page, pageSize };
 }
 
 export async function readIncomingInspectionReceiptLines(
@@ -180,7 +181,7 @@ export async function readIncomingInspectionReceiptLines(
   const ids = lineRows.map((line) => text(line.id));
   const lines = await readInspectionWorklistRows(db, ids);
   return {
-    receipt: (await mapReceipts(db, [row]))[0]!,
+    receipt: mapReceipts([row])[0]!,
     items: ids.map((id) => {
       const item = lines.get(id);
       if (!item) throw new Error('到货明细缺少当前检验投影');
@@ -228,20 +229,14 @@ function mapOrderReference(row: ReadRow): QualityIncomingInspectionOrderReferenc
       };
 }
 
-async function mapReceipts(
-  db: Db,
-  rows: ReadRow[],
-): Promise<QualityIncomingInspectionReceiptItem[]> {
-  const suppliers = await readReceiptSuppliers(
-    db,
-    rows.map((row) => text(row.receipt_id)),
-  );
+function mapReceipts(rows: ReadRow[]): QualityIncomingInspectionReceiptItem[] {
   return rows.map((row) => ({
     receiptId: text(row.receipt_id),
     receiptNo: text(row.receipt_no),
     purchaseOrderId: text(row.purchase_order_id),
     purchaseNo: text(row.purchase_no),
-    suppliers: suppliers.get(text(row.receipt_id)) ?? [],
+    supplierId: text(row.supplier_id),
+    supplierName: text(row.supplier_name),
     receivedAt: date(row.received_at),
     lineCount: Number(row.line_count),
     void: mapReceiptVoid(row),

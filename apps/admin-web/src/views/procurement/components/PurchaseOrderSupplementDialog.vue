@@ -38,6 +38,10 @@
           <span
             >工单 <strong>{{ order.workOrderNo || '独立备料' }}</strong></span
           >
+          <span
+            >供应商 <strong>{{ order.supplierName }}</strong
+            >（沿用原单）</span
+          >
         </template>
         <el-button
           link
@@ -131,10 +135,7 @@
               <div class="draft-heading">
                 <div class="draft-identity">
                   <strong>{{ draft.line.itemName }} · {{ draft.line.materialVariantCode }}</strong>
-                  <span
-                    >供应商 {{ draft.line.supplierName }} · 原计划 {{ draft.line.plannedQuantity }}
-                    {{ draft.line.unit }}</span
-                  >
+                  <span>原计划 {{ draft.line.plannedQuantity }} {{ draft.line.unit }}</span>
                 </div>
                 <el-button
                   link
@@ -201,8 +202,23 @@
                     <span>{{ draft.line.unit }}</span>
                   </div>
                 </el-form-item>
+                <el-form-item label="无税金额">
+                  <el-input
+                    v-model="draft.taxExclusiveAmount"
+                    :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+                    placeholder="本次明细整行总额（选填）"
+                  />
+                </el-form-item>
+                <el-form-item label="含税金额">
+                  <el-input
+                    v-model="draft.taxInclusiveAmount"
+                    :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+                    placeholder="本次明细整行总额（选填）"
+                  />
+                </el-form-item>
                 <el-form-item
                   :label="reason === 'excess_purchase' ? '额外购买依据' : '供应商补发约定'"
+                  class="evidence-field"
                   required
                 >
                   <el-input
@@ -295,6 +311,7 @@ import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
 import type { PurchaseOrderSupplementReason } from '@company/contracts';
 import {
   PURCHASE_ORDER_MAX_QUANTITY,
+  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
   PURCHASE_ORDER_SUPPLEMENT_REASONS,
   PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS,
 } from '@company/constants';
@@ -514,8 +531,11 @@ defineExpose({ open, close, visible, locked: editingLocked });
 }
 .line-form {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr);
+  grid-template-columns: 210px minmax(160px, 1fr) minmax(160px, 1fr);
   gap: 16px;
+}
+.evidence-field {
+  grid-column: 1 / -1;
 }
 .line-form :deep(.el-form-item),
 .remark-form :deep(.el-form-item) {

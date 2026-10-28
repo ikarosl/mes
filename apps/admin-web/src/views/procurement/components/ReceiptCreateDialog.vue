@@ -54,9 +54,7 @@
           label="供应商"
           min-width="210"
           show-overflow-tooltip
-          ><template #default="{ row }">{{
-            supplierSummary(row.suppliers)
-          }}</template></el-table-column
+          ><template #default="{ row }">{{ row.supplierName }}</template></el-table-column
         ><el-table-column
           prop="lineCount"
           label="物料行"
@@ -92,7 +90,7 @@
       <div class="order-context">
         <div>
           <strong>{{ order.purchaseNo }}</strong>
-          <span>{{ supplierSummary(order.suppliers) }}</span>
+          <span>供应商 {{ order.supplierName }}</span>
         </div>
         <div class="toolbar">
           <el-button
@@ -150,14 +148,13 @@
         row-key="key"
       >
         <el-table-column
-          label="物料 / 版本 / 供应商"
+          label="物料 / 精确版本"
           min-width="245"
           ><template #default="{ row }">
             <strong>{{ row.line.itemName }}</strong>
             <div class="material-meta">
-              {{ row.line.itemCode }} · {{ row.line.materialVariantCode }}
+              {{ row.line.materialVariantCode }}
             </div>
-            <div class="material-meta">{{ row.line.supplierName }}</div>
           </template></el-table-column
         >
         <el-table-column
@@ -258,7 +255,6 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
-import { supplierSummary } from '../supplier-summary';
 import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';

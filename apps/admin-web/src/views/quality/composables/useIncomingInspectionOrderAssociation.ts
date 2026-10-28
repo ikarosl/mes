@@ -418,7 +418,6 @@ export function useIncomingInspectionOrderAssociation(onChanged: () => void) {
     return {
       ...receipt,
       order: receipt.order ? { ...receipt.order } : null,
-      suppliers: receipt.suppliers.map((supplier) => ({ ...supplier })),
       void: receipt.void ? { ...receipt.void } : null,
     };
   }

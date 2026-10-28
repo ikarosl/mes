@@ -26,6 +26,7 @@
           border
         >
           <el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item>
+          <el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag v-bind="purchaseOrderStatusTag(detail.status)">{{
               PURCHASE_ORDER_STATUS_LABELS[detail.status]
@@ -42,11 +43,6 @@
             :span="2"
             >{{ actionLine.itemCode }} · {{ actionLine.itemName }} ·
             {{ actionLine.materialVariantCode }}</el-descriptions-item
-          >
-          <el-descriptions-item
-            v-if="actionLine"
-            label="实际供应商"
-            >{{ actionLine.supplierName }}</el-descriptions-item
           >
           <el-descriptions-item
             v-if="actionLine"
@@ -85,11 +81,6 @@
             min-width="110"
           />
           <el-table-column
-            prop="supplierName"
-            label="实际供应商"
-            min-width="140"
-          />
-          <el-table-column
             prop="materialVariantCode"
             label="物料精确版本"
             min-width="180"
@@ -105,6 +96,18 @@
             width="70"
           />
           <el-table-column
+            label="无税金额"
+            min-width="140"
+          >
+            <template #default="{ row }">{{ row.taxExclusiveAmount ?? '—' }}</template>
+          </el-table-column>
+          <el-table-column
+            label="含税金额"
+            min-width="140"
+          >
+            <template #default="{ row }">{{ row.taxInclusiveAmount ?? '—' }}</template>
+          </el-table-column>
+          <el-table-column
             v-if="detail.supplementReason === 'quality_replacement'"
             label="补单依据"
             min-width="230"
@@ -114,7 +117,9 @@
             </template>
           </el-table-column>
         </el-table>
-        <p v-if="mode === 'place'">确认下单后，各物料行的供应商、版本、数量和来源将锁定。</p>
+        <p v-if="mode === 'place'">
+          确认下单后，本单供应商及各物料行的版本、数量、金额和来源将锁定。
+        </p>
         <p v-else-if="mode === 'cancel'">
           草稿可整单取消；已下单采购须没有属于本单的到货记录（含已作废登记）。取消后整单及物料行均不可恢复。
         </p>

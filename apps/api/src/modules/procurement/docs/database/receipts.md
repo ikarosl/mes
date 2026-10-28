@@ -29,7 +29,7 @@
 | 字段 | 类型／约束 | 语义 |
 | --- | --- | --- |
 | receipt_id / purchase_order_id | ID | 同一到货及采购根 |
-| purchase_order_line_id | ID | 固定来源采购行，供应商沿该行取得 |
+| purchase_order_line_id | ID | 固定来源采购行，供应商沿该行所属采购主单取得 |
 | line_no | INT，CHECK >0 | 单内登记顺序，仅供稳定排序，公开定位使用 id |
 | item_id / material_variant_id | ID | 与原采购行相同的物料及精确版本 |
 | supplier_batch_code | VARCHAR(100) NULL | 供应商提供的原批号，不是库存批次编号 |
@@ -39,7 +39,7 @@
 
 唯一键为 `(receipt_id,line_no)`、`(id,item_id,material_variant_id)`、`(id,purchase_order_line_id)`；业务索引为 `(purchase_order_line_id,id)`。组合外键分别为 `(receipt_id,purchase_order_id)→procurement_receipt(id,purchase_order_id)`、`(purchase_order_line_id,purchase_order_id)→procurement_order_line(id,purchase_order_id)`、`(purchase_order_line_id,item_id,material_variant_id)→procurement_order_line(id,item_id,material_variant_id)`；两个当前指针各与本行 id 组合引用 revision／round 的 `(id,receipt_line_id)`。保留的 `fk_procurement_receipt_line_batch(item_id,material_variant_id)` 只是索引名，不存在到库存批次的外键或 batch_id 列。
 
-UPDATE 身份触发器冻结 receipt_id、purchase_order_id、purchase_order_line_id、item_id、material_variant_id 和 supplier_batch_code；登记顺序、说明及创建依据由命令保留，当前指针和可变审计按命令推进。同源冗余 ID 不构成第二份来源；供应商名称按采购行供应商身份读取。
+UPDATE 身份触发器冻结 receipt_id、purchase_order_id、purchase_order_line_id、item_id、material_variant_id 和 supplier_batch_code；登记顺序、说明及创建依据由命令保留，当前指针和可变审计按命令推进。同源冗余 ID 不构成第二份来源；供应商名称按来源采购主单的供应商身份读取。
 
 ## procurement_receipt_revision
 

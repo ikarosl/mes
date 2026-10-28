@@ -1,5 +1,4 @@
 import type { PageQuery, PageResult } from '../common.js';
-import type { ProcurementSupplierSummary } from '../procurement/purchase-orders.js';
 import type {
   ProcurementInboundInspectionLineItem,
   ProcurementReceiptVoidItem,
@@ -34,7 +33,8 @@ export interface QualityIncomingInspectionReceiptItem {
   receiptNo: string;
   purchaseOrderId: string;
   purchaseNo: string;
-  suppliers: ProcurementSupplierSummary[];
+  supplierId: string;
+  supplierName: string;
   receivedAt: string;
   lineCount: number;
   void: ProcurementReceiptVoidItem | null;

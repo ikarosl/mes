@@ -38,7 +38,7 @@
             v-model="lineSearch"
             clearable
             :disabled="disabled"
-            placeholder="搜索物料、版本、供应商或行 ID"
+            placeholder="搜索物料、版本或行 ID"
             aria-label="搜索原采购行"
           />
         </div>
@@ -77,7 +77,6 @@
               >
             </span>
             <span>{{ line.materialVariantCode }}</span>
-            <span>{{ line.supplierName }}</span>
             <span>采购行 ID：{{ line.id }}</span>
           </button>
         </div>
@@ -90,8 +89,8 @@
           <div class="basis-heading">
             <strong>{{ currentLine.itemName }} · {{ currentLine.materialVariantCode }}</strong>
             <span
-              >采购行 ID：{{ currentLine.id }} · {{ currentLine.supplierName }} · 原计划
-              {{ currentLine.plannedQuantity }} {{ currentLine.unit }}</span
+              >采购行 ID：{{ currentLine.id }} · 原计划 {{ currentLine.plannedQuantity }}
+              {{ currentLine.unit }}</span
             >
           </div>
           <InlineHint v-if="isAlreadyAdded(currentLine.id)">

@@ -154,6 +154,11 @@
           </template>
         </el-table-column>
         <el-table-column
+          prop="supplierName"
+          label="供应商"
+          min-width="160"
+        />
+        <el-table-column
           prop="workOrderNo"
           label="所属工单"
           min-width="145"

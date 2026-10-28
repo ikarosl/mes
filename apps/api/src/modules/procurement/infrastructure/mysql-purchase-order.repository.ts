@@ -54,7 +54,7 @@ import {
   idsSql,
 } from './mysql-purchase-order.shared.js';
 import {
-  requireSuppliers,
+  requireSupplier,
   assertSources,
   insertOrder,
   insertLines,
@@ -120,10 +120,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     return withTransaction(this.pool, async (connection) => {
       const demands = await this.requireSources(payload.items);
       assertSources(payload.items, demands, payload.workOrderId);
-      await requireSuppliers(
-        connection,
-        payload.items.map((line) => line.supplierId),
-      );
+      await requireSupplier(connection, payload.supplierId);
       const id = await insertOrder(connection, payload, context);
       const refs = await this.requireMaterials(payload.items);
       await insertLines(connection, id, payload.items, refs, context);
@@ -148,10 +145,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         order.version === payload.version && order.version === locator.order.version ? 1 : 0,
       );
       const lines = await readLines(connection, id, true);
-      await requireSuppliers(
-        connection,
-        payload.items.map((line) => line.supplierId),
-      );
+      await requireSupplier(connection, payload.supplierId);
       const sources = await readSourceIds(
         connection,
         lines.map((line) => String(line.id)),
@@ -167,25 +161,29 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         | undefined;
       if (order.supplement_reason) {
         if (
+          String(order.supplier_id) !== payload.supplierId ||
           lines.length !== payload.items.length ||
           (order.work_order_id === null ? null : String(order.work_order_id)) !==
             payload.workOrderId ||
           order.source_type !== payload.sourceType
         )
-          return orderError('补单只能调整计划量与备注，原采购、物料和需求追溯不能改变');
+          return orderError(
+            '补单只能调整计划量、金额文本与备注，供应商、原采购、物料和需求追溯不能改变',
+          );
         origins = lines.map((line, index) => {
           const next = payload.items[index];
           if (
             !next ||
             line.origin_order_line_id === null ||
             line.supplement_evidence === null ||
-            String(line.supplier_id) !== next.supplierId ||
             String(line.item_id) !== next.itemId ||
             String(line.material_variant_id) !== next.materialVariantId ||
             JSON.stringify(sortedIds(sources.get(String(line.id)) ?? [])) !==
               JSON.stringify(sortedIds(next.demandIds))
           )
-            return orderError('补单只能调整计划量与备注，原采购、物料和需求追溯不能改变');
+            return orderError(
+              '补单只能调整计划量、金额文本与备注，供应商、原采购、物料和需求追溯不能改变',
+            );
           return {
             lineId: String(line.origin_order_line_id),
             evidence: line.supplement_evidence,
@@ -199,8 +197,9 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       await deleteDraftLines(connection, lines);
       await insertLines(connection, id, payload.items, refs, context, origins);
       await connection.execute(
-        'UPDATE procurement_order SET work_order_id=?,source_type=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
+        'UPDATE procurement_order SET supplier_id=?,work_order_id=?,source_type=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
         [
+          payload.supplierId,
           payload.workOrderId,
           payload.sourceType,
           payload.remark ?? null,
@@ -244,6 +243,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         true,
       );
       if (
+        order.supplier_id !== locator.order.supplier_id ||
         order.work_order_id !== locator.order.work_order_id ||
         order.source_type !== locator.order.source_type ||
         JSON.stringify(toDraftLines(lines, sources)) !== JSON.stringify(candidateLines)
@@ -253,10 +253,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           PROCUREMENT_ERROR_CODES.procurementSourceUnavailable,
         );
       if (!lines.length) return orderError('采购单没有物料行');
-      await requireSuppliers(
-        connection,
-        lines.map((line) => String(line.supplier_id)),
-      );
+      await requireSupplier(connection, String(order.supplier_id));
       if (order.supplement_reason)
         await this.assertSupplementOrigins(connection, order, lines, sources);
       const refs = await this.requireMaterials(candidateLines);
@@ -468,17 +465,16 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         if (!line) return orderError('原采购行不属于所选采购单');
         return line;
       });
-      await requireSuppliers(
-        connection,
-        selected.map((line) => String(line.supplier_id)),
-      );
+      await requireSupplier(connection, String(original.supplier_id));
       const sources = await readSourceIds(connection, selectedIds, true);
       const draft = normalizePurchaseDraft({
+        supplierId: String(original.supplier_id),
         workOrderId: original.work_order_id === null ? null : String(original.work_order_id),
         sourceType: original.source_type,
         remark: payload.remark ?? null,
         items: selected.map((line, index) => ({
-          supplierId: String(line.supplier_id),
+          taxExclusiveAmount: payload.items[index]!.taxExclusiveAmount ?? null,
+          taxInclusiveAmount: payload.items[index]!.taxInclusiveAmount ?? null,
           itemId: String(line.item_id),
           materialVariantId: String(line.material_variant_id),
           plannedQuantity: payload.items[index]!.plannedQuantity,
@@ -601,17 +597,15 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       originalLineIds.add(originalLineId);
       const [[origin]] = await connection.query<
         (RowDataPacket &
-          Pick<
-            OrderLineRow,
-            'id' | 'purchase_order_id' | 'supplier_id' | 'item_id' | 'material_variant_id'
-          > & {
+          Pick<OrderLineRow, 'id' | 'purchase_order_id' | 'item_id' | 'material_variant_id'> & {
+            supplier_id: number;
             work_order_id: number | null;
             source_type: string;
             ordered_at: Date | null;
           })[]
       >(
-        `SELECT l.id,l.purchase_order_id,l.supplier_id,l.item_id,l.material_variant_id,
-          o.work_order_id,o.source_type,o.ordered_at
+        `SELECT l.id,l.purchase_order_id,l.item_id,l.material_variant_id,
+          o.supplier_id,o.work_order_id,o.source_type,o.ordered_at
           FROM procurement_order_line l JOIN procurement_order o ON o.id=l.purchase_order_id
           WHERE l.id=? FOR SHARE`,
         [line.origin_order_line_id],
@@ -619,7 +613,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       if (
         !origin ||
         !origin.ordered_at ||
-        String(origin.supplier_id) !== String(line.supplier_id) ||
+        String(origin.supplier_id) !== String(order.supplier_id) ||
         origin.work_order_id !== order.work_order_id ||
         origin.source_type !== order.source_type ||
         String(origin.item_id) !== String(line.item_id) ||
@@ -643,7 +637,8 @@ const toDraftLines = (
   sources: Map<string, string[]>,
 ): PurchaseOrderDraftLine[] =>
   lines.map((line) => ({
-    supplierId: String(line.supplier_id),
+    taxExclusiveAmount: line.tax_exclusive_amount,
+    taxInclusiveAmount: line.tax_inclusive_amount,
     itemId: String(line.item_id),
     materialVariantId: String(line.material_variant_id),
     plannedQuantity: Number(line.planned_quantity),

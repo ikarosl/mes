@@ -15,6 +15,7 @@
       <span class="document-meta"
         >{{ quantityScope }} {{ lineCount ?? receipt.lines.length }} 条到货明细</span
       >
+      <span class="supplier-name">供应商 {{ receipt.supplierName }}</span>
       <slot
         name="receipt-meta"
         :receipt="receipt"
@@ -36,14 +37,12 @@
         <colgroup>
           <col style="width: 90px" />
           <col style="width: 210px" />
-          <col style="width: 150px" />
           <slot name="column-widths" />
         </colgroup>
         <thead>
           <tr>
             <th scope="col">明细 ID</th>
             <th scope="col">物料 / 精确版本</th>
-            <th scope="col">供应商</th>
             <slot name="column-headings" />
           </tr>
         </thead>
@@ -58,11 +57,8 @@
             <td>
               <strong class="material-name">{{ row.itemName }}</strong>
               <div class="material-version">{{ row.materialVariantCode }}</div>
-            </td>
-            <td>
-              <div class="supplier-name">{{ row.supplierName }}</div>
               <slot
-                name="supplier-detail"
+                name="material-detail"
                 :row="row"
               />
             </td>
@@ -97,7 +93,7 @@ withDefaults(
 defineSlots<{
   'receipt-title'(): unknown;
   'receipt-meta'(props: { receipt: ReceiptWorklistReceipt<T> }): unknown;
-  'supplier-detail'(props: { row: T }): unknown;
+  'material-detail'(props: { row: T }): unknown;
   'column-widths'(): unknown;
   'column-headings'(): unknown;
   row(props: { row: T }): unknown;
@@ -126,7 +122,7 @@ defineSlots<{
 }
 .receipt-table {
   width: 100%;
-  min-width: 1080px;
+  min-width: 930px;
   table-layout: fixed;
   border-collapse: separate;
   border-spacing: 0;
@@ -164,6 +160,9 @@ defineSlots<{
 }
 .receipt-line-id {
   font-weight: 600;
+}
+.supplier-name {
+  overflow-wrap: anywhere;
 }
 .visually-hidden {
   position: absolute;

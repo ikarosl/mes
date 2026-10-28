@@ -2,6 +2,8 @@
 
 本 ADR 涉及补单承接、分配采购归属及其取消／继续办理资格的条款，在 [ADR-0023](0023-supplement-source-and-receipt-ownership.md) 明确范围内被取代；其余业务边界继续有效。
 
+本文取代关系中保留的 ADR-0013 逐行供应商规则，由 [ADR-0026](0026-purchase-order-supplier-and-amounts.md) 的采购主单唯一供应商取代；检验、正式授权及实际入库的职责不变。
+
 状态：Accepted，成品 C/R/S 部分由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。本文保留检验事实、来源数量授权与实际入库分离的跨模块决策及取代关系。当前完整规则分别由 [Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)、[Procurement 来料正式清单](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)和 [Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)维护，统一事实结构见 [Quality 模型](../../apps/api/src/modules/quality/docs/unified-inspection-model.md)。入库授权、库批分离及成品执行方式由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 调整；未完成验收及正式测试见[路线图](../roadmap.md)。
 
 ## 统一职责与数量定义

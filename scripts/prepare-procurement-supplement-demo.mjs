@@ -131,6 +131,7 @@ async function markedOrders(client, marker) {
 }
 
 function unique(rows, predicate, name) {
+  if (!Array.isArray(rows)) throw new Error(`${name} 未返回约定的数组`);
   const matching = rows.filter(predicate);
   if (matching.length !== 1) throw new Error(`${name} 应精确匹配一项，实际 ${matching.length} 项`);
   return matching[0];
@@ -174,10 +175,20 @@ async function place(client, orderId) {
 
 async function original(client, config, refs, scenario, plannedQuantity, message) {
   const result = await client.request('/procurement/purchase-orders', {
+    supplierId: refs.supplierId,
     sourceType: 'stock',
     workOrderId: null,
     remark: note(config.marker, scenario, message),
-    items: [{ ...refs, plannedQuantity, demandIds: [] }],
+    items: [
+      {
+        itemId: refs.itemId,
+        materialVariantId: refs.materialVariantId,
+        plannedQuantity,
+        taxExclusiveAmount: '原采购整行总额待约定',
+        taxInclusiveAmount: null,
+        demandIds: [],
+      },
+    ],
   });
   return place(client, result.purchaseOrderId);
 }
@@ -221,7 +232,7 @@ async function inspect(client, config, receiptLineId, qualifiedQuantity, unquali
     roundVersion: line.currentRound.version,
     reason: `${config.marker} 对本次到货实物进行模拟全检`,
   });
-  line = await client.request(`/procurement/receipt-lines/${receiptLineId}`);
+  line = await client.request(`/quality/inbound-inspections/receipt-lines/${receiptLineId}`);
   const review = unique(
     line.cases,
     (row) => row.roundId === line.currentRound.id && row.status === 'reviewing',
@@ -245,12 +256,12 @@ async function inspect(client, config, receiptLineId, qualifiedQuantity, unquali
 }
 
 async function accept(client, config, receiptLineId, details, message, overrideReason) {
-  const line = await client.request(`/procurement/receipt-lines/${receiptLineId}`);
-  const review = unique(
-    line.cases,
-    (row) => row.inspection?.id === line.currentRound.inspectionId,
-    '本轮采用的真实检验',
+  const line = await client.request(
+    `/procurement/receipt-lines/${receiptLineId}/acceptance-context`,
   );
+  const review = line.currentInspectionCase;
+  if (!review || review.inspection?.id !== line.currentRound.inspectionId)
+    throw new Error('本轮缺少明确采用的真实检验，停止准备');
   await client.request(`/procurement/receipt-lines/${receiptLineId}/actions/accept`, {
     version: line.version,
     roundId: line.currentRound.id,
@@ -407,6 +418,7 @@ async function prepareDataset(client, config, refs) {
     `/procurement/purchase-orders/${continued.id}`,
     {
       version: oldDraft.version,
+      supplierId: oldDraft.supplierId,
       sourceType: oldDraft.sourceType,
       workOrderId: oldDraft.workOrderId,
       remark: note(
@@ -415,7 +427,8 @@ async function prepareDataset(client, config, refs) {
         'A 已被 B 替代；旧草稿由 4 调整为 5 后正式下单，仍固定原到货来源，并有自己的 5 件到货及入库',
       ),
       items: oldDraft.items.map((line) => ({
-        supplierId: line.supplierId,
+        taxExclusiveAmount: line.taxExclusiveAmount,
+        taxInclusiveAmount: line.taxInclusiveAmount,
         itemId: line.itemId,
         materialVariantId: line.materialVariantId,
         plannedQuantity: 5,
@@ -552,6 +565,8 @@ function orderSummary(order) {
   return {
     id: order.id,
     purchaseNo: order.purchaseNo,
+    supplierId: order.supplierId,
+    supplierName: order.supplierName,
     status: order.status,
     supplementReason: order.supplementReason,
     remark: order.remark,
@@ -561,7 +576,8 @@ function orderSummary(order) {
       plannedQuantity: line.plannedQuantity,
       status: line.status,
       fulfillmentMode: line.fulfillmentMode,
-      supplierName: line.supplierName,
+      taxExclusiveAmount: line.taxExclusiveAmount,
+      taxInclusiveAmount: line.taxInclusiveAmount,
       materialVariantCode: line.materialVariantCode,
       originOrderLineId: line.originOrderLineId,
       originReceiptLineId: line.originReceiptLineId,
@@ -585,8 +601,13 @@ async function buildReport(client, config) {
     for (const registration of registrations) {
       const detail = await client.request(`/procurement/receipts/${registration.id}`);
       const lines = [];
-      for (const line of detail.items) {
-        const history = await allPages(client, `/procurement/receipt-lines/${line.id}/allocations`);
+      for (const indexLine of detail.items) {
+        const line = await client.request(`/procurement/receipt-lines/${indexLine.id}`);
+        const [history, inbounds, returns] = await Promise.all([
+          allPages(client, `/procurement/receipt-lines/${line.id}/allocations`),
+          allPages(client, `/procurement/receipt-lines/${line.id}/inbounds`),
+          allPages(client, `/procurement/receipt-lines/${line.id}/returns`),
+        ]);
         lines.push({
           id: line.id,
           purchaseOrderLineId: line.purchaseOrderLineId,
@@ -613,8 +634,8 @@ async function buildReport(client, config) {
               returnedQuantity,
             }),
           ),
-          inboundIds: line.inbounds.map((item) => item.inboundId),
-          returns: line.returns.map(({ id, returnNo, allocationId, returnedQuantity }) => ({
+          inboundIds: inbounds.map((item) => item.inboundId),
+          returns: returns.map(({ id, returnNo, allocationId, returnedQuantity }) => ({
             id,
             returnNo,
             allocationId,

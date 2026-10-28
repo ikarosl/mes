@@ -22,7 +22,6 @@ import {
   mapReceiptListSource,
   mapReceipt,
   mapRound,
-  readReceiptSuppliers,
   pageInput,
   slots,
   text,
@@ -33,7 +32,8 @@ import { readReceiptQuantitySummaries } from './receipt-quantities.query.js';
 
 const RECEIPT_KEYWORD_LINE_SELECT = `SELECT 1 FROM procurement_receipt_line search_line
   JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id
-  JOIN procurement_supplier search_supplier ON search_supplier.id=search_order_line.supplier_id
+  JOIN procurement_order search_order ON search_order.id=search_order_line.purchase_order_id
+  JOIN procurement_supplier search_supplier ON search_supplier.id=search_order.supplier_id
   JOIN materials search_material ON search_material.id=search_line.item_id
   WHERE search_line.receipt_id=r.id AND (
     search_supplier.supplier_name LIKE ? OR search_material.material_name LIKE ?
@@ -48,11 +48,7 @@ function filters(
   const where = ['1=1'];
   const params: Array<string | number> = [];
   if (query.supplierId) {
-    where.push(
-      line
-        ? 'pol.supplier_id=?'
-        : 'EXISTS(SELECT 1 FROM procurement_receipt_line filtered_line JOIN procurement_order_line filtered_order_line ON filtered_order_line.id=filtered_line.purchase_order_line_id WHERE filtered_line.receipt_id=r.id AND filtered_order_line.supplier_id=?)',
-    );
+    where.push('po.supplier_id=?');
     params.push(query.supplierId);
   }
   if (query.purchaseOrderId) {
@@ -92,12 +88,8 @@ export async function listReceipts(
     WHERE ${where.join(' AND ')} ORDER BY r.received_at DESC,r.id DESC LIMIT ? OFFSET ?`,
     [...params, pageSize, (page - 1) * pageSize],
   );
-  const suppliers = await readReceiptSuppliers(
-    db,
-    rows.map((row) => text(row.id)),
-  );
   return {
-    items: rows.map((row) => mapReceipt(row, suppliers.get(text(row.id)) ?? [])),
+    items: rows.map(mapReceipt),
     total: Number(count?.total ?? 0),
     page,
     pageSize,

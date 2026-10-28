@@ -15,6 +15,7 @@ import {
   PURCHASE_ORDER_MAX_LINES,
   PURCHASE_ORDER_MAX_DEMANDS,
   PURCHASE_ORDER_MAX_QUANTITY,
+  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
 } from '@company/constants';
 import { RequestError } from '@company/request';
 import { procurementApi } from '../../../api/procurement';
@@ -22,13 +23,9 @@ import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { useProcurementCommand } from './useProcurementCommand';
-import { usePurchaseDemandSplit } from './usePurchaseDemandSplit';
 
 export interface PurchaseDraftRow {
   key: string;
-  supplierId: string;
-  supplierName: string;
-  supplierReady: boolean;
   itemId: string;
   itemCode: string;
   itemName: string;
@@ -36,6 +33,8 @@ export interface PurchaseDraftRow {
   materialVariantCode: string;
   unit: string;
   plannedQuantity: number | undefined;
+  taxExclusiveAmount: string;
+  taxInclusiveAmount: string;
   sources: PurchaseOrderLineSource[];
   ready: boolean;
 }
@@ -53,6 +52,9 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     workOrderNo = ref(''),
     workOrderPickerVisible = ref(false),
     sourceRowKey = ref<string | null>(null),
+    supplierId = ref(''),
+    supplierName = ref(''),
+    supplierReady = ref(false),
     supplierRefreshToken = ref(0),
     remark = ref('');
   const original = ref<PurchaseOrderDetail | null>(null),
@@ -72,27 +74,19 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     JSON.stringify({
       sourceType: sourceType.value,
       workOrderId: workOrderId.value,
+      supplierId: supplierId.value,
       remark: remark.value.trim(),
       rows: rows.value.map((row) => ({
-        supplierId: row.supplierId,
         itemId: row.itemId,
         materialVariantId: row.materialVariantId,
         plannedQuantity: row.plannedQuantity,
+        taxExclusiveAmount: row.taxExclusiveAmount.trim(),
+        taxInclusiveAmount: row.taxInclusiveAmount.trim(),
         demandIds: row.sources.map((source) => source.demandId),
       })),
     });
   let initialSnapshot = '';
   let rowSequence = 0;
-  const demandSplit = usePurchaseDemandSplit(
-    rows,
-    () =>
-      !visible.value ||
-      loading.value ||
-      command.locked.value ||
-      supplement.value ||
-      sourceType.value !== 'demand',
-    () => `new-${++rowSequence}`,
-  );
   const dirty = computed(() => snapshot() !== initialSnapshot);
   const canSave = computed(
     () =>
@@ -100,6 +94,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       !command.locked.value &&
       !stale.value &&
       !freshnessError.value &&
+      Boolean(supplierId.value) &&
+      supplierReady.value &&
       (sourceType.value === 'stock' || Boolean(workOrderId.value)) &&
       rows.value.reduce((count, row) => count + row.sources.length, 0) <=
         PURCHASE_ORDER_MAX_DEMANDS &&
@@ -107,11 +103,11 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       rows.value.every(
         (row) =>
           row.ready &&
-          row.supplierReady &&
-          row.supplierId &&
           (sourceType.value === 'stock' || row.sources.length > 0) &&
           row.itemId &&
           row.materialVariantId &&
+          row.taxExclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
+          row.taxInclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
           Number.isInteger(row.plannedQuantity) &&
           Number(row.plannedQuantity) > 0 &&
           Number(row.plannedQuantity) <= PURCHASE_ORDER_MAX_QUANTITY,
@@ -122,15 +118,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     rows.value.reduce((count, row) => count + row.sources.length, 0),
   );
   const sourceRow = computed(() => rows.value.find((row) => row.key === sourceRowKey.value));
-  const pickerSelectedIds = computed(() =>
-    demandSplit.visible.value
-      ? []
-      : (sourceRow.value?.sources.map((source) => source.demandId) ?? []),
-  );
-  const pickerMoveSourceIds = computed(() =>
-    demandSplit.visible.value
-      ? (sourceRow.value?.sources.map((source) => source.demandId) ?? [])
-      : undefined,
+  const pickerSelectedIds = computed(
+    () => sourceRow.value?.sources.map((source) => source.demandId) ?? [],
   );
   const pickerAlreadyAddedIds = computed(() =>
     sourceRowKey.value === null ? selectedIds.value : [],
@@ -178,14 +167,6 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       EMessage.warning('当前采购行已移除，请重新选择关联需求');
       return;
     }
-    if (editing && demandSplit.visible.value) {
-      if (demands.some((demand) => identity(demand) !== identity(editing))) {
-        EMessage.warning('本行来源须与采购物料及精确版本一致');
-        return;
-      }
-      if (demandSplit.apply(demands.map((demand) => demand.demandId))) pickerVisible.value = false;
-      return;
-    }
     if (!editing && demands.some((demand) => selectedIds.value.includes(demand.demandId))) {
       EMessage.warning('部分需求已添加，请移除重复选择');
       return;
@@ -194,7 +175,7 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       sourceCount.value - (editing?.sources.length ?? 0) + demands.length >
       PURCHASE_ORDER_MAX_DEMANDS
     ) {
-      EMessage.warning('单张采购单最多 100 条来源映射，同一需求关联不同行分别计数');
+      EMessage.warning('单张采购单最多 100 条来源映射，请另建采购单');
       return;
     }
     if (editing) {
@@ -205,16 +186,15 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       editing.sources = demands.map(demandSource);
       editing.ready = true;
     } else {
-      const grouped = new Map<string, PurchaseDraftRow>();
+      const grouped = new Map(
+        rows.value.map((row) => [identity(row), { ...row, sources: [...row.sources] }]),
+      );
       for (const demand of demands) {
         const key = identity(demand);
         let row = grouped.get(key);
         if (!row) {
           row = {
             key: `new-${++rowSequence}`,
-            supplierId: '',
-            supplierName: '',
-            supplierReady: false,
             itemId: demand.itemId,
             itemCode: demand.itemCode,
             itemName: demand.itemName,
@@ -222,6 +202,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
             materialVariantCode: demand.materialVariantCode,
             unit: demand.unit,
             plannedQuantity: undefined,
+            taxExclusiveAmount: '',
+            taxInclusiveAmount: '',
             sources: [],
             ready: true,
           };
@@ -229,11 +211,11 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
         }
         row.sources.push(demandSource(demand));
       }
-      if (rows.value.length + grouped.size > PURCHASE_ORDER_MAX_LINES) {
+      if (grouped.size > PURCHASE_ORDER_MAX_LINES) {
         EMessage.warning('一张采购单最多 100 条物料行');
         return;
       }
-      rows.value.push(...grouped.values());
+      rows.value = [...grouped.values()];
     }
     if (demands[0]) workOrderNo.value = demands[0].workOrderNo;
     pickerVisible.value = false;
@@ -248,7 +230,6 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       !workOrderId.value
     )
       return;
-    demandSplit.close();
     sourceRowKey.value = row?.key ?? null;
     pickerVisible.value = true;
   };
@@ -257,7 +238,7 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     if (order.id !== workOrderId.value && rows.value.length) {
       try {
         await RouteMessageBox.confirm(
-          '切换工单将清空原需求和采购明细，请重新配置供应商与采购量。确定继续吗？',
+          '切换工单将清空原需求和采购明细，请重新填写采购量与金额。确定继续吗？',
           '切换需求工单',
           { type: 'warning' },
         );
@@ -269,41 +250,11 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       rows.value = [];
       sourceRowKey.value = null;
       pickerVisible.value = false;
-      demandSplit.close();
       read.invalidate();
     }
     workOrderId.value = order.id;
     workOrderNo.value = order.workOrderNo;
     workOrderPickerVisible.value = false;
-  };
-  const splitRow = (row: PurchaseDraftRow): void => {
-    demandSplit.open(row);
-    if (demandSplit.visible.value) {
-      sourceRowKey.value = row.key;
-      pickerVisible.value = true;
-    }
-  };
-  const addPurchaseRow = (row: PurchaseDraftRow): void => {
-    if (!visible.value || loading.value || command.locked.value || supplement.value) return;
-    const index = rows.value.indexOf(row);
-    if (index < 0) return;
-    if (rows.value.length >= PURCHASE_ORDER_MAX_LINES) {
-      EMessage.warning('一张采购单最多 100 条物料行');
-      return;
-    }
-    if (sourceCount.value + row.sources.length > PURCHASE_ORDER_MAX_DEMANDS) {
-      EMessage.warning('单张采购单最多 100 条来源映射，同一需求关联不同行分别计数');
-      return;
-    }
-    rows.value.splice(index + 1, 0, {
-      ...row,
-      key: `new-${++rowSequence}`,
-      supplierId: '',
-      supplierName: '',
-      supplierReady: false,
-      plannedQuantity: undefined,
-      sources: row.sources.map((source) => ({ ...source })),
-    });
   };
   const resolveSources = async (): Promise<boolean> => {
     if (sourceType.value !== 'demand' || supplement.value) return true;
@@ -379,17 +330,16 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     workOrderId.value = detail?.workOrderId ?? targetWorkOrderId ?? '';
     workOrderNo.value = detail?.workOrderNo ?? targetWorkOrderId ?? '';
     sourceRowKey.value = null;
-    demandSplit.close();
     workOrderPickerVisible.value = false;
     remark.value = detail?.remark ?? '';
+    supplierId.value = detail?.supplierId ?? '';
+    supplierName.value = detail?.supplierName ?? '';
+    supplierReady.value = Boolean(detail?.supplementReason);
     stale.value = false;
     freshnessError.value = false;
     rows.value =
       detail?.items.map((line) => ({
         key: line.id,
-        supplierId: line.supplierId,
-        supplierName: line.supplierName,
-        supplierReady: false,
         itemId: line.itemId,
         itemCode: line.itemCode,
         itemName: line.itemName,
@@ -397,6 +347,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
         materialVariantCode: line.materialVariantCode,
         unit: line.unit,
         plannedQuantity: Number(line.plannedQuantity),
+        taxExclusiveAmount: line.taxExclusiveAmount ?? '',
+        taxInclusiveAmount: line.taxInclusiveAmount ?? '',
         sources: line.sources.map((source) => ({ ...source })),
         ready: Boolean(detail.supplementReason),
       })) ?? [];
@@ -442,9 +394,6 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     }
     rows.value.push({
       key: `new-${++rowSequence}`,
-      supplierId: '',
-      supplierName: '',
-      supplierReady: false,
       itemId: '',
       itemCode: '',
       itemName: '',
@@ -452,6 +401,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       materialVariantCode: '',
       unit: '',
       plannedQuantity: undefined,
+      taxExclusiveAmount: '',
+      taxInclusiveAmount: '',
       sources: [],
       ready: false,
     });
@@ -461,6 +412,19 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     item?: MaterialOption,
     variant?: MaterialVariantItem,
   ): void => {
+    if (
+      item &&
+      variant &&
+      rows.value.some(
+        (other) =>
+          other.key !== row.key &&
+          other.itemId === item.id &&
+          other.materialVariantId === variant.id,
+      )
+    ) {
+      EMessage.warning('相同物料及精确版本只能保留一行，请在已有明细填写采购量与金额');
+      return;
+    }
     row.itemId = item?.id ?? '';
     row.itemCode = item?.materialCode ?? '';
     row.itemName = item?.materialName ?? '';
@@ -473,29 +437,27 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     if (!(await command.canClose(dirty.value))) return false;
     visible.value = false;
     pickerVisible.value = false;
-    demandSplit.close();
     workOrderPickerVisible.value = false;
     read.invalidate();
     return true;
   };
   const save = async (): Promise<void> => {
     if (!canSave.value || !(await checkOriginal()) || !(await resolveSources())) return;
-    if (
-      new Set(rows.value.map((row) => `${identity(row)}:${row.supplierId}`)).size !==
-      rows.value.length
-    ) {
-      EMessage.warning('相同物料、精确版本和供应商请合并为一行');
+    if (new Set(rows.value.map(identity)).size !== rows.value.length) {
+      EMessage.warning('相同物料及精确版本请合并为一行；不同供应商请另建采购单');
       return;
     }
     const body: CreatePurchaseOrderPayload = {
+      supplierId: supplierId.value,
       workOrderId: sourceType.value === 'demand' ? workOrderId.value : null,
       sourceType: sourceType.value,
       remark: remark.value.trim() || null,
       items: rows.value.map((row) => ({
-        supplierId: row.supplierId,
         itemId: row.itemId,
         materialVariantId: row.materialVariantId,
         plannedQuantity: Number(row.plannedQuantity),
+        taxExclusiveAmount: row.taxExclusiveAmount.trim() || null,
+        taxInclusiveAmount: row.taxInclusiveAmount.trim() || null,
         demandIds: row.sources.map((source) => source.demandId),
       })),
     };
@@ -543,14 +505,14 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
     workOrderPickerVisible,
     sourceRow,
     pickerSelectedIds,
-    pickerMoveSourceIds,
     pickerAlreadyAddedIds,
     pickerOtherRowIds,
     supplierRefreshToken,
+    supplierId,
+    supplierName,
+    supplierReady,
     selectWorkOrder,
     selectSources,
-    splitRow,
-    addPurchaseRow,
     remark,
     original,
     rows,

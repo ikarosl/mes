@@ -58,7 +58,7 @@ export function usePurchaseOrderSupplementSelection(context: SupplementSelection
         (line) =>
           (!replacingLineId.value || line.id === replacingLineId.value) &&
           (!keyword ||
-            [line.id, line.itemCode, line.itemName, line.materialVariantCode, line.supplierName]
+            [line.id, line.itemCode, line.itemName, line.materialVariantCode]
               .join(' ')
               .toLocaleLowerCase()
               .includes(keyword)),

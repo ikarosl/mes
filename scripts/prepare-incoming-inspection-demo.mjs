@@ -140,12 +140,12 @@ const note = (config, scenario) => `${config.marker} [scenario:${scenario}] äººå
 
 async function createPurchase(client, config, refs, index) {
   const created = await client.request('/procurement/purchase-orders', {
+    supplierId: refs.supplierIds[index],
     sourceType: 'stock',
     workOrderId: null,
     remark: note(config, `purchase-${index + 1}`),
     items: [
       {
-        supplierId: refs.supplierIds[index],
         itemId: refs.itemId,
         materialVariantId: refs.materialVariantId,
         plannedQuantity: 1000,

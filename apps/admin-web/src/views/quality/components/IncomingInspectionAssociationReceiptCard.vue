@@ -13,8 +13,8 @@
       >
       <span
         class="receipt-suppliers"
-        :title="`供应商：${supplierNames || '—'}`"
-        >{{ supplierNames || '—' }}</span
+        :title="`供应商：${receipt.supplierName || '—'}`"
+        >{{ receipt.supplierName || '—' }}</span
       >
       <span class="line-count">{{ receipt.lineCount }} 行物料</span>
     </div>
@@ -54,21 +54,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
 import { RECEIPT_ROUND_STATUS_LABELS } from '@company/constants';
 import type { QualityIncomingInspectionReceiptItem } from '@company/contracts';
 
 defineOptions({ name: 'IncomingInspectionAssociationReceiptCard' });
-const props = withDefaults(
+withDefaults(
   defineProps<{
     receipt: QualityIncomingInspectionReceiptItem;
     selected?: boolean;
     showAssociation?: boolean;
   }>(),
   { selected: false, showAssociation: true },
-);
-const supplierNames = computed(() =>
-  props.receipt.suppliers.map((supplier) => supplier.supplierName).join('、'),
 );
 </script>
 

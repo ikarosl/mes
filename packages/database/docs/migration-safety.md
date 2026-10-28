@@ -210,6 +210,12 @@ down 在事务内移除新权限及其角色关联，其他目录与授权保持
 
 down 的临时守卫在任何永久 DDL 前要求主单表、关联表以及 `business_number_daily_sequence` 中该编号类型全部为空；即使已移走全部到货，仍存在空主单或已发编号时也拒绝回退，不通过删除关系丢失稳定编号和审计依据。守卫通过后先删关系再删主单，恢复编号 CHECK，最后事务删除管理权限及其角色关联；其他到货、检查、数量与库存不变。DDL 失败继续按通用规则保持停写并核对实际结构及登记，不能声称整体回滚。当前表和边界见[Quality 分组表设计](../../../apps/api/src/modules/quality/docs/database.md#来料分组主单-quality_incoming_inspection_order)。
 
+### 202610280002：采购主单供应商与明细金额
+
+暂停采购、到货、来料质检和采购入库写入；本迁移保护全部 `http_idempotency_records`，还须暂停其他会持久化 HTTP 幂等记录的命令，完成后切换匹配 API 与管理端。up/down 均在首个永久 DDL 前要求 `procurement_order`、`procurement_order_line`、`procurement_receipt`、带 `procurement_receipt_line_id` 的 `inbound_detail` 及全部 HTTP 幂等记录为空。旧多供应商单不能任取一行归入主单，开发库从空库按统一 `db:init` 再显式加载 demo，不通过删除局部事实或幂等证据绕过守卫。
+
+up 切换供应商字段及行唯一键，新增金额列和冻结触发器；down 在相同空业务条件下恢复原行字段、键及索引，删除本次新增字段和触发器，不恢复旧数据或旧幂等结果。Inventory 现行来源守卫无需替换，既有名称快照、provider 及审计文本不回写。DDL 中断时按通用要求保持停写并核对实际结构与登记；业务字段和约束仅由[Procurement 数据库](../../../apps/api/src/modules/procurement/docs/database.md#主单供应商与金额迁移)维护。
+
 ## 验证边界
 
 - 空库 fresh 验证应用全量迁移后再次运行，核对无待执行或校验和冲突；`db:init` 不能替代迁移验证。

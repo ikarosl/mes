@@ -22,11 +22,12 @@
           class="notice"
         />
         <el-descriptions
-          :column="detail.remark ? 4 : 3"
+          :column="detail.remark ? 3 : 2"
           border
           size="small"
           class="receipt-header"
           ><el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item
+          ><el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item
           ><el-descriptions-item label="实际到货时间">{{
             formatDateTimeForDisplay(detail.receivedAt)
           }}</el-descriptions-item
@@ -55,7 +56,7 @@
               v-model="lineSearch"
               clearable
               aria-label="筛选本单明细"
-              placeholder="物料 / 编码 / 供应商 / 批号"
+              placeholder="物料 / 编码 / 批号"
             />
             <p
               v-if="lineSearch && !filteredLines.some((line) => line.id === activeLine)"
@@ -75,7 +76,6 @@
               >
                 <span class="line-identity">id:{{ line.id }} · {{ line.itemName }}</span>
                 <span class="line-version">{{ line.materialVariantCode }}</span>
-                <span class="line-version">{{ line.supplierName }}</span>
                 <span class="line-version"
                   >供应商批号 {{ line.supplierBatchCode || '未提供' }}</span
                 >
@@ -446,13 +446,9 @@ const filteredLines = computed(() => {
   const query = lineSearch.value.trim().toLocaleLowerCase();
   if (!query) return detail.value?.items ?? [];
   return (detail.value?.items ?? []).filter((line) =>
-    [
-      line.itemName,
-      line.itemCode,
-      line.materialVariantCode,
-      line.supplierName,
-      line.supplierBatchCode ?? '',
-    ].some((value) => value.toLocaleLowerCase().includes(query)),
+    [line.itemName, line.itemCode, line.materialVariantCode, line.supplierBatchCode ?? ''].some(
+      (value) => value.toLocaleLowerCase().includes(query),
+    ),
   );
 });
 const hasQualityReplacementSource = (line: ProcurementReceiptLine): boolean =>

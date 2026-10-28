@@ -16,7 +16,7 @@ Quality 不导入或查询 Procurement。它按传入来源保存检验事实并
 
 数据字段、约束与审计见[数据库设计](docs/database.md)，当前采购来源见[采购订单](../procurement/docs/purchase-orders.md)，跨模块关系见[采购技术设计](../../../../../docs/procurement-inbound-technical-design.md)。采购事实独立的理由及边界见 [ADR-0013](../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md)。检验 HTTP 由 Procurement 场景 Controller 使用独立 Quality 权限编排；成品质检则由本模块独立 HTTP 入口办理，同样必须通过来源模块锁内核验。
 
-**采购身份边界**：供应商逐采购行保存，按需求采购限定单工单。Quality 的来源粒度继续为单个到货明细及其修订／整批处理轮次，不合并不同明细或供应商检验。检验页面的 supplierId/supplierName 由 Procurement 查询按原采购行组装，Quality 不新增供应商归属字段、不查询采购表，统一检验表仍由Quality所有。显式复核状态、放行判定和不可变结论规则保持。
+**采购身份边界**：供应商由采购主单唯一保存，按需求采购限定单工单。Quality 的来源粒度继续为单个到货明细及其修订／整批处理轮次，不合并不同明细检验；质检分组主单仍可包含跨采购、跨供应商的完整到货。检验页面的 supplierId/supplierName 由 Procurement 查询沿原采购行所属主单组装，Quality 不新增供应商归属字段、不查询采购表，统一检验表仍由 Quality 所有。显式复核状态、放行判定和不可变结论规则保持。
 
 验证使用 `corepack pnpm --filter @company/api typecheck`、`corepack pnpm architecture:check` 与 API 构建。交付、用户验收及正式测试顺序遵守 [AGENTS.md](../../../../../AGENTS.md#数据库与交付约定)。
 

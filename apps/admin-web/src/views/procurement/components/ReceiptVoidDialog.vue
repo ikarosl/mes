@@ -37,9 +37,7 @@
         >
           <el-descriptions-item label="到货单">{{ detail.receiptNo }}</el-descriptions-item>
           <el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item>
-          <el-descriptions-item label="供应商">{{
-            supplierSummary(detail.suppliers)
-          }}</el-descriptions-item>
+          <el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item>
           <el-descriptions-item label="作废范围"
             >整单 {{ detail.voiding.lines.length }} 条明细</el-descriptions-item
           >
@@ -77,11 +75,6 @@
               >{{ row.itemName }} · {{ row.materialVariantCode }}</template
             >
           </el-table-column>
-          <el-table-column
-            prop="supplierName"
-            label="供应商"
-            min-width="120"
-          />
           <el-table-column
             label="本批到货量"
             width="110"
@@ -154,7 +147,6 @@ import type { VoidProcurementReceiptCommandResult } from '@company/contracts';
 import InlineHint from '../../../components/InlineHint.vue';
 import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
-import { supplierSummary } from '../supplier-summary';
 import { useReceiptVoid } from '../composables/useReceiptVoid';
 
 const emit = defineEmits<{ saved: [VoidProcurementReceiptCommandResult] }>();

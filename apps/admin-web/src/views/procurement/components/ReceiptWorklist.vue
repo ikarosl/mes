@@ -60,6 +60,7 @@
             collapsedPurchases.has(purchase.purchaseOrderId) ? '展开' : '收起'
           }}</span>
         </button>
+        <span class="supplier-name">供应商 {{ purchase.supplierName }}</span>
         <span class="document-meta">本页含本单 {{ purchase.lines.length }} 条到货明细</span>
       </div>
       <div v-if="!collapsedPurchases.has(purchase.purchaseOrderId)">
@@ -75,9 +76,9 @@
               name="receipt-meta"
               v-bind="scope"
           /></template>
-          <template #supplier-detail="scope"
+          <template #material-detail="scope"
             ><slot
-              name="supplier-detail"
+              name="material-detail"
               v-bind="scope"
           /></template>
           <template #column-widths><slot name="column-widths" /></template>
@@ -116,7 +117,7 @@ const emit = defineEmits<{ refresh: [] }>();
 defineSlots<{
   actions(): unknown;
   'receipt-meta'(props: { receipt: ReceiptWorklistReceipt<T> }): unknown;
-  'supplier-detail'(props: { row: T }): unknown;
+  'material-detail'(props: { row: T }): unknown;
   'column-widths'(): unknown;
   'column-headings'(): unknown;
   row(props: { row: T }): unknown;
@@ -173,5 +174,8 @@ defineExpose<ReceiptWorklistHandle>({ expandPage });
 .document-meta {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.supplier-name {
+  overflow-wrap: anywhere;
 }
 </style>
