@@ -15,3 +15,18 @@ FROM user_candidate_configs c
 JOIN roles r ON r.code = 'production' AND r.status = 1 AND r.deleted_at IS NULL
 WHERE c.scene_code = 'production.work_order_owner'
   AND @demo_candidate_existing_config_id IS NULL;
+
+SET @demo_task_owner_existing_config_id = (
+  SELECT id FROM user_candidate_configs WHERE scene_code = 'production.task_owner'
+);
+
+INSERT INTO user_candidate_configs (scene_code, version, created_by, updated_by)
+SELECT 'production.task_owner', 1, @demo_candidate_actor_id, @demo_candidate_actor_id
+WHERE @demo_task_owner_existing_config_id IS NULL;
+
+INSERT INTO user_candidate_config_roles (config_id, role_id)
+SELECT c.id, r.id
+FROM user_candidate_configs c
+JOIN roles r ON r.code = 'production' AND r.status = 1 AND r.deleted_at IS NULL
+WHERE c.scene_code = 'production.task_owner'
+  AND @demo_task_owner_existing_config_id IS NULL;

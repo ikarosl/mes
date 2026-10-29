@@ -4,7 +4,7 @@
 
 工单与生产任务创建时，服务端在各自创建事务内分别按 `work_order`、`production_batch` 类型取号。前缀映射入口、格式、北京自然日日序列、平台序列表及回滚边界由[统一业务编号](../../../../../docs/business-numbering.md)维护。创建和编辑请求都不接受工单号，创建任务请求不接受批次号；编号随创建事实固定，取消、关闭和重新下达均不回收。
 
-`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v5`；任务创建 scope 为 `production.batch.create.v13`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。任务创建结果保存轻量任务概览，不包含工序、开工说明或开工物料快照；结果结构与 scope 固定，开发切换遵守[幂等 scope 版本规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。
+`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v5`；任务创建 scope 为 `production.batch.create.v14`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。任务创建结果保存轻量任务概览，不包含工序、开工说明或开工物料快照；结果结构与 scope 固定，开发切换遵守[幂等 scope 版本规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。
 
 `202609170003-work-order-auto-number` 是原工单日序列表的历史迁移；追加迁移 `202609280001-business-number-daily-sequence` 在空业务库切换为统一平台序列并删除旧序列表。旧编号不转换，开发数据经统一初始化入口重建；当前应用不读写 `work_order_daily_sequence`。
 
@@ -211,7 +211,7 @@
 | `cancelled_by`           | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空    |
 | `cancelled_at`           | `DATETIME`        | 取消时间；历史未记录数据可为空  |
 | `status`                 | `VARCHAR(40)`     | 生产批次状态                    |
-| `batch_owner_id`         | `BIGINT UNSIGNED` | 批次负责人，负责该批次执行，可为空 |
+| `batch_owner_id`         | `BIGINT UNSIGNED` | 任务负责人；新建及编辑必须符合任务负责人场景资格，历史记录可为空 |
 | `remark`                 | `TEXT`            | 备注                            |
 | `version`                | `INT`             | 乐观锁版本号，默认 `0`          |
 | 业务审计字段             | 见统一规则        | 可变业务单据审计字段            |
@@ -233,6 +233,14 @@
 - 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_partially_outbound', 'material_outbound', 'doing', 'completed', 'cancelled', 'terminated', 'closing'))`
 - 组合索引：`INDEX (work_order_id, status)`，用于按工单查询有效生产批次
 - 索引：`INDEX (plan_start_date)`，用于生产排程与按计划开工日筛选
+
+#### 任务负责人资格与公开边界
+
+任务负责人使用独立的 `production.task_owner` 场景；配置集合、默认拒绝及并发资格规则由 [Identity](../../../identity/docs/user-candidates.md) 所有。批量与研发任务新建时都必须指定合格负责人；编辑仍仅限 `pending` 任务，不能清空负责人，省略 `ownerId` 时也须复核保留的负责人。历史空负责人不回填，编辑时须补选；其他任务命令不因候选配置变化自动改派或追加负责人门禁。任务负责人不参与工单负责人审批解析，也不替代工序派工或路线默认人员。
+
+`GET /production/batches/owner-options` 固定查询该场景，消费入口为任务新建和编辑表单，独立授权 `production:tasks:view`，返回完整 `UserOption[]`，不接收场景参数、不分页或截断。无配置或空集合不回退通用用户目录、工单负责人、当前用户或管理员。历史任务负责人姓名继续通过 Identity 历史引用能力解析，不按当前候选过滤。
+
+创建在幂等首次执行事务内先锁工单，再通过 Identity 公开 `UserCandidateService.checkEligibility` 复核负责人；编辑先锁工单和任务，再按最终负责人复核。资格锁保留到任务写入、成功审计及创建幂等结果提交；失败整体回滚，成功重放不重复核验当前资格。
 
 状态说明：
 

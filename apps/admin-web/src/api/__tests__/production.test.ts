@@ -241,12 +241,12 @@ describe('productionApi', () => {
   it('creates a batch under a work order with the supplied idempotency key', async () => {
     const { productionApi } = await import('../production');
 
-    await productionApi.createOrderBatch('1', { plannedQuantity: 50 }, 'k1-uuid');
+    await productionApi.createOrderBatch('1', { plannedQuantity: 50, ownerId: 'u1' }, 'k1-uuid');
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/batches',
       method: 'POST',
-      data: { plannedQuantity: 50 },
+      data: { plannedQuantity: 50, ownerId: 'u1' },
       headers: { 'Idempotency-Key': 'k1-uuid' },
     });
   });

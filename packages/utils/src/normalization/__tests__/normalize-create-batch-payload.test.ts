@@ -2,17 +2,19 @@ import { describe, expect, it } from 'vitest';
 import type { CreateProductionBatchPayload } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '../normalize-create-batch-payload.js';
 
-const base: CreateProductionBatchPayload = { plannedQuantity: 10 };
+const base: CreateProductionBatchPayload = { plannedQuantity: 10, ownerId: 'o1' };
 
 describe('normalizeCreateBatchPayload', () => {
   it('去掉 remark 的首尾空白', () => {
     expect(
       normalizeCreateBatchPayload({
         plannedQuantity: 10,
+        ownerId: 'o1',
         remark: ' 测试 ',
       }),
     ).toEqual({
       plannedQuantity: 10,
+      ownerId: 'o1',
       remark: '测试',
     });
   });
@@ -49,7 +51,7 @@ describe('normalizeCreateBatchPayload', () => {
   });
 
   it('归一化是幂等的：重复调用结果不变', () => {
-    const once = normalizeCreateBatchPayload({ plannedQuantity: 1, remark: ' x ' });
+    const once = normalizeCreateBatchPayload({ plannedQuantity: 1, ownerId: 'o1', remark: ' x ' });
     expect(normalizeCreateBatchPayload(once)).toEqual(once);
   });
 });

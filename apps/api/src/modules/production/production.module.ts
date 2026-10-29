@@ -40,6 +40,7 @@ import { IdentityModule } from '../identity/public.js';
 import { ProductModule } from '../product/public.js';
 import { ProductionService } from './application/production.service.js';
 import { ProductionWorkOrderOwnerService } from './application/production-work-order-owner.service.js';
+import { ProductionTaskOwnerService } from './application/production-task-owner.service.js';
 import { ProductionMaterialService } from './application/production-material.service.js';
 import { ProductionMaterialDemandService } from './application/production-material-demand.service.js';
 import { ProductionExecutionService } from './application/production-execution.service.js';
@@ -96,6 +97,7 @@ const planningControllers = [ProductionController];
 const planningProviders = [
   ProductionService,
   ProductionWorkOrderOwnerService,
+  ProductionTaskOwnerService,
   MysqlWorkOrderRepository,
   MysqlProductionBatchRepository,
   MysqlProductionRepository,

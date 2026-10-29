@@ -34,6 +34,7 @@ import {
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionRepository } from './ports/production.repository.js';
 import { ProductionWorkOrderOwnerService } from './production-work-order-owner.service.js';
+import { ProductionTaskOwnerService } from './production-task-owner.service.js';
 import type { ResolvedBatchStepOverride } from './ports/production.repository.js';
 import {
   CREATE_BATCH_IDEMPOTENCY_SCOPE,
@@ -50,6 +51,7 @@ export class ProductionService {
     private readonly identity: IdentityDirectoryService,
     private readonly idempotency: IdempotencyExecutor,
     private readonly workOrderOwners: ProductionWorkOrderOwnerService,
+    private readonly taskOwners: ProductionTaskOwnerService,
     private readonly productDefinitions?: ProductProductionDefinitionCommand,
   ) {}
 
@@ -69,6 +71,9 @@ export class ProductionService {
   }
   listWorkOrderOwnerOptions(): Promise<UserOption[]> {
     return this.workOrderOwners.listOptions();
+  }
+  listTaskOwnerOptions(): Promise<UserOption[]> {
+    return this.taskOwners.listOptions();
   }
   async getWorkOrder(id: string) {
     return this.enrichWorkOrder(await this.production.getWorkOrder(id));
@@ -203,8 +208,7 @@ export class ProductionService {
           }))
         : normalizedPayload.stepOverrides,
     } satisfies CreateProductionBatchPayload;
-    // 纯格式校验只由请求内容决定，放在幂等 executor 外；会受数据库状态影响的业务校验（负责人是否
-    // 启用等）移入 handler，重放不重复执行——否则负责人停用后同键重试会 400 而非重放原结果。
+    // 纯格式校验在 executor 外；当前人员资格在首次执行的事务内复核，成功重放直接返回原结果。
     this.assertPlanDates(normalizedPayload.planStartDate, normalizedPayload.planEndDate);
     // 幂等能力止于 application service：repository 只接收不含幂等键的命令审计元数据。
     const commandContext: CommandContext = {
@@ -224,9 +228,6 @@ export class ProductionService {
       },
       resultCodec: productionBatchResultCodec,
       handler: async () => {
-        // 会变化的业务校验：负责人是否启用，只在首次执行时校验；读取经 withActiveConnection 复用
-        // executor 外层事务连接，与批次创建、成功审计、幂等结果处于同一事务上下文。
-        await this.requireActiveUser(normalizedPayload.ownerId ?? null);
         const productDefinitions = this.productDefinitions;
         if (!productDefinitions) {
           throw new Error('产品生产定义命令未配置');
@@ -234,6 +235,7 @@ export class ProductionService {
         return this.production.withBatchCreationTransaction(
           workOrderId,
           async (workOrderProductId, orderType) => {
+            await this.taskOwners.requireEligible(normalizedPayload.ownerId);
             const research = orderType === 'research';
             if (research) {
               this.requireProduct(await this.products.getProductionProduct(workOrderProductId));
@@ -272,11 +274,14 @@ export class ProductionService {
     return execution.result;
   }
   async updateBatch(id: string, payload: UpdateProductionBatchPayload, audit: CommandContext) {
-    if (payload.ownerId !== undefined) await this.requireActiveUser(payload.ownerId);
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
-    return this.enrichBatchDetail(
-      await this.production.updateBatch(id, this.cleanBatchUpdate(payload), audit),
-    );
+    const batch = await this.production.withBatchUpdateTransaction(id, async ({ ownerId }) => {
+      await this.taskOwners.requireEligible(
+        payload.ownerId === undefined ? ownerId : payload.ownerId,
+      );
+      return this.production.updateBatch(id, this.cleanBatchUpdate(payload), audit);
+    });
+    return this.enrichBatchDetail(batch);
   }
   async cancelBatch(id: string, version: number, reason: string, audit: CommandContext) {
     const normalizedReason = reason.trim();
@@ -300,12 +305,6 @@ export class ProductionService {
         await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId),
       );
     return this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit);
-  }
-  private async requireActiveUser(id: string | null): Promise<void> {
-    if (!id) return;
-    const users = await this.identity.listActiveUserOptionsByIds([id]);
-    if (users.length !== 1)
-      throw new ProductionDomainError('INVALID_INPUT', '负责人不存在或已停用');
   }
   private requireProduct<T>(result: ProductQueryResult<T>): T {
     if (result.status === 'success') return result.value;

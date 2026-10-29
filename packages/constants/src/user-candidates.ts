@@ -1,6 +1,7 @@
 /** 已开放的业务人员候选场景；配置只选择角色，不承载业务模块规则。 */
 export const USER_CANDIDATE_SCENES = {
   workOrderOwner: 'production.work_order_owner',
+  taskOwner: 'production.task_owner',
 } as const;
 
 export type UserCandidateSceneCode =
@@ -8,6 +9,7 @@ export type UserCandidateSceneCode =
 
 export const USER_CANDIDATE_SCENE_LABELS = {
   [USER_CANDIDATE_SCENES.workOrderOwner]: '工单负责人',
+  [USER_CANDIDATE_SCENES.taskOwner]: '任务负责人',
 } as const satisfies Record<UserCandidateSceneCode, string>;
 
 export const USER_CANDIDATE_SCENE_CATALOG: readonly {

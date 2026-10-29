@@ -305,12 +305,8 @@
       ref="taskFormDialogRef"
       :visible="taskDialogVisible"
       :editing-task-id="editingTaskId"
-      :user-options="userSource.options.value"
-      :sop-file-options="sopFileOptions"
       :submitting="submitting"
       @update:visible="handleTaskDialogClose"
-      @refresh-users="userSource.refresh"
-      @refresh-sop-files="refreshSopFiles"
       @save="submitTask"
     />
 
@@ -561,13 +557,11 @@ const router = useRouter();
 
 const {
   batches,
-  sopFileOptions,
   loading,
   total,
   currentPage,
   pageSize,
   query,
-  refreshSopFiles,
   loadTasks,
   loadPageData,
   searchTasks,
@@ -576,7 +570,7 @@ const {
   handlePageChange,
 } = useProductionBatchesList();
 
-/** 页面级负责人候选：筛选展开或任务表单打开时读取；存量 options 待后续专项替换 */
+/** 页面级负责人候选仅供任务筛选；存量 options 待后续专项替换。 */
 const userSource = useUserOptions();
 
 /** 负责人筛选下拉实时选项：已选负责人在候选被移除时显示「ID（已失效）」并禁用 */
@@ -799,7 +793,7 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
       const version = editingTaskVersion.value;
       if (version === null) throw new Error('任务编辑依据缺失，请关闭后重新打开');
       await productionApi.updateBatch(editId, {
-        ownerId: data.ownerId || null,
+        ownerId: data.ownerId,
         planStartDate: data.planStartDate || null,
         planEndDate: data.planEndDate || null,
         remark: data.remark || null,
@@ -810,11 +804,10 @@ const submitTask = async (data: TaskFormValue): Promise<void> => {
       const payload: CreateProductionBatchPayload = {
         routeId: data.routeId || null,
         plannedQuantity: data.plannedQuantity,
-        ownerId: data.ownerId || null,
+        ownerId: data.ownerId,
         planStartDate: data.planStartDate,
         planEndDate: data.planEndDate,
         remark: data.remark || null,
-        stepOverrides: data.stepOverrides,
       };
       const workOrderId = data.workOrderId;
       const normalizedPayload = normalizeCreateBatchPayload(payload);

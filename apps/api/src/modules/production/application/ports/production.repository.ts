@@ -33,6 +33,10 @@ export interface WorkOrderUpdateContext {
   workOrderOwnerId: string | null;
 }
 
+export interface ProductionBatchUpdateContext {
+  ownerId: string | null;
+}
+
 export abstract class ProductionRepository {
   abstract listWorkOrders(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>>;
   abstract listWorkOrderOptions(): Promise<WorkOrderOption[]>;
@@ -95,6 +99,10 @@ export abstract class ProductionRepository {
     stepOverrides: ResolvedBatchStepOverride[],
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
+  abstract withBatchUpdateTransaction<T>(
+    batchId: string,
+    action: (batch: ProductionBatchUpdateContext) => Promise<T>,
+  ): Promise<T>;
   abstract updateBatch(
     id: string,
     payload: UpdateProductionBatchPayload,

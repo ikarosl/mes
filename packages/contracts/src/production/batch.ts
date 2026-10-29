@@ -163,7 +163,8 @@ export interface CreateProductionBatchPayload {
   /** 批量任务必须显式选择；研发任务不得传入路线。 */
   routeId?: string | null;
   plannedQuantity: number;
-  ownerId?: string | null;
+  /** 必须指定当前任务负责人场景中的合格人员。 */
+  ownerId: string;
   planStartDate?: string | null;
   planEndDate?: string | null;
   remark?: string | null;
@@ -176,7 +177,8 @@ export interface CreateBatchStepOverridePayload {
 }
 
 export interface UpdateProductionBatchPayload extends VersionedCommand {
-  ownerId?: string | null;
+  /** 省略时保留并复核当前负责人；不能清空。 */
+  ownerId?: string;
   planStartDate?: string | null;
   planEndDate?: string | null;
   remark?: string | null;

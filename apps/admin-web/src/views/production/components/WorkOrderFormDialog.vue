@@ -83,7 +83,10 @@
             :step="1"
           />
         </el-form-item>
-        <el-form-item label="负责人">
+        <el-form-item
+          label="负责人"
+          required
+        >
           <div class="owner-field">
             <div class="owner-picker">
               <el-select

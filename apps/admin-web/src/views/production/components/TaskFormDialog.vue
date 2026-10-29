@@ -145,7 +145,6 @@
           filterable
           clearable
           placeholder="请选择工艺路线"
-          @change="handleRouteChange"
           @visible-change="(v: boolean) => v && routeSource.refresh()"
         >
           <el-option
@@ -157,22 +156,70 @@
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="负责人">
-        <el-select
-          v-model="form.ownerId"
-          filterable
-          clearable
-          placeholder="请选择负责人"
-          @visible-change="(v: boolean) => v && $emit('refresh-users')"
-        >
-          <el-option
-            v-for="choice in ownerChoices"
-            :key="choice.value"
-            :label="choice.option ? choice.option.displayName : `${choice.value}（已失效）`"
-            :value="choice.value"
-            :disabled="choice.isUnavailable"
-          />
-        </el-select>
+      <el-form-item
+        label="负责人"
+        required
+      >
+        <div class="owner-field">
+          <div class="owner-picker">
+            <el-select
+              v-model="form.ownerId"
+              filterable
+              placeholder="请选择任务负责人"
+              :loading="ownersLoading"
+              @change="rememberOwnerSelection"
+            >
+              <el-option
+                v-for="owner in owners"
+                :key="owner.id"
+                :label="owner.displayName"
+                :value="owner.id"
+              />
+              <el-option
+                v-if="missingOwner"
+                :label="missingOwner.label"
+                :value="missingOwner.id"
+                disabled
+              />
+              <template #empty>
+                <div class="candidate-empty">
+                  {{
+                    ownersVerified
+                      ? '暂无候选人员，请联系管理员配置业务人员角色'
+                      : '请刷新负责人候选后重试'
+                  }}
+                </div>
+              </template>
+            </el-select>
+            <el-button
+              :icon="Refresh"
+              :loading="ownersLoading"
+              aria-label="刷新任务负责人候选"
+              @click="refreshOwners"
+            />
+          </div>
+          <p
+            v-if="ownersError"
+            class="owner-warning"
+            role="status"
+          >
+            任务负责人候选读取失败，请刷新后再保存。
+          </p>
+          <p
+            v-else-if="ownersVerified && !owners.length"
+            class="owner-note"
+            role="status"
+          >
+            暂无候选人员，请联系管理员配置业务人员角色。
+          </p>
+          <p
+            v-if="isOwnerUnavailable"
+            class="owner-warning"
+            role="status"
+          >
+            原负责人已退出当前候选范围，请重新选择。
+          </p>
+        </div>
       </el-form-item>
       <el-form-item
         label="计划数量"
@@ -217,67 +264,6 @@
         />
       </el-form-item>
     </el-form>
-    <el-tabs
-      v-if="!editingTaskId && taskOrderType !== 'research' && form.routeId"
-      class="detail-tabs"
-    >
-      <el-tab-pane label="工序执行">
-        <el-table
-          :data="createStepPreview"
-          class="detail-table"
-        >
-          <el-table-column
-            prop="stepOrder"
-            label="顺序"
-            width="70"
-          />
-          <el-table-column
-            prop="stepName"
-            label="工序"
-            min-width="150"
-          />
-          <el-table-column
-            label="默认参考文件"
-            min-width="180"
-          >
-            <template #default="{ row }">{{ row.sopFileName || '未配置' }}</template>
-          </el-table-column>
-          <el-table-column
-            label="实际参考文件"
-            min-width="220"
-          >
-            <template #default="{ row }">
-              <el-select
-                v-model="row.actualSopFileId"
-                clearable
-                filterable
-                placeholder="留空则使用默认文件"
-                @visible-change="(v: boolean) => v && $emit('refresh-sop-files')"
-              >
-                <el-option
-                  v-for="file in sopFileOptions"
-                  :key="file.id"
-                  :label="file.fileName"
-                  :value="file.id"
-                />
-              </el-select>
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="默认负责人"
-            min-width="130"
-          >
-            <template #default="{ row }">{{ row.defaultOwnerName || '未配置' }}</template>
-          </el-table-column>
-        </el-table>
-        <div
-          v-if="!createStepPreview.length"
-          class="empty-hint"
-        >
-          该路线没有可执行工序
-        </div>
-      </el-tab-pane>
-    </el-tabs>
     <template #footer>
       <el-button @click="$emit('update:visible', false)">取消</el-button>
       <el-button
@@ -293,11 +279,10 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import { Refresh } from '@element-plus/icons-vue';
 import type {
   ProcessRouteOption,
   ProductionBatchDetail,
-  TechnicalFileListItem,
-  UserOption,
   WorkOrderOption,
 } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
@@ -305,8 +290,8 @@ import { EMessage } from '../../../utils/message';
 import { toDateInputValue } from '../../../utils/date';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { useProcessRouteOptions } from '../../../composables/options/useProcessRouteOptions';
-import { useTaskRouteSteps } from '../composables/useTaskRouteSteps';
 import { useWorkOrderOptions } from '../composables/useWorkOrderOptions';
+import { useTaskOwnerOptions } from '../composables/use-task-owner-options';
 import { formatQuantity } from '../production-status';
 import { approvedUsableQuantity, plannedOutputGapText } from '../production-output-quantity';
 
@@ -318,24 +303,16 @@ export type TaskFormValue = {
   planStartDate: string;
   planEndDate: string;
   remark: string;
-  stepOverrides: Array<{
-    routeStepId: string;
-    actualSopFileId: string | null;
-  }>;
 };
 
 const props = defineProps<{
   visible: boolean;
   editingTaskId: string | null;
-  userOptions: UserOption[];
-  sopFileOptions: TechnicalFileListItem[];
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
-  (e: 'refresh-users'): void;
-  (e: 'refresh-sop-files'): void;
   (e: 'save', data: TaskFormValue): void;
 }>();
 
@@ -350,7 +327,7 @@ const existingRouteLabel = computed(() => {
   const versionLabel = context.routeVersion ? ` / ${context.routeVersion}` : '';
   return `${context.routeCode}${versionLabel}`;
 });
-const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
+const initialForm = (): TaskFormValue => ({
   workOrderId: '',
   routeId: '',
   ownerId: '',
@@ -363,13 +340,20 @@ const initialForm = (): Omit<TaskFormValue, 'stepOverrides'> => ({
 /** 本弹窗自持工单与工艺路线候选；产品身份由所选工单提供。 */
 const routeSource = useProcessRouteOptions();
 const workOrderSource = useWorkOrderOptions();
+const {
+  owners,
+  loading: ownersLoading,
+  verified: ownersVerified,
+  error: ownersError,
+  refreshOwners,
+  invalidateOwners,
+} = useTaskOwnerOptions(() => props.visible);
 
-/** 打开弹窗刷新自持候选，并请页面刷新它持有的用户 / SOP 文件候选。 */
+/** 打开弹窗刷新本表单持有的候选。 */
 const onOpen = (): void => {
   if (!props.editingTaskId) void routeSource.refresh();
   void workOrderSource.refresh();
-  emit('refresh-users');
-  emit('refresh-sop-files');
+  void refreshOwners();
 };
 
 /** 打开时读取候选，不因恢复缓存页覆盖本次填写的上下文。 */
@@ -377,15 +361,28 @@ watch(
   () => props.visible,
   (visible) => {
     if (visible) onOpen();
+    else invalidateOwners();
   },
 );
 
 const form = reactive(initialForm());
-const {
-  preview: createStepPreview,
-  load: fetchStepPreview,
-  reset: resetStepPreview,
-} = useTaskRouteSteps();
+const originalOwner = ref<{ id: string; name: string | null } | null>(null);
+const rememberOwnerSelection = (): void => {
+  const id = form.ownerId;
+  const owner = owners.value.find((candidate) => candidate.id === id);
+  if (owner) originalOwner.value = { id, name: owner.displayName };
+  if (!id) originalOwner.value = null;
+};
+watch(owners, rememberOwnerSelection);
+
+const missingOwner = computed(() => {
+  const id = form.ownerId;
+  if (!id || owners.value.some((owner) => owner.id === id)) return null;
+  const name = originalOwner.value?.id === id ? originalOwner.value.name || id : id;
+  const state = ownersVerified.value ? '已失效' : '待核验';
+  return { id, label: `${name}（${state}）` };
+});
+const isOwnerUnavailable = computed(() => ownersVerified.value && Boolean(missingOwner.value));
 const editingTaskOriginalQuantity = ref(0);
 
 const selectedWorkOrder = computed(
@@ -448,23 +445,15 @@ const routeChoices = computed(() =>
     (route) => route.id,
   ),
 );
-/** 负责人下拉：合并已选值，已失效负责人回显「ID（已失效）」并禁用 */
-const ownerChoices = computed(() =>
-  buildLiveOptions(props.userOptions, form.ownerId ? [form.ownerId] : [], (user) => user.id),
-);
-const handleRouteChange = (): void => {
-  resetStepPreview();
-  void fetchStepPreview(form.routeId, Boolean(props.editingTaskId));
-};
 
 const handleWorkOrderChange = (workOrderId: string): void => {
   const order = workOrderSource.options.value.find((item) => item.id === workOrderId);
-  // 切换工单：立即清空上一工单的路线与负责人及预览，防止旧产品路线残留到提交校验
+  // 切换工单时清空原路线与负责人，防止旧工单输入残留到提交校验。
   form.routeId = '';
   form.ownerId = '';
+  originalOwner.value = null;
   form.planStartDate = toDateInputValue(order?.planStartDate);
   form.planEndDate = toDateInputValue(order?.planEndDate);
-  resetStepPreview();
   if (!order) return;
   form.plannedQuantity = Number(order.remainingQuantity);
   if (!Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
@@ -475,8 +464,8 @@ const handleWorkOrderChange = (workOrderId: string): void => {
 const resetForm = (): void => {
   existingBatchNo.value = '';
   existingTaskContext.value = null;
+  originalOwner.value = null;
   Object.assign(form, initialForm());
-  resetStepPreview();
 };
 
 const setForm = (row: {
@@ -487,6 +476,7 @@ const setForm = (row: {
   routeCode: string | null;
   routeVersion: string | null;
   ownerId: string | null;
+  ownerName: string | null;
   plannedQuantity: string | number;
   planStartDate: string | null;
   planEndDate: string | null;
@@ -499,6 +489,7 @@ const setForm = (row: {
     routeCode: row.routeCode,
     routeVersion: row.routeVersion,
   };
+  originalOwner.value = row.ownerId ? { id: row.ownerId, name: row.ownerName } : null;
   Object.assign(form, {
     workOrderId: row.workOrderId,
     routeId: row.routeId ?? '',
@@ -508,10 +499,21 @@ const setForm = (row: {
     planEndDate: toDateInputValue(row.planEndDate),
     remark: row.remark ?? '',
   });
-  resetStepPreview();
 };
 
 const handleSubmit = (): void => {
+  if (!form.ownerId) {
+    EMessage.warning('请选择任务负责人');
+    return;
+  }
+  if (!ownersVerified.value) {
+    EMessage.warning('请先刷新任务负责人候选后再保存');
+    return;
+  }
+  if (isOwnerUnavailable.value) {
+    EMessage.warning('所选任务负责人已失效，请重新选择');
+    return;
+  }
   if (!props.editingTaskId && workOrderSource.status.value !== 'ready') {
     EMessage.warning('请先刷新工单额度后再保存任务');
     return;
@@ -571,22 +573,9 @@ const handleSubmit = (): void => {
     EMessage.warning('所选工艺路线已失效，请重新选择');
     return;
   }
-  if (
-    form.ownerId &&
-    hasUnavailableSelection(props.userOptions, [form.ownerId], (user) => user.id)
-  ) {
-    EMessage.warning('所选负责人已失效，请重新选择');
-    return;
-  }
   emit('save', {
     ...form,
     routeId: taskOrderType.value === 'research' ? '' : form.routeId,
-    stepOverrides: createStepPreview.value
-      .filter((step) => step.actualSopFileId)
-      .map((step) => ({
-        routeStepId: step.id,
-        actualSopFileId: step.actualSopFileId,
-      })),
   });
 };
 
@@ -594,6 +583,37 @@ defineExpose({ setForm, resetForm });
 </script>
 
 <style scoped>
+.owner-field {
+  width: 100%;
+}
+.owner-picker {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.owner-picker :deep(.el-select) {
+  flex: 1;
+  min-width: 0;
+}
+.owner-note,
+.owner-warning {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.owner-note {
+  color: var(--el-text-color-regular);
+}
+.owner-warning {
+  color: var(--el-color-warning);
+}
+.candidate-empty {
+  max-width: 340px;
+  padding: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+  text-align: center;
+}
 .work-order-summary {
   margin-bottom: 20px;
 }
@@ -619,37 +639,5 @@ defineExpose({ setForm, resetForm });
 .dialog-form :deep(.el-select__wrapper) {
   border-radius: 6px;
   box-shadow: 0 0 0 1px #e5e7eb inset;
-}
-.detail-tabs {
-  margin-top: 18px;
-}
-.detail-table {
-  width: 100%;
-  color: #1f2937;
-  font-size: 14px;
-}
-.detail-table :deep(.el-table__header th) {
-  height: 48px;
-  background: #f9fafb;
-  color: #1f2937;
-  font-weight: 600;
-}
-.detail-table :deep(.el-table__row) {
-  height: 48px;
-}
-.detail-table :deep(.el-table__row:hover) {
-  background: #f3f4f6;
-}
-.detail-table :deep(.el-table__cell) {
-  border-bottom-color: #e5e7eb;
-}
-.detail-table :deep(.el-select) {
-  width: 100%;
-}
-.empty-hint {
-  padding: 24px;
-  text-align: center;
-  color: #9ca3af;
-  font-size: 14px;
 }
 </style>

@@ -177,11 +177,6 @@
         @click="load"
         >重试读取</el-button
       >
-      <span
-        v-if="pendingCount"
-        class="footer-hint"
-        >还有 {{ pendingCount }} 项待选版</span
-      >
       <el-button
         type="primary"
         :loading="submitting"
@@ -463,10 +458,6 @@ watch(
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-.row-warning,
-.footer-hint {
-  color: #b45309;
 }
 .split-row {
   display: flex;

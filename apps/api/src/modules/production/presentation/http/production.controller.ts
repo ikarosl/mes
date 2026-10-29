@@ -140,6 +140,11 @@ export class ProductionController {
   batches(@Query() query: ProductionBatchQueryDto) {
     return this.service.listBatches({ ...query, keyword: query.keyword?.trim() || undefined });
   }
+  @Get('batches/owner-options')
+  @RequirePermission([PERMISSIONS.production.tasks.view])
+  taskOwnerOptions(): Promise<UserOption[]> {
+    return this.service.listTaskOwnerOptions();
+  }
   @Get('batches/:id')
   @RequirePermission(PERMISSIONS.production.tasks.view)
   batch(@Param() { id }: IdParamDto) {

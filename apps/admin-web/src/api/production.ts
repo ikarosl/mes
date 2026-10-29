@@ -226,6 +226,13 @@ export const productionApi = {
       skipErrorHandling: true,
     }),
 
+  taskOwnerOptions: (signal?: AbortSignal) =>
+    request<UserOption[]>({
+      url: '/production/batches/owner-options',
+      signal,
+      skipErrorHandling: true,
+    }),
+
   /** 任务表单工单候选：完整返回 released/doing 且仍有余量的工单，前端本地过滤 */
   workOrderOptions: () =>
     request<WorkOrderOption[]>({

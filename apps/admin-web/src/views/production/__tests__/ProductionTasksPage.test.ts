@@ -11,24 +11,26 @@ import ProductionTasksPage from '../ProductionTasksPage.vue';
 const {
   listBatches,
   listOrders,
+  workOrderOptions,
+  taskOwnerOptions,
   getBatchCancellationCheck,
   cancelBatch,
   productOptions,
   routeOptions,
   userOptions,
-  technicalFiles,
   confirm,
   success,
   error,
 } = vi.hoisted(() => ({
   listBatches: vi.fn(),
   listOrders: vi.fn(),
+  workOrderOptions: vi.fn(),
+  taskOwnerOptions: vi.fn(),
   getBatchCancellationCheck: vi.fn(),
   cancelBatch: vi.fn(),
   productOptions: vi.fn(),
   routeOptions: vi.fn(),
   userOptions: vi.fn(),
-  technicalFiles: vi.fn(),
   confirm: vi.fn(),
   success: vi.fn(),
   error: vi.fn(),
@@ -40,13 +42,14 @@ vi.mock('../../../api/product', () => ({
     productOptions,
     routeOptions,
     userOptions,
-    technicalFiles,
   },
 }));
 vi.mock('../../../api/production', () => ({
   productionApi: {
     listBatches,
     listOrders,
+    workOrderOptions,
+    taskOwnerOptions,
     getBatchCancellationCheck,
     cancelBatch,
   },
@@ -109,6 +112,10 @@ describe('ProductionTasksPage', () => {
     listBatches.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 10 });
     listOrders.mockReset();
     listOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 50 });
+    workOrderOptions.mockReset();
+    workOrderOptions.mockResolvedValue([]);
+    taskOwnerOptions.mockReset();
+    taskOwnerOptions.mockResolvedValue([]);
     getBatchCancellationCheck.mockReset();
     getBatchCancellationCheck.mockResolvedValue({
       productionBatchId: 'b1',
@@ -129,8 +136,6 @@ describe('ProductionTasksPage', () => {
     routeOptions.mockResolvedValue([]);
     userOptions.mockReset();
     userOptions.mockResolvedValue([]);
-    technicalFiles.mockReset();
-    technicalFiles.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100 });
     confirm.mockReset();
     confirm.mockResolvedValue(undefined);
   });
@@ -288,8 +293,8 @@ describe('ProductionTasksPage', () => {
     );
   });
 
-  // TODO(production-tasks): 保留缓存激活的任务上下文与候选按需读取场景；正式测试获准并适配当前生命周期后恢复。
-  it.todo('activation preserves task context while options load only at their entry');
+  // TODO(production-tasks): 验证缓存返回保留任务上下文、候选仅在各消费入口读取；高重要性：草稿和读取生命周期。
+  // 旧旅程依赖激活刷新，当前暂停；用户明确授权正式测试后按现行缓存及独立候选生命周期恢复。
 });
 
 type TaskGuardVm = {

@@ -30,6 +30,7 @@ describe('Production batch execution DTOs', () => {
   it('transforms and validates route-generated step overrides on batch creation', async () => {
     const dto = plainToInstance(CreateProductionBatchDto, {
       plannedQuantity: '10',
+      ownerId: '3',
       stepOverrides: [{ routeStepId: '41', actualSopFileId: '7', responsibleUserId: '3' }],
     });
 
@@ -295,7 +296,7 @@ describe('Production date-only DTO fields', () => {
       },
     ],
     ['update work order', UpdateWorkOrderDto, { version: 1 }],
-    ['create batch', CreateProductionBatchDto, { plannedQuantity: 1 }],
+    ['create batch', CreateProductionBatchDto, { plannedQuantity: 1, ownerId: '3' }],
     ['update batch', UpdateProductionBatchDto, { version: 1 }],
   ];
 

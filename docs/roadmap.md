@@ -10,7 +10,7 @@
 - [ ] 最高优先级恢复库存流水不可修改／不可删除、真实来源约束、预留与负库存保护；入口在 `tests/integration/inventory/inventory-ledger.mysql.test.ts` 及 `tests/integration/production/materials/`，按现行公共入出库单据重建共享夹具。
 - [ ] 恢复生产执行、报工冲销唯一、异常与报废补料、事务审计回滚、并发分配及持久化集成；入口在 `tests/integration/production/execution/`、`persistence/`。以任务锁版、自动业务编号、执行进入收尾及批准产出清单为准，不恢复工单跨任务锁版或旧完成数量模型。
 - [ ] 恢复 API 相邻 TODO 中的任务创建／取消锁序、结案损耗、正式产出资格、路线上下文快照及 BOM 资格保护，核对幂等重放、权限与当前来源互斥规则。
-- [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，使用显式路线和自动编号夹具；恢复 `tests/integration/inventory/migrations/inventory-item-balance-migration.mysql.test.ts` 在当前完整迁移链上的历史投影回填及 down/up，以合法公共入库来源准备流水，不截断迁移链规避来源约束。
+- [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，以及 `create-batch-closed-loop.mysql.test.ts` 的任务／幂等结果／成功审计原子提交、失败回滚与重放，使用任务负责人场景资格、显式路线及当前 BOM 结构重建夹具；恢复 `tests/integration/inventory/migrations/inventory-item-balance-migration.mysql.test.ts` 在当前完整迁移链上的历史投影回填及 down/up，以合法公共入库来源准备流水，不截断迁移链规避来源约束。
 - [ ] 恢复管理端相邻 TODO 中的仓储子页办理、异常处理弹窗、批准产出完工资格、菜单路由上下文及任务创建数量／日期保护；废弃的产品默认路线与自动选路行为不作为恢复目标。
 - [ ] 恢复[请求层 TODO](../packages/request/src/__tests__/request.test.ts)中的写请求禁止传输自动重试边界，覆盖携带幂等键、残留旧配置、网络／超时／5xx、401 认证恢复例外及原请求手动恢复；不恢复旧的自动写重试能力。
 
@@ -20,11 +20,11 @@
 
 - [ ] 正式测试授权后恢复本次失效用例的原位 TODO，补文件用途与格式校验、上传失败补偿、独立鉴权、规格书及模板并发冲突、事务审计和成对迁移覆盖。模板内容与界面状态的现行约束见所有者文档，应用检查与页面冒烟不代替正式测试。
 
-## 业务人员配置与工单负责人：待验收
+## 业务人员配置与生产负责人：待验收
 
-状态：已实施，待用户验收及正式测试。Identity 维护已登记场景的角色候选配置，首期接入工单负责人。规则由 [Identity](../apps/api/src/modules/identity/docs/user-candidates.md) 和 [工单与任务](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)维护；任务负责人、工序派工及审批资格检查时点不在本次扩展范围。
+状态：已实施，待用户验收及正式测试。Identity 维护已登记场景的角色候选配置，工单与任务负责人分别使用独立场景。规则由 [Identity](../apps/api/src/modules/identity/docs/user-candidates.md) 和 [工单与任务](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)维护；工序派工及审批资格检查时点不在本次扩展范围。
 
-- [ ] 联合验收配置管理、工单候选及保存／下达资格，覆盖多角色去重、空配置、人员及角色失效、配置冲突、历史负责人展示和普通角色权限。
+- [ ] 联合验收配置管理、工单候选及保存／下达资格、任务负责人必填及创建／编辑最终人员复核，覆盖多角色去重、空配置、人员及角色失效、配置冲突、历史负责人展示和普通角色权限。
 - [ ] 正式测试授权后补配置与角色成员变更的并发边界、事务审计回滚、幂等重放、HTTP 鉴权与迁移上下行覆盖；应用检查和启动验证不代替这些测试。
 
 ## 工序专检与异常处理：待验收
@@ -88,7 +88,7 @@
 
 - [ ] 后续替换旧 `TaskFormDialog` 的候选读取方式及其他独立任务动作的旧 options 消费；打开／展开读取与已选 ID 解析仍按资源边界核对，取消激活刷新不表示候选框架替换完成。
 - [ ] 逐步替换旧工具的存量消费方；持续增长的用户、产品、物料等候选按各资源契约迁移远程搜索／分页，明确小规模候选局部加载并显式刷新，静态枚举直接使用共享常量。先核对全部消费方及已选 ID 解析，搜索窗口缺项不得按旧 `hasUnavailableSelection` 误判失效，不新增通用候选缓存合并框架。
-- [ ] 复核采购编辑器逐行选择组件首次挂载的请求规模和候选完备性；缓存返回与手动请求并发见[标签切换性能](#标签切换性能待验收)，SOP 前 100 条的完备性问题见[已确认缺陷](#已确认缺陷待修复)。
+- [ ] 复核采购编辑器逐行选择组件首次挂载的请求规模和候选完备性；缓存返回与手动请求并发见[标签切换性能](#标签切换性能待验收)。
 - [ ] 替换后迁移旧生命周期及全量候选断言，补已选 ID 解析、候选完备性和跨页草稿覆盖。
 
 ## 生产任务 UI／UX：待验收
@@ -495,7 +495,6 @@
 以下为已确认但尚未修复的缺陷，完成后按统一交付顺序验证。
 
 - [ ] AuthClient会话竞态：按会话版本约束refresh成功／失败清理、401重试及me用户资料回写，finally仅清理自身持有的刷新Promise。验收退出A并登录B后，A旧刷新成功／失败、旧401或用户资料晚到均不修改B，也不使用B凭证重试旧请求；同会话合法并发继续可用。
-- [ ] SOP候选只取第1页100条：修复 `useProductionBatchesList` 的候选完备性，取齐分页或提供远程搜索与已选ID解析；验收101条以上文件和历史已选回显。
 - [ ] 缓存任务页未消费新定位：从出库阻断跳转时，ProductionTasksPage需应用新的route.query.keyword、重置分页并查询，不能仅在onMounted处理；保留尚未提交草稿，当前可手动搜索。
 - [ ] HTTP超时提示优先级：`handleHttpError`先判status=0，ECONNABORTED被提示为普通网络错误；按[错误处理边界](../apps/admin-web/docs/http-error-handling.md#121-超时当前会优先被识别为网络错误)区分超时，验收后补相邻用例。
 - [ ] 生产写意图恢复：工单／任务创建和物料分配仍可能在重放前被当前候选或余量校验阻断；领料损耗申报／确认未完整保留首次载荷及版本，未知结果后的编辑、关闭和重开保护不足。按[写意图边界](../apps/admin-web/docs/architecture.md#5-写意图与错误)补首次请求快照、未知状态保护及可达的原请求恢复入口，验收响应丢失后候选／版本变化、改输入和关闭重开。取消前端自动写重试不代表这些存量缺口已修复。

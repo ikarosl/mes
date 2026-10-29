@@ -77,7 +77,7 @@ const knownIdempotencyScopes = [
   'inventory.other-outbound.save.v1',
   'inventory.other-outbound.confirm.v1',
   'inventory.other-outbound.cancel.v1',
-  'production.batch.create.v13',
+  'production.batch.create.v14',
   'production.batch.create.v12',
   'production.batch-closeout.begin.v2',
   'production.batch-closeout.withdraw.v1',

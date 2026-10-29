@@ -1,4 +1,5 @@
 import type {
+  ProductionBatchUpdateContext,
   WorkOrderReleaseContext,
   WorkOrderUpdateContext,
 } from '../../application/ports/production.repository.js';
@@ -136,6 +137,12 @@ export class MysqlProductionRepository extends ProductionRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return this.batches.create(workOrderId, payload, route, stepOverrides, audit);
+  }
+  withBatchUpdateTransaction<T>(
+    batchId: string,
+    action: (batch: ProductionBatchUpdateContext) => Promise<T>,
+  ): Promise<T> {
+    return this.batches.withUpdateTransaction(batchId, action);
   }
   updateBatch(
     id: string,

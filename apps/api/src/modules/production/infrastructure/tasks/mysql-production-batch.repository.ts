@@ -23,7 +23,10 @@ import { toBeijingISOString, toDateOnlyString } from '../../../../common/time/da
 import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
 import type { ProcessRouteSnapshot } from '../../../product/public.js';
 import { InventoryProductionDocumentCommand } from '../../../inventory/public.js';
-import type { ResolvedBatchStepOverride } from '../../application/ports/production.repository.js';
+import type {
+  ProductionBatchUpdateContext,
+  ResolvedBatchStepOverride,
+} from '../../application/ports/production.repository.js';
 import { requireBatchTransition } from '../../domain/production-status.policy.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import { integerQuantity } from '../../domain/integer-quantity.js';
@@ -185,7 +188,7 @@ export class MysqlProductionBatchRepository {
           payload.plannedQuantity,
           payload.planStartDate ?? null,
           payload.planEndDate ?? null,
-          payload.ownerId ?? null,
+          payload.ownerId,
           payload.remark ?? null,
           audit.actorId,
           audit.actorId,
@@ -229,6 +232,20 @@ export class MysqlProductionBatchRepository {
       );
       return selectBatchOverview(connection, String(result.insertId));
     }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
+  }
+
+  async withUpdateTransaction<T>(
+    batchId: string,
+    action: (batch: ProductionBatchUpdateContext) => Promise<T>,
+  ): Promise<T> {
+    return withTransaction(this.pool, async (connection) => {
+      const unlocked = await findBatch(connection, batchId);
+      await findWorkOrder(connection, String(unlocked.work_order_id), true);
+      const batch = await findBatch(connection, batchId, true);
+      if (batch.status !== 'pending')
+        throw new ProductionDomainError('INVALID_STATE', '仅待处理生产批次可编辑');
+      return action({ ownerId: batch.owner_id === null ? null : String(batch.owner_id) });
+    });
   }
 
   async update(

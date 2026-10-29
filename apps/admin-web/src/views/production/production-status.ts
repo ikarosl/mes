@@ -107,12 +107,3 @@ export const formatQuantityDifference = (value: string | null | undefined): stri
   const amount = Number(value);
   return `${amount > 0 ? '+' : ''}${formatQuantity(value)}`;
 };
-
-/** 根据用户选项解析负责人显示名 */
-export const resolveOwnerName = (
-  ownerId: string | null | undefined,
-  users: Array<{ id: string; displayName: string }>,
-): string => {
-  if (!ownerId) return '-';
-  return users.find((user) => user.id === ownerId)?.displayName ?? '-';
-};

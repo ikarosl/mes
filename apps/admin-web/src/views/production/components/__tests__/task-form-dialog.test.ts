@@ -1,22 +1,21 @@
 import { nextTick } from 'vue';
-import { h, type VNode } from 'vue';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import TaskFormDialog from '../TaskFormDialog.vue';
 
-const { productOptions, routeOptions, routeSteps, workOrderOptions } = vi.hoisted(() => ({
+const { productOptions, routeOptions, workOrderOptions, taskOwnerOptions } = vi.hoisted(() => ({
   productOptions: vi.fn(),
   routeOptions: vi.fn(),
-  routeSteps: vi.fn(),
   workOrderOptions: vi.fn(),
+  taskOwnerOptions: vi.fn(),
 }));
 
-// 弹窗自持候选源：产品 / 工艺路线（api/product）、已下达工单（api/production /options 契约）
+// 弹窗自持工艺路线、已下达工单和任务负责人候选。
 vi.mock('../../../../api/product', () => ({
-  productApi: { productOptions, routeOptions, routeSteps },
+  productApi: { productOptions, routeOptions },
 }));
 vi.mock('../../../../api/production', () => ({
-  productionApi: { workOrderOptions },
+  productionApi: { workOrderOptions, taskOwnerOptions },
 }));
 vi.mock('../../../../utils/message', () => ({ EMessage: { warning: vi.fn(), error: vi.fn() } }));
 import { EMessage } from '../../../../utils/message';
@@ -48,38 +47,15 @@ const dialogStub = {
 /** 渲染默认插槽的透传 stub：`true` 会丢弃插槽内容，导致弹窗内表单不渲染 */
 const passthroughStub = { template: '<div><slot /></div>' };
 
-/** el-table-column：向作用域插槽提供 { row }，否则工序预览表格的逐行下拉无法渲染 */
-const tableColumnStub = {
-  props: ['prop', 'label'],
-  setup(
-    _props: Record<string, unknown>,
-    ctx: { slots: { default?: (scope: Record<string, unknown>) => VNode[] } },
-  ) {
-    const row = {
-      id: 'step1',
-      stepOrder: 1,
-      stepName: '工序1',
-      sopFileName: null,
-      defaultOwnerName: null,
-      actualSopFileId: null,
-      responsibleUserId: null,
-    };
-    return () => h('div', { class: 'column-stub' }, ctx.slots.default?.({ row }) ?? []);
-  },
-};
-
 const openDialog = async (
   overrides: {
     editingTaskId?: string | null;
-    userOptions?: Array<{ id: string; displayName: string }>;
   } = {},
 ) => {
   const wrapper = mount(TaskFormDialog, {
     props: {
       visible: false,
       editingTaskId: overrides.editingTaskId ?? null,
-      userOptions: overrides.userOptions ?? [{ id: 'u1', displayName: '张三' }],
-      sopFileOptions: [],
       submitting: false,
     },
     global: {
@@ -93,10 +69,6 @@ const openDialog = async (
         'el-date-picker': true,
         'el-form': passthroughStub,
         'el-form-item': passthroughStub,
-        'el-tabs': passthroughStub,
-        'el-tab-pane': passthroughStub,
-        'el-table': passthroughStub,
-        'el-table-column': tableColumnStub,
       },
     },
   });
@@ -186,21 +158,20 @@ describe('TaskFormDialog', () => {
     productOptions.mockResolvedValue([]);
     routeOptions.mockReset();
     routeOptions.mockResolvedValue([]);
-    routeSteps.mockReset();
-    routeSteps.mockResolvedValue([]);
     workOrderOptions.mockReset();
     workOrderOptions.mockResolvedValue([]);
+    taskOwnerOptions.mockReset();
+    taskOwnerOptions.mockResolvedValue([{ id: 'u1', displayName: '张三' }]);
     vi.mocked(EMessage.warning).mockClear();
   });
 
-  it('opening the dialog refreshes its own sources and emits refresh-users/refresh-sop-files', async () => {
+  it('opening the dialog refreshes its own sources', async () => {
     const wrapper = await openDialog();
     expect(productOptions).not.toHaveBeenCalled();
     expect(routeOptions).toHaveBeenCalledTimes(1);
     expect(workOrderOptions).toHaveBeenCalledTimes(1);
-    expect(wrapper.emitted('refresh-users')).toHaveLength(1);
-    expect(wrapper.emitted('refresh-sop-files')).toHaveLength(1);
-    // 用户 / SOP 候选由页面持有：弹窗只触发刷新，不再请求产品 / 路线 / 工单之外资源
+    expect(taskOwnerOptions).toHaveBeenCalledTimes(1);
+    // 工单和路线由表单直接读取。
     expect(wrapper.emitted('refresh-work-orders')).toBeUndefined();
     expect(wrapper.emitted('refresh-routes')).toBeUndefined();
   });
@@ -231,19 +202,8 @@ describe('TaskFormDialog', () => {
     expect(productOptions).not.toHaveBeenCalled();
   });
 
-  it('expanding the user select refreshes only users (emits refresh-users)', async () => {
-    const wrapper = await openDialog();
-    const before = wrapper.emitted('refresh-users')?.length ?? 0;
-
-    await emitVisibleChange(wrapper, '请选择负责人');
-
-    expect(wrapper.emitted('refresh-users')?.length).toBe(before + 1);
-    expect(routeOptions).toHaveBeenCalledTimes(1); // 打开时刷新一次，展开下拉不再重复请求
-    expect(workOrderOptions).toHaveBeenCalledTimes(1);
-  });
-
-  // TODO(task-form): 保留切换工单的数量和日期约束；正式测试获准并适配手动选路后恢复。
-  it.todo('changing a work order preserves its quantity and plan-date constraints');
+  // TODO(task-form): 验证切换工单保留所属工单的数量和日期约束；高重要性：计划额度与排程边界。
+  // 旧旅程依赖自动选路，当前暂停；用户明确授权正式测试后按显式路线和合格任务负责人恢复。
 
   it('blocks task dates outside the selected work-order plan window', async () => {
     workOrderOptions.mockResolvedValue([releasedOrder('wo1')]);
@@ -251,8 +211,9 @@ describe('TaskFormDialog', () => {
     await emitChange(wrapper, '请选择工单', 'wo1');
 
     const vm = wrapper.vm as unknown as {
-      form: { planStartDate: string; planEndDate: string };
+      form: { ownerId: string; planStartDate: string; planEndDate: string };
     };
+    vm.form.ownerId = 'u1';
     vm.form.planStartDate = '2026-07-31';
     await emitSubmit(wrapper);
 
@@ -274,6 +235,7 @@ describe('TaskFormDialog', () => {
           batchNo: string;
           routeId: string | null;
           ownerId: string | null;
+          ownerName: string | null;
           plannedQuantity: string | number;
           planStartDate: string;
           planEndDate: string;
@@ -285,6 +247,7 @@ describe('TaskFormDialog', () => {
       batchNo: 'B001',
       routeId: 'r1',
       ownerId: 'u1',
+      ownerName: '张三',
       plannedQuantity: 100,
       planStartDate: '2026-08-01',
       planEndDate: '2026-08-31',
@@ -315,6 +278,7 @@ describe('TaskFormDialog', () => {
           batchNo: string;
           routeId: string | null;
           ownerId: string | null;
+          ownerName: string | null;
           plannedQuantity: string | number;
           planStartDate: string;
           planEndDate: string;
@@ -326,6 +290,7 @@ describe('TaskFormDialog', () => {
       batchNo: '',
       routeId: 'r9',
       ownerId: 'u1',
+      ownerName: '张三',
       plannedQuantity: 50,
       planStartDate: '2026-08-01',
       planEndDate: '2026-08-31',
@@ -342,7 +307,7 @@ describe('TaskFormDialog', () => {
   it('blocks submit when the selected owner is no longer available', async () => {
     workOrderOptions.mockResolvedValue([releasedOrder('wo1')]);
     routeOptions.mockResolvedValue(defaultRoutes); // 路线 r1 在候选内，放行到负责人校验
-    const wrapper = await openDialog({ userOptions: [{ id: 'u1', displayName: '张三' }] });
+    const wrapper = await openDialog();
 
     (
       wrapper.vm as unknown as {
@@ -351,6 +316,7 @@ describe('TaskFormDialog', () => {
           batchNo: string;
           routeId: string | null;
           ownerId: string | null;
+          ownerName: string | null;
           plannedQuantity: string | number;
           planStartDate: string;
           planEndDate: string;
@@ -362,6 +328,7 @@ describe('TaskFormDialog', () => {
       batchNo: '',
       routeId: 'r1',
       ownerId: 'u9', // 不在负责人候选内
+      ownerName: '原负责人',
       plannedQuantity: 50,
       planStartDate: '2026-08-01',
       planEndDate: '2026-08-31',
@@ -372,38 +339,7 @@ describe('TaskFormDialog', () => {
     await emitSubmit(wrapper);
 
     expect(wrapper.emitted('save')).toBeUndefined();
-    expect(EMessage.warning).toHaveBeenCalledWith('所选负责人已失效，请重新选择');
-  });
-
-  it('the step-preview table selects refresh only their own resource on expand', async () => {
-    const wrapper = await openDialog();
-
-    // 打开工序执行预览（新增模式需要 routeId）
-    (
-      wrapper.vm as unknown as {
-        setForm: (row: {
-          workOrderId: string;
-          batchNo: string;
-          routeId: string | null;
-          ownerId: string | null;
-          plannedQuantity: string | number;
-          remark: string | null;
-        }) => void;
-      }
-    ).setForm({
-      workOrderId: 'wo1',
-      batchNo: '',
-      routeId: 'r1',
-      ownerId: null,
-      plannedQuantity: 100,
-      remark: null,
-    });
-    await flushPromises();
-
-    // 逐行 SOP 文件下拉只刷新 SOP 文件
-    const beforeSop = wrapper.emitted('refresh-sop-files')?.length ?? 0;
-    await emitVisibleChange(wrapper, '留空则使用默认文件');
-    expect(wrapper.emitted('refresh-sop-files')?.length).toBe(beforeSop + 1);
+    expect(EMessage.warning).toHaveBeenCalledWith('所选任务负责人已失效，请重新选择');
   });
 
   it('uses a local filterable work-order select without remote-method', async () => {
@@ -446,8 +382,9 @@ describe('TaskFormDialog', () => {
     await flushPromises();
 
     const vm = wrapper.vm as unknown as {
-      form: { planStartDate: string; planEndDate: string };
+      form: { ownerId: string; planStartDate: string; planEndDate: string };
     };
+    vm.form.ownerId = 'u1';
     vm.form.planStartDate = '2026-08-01';
     vm.form.planEndDate = '2026-08-31';
 

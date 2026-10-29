@@ -289,7 +289,7 @@
               :rows="2"
               maxlength="2000"
               show-word-limit
-              placeholder="说明本次金额或税率的更正原因"
+              placeholder="说明本次金额或税率的更正原因，更正原因备注记录到通用日志中"
             />
           </el-form-item>
         </el-form>

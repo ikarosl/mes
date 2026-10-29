@@ -132,7 +132,11 @@ export class CreateBatchStepOverrideDto {
 export class CreateProductionBatchDto implements CreateProductionBatchPayload {
   @IsOptional() @IsString() @MaxLength(20) routeId?: string | null;
   @Type(() => Number) @IsInt() @Min(1) @Max(MAX_QUANTITY) plannedQuantity!: number;
-  @IsOptional() @IsString() @MaxLength(20) ownerId?: string | null;
+  @IsDefined({ message: '请选择任务负责人' })
+  @IsString()
+  @IsNotEmpty({ message: '请选择任务负责人' })
+  @MaxLength(20)
+  ownerId!: string;
   @IsOptional()
   @IsString()
   @Matches(DATE_ONLY_PATTERN)
@@ -155,7 +159,12 @@ export class UpdateProductionBatchDto
   extends VersionedCommandDto
   implements UpdateProductionBatchPayload
 {
-  @IsOptional() @IsString() @MaxLength(20) ownerId?: string | null;
+  @ValidateIf((_, value: unknown) => value !== undefined)
+  @IsDefined({ message: '请选择任务负责人' })
+  @IsString()
+  @IsNotEmpty({ message: '请选择任务负责人' })
+  @MaxLength(20)
+  ownerId?: string;
   @IsOptional()
   @IsString()
   @Matches(DATE_ONLY_PATTERN)
