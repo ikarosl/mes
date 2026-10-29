@@ -145,7 +145,7 @@
 import { computed, ref, watch } from 'vue';
 import type { FinishedGoodsInboundCandidate, FinishedGoodsInboundSource } from '@company/contracts';
 import { FINISHED_GOODS_INBOUND_SOURCE_LABELS } from '@company/constants';
-import { formatQuantity } from '../../production/production-status';
+import { formatQuantity } from '../../../utils/quantity';
 import { finishedGoodsInboundSourceTagType } from '../warehouse-list-presentation';
 import InboundGroupHeader from './InboundGroupHeader.vue';
 

@@ -15,7 +15,7 @@
 
 ## 2. 页面与路由
 
-路由、菜单和权限映射直接见 [router](../src/router/index.ts)、[AdminLayout](../src/views/AdminLayout.vue)；不在本文另列一套页面清单。页面只按查看权限控制整页，命令权限由后端逐接口校验，不要求页面内按钮做权限隐藏。
+路由、菜单和权限映射直接见 [router](../src/router/index.ts)、[导航配置](../src/router/navigation.ts)；不在本文另列一套页面清单。页面只按查看权限控制整页，命令权限由后端逐接口校验，不要求页面内按钮做权限隐藏。
 
 ### 2.1 详情定位
 
@@ -26,7 +26,7 @@
 - 更换定位目标先确认放弃未保存输入；取消保留原草稿和原定位。提交中或结果未知时阻止换单。离开页面仅使旧读取失效，不销毁缓存草稿。
 - 关联补单查看沿用采购 ID 定位：从目标详情中按原采购行 ID、可选的到货明细 ID 及补因解析真实补单行，不能把原采购行 ID 当作目标行 ID。恰好匹配一行时定位该行；没有唯一匹配时仅展示目标主单并提示核对，不猜测首行。明确携带的目标行不存在时保留原有效定位并提示失败。
 - 定位成功后展开目标主单，主单和具体行保留“当前定位”标记，并滚动到目标内容；成功查看的主单／行 ID 同步到当前路由，清除已消费的补单办理和需求建单入口参数，刷新或缓存标签返回不重开旧来源。清除定位同时移除标记、临时页外单据及路由定位参数。定位不改变原查询条件、页码、分页总数，也不以关键词模拟唯一查找；读取失败、关闭取消及迟到响应不能替换有效定位。
-- 生产需求总览由 [MaterialDemandOverviewDialog](../src/views/production/components/MaterialDemandOverviewDialog.vue)承担，没有独立 `production-material-demands` 路由；同名 HTTP 资源不能当页面链接。
+- 生产需求总览由 [MaterialDemandOverviewDialog](../src/views/production/materials/MaterialDemandOverviewDialog.vue)承担，没有独立 `production-material-demands` 路由；同名 HTTP 资源不能当页面链接。
 
 ## 3. 供应商及采购选择
 

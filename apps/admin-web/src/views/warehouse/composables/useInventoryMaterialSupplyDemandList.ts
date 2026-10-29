@@ -1,6 +1,6 @@
 import { reactive, ref } from 'vue';
 import type { InventoryMaterialSupplyDemandItem } from '@company/contracts';
-import { productionApi } from '../../../api/production';
+import { productionInventoryApi } from '../../../api/production/inventory';
 import { EMessage } from '../../../utils/message';
 
 /** 库存页精确版本列表：按有库存或活动需求的版本分页，较旧响应不得覆盖较新查询。 */
@@ -17,7 +17,7 @@ export function useInventoryMaterialSupplyDemandList() {
     const token = ++requestToken;
     loading.value = true;
     try {
-      const result = await productionApi.listInventoryMaterialSupplyDemand({
+      const result = await productionInventoryApi.listInventoryMaterialSupplyDemand({
         page: currentPage.value,
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,

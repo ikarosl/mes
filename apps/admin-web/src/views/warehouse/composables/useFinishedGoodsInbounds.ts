@@ -4,7 +4,7 @@ import type {
   FinishedGoodsInboundOrderItem,
   FinishedGoodsInboundQuery,
 } from '@company/contracts';
-import { productionApi } from '../../../api/production';
+import { productionInboundsApi } from '../../../api/production/inbounds';
 import { useLatestRequest } from '../../../composables/requests/useLatestRequest';
 import { EMessage } from '../../../utils/message';
 export function useFinishedGoodsInbounds() {
@@ -26,7 +26,7 @@ export function useFinishedGoodsInbounds() {
     loading.value = true;
     error.value = '';
     try {
-      const result = await productionApi.listFinishedGoodsInbounds({
+      const result = await productionInboundsApi.listFinishedGoodsInbounds({
         ...query,
         keyword: query.keyword?.trim() || undefined,
       });
@@ -51,7 +51,7 @@ export function useFinishedGoodsInbounds() {
     detailLoading[id] = true;
     detailErrors[id] = '';
     try {
-      const result = await productionApi.getFinishedGoodsInbound(id);
+      const result = await productionInboundsApi.getFinishedGoodsInbound(id);
       if (disposed || detailVersions.get(id) !== version) return;
       if (result.inboundId !== id) throw new Error('入库详情与请求单据不一致');
       details[id] = result;

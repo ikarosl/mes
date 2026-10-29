@@ -242,11 +242,11 @@ import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { EMessage } from '../../../utils/message';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
-import MaterialOutboundOrderCreateDialog from '../../production/components/MaterialOutboundOrderCreateDialog.vue';
-import MaterialOutboundOrderDetailDialog from '../../production/components/MaterialOutboundOrderDetailDialog.vue';
-import { useMaterialOutboundOrders } from '../../production/composables/useMaterialOutboundOrders';
-import { materialDemandGroupLabel } from '../../production/material-demand-group-presentation';
-import { formatQuantity } from '../../production/production-status';
+import { MaterialOutboundOrderCreateDialog } from '../../production/public';
+import { MaterialOutboundOrderDetailDialog } from '../../production/public';
+import { useMaterialOutboundOrders } from '../../production/public';
+import { materialDemandGroupLabel } from '../../production/public';
+import { formatQuantity } from '../../../utils/quantity';
 import { outboundRowClass, outboundStatusHint } from '../warehouse-list-presentation';
 
 defineOptions({ name: 'ProductionOutboundPanel' });

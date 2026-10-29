@@ -1,11 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { productionApi } from '../../../../api/production';
+import { productionInventoryApi } from '../../../../api/production/inventory';
 import { useInventoryMaterialSupplyDemandList } from '../useInventoryMaterialSupplyDemandList';
 
-vi.mock('../../../../api/production', () => ({
-  productionApi: {
-    listInventoryMaterialSupplyDemand: vi.fn(),
-  },
+vi.mock('../../../../api/production/inventory', () => ({
+  productionInventoryApi: { listInventoryMaterialSupplyDemand: vi.fn() },
 }));
 vi.mock('../../../../utils/message', () => ({
   EMessage: { error: vi.fn() },
@@ -34,7 +32,7 @@ describe('useInventoryMaterialSupplyDemandList', () => {
   it('keeps the latest list response when requests finish out of order', async () => {
     let resolveFirst!: (value: ReturnType<typeof page>) => void;
     let resolveSecond!: (value: ReturnType<typeof page>) => void;
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand)
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand)
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -64,7 +62,7 @@ describe('useInventoryMaterialSupplyDemandList', () => {
   it('passes the version-search keyword and preserves demand-first exact-version rows', async () => {
     const demandFirst = row('same-item', 'mv-demand', '12');
     const inventoryOnly = row('same-item', 'mv-stock-only', '0');
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand).mockResolvedValue({
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand).mockResolvedValue({
       items: [demandFirst, inventoryOnly],
       total: 2,
       page: 1,
@@ -75,7 +73,7 @@ describe('useInventoryMaterialSupplyDemandList', () => {
 
     await list.loadSupplyDemand();
 
-    expect(productionApi.listInventoryMaterialSupplyDemand).toHaveBeenCalledWith({
+    expect(productionInventoryApi.listInventoryMaterialSupplyDemand).toHaveBeenCalledWith({
       page: 1,
       pageSize: 10,
       keyword: 'M-same-item-v2',
@@ -93,7 +91,9 @@ describe('useInventoryMaterialSupplyDemandList', () => {
   });
 
   it('resets the page for search, reset, and page-size changes', async () => {
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand).mockResolvedValue(page('1'));
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand).mockResolvedValue(
+      page('1'),
+    );
     const list = useInventoryMaterialSupplyDemandList();
     list.query.keyword = 'old';
     await list.changeSupplyDemandPage(3);
@@ -104,7 +104,7 @@ describe('useInventoryMaterialSupplyDemandList', () => {
     expect(list.currentPage.value).toBe(1);
     expect(list.pageSize.value).toBe(25);
     expect(list.query.keyword).toBe('');
-    expect(productionApi.listInventoryMaterialSupplyDemand).toHaveBeenLastCalledWith({
+    expect(productionInventoryApi.listInventoryMaterialSupplyDemand).toHaveBeenLastCalledWith({
       page: 1,
       pageSize: 25,
       keyword: undefined,
@@ -114,9 +114,11 @@ describe('useInventoryMaterialSupplyDemandList', () => {
   it('keeps the previous exact-version rows and reports only the latest failure', async () => {
     const list = useInventoryMaterialSupplyDemandList();
     const error = vi.mocked((await import('../../../../utils/message')).EMessage.error);
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand).mockResolvedValueOnce(page('old'));
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand).mockResolvedValueOnce(
+      page('old'),
+    );
     await list.loadSupplyDemand();
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand).mockRejectedValueOnce(
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand).mockRejectedValueOnce(
       new Error('latest failure'),
     );
 

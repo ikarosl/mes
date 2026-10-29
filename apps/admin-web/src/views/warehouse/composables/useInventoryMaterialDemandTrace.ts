@@ -3,7 +3,7 @@ import type {
   InventoryMaterialDemandTraceItem,
   InventoryMaterialSupplyDemandItem,
 } from '@company/contracts';
-import { productionApi } from '../../../api/production';
+import { productionInventoryApi } from '../../../api/production/inventory';
 import { EMessage } from '../../../utils/message';
 
 /** 活动物料需求溯源：按精确版本分页，并避免较旧响应覆盖新打开的版本。 */
@@ -22,7 +22,7 @@ export function useInventoryMaterialDemandTrace() {
     const token = ++requestToken;
     loading.value = true;
     try {
-      const result = await productionApi.listInventoryMaterialDemandTrace(
+      const result = await productionInventoryApi.listInventoryMaterialDemandTrace(
         selectedItem.value.itemId,
         {
           materialVariantId: selectedItem.value.materialVariantId,

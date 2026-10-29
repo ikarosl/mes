@@ -202,7 +202,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
-import { useRowPending } from '../../utils/useRowPending';
+import { useRowPending } from '../../composables/use-row-pending';
 import { systemApi } from '../../api/system';
 import { useAuthStore } from '../../stores/auth';
 import { formatDateTimeForDisplay } from '../../utils/date';

@@ -2,11 +2,11 @@ import { createPinia } from 'pinia';
 import { createMemoryHistory, createRouter } from 'vue-router';
 import { flushPromises, mount } from '@vue/test-utils';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { productionApi } from '../../../api/production';
+import { productionInventoryApi } from '../../../api/production/inventory';
 import WarehouseInventoryPage from '../WarehouseInventoryPage.vue';
 
-vi.mock('../../../api/production', () => ({
-  productionApi: {
+vi.mock('../../../api/production/inventory', () => ({
+  productionInventoryApi: {
     listInventoryBatches: vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20 }),
     listInventoryMaterialSupplyDemand: vi
       .fn()
@@ -57,10 +57,10 @@ const testPlugins = () => [
 
 describe('WarehouseInventoryPage', () => {
   beforeEach(() => {
-    vi.mocked(productionApi.listInventoryBatches).mockClear();
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand).mockClear();
-    vi.mocked(productionApi.listInventoryMaterialDemandTrace).mockClear();
-    vi.mocked(productionApi.getInventoryBatch).mockClear();
+    vi.mocked(productionInventoryApi.listInventoryBatches).mockClear();
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand).mockClear();
+    vi.mocked(productionInventoryApi.listInventoryMaterialDemandTrace).mockClear();
+    vi.mocked(productionInventoryApi.getInventoryBatch).mockClear();
   });
 
   it('uses the current read-only inventory layout without stock mutation actions', () => {
@@ -128,7 +128,10 @@ describe('WarehouseInventoryPage', () => {
     );
     await wrapper.vm.$nextTick();
 
-    expect(productionApi.getInventoryBatch).toHaveBeenCalledWith('101', expect.any(AbortSignal));
+    expect(productionInventoryApi.getInventoryBatch).toHaveBeenCalledWith(
+      '101',
+      expect.any(AbortSignal),
+    );
     expect(wrapper.text()).not.toContain('正库存流水');
     expect(wrapper.text()).toContain('库存流水（全部正负记录）');
     const detail = (wrapper.vm as unknown as { detail: { inventoryTransactions: unknown[] } })
@@ -169,13 +172,13 @@ describe('WarehouseInventoryPage', () => {
         isShortage: false,
       },
     ];
-    vi.mocked(productionApi.listInventoryMaterialSupplyDemand).mockResolvedValue({
+    vi.mocked(productionInventoryApi.listInventoryMaterialSupplyDemand).mockResolvedValue({
       items: supplyRows,
       total: 2,
       page: 1,
       pageSize: 10,
     });
-    vi.mocked(productionApi.listInventoryMaterialDemandTrace).mockResolvedValue({
+    vi.mocked(productionInventoryApi.listInventoryMaterialDemandTrace).mockResolvedValue({
       items: [],
       total: 0,
       page: 1,
@@ -218,7 +221,7 @@ describe('WarehouseInventoryPage', () => {
     ]);
 
     await vm.openDemandTrace(supplyRows[1]!);
-    expect(productionApi.listInventoryMaterialDemandTrace).toHaveBeenCalledWith('5', {
+    expect(productionInventoryApi.listInventoryMaterialDemandTrace).toHaveBeenCalledWith('5', {
       materialVariantId: 'mv-stock-only',
       page: 1,
       pageSize: 10,

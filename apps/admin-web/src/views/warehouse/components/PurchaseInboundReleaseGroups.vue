@@ -176,7 +176,7 @@ import { PERMISSIONS } from '@company/constants';
 import type { ProcurementInboundReleaseItem } from '@company/contracts';
 import { useAuthStore } from '../../../stores/auth';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { formatQuantity } from '../../production/production-status';
+import { formatQuantity } from '../../../utils/quantity';
 import InlineHint from '../../../components/InlineHint.vue';
 import type { usePurchaseInboundReleases } from '../composables/usePurchaseInboundReleases';
 import InboundGroupHeader from './InboundGroupHeader.vue';

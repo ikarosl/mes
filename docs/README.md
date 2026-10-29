@@ -20,7 +20,7 @@
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)：采购单位单价、逐行税率、含税总额推算及下单后更正；不提供税务或结算
 - [到货与来料查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：采购主单或质检主单下的到货分页、按需完整明细及精确定位
-- [前端组件复用审查](frontend-component-reuse-review.md)：静态重复证据、组件／composable 边界及保留差异；仅记录，未批准实施
+- [前端组件复用审查](frontend-component-reuse-review.md)：入库数量、领料选择与批次摘要的抽离候选及待决边界；未批准实施
 - [用户提示语语义核对](user-facing-copy-review.md)：尚未完成的 DTO 业务字段映射与履约术语核对
 - [审批接入边界](approval-design.md)
 - [通用通知设计与提交后扩展钩子](notification-design.md)

@@ -351,8 +351,8 @@ import type {
   ApprovalInstanceStep,
   ApprovalStepStatus,
 } from '@company/contracts';
-import DemandCorrectionEvidence from '../../production/components/DemandCorrectionEvidence.vue';
-import BatchCloseoutEvidence from '../../production/components/BatchCloseoutEvidence.vue';
+import { DemandCorrectionEvidence } from '../../production/public';
+import { BatchCloseoutEvidence } from '../../production/public';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { formatDateTimeForDisplay } from '../../../utils/date';

@@ -2,6 +2,12 @@
 
 本文维护 KeepAlive、路由区域弹窗的接入边界；候选所有权与刷新遵守[管理端架构](architecture.md)，尺寸和视觉遵守[视觉设计](visual-design.md)。
 
+## 代码职责
+
+`main.ts` 负责应用与平台能力装配；`src/layouts` 负责侧栏、顶栏、标签及路由内容区的组合和布局。业务路由由 `src/router/routes` 分组声明，路由创建与守卫安装分别由 `router/index.ts` 和 `router/guards.ts` 负责。导航配置位于 `router/navigation.ts`，只维护菜单分组、顺序和目标路由；菜单标题与页面准入权限读取目标路由声明，仓储分类入口依其子路由权限选择首个可访问目标。菜单工作区不决定业务代码所有权，例如采购到货仍由 Procurement 所有。
+
+路由 URL、`name`、页面组件名与 `meta.keepAliveName/tabName/menuPath` 共同构成导航及缓存身份。目录移动和文件拆分须保留这些身份、嵌套路由与关闭保护关系；跨页跳转继续按目标路由权限判断。
+
 ## 1. 挂载边界
 
 Dialog 和短时确认框只遮罩 `AdminLayout` 的 `.content`，不阻断菜单、顶部栏和标签栏。Dialog 的 DOM 必须留在所属路由子树，失活隐藏，回来恢复草稿、选择及校验状态；普通编辑不能在 `onDeactivated` 清空。

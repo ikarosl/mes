@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { productionApi } from '../../../../api/production';
+import { productionInventoryApi } from '../../../../api/production/inventory';
 import { useInventoryMaterialDemandTrace } from '../useInventoryMaterialDemandTrace';
 
-vi.mock('../../../../api/production', () => ({
-  productionApi: { listInventoryMaterialDemandTrace: vi.fn() },
+vi.mock('../../../../api/production/inventory', () => ({
+  productionInventoryApi: { listInventoryMaterialDemandTrace: vi.fn() },
 }));
 vi.mock('../../../../utils/message', () => ({
   EMessage: { error: vi.fn() },
@@ -35,7 +35,7 @@ describe('useInventoryMaterialDemandTrace', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('opens the selected material and requests only its active demand page', async () => {
-    vi.mocked(productionApi.listInventoryMaterialDemandTrace).mockResolvedValue({
+    vi.mocked(productionInventoryApi.listInventoryMaterialDemandTrace).mockResolvedValue({
       items: [],
       total: 3,
       page: 1,
@@ -48,7 +48,7 @@ describe('useInventoryMaterialDemandTrace', () => {
     expect(trace.visible.value).toBe(true);
     expect(trace.selectedItem.value?.itemId).toBe('9');
     expect(trace.total.value).toBe(3);
-    expect(productionApi.listInventoryMaterialDemandTrace).toHaveBeenCalledWith('9', {
+    expect(productionInventoryApi.listInventoryMaterialDemandTrace).toHaveBeenCalledWith('9', {
       materialVariantId: 'mv-9',
       page: 1,
       pageSize: 10,
@@ -56,7 +56,7 @@ describe('useInventoryMaterialDemandTrace', () => {
   });
 
   it('keeps same-base-material drill-down isolated by exact variant', async () => {
-    vi.mocked(productionApi.listInventoryMaterialDemandTrace)
+    vi.mocked(productionInventoryApi.listInventoryMaterialDemandTrace)
       .mockResolvedValueOnce(demandResult('d-v1'))
       .mockResolvedValueOnce(demandResult('d-v2'));
     const trace = useInventoryMaterialDemandTrace();
@@ -64,16 +64,24 @@ describe('useInventoryMaterialDemandTrace', () => {
     await trace.open(supplyItem('9', 'mv-v1'));
     await trace.open(supplyItem('9', 'mv-v2'));
 
-    expect(productionApi.listInventoryMaterialDemandTrace).toHaveBeenNthCalledWith(1, '9', {
-      materialVariantId: 'mv-v1',
-      page: 1,
-      pageSize: 10,
-    });
-    expect(productionApi.listInventoryMaterialDemandTrace).toHaveBeenNthCalledWith(2, '9', {
-      materialVariantId: 'mv-v2',
-      page: 1,
-      pageSize: 10,
-    });
+    expect(productionInventoryApi.listInventoryMaterialDemandTrace).toHaveBeenNthCalledWith(
+      1,
+      '9',
+      {
+        materialVariantId: 'mv-v1',
+        page: 1,
+        pageSize: 10,
+      },
+    );
+    expect(productionInventoryApi.listInventoryMaterialDemandTrace).toHaveBeenNthCalledWith(
+      2,
+      '9',
+      {
+        materialVariantId: 'mv-v2',
+        page: 1,
+        pageSize: 10,
+      },
+    );
     expect(trace.selectedItem.value?.materialVariantId).toBe('mv-v2');
     expect(trace.items.value).toEqual([{ demandId: 'd-v2' }]);
   });
@@ -81,7 +89,7 @@ describe('useInventoryMaterialDemandTrace', () => {
   it('drops a late drill-down response after opening another version', async () => {
     let resolveFirst!: (value: unknown) => void;
     let resolveSecond!: (value: unknown) => void;
-    vi.mocked(productionApi.listInventoryMaterialDemandTrace)
+    vi.mocked(productionInventoryApi.listInventoryMaterialDemandTrace)
       .mockImplementationOnce(
         () =>
           new Promise((resolve) => {
@@ -109,7 +117,7 @@ describe('useInventoryMaterialDemandTrace', () => {
   });
 
   it('keeps the selected version on pagination and page-size changes', async () => {
-    vi.mocked(productionApi.listInventoryMaterialDemandTrace).mockResolvedValue({
+    vi.mocked(productionInventoryApi.listInventoryMaterialDemandTrace).mockResolvedValue({
       items: [],
       total: 12,
       page: 1,
@@ -122,7 +130,7 @@ describe('useInventoryMaterialDemandTrace', () => {
 
     expect(trace.currentPage.value).toBe(1);
     expect(trace.pageSize.value).toBe(25);
-    expect(productionApi.listInventoryMaterialDemandTrace).toHaveBeenLastCalledWith('9', {
+    expect(productionInventoryApi.listInventoryMaterialDemandTrace).toHaveBeenLastCalledWith('9', {
       materialVariantId: 'mv-v1',
       page: 1,
       pageSize: 25,

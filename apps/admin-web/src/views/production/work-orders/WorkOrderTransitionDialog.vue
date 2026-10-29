@@ -1,0 +1,275 @@
+<template>
+  <el-dialog
+    :model-value="visible"
+    :title="dialogTitle"
+    :width="DialogWidth.lg"
+    @update:model-value="$emit('update:visible', $event)"
+  >
+    <template v-if="order">
+      <el-alert
+        :title="alertTitle"
+        :description="alertDescription"
+        :type="alertType"
+        :closable="false"
+        show-icon
+        class="transition-alert"
+      />
+
+      <el-descriptions
+        :column="3"
+        border
+      >
+        <el-descriptions-item label="工单号">{{ order.workOrderNo }}</el-descriptions-item>
+        <el-descriptions-item label="当前状态">
+          {{ orderStatusMeta(order.status).label }}
+        </el-descriptions-item>
+        <el-descriptions-item label="产品">
+          {{ order.productCode }} · {{ order.productName }}
+        </el-descriptions-item>
+        <el-descriptions-item label="计划数量">
+          {{ formatQuantity(order.plannedQuantity) }} {{ order.unit }}
+        </el-descriptions-item>
+        <el-descriptions-item label="审定计划内产出">
+          {{ formatQuantity(approvedPlannedQuantity) }} {{ order.unit }}
+        </el-descriptions-item>
+        <el-descriptions-item label="批次汇总">
+          非取消 {{ activeBatches.length }} 个，未完成结案 {{ unfinishedBatches.length }} 个
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <div class="dialog-section-title">所属生产批次</div>
+      <el-table
+        v-if="order.batches.length"
+        :data="order.batches"
+        class="batch-summary-table"
+        max-height="280"
+      >
+        <el-table-column
+          prop="batchNo"
+          label="生产批次号"
+          min-width="170"
+        />
+        <el-table-column
+          label="计划数量"
+          width="120"
+          align="right"
+        >
+          <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
+        </el-table-column>
+        <el-table-column
+          label="当前批准产出"
+          min-width="230"
+        >
+          <template #default="{ row }"><BatchApprovedOutput :output="row.finalOutput" /></template>
+        </el-table-column>
+        <el-table-column
+          label="状态"
+          width="130"
+        >
+          <template #default="{ row }">
+            <el-tag
+              :type="batchStatusMeta(row.status).type"
+              effect="light"
+            >
+              {{ batchStatusMeta(row.status).label }}
+            </el-tag>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div
+        v-else
+        class="empty-hint"
+      >
+        暂无生产批次
+      </div>
+
+      <el-form
+        v-if="mode === 'early-close'"
+        label-position="top"
+        class="reason-form"
+      >
+        <el-form-item
+          label="关闭原因"
+          required
+          :error="reasonTouched && !trimmedReason ? '请填写提前关闭原因' : ''"
+        >
+          <el-input
+            v-model="reason"
+            type="textarea"
+            :rows="3"
+            maxlength="5000"
+            show-word-limit
+            placeholder="说明本轮结束或提前结案原因"
+            @blur="reasonTouched = true"
+          />
+        </el-form-item>
+      </el-form>
+    </template>
+
+    <template #footer>
+      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button
+        :type="mode === 'early-close' ? 'danger' : 'primary'"
+        :loading="submitting"
+        :disabled="!canSubmit"
+        @click="submit"
+      >
+        {{ confirmText }}
+      </el-button>
+    </template>
+  </el-dialog>
+</template>
+
+<script setup lang="ts">
+import { computed, ref, watch } from 'vue';
+import type { WorkOrderDetail } from '@company/contracts';
+import { DialogWidth } from '../../../utils/dialog';
+import { formatQuantity } from '../../../utils/quantity';
+import { batchStatusMeta, orderStatusMeta } from '../shared/production-status';
+import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
+import type { WorkOrderTransitionMode, WorkOrderTransitionValue } from './work-order-transition';
+
+const props = defineProps<{
+  visible: boolean;
+  mode: WorkOrderTransitionMode;
+  order: WorkOrderDetail | null;
+  submitting: boolean;
+}>();
+
+const emit = defineEmits<{
+  (e: 'update:visible', value: boolean): void;
+  (e: 'confirm', value: WorkOrderTransitionValue): void;
+}>();
+
+const reason = ref('');
+const reasonTouched = ref(false);
+const integerQuantity = (value: string | number): number => Number(value);
+const activeBatches = computed(() =>
+  (props.order?.batches ?? []).filter((batch) => batch.status !== 'cancelled'),
+);
+const unfinishedBatches = computed(() =>
+  activeBatches.value.filter(
+    (batch) =>
+      (batch.status !== 'completed' && batch.status !== 'terminated') ||
+      !batch.currentOutputRevisionId ||
+      !batch.finalOutput,
+  ),
+);
+const approvedPlannedQuantity = computed(() =>
+  activeBatches.value.reduce(
+    (sum, batch) => sum + integerQuantity(batch.finalOutput?.availableQuantity ?? 0),
+    0,
+  ),
+);
+const plannedQuantity = computed(() => integerQuantity(props.order?.plannedQuantity ?? 0));
+const isFullyProduced = computed(
+  () =>
+    activeBatches.value.length > 0 &&
+    activeBatches.value.every(
+      (batch) => batch.status === 'completed' && batch.currentOutputRevisionId && batch.finalOutput,
+    ) &&
+    approvedPlannedQuantity.value === plannedQuantity.value,
+);
+const canComplete = computed(() => isFullyProduced.value);
+const trimmedReason = computed(() => reason.value.trim());
+const canEarlyClose = computed(
+  () =>
+    unfinishedBatches.value.length === 0 && !isFullyProduced.value && Boolean(trimmedReason.value),
+);
+const canSubmit = computed(() => {
+  if (props.submitting || !props.order) return false;
+  if (props.mode === 'complete') return canComplete.value;
+  if (props.mode === 'early-close') return canEarlyClose.value;
+  return props.order.status === 'completed';
+});
+
+const dialogTitle = computed(() => {
+  if (props.mode === 'complete') return '确认工单完工';
+  if (props.mode === 'early-close') return '提前关闭工单';
+  return '归档关闭工单';
+});
+const confirmText = computed(() => {
+  if (props.mode === 'complete') return '确认工单完工';
+  if (props.mode === 'early-close') return '确认提前关闭';
+  return '确认归档关闭';
+});
+const alertType = computed<'success' | 'warning' | 'error' | 'info'>(() => {
+  if (props.mode === 'archive') return 'info';
+  if (unfinishedBatches.value.length > 0) return 'error';
+  if (props.mode === 'complete') return canComplete.value ? 'success' : 'warning';
+  return isFullyProduced.value ? 'warning' : 'warning';
+});
+const alertTitle = computed(() => {
+  if (props.mode === 'archive') return '归档后工单进入终态，不能继续生产操作';
+  if (unfinishedBatches.value.length > 0) return '存在未完成结案的生产批次，当前不能提交';
+  if (props.mode === 'complete')
+    return canComplete.value ? '审定计划内产出已达到工单计划量' : '当前尚未达到工单完工条件';
+  if (isFullyProduced.value) return '审定计划内产出已足量，请改用“确认工单完工”';
+  if (activeBatches.value.some((batch) => batch.status === 'terminated'))
+    return '该操作将按结束生产结案';
+  return activeBatches.value.length === 0 ? '该操作将按未生产结案' : '该操作将按不足量结案';
+});
+const alertDescription = computed(() => {
+  if (unfinishedBatches.value.length > 0)
+    return `请先完成各批次结案审批，或取消尚未执行的批次：${unfinishedBatches.value
+      .map((batch) => `${batch.batchNo}（${batchStatusMeta(batch.status).label}）`)
+      .join('、')}`;
+  if (props.mode === 'complete')
+    return canComplete.value
+      ? '请管理员复核工单及各批次当前批准清单；确认后工单状态变为“已完工”。'
+      : '所有非取消批次必须正常完成并有批准清单，审定计划内产出合计必须等于工单计划量；含提前结束批次时办理提前关闭。';
+  if (props.mode === 'early-close')
+    return isFullyProduced.value
+      ? '足量生产不能按提前结案处理，应先确认完工，再执行行政归档。'
+      : '产出仅汇总各批次当前批准清单，不使用报工量或入库量。提前关闭不会自动取消批次，关闭原因随命令留存。';
+  return '归档用于收纳已完工工单，不改变生产记录。';
+});
+
+watch(
+  () => [props.visible, props.mode, props.order?.id],
+  ([visible]) => {
+    if (visible) {
+      reason.value = '';
+      reasonTouched.value = false;
+    }
+  },
+);
+
+const submit = (): void => {
+  if (props.mode === 'early-close') reasonTouched.value = true;
+  if (!canSubmit.value) return;
+  emit('confirm', {
+    mode: props.mode,
+    reason: props.mode === 'early-close' ? trimmedReason.value : null,
+  });
+};
+</script>
+
+<style scoped>
+.transition-alert {
+  margin-bottom: 16px;
+}
+.dialog-section-title {
+  margin: 20px 0 12px;
+  color: #1f2937;
+  font-size: 16px;
+  font-weight: 600;
+}
+.batch-summary-table {
+  width: 100%;
+}
+.batch-summary-table :deep(.el-table__header th) {
+  background: #f9fafb;
+  color: #1f2937;
+}
+.empty-hint {
+  padding: 24px;
+  border: 1px dashed #e5e7eb;
+  border-radius: 6px;
+  text-align: center;
+  color: #9ca3af;
+}
+.reason-form {
+  margin-top: 18px;
+}
+</style>

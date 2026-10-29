@@ -225,7 +225,7 @@ import {
 import { useAuthStore } from '../../../stores/auth';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { formatQuantity } from '../../production/production-status';
+import { formatQuantity } from '../../../utils/quantity';
 import InboundGroupHeader from './InboundGroupHeader.vue';
 
 defineOptions({ name: 'FinishedGoodsInboundHistoryGroups' });

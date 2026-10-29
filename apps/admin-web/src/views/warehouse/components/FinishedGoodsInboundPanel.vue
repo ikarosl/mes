@@ -266,7 +266,7 @@ import {
   FINISHED_GOODS_INBOUND_SOURCE_LABELS,
   PERMISSIONS,
 } from '@company/constants';
-import { productionApi } from '../../../api/production';
+import { productionInboundsApi } from '../../../api/production/inbounds';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
@@ -339,7 +339,7 @@ async function loadCandidates(): Promise<void> {
   candidateLoading.value = true;
   candidateError.value = '';
   try {
-    const page = await productionApi.finishedGoodsInboundCandidates({
+    const page = await productionInboundsApi.finishedGoodsInboundCandidates({
       keyword: candidateKeyword.value.trim() || undefined,
       sourceType: candidateSource.value || undefined,
       page: candidatePage.value,

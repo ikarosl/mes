@@ -10,6 +10,12 @@
 
 使用 `useXxxList/Options/Editor` 区分职责，`loadXxx/refreshXxx` 按资源命名。通用组件当前由 `src/components` 所有；出现第二个独立前端消费者且 API 稳定后才评审提取 workspace UI 包。
 
+业务代码位于 `src/views/<业务>`，规模较大的业务按一起变化的能力聚合页面、业务弹窗、composable、展示函数与草稿类型。Production 分为工单、任务、物料、执行、收尾与追溯；执行中的报工和异常处理继续按各自流程聚合。仅模块内部共用的展示放在该模块 `shared`，不因多个业务页面使用就提升到应用公共层。目录规模较小时直接放文件，组件或状态逻辑增多后再按需分子目录；测试跟随对应代码放相邻 `__tests__`。
+
+页面负责列表、路由定位与编辑器组合；业务编辑器可以持有对象详情、草稿、版本、写意图及关闭保护，纯展示组件只接收数据和发出事件。跨文件使用的表单类型由所属能力的 TypeScript 文件维护，不要求消费方从 Vue 组件导入。应用通用的响应式状态与生命周期机制归 `src/composables`，纯计算和格式化归 `src/utils`；模板选择与查询归 `src/views/template`。Production 与 Template 的跨业务复用通过各自 `public.ts` 明确导出，模块内直接引用所属文件；路由装配直接引用页面入口，不借公开入口暴露全部内部实现。
+
+HTTP 封装集中在 `src/api`，按接口能力拆分具名客户端；各客户端只处理请求协议，不能拥有页面草稿或生成写意图。接口 URL、权限和业务所有权继续由 API 契约决定，不从前端目录名或菜单分组推导。应用装配、布局、路由和导航的职责由[路由与标签页](route-dialogs-and-tabs.md#代码职责)维护。
+
 管理端的业务日历日期以 `YYYY-MM-DD` 原样处理，不因浏览器时区平移。API 时刻必须有 `Z` 或显式偏移，展示统一换算为北京时间；日期时间控件以北京墙上时间显示和编辑，提交时明确转为 `+08:00`。日志范围筛选、通知、审批、详情和打印遵守同一边界，不依赖浏览器本地时区。公共转换位于 `@company/utils`，管理端 `src/utils/date.ts` 只处理空值和控件适配。
 
 ## 2. 草稿与关键详情
@@ -28,7 +34,7 @@
 
 ### 4.1 存量 options 设计：停止使用与维护
 
-自建 options 设计属于存量遗留：禁止新增消费方、维护、扩展或增强该方案。范围是 [useRefreshableOptions](../src/composables/options/useRefreshableOptions.ts)、[composables/options](../src/composables/options/) 下现有资源封装、模块内以它为基础的 [useWorkOrderOptions](../src/views/production/composables/useWorkOrderOptions.ts)／[useProcessStepOptions](../src/views/product/composables/useProcessStepOptions.ts)，以及 [buildLiveOptions/hasUnavailableSelection](../src/utils/live-options.ts) 配套的已选值合并、缺项判断与激活／下拉展开自动刷新接入。存量页面尚有依赖，随消费方逐步替换后再移除，不能直接删除使现有页面失效；迁移状态见[路线图](../../../docs/roadmap.md#选择组件与刷新策略存量替换)。
+自建 options 设计属于存量遗留：禁止新增消费方、维护、扩展或增强该方案。范围是 [useRefreshableOptions](../src/composables/options/useRefreshableOptions.ts)、[composables/options](../src/composables/options/) 下现有资源封装、模块内以它为基础的 [useWorkOrderOptions](../src/views/production/work-orders/use-work-order-options.ts)／[useProcessStepOptions](../src/views/product/composables/useProcessStepOptions.ts)，以及 [buildLiveOptions/hasUnavailableSelection](../src/utils/live-options.ts) 配套的已选值合并、缺项判断与激活／下拉展开自动刷新接入。存量页面尚有依赖，随消费方逐步替换后再移除，不能直接删除使现有页面失效；迁移状态见[路线图](../../../docs/roadmap.md#选择组件与刷新策略存量替换)。
 
 存量工具每次 `refresh()` 都发新请求，不合并在途请求，也没有全局候选缓存；请求代际保护最后一次响应，失败保留本实例上次成功快照并局部提示，消费方另查状态，不能将 await 返回当作成功。部分存量封装使用远程关键词及 `includeIds`，停用范围包括这些封装，不仅限于“全量下拉”。
 

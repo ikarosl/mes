@@ -11,9 +11,9 @@ describe('productionApi', () => {
   });
 
   it('lists one material active demand trace with server pagination', async () => {
-    const { productionApi } = await import('../production');
+    const { productionInventoryApi } = await import('../production/inventory');
 
-    await productionApi.listInventoryMaterialDemandTrace('9', {
+    await productionInventoryApi.listInventoryMaterialDemandTrace('9', {
       materialVariantId: 'mv-9',
       page: 2,
       pageSize: 20,
@@ -26,12 +26,12 @@ describe('productionApi', () => {
   });
 
   it('lists work orders with query params', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
     request.mockResolvedValue({
       data: { items: [], total: 0, page: 1, pageSize: 10 },
     });
 
-    await productionApi.listOrders({ page: 1, pageSize: 10, status: 'draft' });
+    await productionWorkOrdersApi.listOrders({ page: 1, pageSize: 10, status: 'draft' });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
@@ -40,9 +40,9 @@ describe('productionApi', () => {
   });
 
   it('lists work orders with keyword filter', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.listOrders({ keyword: 'WO-001' });
+    await productionWorkOrdersApi.listOrders({ keyword: 'WO-001' });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders',
@@ -51,9 +51,9 @@ describe('productionApi', () => {
   });
 
   it('gets work order detail', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.getOrder('42');
+    await productionWorkOrdersApi.getOrder('42');
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/42',
@@ -61,9 +61,9 @@ describe('productionApi', () => {
   });
 
   it('creates a work order with required fields', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.createOrder(
+    await productionWorkOrdersApi.createOrder(
       {
         orderType: 'mass_production',
         productId: '1',
@@ -90,9 +90,9 @@ describe('productionApi', () => {
   });
 
   it('creates a work order with all optional fields', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.createOrder(
+    await productionWorkOrdersApi.createOrder(
       {
         orderType: 'research',
         productId: '2',
@@ -129,9 +129,9 @@ describe('productionApi', () => {
   });
 
   it('updates a work order with version', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.updateOrder('1', {
+    await productionWorkOrdersApi.updateOrder('1', {
       externalOrderNo: 'CO-001',
       remark: '加急',
       version: 0,
@@ -145,9 +145,9 @@ describe('productionApi', () => {
   });
 
   it('updates a work order with new fields', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.updateOrder('1', {
+    await productionWorkOrdersApi.updateOrder('1', {
       productId: '2',
       plannedQuantity: 75,
       workOrderOwnerId: 'u2',
@@ -175,9 +175,9 @@ describe('productionApi', () => {
   });
 
   it('releases an order via the semantic action endpoint', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.releaseOrder('1', 1);
+    await productionWorkOrdersApi.releaseOrder('1', 1);
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/actions/release',
@@ -187,9 +187,9 @@ describe('productionApi', () => {
   });
 
   it('cancels order via cancel action', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.cancelOrder('2', { version: 0, reason: '计划取消' });
+    await productionWorkOrdersApi.cancelOrder('2', { version: 0, reason: '计划取消' });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/2/actions/cancel',
@@ -199,9 +199,9 @@ describe('productionApi', () => {
   });
 
   it('closes order via close action', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.closeOrder('3', { version: 2, reason: '计划终止' });
+    await productionWorkOrdersApi.closeOrder('3', { version: 2, reason: '计划终止' });
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/3/actions/close',
@@ -211,9 +211,9 @@ describe('productionApi', () => {
   });
 
   it('completes an order only through the explicit completion endpoint', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.completeOrder('3', 2);
+    await productionWorkOrdersApi.completeOrder('3', 2);
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/3/actions/complete',
@@ -223,10 +223,10 @@ describe('productionApi', () => {
   });
 
   it('loads the cancellation impact and cancels a production task with a reason', async () => {
-    const { productionApi } = await import('../production');
+    const { productionTasksApi } = await import('../production/tasks');
 
-    await productionApi.getBatchCancellationCheck('8');
-    await productionApi.cancelBatch('8', { version: 4, reason: '计划调整' });
+    await productionTasksApi.getBatchCancellationCheck('8');
+    await productionTasksApi.cancelBatch('8', { version: 4, reason: '计划调整' });
 
     expect(request).toHaveBeenNthCalledWith(1, {
       url: '/production/batches/8/cancellation-check',
@@ -239,9 +239,13 @@ describe('productionApi', () => {
   });
 
   it('creates a batch under a work order with the supplied idempotency key', async () => {
-    const { productionApi } = await import('../production');
+    const { productionTasksApi } = await import('../production/tasks');
 
-    await productionApi.createOrderBatch('1', { plannedQuantity: 50, ownerId: 'u1' }, 'k1-uuid');
+    await productionTasksApi.createOrderBatch(
+      '1',
+      { plannedQuantity: 50, ownerId: 'u1' },
+      'k1-uuid',
+    );
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/work-orders/1/batches',
@@ -252,9 +256,9 @@ describe('productionApi', () => {
   });
 
   it('lists batches with combined query', async () => {
-    const { productionApi } = await import('../production');
+    const { productionTasksApi } = await import('../production/tasks');
 
-    await productionApi.listBatches({
+    await productionTasksApi.listBatches({
       page: 1,
       pageSize: 20,
       status: 'doing',
@@ -269,8 +273,12 @@ describe('productionApi', () => {
   });
 
   it('lists execution batch summaries without per-row detail requests', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.listExecutionBatchSummaries({ page: 2, pageSize: 20, keyword: 'PB' });
+    const { productionExecutionApi } = await import('../production/execution');
+    await productionExecutionApi.listExecutionBatchSummaries({
+      page: 2,
+      pageSize: 20,
+      keyword: 'PB',
+    });
     expect(request).toHaveBeenCalledWith({
       url: '/production/execution-batches',
       params: { page: 2, pageSize: 20, keyword: 'PB' },
@@ -278,9 +286,9 @@ describe('productionApi', () => {
   });
 
   it('gets batch detail', async () => {
-    const { productionApi } = await import('../production');
+    const { productionTasksApi } = await import('../production/tasks');
 
-    await productionApi.getBatch('5');
+    await productionTasksApi.getBatch('5');
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/5',
@@ -288,9 +296,9 @@ describe('productionApi', () => {
   });
 
   it('updates a batch with version', async () => {
-    const { productionApi } = await import('../production');
+    const { productionTasksApi } = await import('../production/tasks');
 
-    await productionApi.updateBatch('1', {
+    await productionTasksApi.updateBatch('1', {
       ownerId: 'u2',
       remark: '更换负责人',
       version: 0,
@@ -304,9 +312,9 @@ describe('productionApi', () => {
   });
 
   it('updates a generated step execution override with the step version', async () => {
-    const { productionApi } = await import('../production');
+    const { productionTasksApi } = await import('../production/tasks');
 
-    await productionApi.updateBatchStepExecution('1', '9', {
+    await productionTasksApi.updateBatchStepExecution('1', '9', {
       version: 2,
       actualSopFileId: '7',
     });
@@ -319,7 +327,7 @@ describe('productionApi', () => {
   });
 
   it('configures explicit material variants with an idempotency key', async () => {
-    const { productionApi } = await import('../production');
+    const { productionMaterialDemandsApi } = await import('../production/material-demands');
     request.mockResolvedValueOnce({ data: { configured: true } });
     const data = {
       requirements: [
@@ -333,7 +341,7 @@ describe('productionApi', () => {
       ],
     };
 
-    await productionApi.configureMaterialDemands('1', data, 'configure-key');
+    await productionMaterialDemandsApi.configureMaterialDemands('1', data, 'configure-key');
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/material-demands/configurations',
@@ -344,7 +352,7 @@ describe('productionApi', () => {
   });
 
   it('adds manually selected variants under the production batch with an idempotency key', async () => {
-    const { productionApi } = await import('../production');
+    const { productionMaterialDemandsApi } = await import('../production/material-demands');
     const data = {
       reason: '生产补充',
       requirements: [
@@ -358,7 +366,7 @@ describe('productionApi', () => {
     request.mockResolvedValueOnce({
       data: { additionId: '1', additionNo: 'ADD-1', demandIds: ['2'] },
     });
-    await productionApi.addManualMaterialDemands('batch-1', data, 'manual-key');
+    await productionMaterialDemandsApi.addManualMaterialDemands('batch-1', data, 'manual-key');
 
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/batch-1/material-demands/additions',
@@ -369,9 +377,9 @@ describe('productionApi', () => {
   });
 
   it('creates material allocations with the supplied idempotency key', async () => {
-    const { productionApi } = await import('../production');
+    const { productionMaterialAllocationsApi } = await import('../production/material-allocations');
     const data = { allocations: [{ demandId: '2', itemBatchId: '3', assignedQuantity: 1 }] };
-    await productionApi.createMaterialAllocations('1', data, 'allocation-key');
+    await productionMaterialAllocationsApi.createMaterialAllocations('1', data, 'allocation-key');
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/material-allocations',
       method: 'POST',
@@ -381,8 +389,8 @@ describe('productionApi', () => {
   });
 
   it('does not send an idempotency key when releasing an allocation', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.releaseMaterialAllocation('1', '9', 2);
+    const { productionMaterialAllocationsApi } = await import('../production/material-allocations');
+    await productionMaterialAllocationsApi.releaseMaterialAllocation('1', '9', 2);
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/material-allocations/9/actions/release',
       method: 'POST',
@@ -391,7 +399,7 @@ describe('productionApi', () => {
   });
 
   it('creates production material outbound with the supplied idempotency key', async () => {
-    const { productionApi } = await import('../production');
+    const { productionMaterialOutboundsApi } = await import('../production/material-outbounds');
     const data = { details: [{ allocationId: '9', outboundQuantity: 2 }], remark: null };
     request.mockResolvedValueOnce({
       data: {
@@ -403,7 +411,7 @@ describe('productionApi', () => {
         },
       },
     });
-    await productionApi.createMaterialOutbound('1', data, 'outbound-key');
+    await productionMaterialOutboundsApi.createMaterialOutbound('1', data, 'outbound-key');
     expect(request).toHaveBeenCalledWith({
       url: '/production/batches/1/material-outbounds',
       method: 'POST',
@@ -413,17 +421,20 @@ describe('productionApi', () => {
   });
 
   it('uses real material outbound list, detail, candidate, confirm and cancel endpoints', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.listMaterialOutboundOrders({
+    const { productionMaterialOutboundsApi } = await import('../production/material-outbounds');
+    await productionMaterialOutboundsApi.listMaterialOutboundOrders({
       page: 1,
       pageSize: 20,
       status: 'pending_picking',
     });
-    await productionApi.getMaterialOutbound('8');
-    await productionApi.listMaterialOutboundBatchOptions();
-    await productionApi.listMaterialOutboundCandidates('3');
-    await productionApi.confirmMaterialOutbound('8', 0, 'confirm-key');
-    await productionApi.cancelMaterialOutbound('9', { version: 1, reason: '计划调整' });
+    await productionMaterialOutboundsApi.getMaterialOutbound('8');
+    await productionMaterialOutboundsApi.listMaterialOutboundBatchOptions();
+    await productionMaterialOutboundsApi.listMaterialOutboundCandidates('3');
+    await productionMaterialOutboundsApi.confirmMaterialOutbound('8', 0, 'confirm-key');
+    await productionMaterialOutboundsApi.cancelMaterialOutbound('9', {
+      version: 1,
+      reason: '计划调整',
+    });
     expect(request.mock.calls.slice(-6).map(([config]) => config)).toEqual([
       {
         url: '/production/material-outbounds',
@@ -457,11 +468,12 @@ describe('productionApi', () => {
   });
 
   it('uses read-only Production purchase inbound and inventory endpoints', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
-    await productionApi.getPurchaseInbound('7');
-    await productionApi.listInventoryBatches({ page: 1, pageSize: 20 });
-    await productionApi.getInventoryBatch('9');
+    const { productionInboundsApi } = await import('../production/inbounds');
+    const { productionInventoryApi } = await import('../production/inventory');
+    await productionInboundsApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
+    await productionInboundsApi.getPurchaseInbound('7');
+    await productionInventoryApi.listInventoryBatches({ page: 1, pageSize: 20 });
+    await productionInventoryApi.getInventoryBatch('9');
     expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
       {
         url: '/production/purchase-inbounds',
@@ -481,10 +493,10 @@ describe('productionApi', () => {
   });
 
   it('uses semantic step assignment routes without idempotency headers', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.assignStep('1', '9', '7', 0);
-    await productionApi.unassignStep('1', '9', 1);
-    await productionApi.reassignStep('1', '9', '8', 2);
+    const { productionTasksApi } = await import('../production/tasks');
+    await productionTasksApi.assignStep('1', '9', '7', 0);
+    await productionTasksApi.unassignStep('1', '9', 1);
+    await productionTasksApi.reassignStep('1', '9', '8', 2);
     expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
       {
         url: '/production/batches/1/step-records/9/actions/assign',
@@ -505,10 +517,10 @@ describe('productionApi', () => {
   });
 
   it('uses the employee SOP snapshot download route', async () => {
-    const { productionApi } = await import('../production');
+    const { productionExecutionApi } = await import('../production/execution');
     request.mockResolvedValue({ data: new Blob(['sop']) });
 
-    await productionApi.workerTaskSopContent('1', '9');
+    await productionExecutionApi.workerTaskSopContent('1', '9');
 
     expect(request.mock.calls.slice(-1).map(([config]) => config)).toEqual([
       {
@@ -520,9 +532,9 @@ describe('productionApi', () => {
   });
 
   it('lists current employee tasks and starts a step with its version', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.listWorkerTasks({ page: 1, pageSize: 20 });
-    await productionApi.startStep('1', '9', 3);
+    const { productionExecutionApi } = await import('../production/execution');
+    await productionExecutionApi.listWorkerTasks({ page: 1, pageSize: 20 });
+    await productionExecutionApi.startStep('1', '9', 3);
     expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
       { url: '/production/worker-tasks', params: { page: 1, pageSize: 20 } },
       {
@@ -534,9 +546,9 @@ describe('productionApi', () => {
   });
 
   it('checks and explicitly completes production execution with a versioned idempotent command', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.getExecutionCompletionCheck('1');
-    await productionApi.completeProductionExecution(
+    const { productionExecutionApi } = await import('../production/execution');
+    await productionExecutionApi.getExecutionCompletionCheck('1');
+    await productionExecutionApi.completeProductionExecution(
       '1',
       { version: 4, closeoutVersion: null },
       'k2-uuid',
@@ -554,9 +566,9 @@ describe('productionApi', () => {
   });
 
   it('uses read-only Production trace endpoints without warehouse API ownership', async () => {
-    const { productionApi } = await import('../production');
-    await productionApi.searchProductionTrace({ keyword: 'IB-1', page: 1, pageSize: 20 });
-    await productionApi.getProductionTrace('7');
+    const { productionTraceApi } = await import('../production/trace');
+    await productionTraceApi.searchProductionTrace({ keyword: 'IB-1', page: 1, pageSize: 20 });
+    await productionTraceApi.getProductionTrace('7');
     expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
       {
         url: '/production/trace',
@@ -567,12 +579,15 @@ describe('productionApi', () => {
   });
 
   it('uses idempotency only for report creation and correction, not reversal', async () => {
-    const { productionApi } = await import('../production');
+    const { productionStepReportsApi } = await import('../production/step-reports');
     const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 0, remark: null };
-    await productionApi.createStepReport('1', '9', createBody, 'report-key');
-    await productionApi.reverseStepReport('1', '9', '12', { version: 4, reason: '录入错误' });
+    await productionStepReportsApi.createStepReport('1', '9', createBody, 'report-key');
+    await productionStepReportsApi.reverseStepReport('1', '9', '12', {
+      version: 4,
+      reason: '录入错误',
+    });
     const correctBody = { version: 4, normalQuantity: 2, reason: '修正' };
-    await productionApi.correctStepReport('1', '9', '12', correctBody, 'correct-key');
+    await productionStepReportsApi.correctStepReport('1', '9', '12', correctBody, 'correct-key');
     expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
       {
         url: '/production/batches/1/step-records/9/reports',
@@ -595,7 +610,8 @@ describe('productionApi', () => {
   });
 
   it('loads supplement candidates and walks the draft save and confirm flow with idempotency', async () => {
-    const { productionApi } = await import('../production');
+    const { productionAbnormalDispositionsApi } =
+      await import('../production/abnormal-dispositions');
     const saveBody = {
       planVersion: null,
       dispositionVersion: 0,
@@ -609,10 +625,10 @@ describe('productionApi', () => {
       ],
       remark: '补料',
     };
-    await productionApi.listSupplementCandidates('8');
-    await productionApi.getScrapSupplementPlan('8');
-    await productionApi.saveScrapSupplementPlan('8', saveBody);
-    await productionApi.confirmScrapSupplementPlan(
+    await productionAbnormalDispositionsApi.listSupplementCandidates('8');
+    await productionAbnormalDispositionsApi.getScrapSupplementPlan('8');
+    await productionAbnormalDispositionsApi.saveScrapSupplementPlan('8', saveBody);
+    await productionAbnormalDispositionsApi.confirmScrapSupplementPlan(
       '8',
       { version: 0, dispositionVersion: 0 },
       'supplement-key',
@@ -637,10 +653,11 @@ describe('productionApi', () => {
   });
 
   it('passes through a null scrap supplement plan for a disposition without a draft', async () => {
-    const { productionApi } = await import('../production');
+    const { productionAbnormalDispositionsApi } =
+      await import('../production/abnormal-dispositions');
     request.mockResolvedValue({ data: null });
 
-    const plan = await productionApi.getScrapSupplementPlan('8');
+    const plan = await productionAbnormalDispositionsApi.getScrapSupplementPlan('8');
 
     expect(plan).toBeNull();
     expect(request).toHaveBeenCalledWith({
@@ -658,19 +675,19 @@ describe('productionApi', () => {
     request.mockRejectedValue(
       new axios.AxiosError('Network Error', 'ECONNABORTED', undefined, undefined, response),
     );
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await expect(productionApi.listOrders({})).rejects.toThrow(RequestError);
-    await expect(productionApi.listOrders({})).rejects.toMatchObject({
+    await expect(productionWorkOrdersApi.listOrders({})).rejects.toThrow(RequestError);
+    await expect(productionWorkOrdersApi.listOrders({})).rejects.toMatchObject({
       status: 500,
       code: 'SERVER_ERROR',
     });
   });
 
   it('strips keyword whitespace for list orders', async () => {
-    const { productionApi } = await import('../production');
+    const { productionWorkOrdersApi } = await import('../production/work-orders');
 
-    await productionApi.listOrders({ keyword: '  WO-001  ' });
+    await productionWorkOrdersApi.listOrders({ keyword: '  WO-001  ' });
 
     // API 客户端原样传递参数；裁剪处理由控制器负责。
     expect(request).toHaveBeenCalledWith({

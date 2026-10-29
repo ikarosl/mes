@@ -1,7 +1,7 @@
 import { reactive, ref, watch } from 'vue';
 import type { Ref } from 'vue';
 import type { InventoryBatchItem, InventoryBatchQuery } from '@company/contracts';
-import { productionApi } from '../../../api/production';
+import { productionInventoryApi } from '../../../api/production/inventory';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 
@@ -46,7 +46,7 @@ export function useInventoryBatchList(
     loading.value = true;
     error.value = false;
     try {
-      const result = await productionApi.listInventoryBatches(
+      const result = await productionInventoryApi.listInventoryBatches(
         {
           ...query,
           itemKind,

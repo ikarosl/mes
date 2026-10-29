@@ -193,11 +193,11 @@ import type {
   FinishedGoodsInboundCommandResult,
 } from '@company/contracts';
 import { FINISHED_GOODS_INBOUND_SOURCE_LABELS } from '@company/constants';
-import { productionApi } from '../../../api/production';
+import { productionInboundsApi } from '../../../api/production/inbounds';
 import { useProcurementCommand } from '../../procurement/composables/useProcurementCommand';
 import { EMessage } from '../../../utils/message';
 import { DialogWidth } from '../../../utils/dialog';
-import { formatQuantity } from '../../production/production-status';
+import { formatQuantity } from '../../../utils/quantity';
 import { parseInboundQuantity } from '../inbound-quantity';
 import {
   buildInboundNewBatchGroups,
@@ -358,7 +358,7 @@ async function recheck(adopt: boolean): Promise<boolean> {
     let page = 1;
     let total = Infinity;
     while (ids.size && (page - 1) * 100 < total) {
-      const result = await productionApi.finishedGoodsInboundCandidates({
+      const result = await productionInboundsApi.finishedGoodsInboundCandidates({
         keyword: selected.value[0]!.source.batchNo,
         page,
         pageSize: 100,
@@ -411,7 +411,7 @@ async function confirm(): Promise<void> {
   };
   await command.run(
     { intentType: 'production.finished-inbound.confirm', params: {}, query: {}, body },
-    (key) => productionApi.confirmFinishedGoodsInbound(body, key),
+    (key) => productionInboundsApi.confirmFinishedGoodsInbound(body, key),
     '成品入库已确认',
   );
 }

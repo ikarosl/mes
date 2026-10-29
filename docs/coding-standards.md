@@ -57,7 +57,7 @@
 - 使用 Composition API 和 `<script setup lang="ts">`，Props、Emits、模板引用必须有类型。
 - 状态归属、composable 复用、候选刷新及失败处理遵守[管理端架构](../apps/admin-web/docs/architecture.md)，不在本规范另存副本。
 
-- Vue 单文件超过 1000 行时，优先把列表状态、服务端分页和可复用副作用提取到 `views/<模块>/composables/useXxx.ts`（视图与状态分离），再按需拆分弹窗组件；模板和样式不是拆分对象，禁止机械拆行数。
+- Vue 单文件超过 1000 行时，优先把列表状态、服务端分页和可复用副作用提取为所属业务能力的 composable（视图与状态分离），目录与状态所有权遵守[管理端架构](../apps/admin-web/docs/architecture.md#1-分层与状态所有权)，再按需拆分弹窗组件；模板和样式不是拆分对象，禁止机械拆行数。
 - HTTP 只通过 `src/api` 封装，不在组件创建 Axios 实例。
 - `.vue` 不重复声明业务编码与中文映射；复用 shared constants 和格式化函数。
 - `v-for` 使用稳定业务 ID；loading 在 `finally` 恢复；通用 HTTP 错误不重复提示。

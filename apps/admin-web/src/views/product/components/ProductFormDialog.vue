@@ -187,7 +187,7 @@ import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useDraftCloseGuard } from '../../../composables/useDraftCloseGuard';
 import JsonTableEditor from '../../../components/JsonTableEditor.vue';
-import BusinessTemplatePicker from '../../../components/BusinessTemplatePicker.vue';
+import { BusinessTemplatePicker } from '../../template/public';
 import { normalizeJsonTable } from '@company/utils';
 import SpecificationUpload from './SpecificationUpload.vue';
 import type { JsonTableData } from '@company/contracts';

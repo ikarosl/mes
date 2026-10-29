@@ -584,7 +584,7 @@ import type {
   InventoryMaterialDemandTraceItem,
   InventorySourceType,
 } from '@company/contracts';
-import { productionApi } from '../../api/production';
+import { productionInventoryApi } from '../../api/production/inventory';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import {
@@ -600,7 +600,7 @@ import { useRouteAccess } from '../../composables/useRouteAccess';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
-import { formatQuantity } from '../production/production-status';
+import { formatQuantity } from '../../utils/quantity';
 import { useInventoryMaterialSupplyDemandList } from './composables/useInventoryMaterialSupplyDemandList';
 import { useInventoryMaterialDemandTrace } from './composables/useInventoryMaterialDemandTrace';
 import { useInventoryBatchList } from './composables/useInventoryBatchList';
@@ -707,7 +707,7 @@ const openDetail = async (id: string, selectBatchTab = false): Promise<void> => 
   );
   detailLoading.value = true;
   try {
-    const result = await productionApi.getInventoryBatch(id, request.signal);
+    const result = await productionInventoryApi.getInventoryBatch(id, request.signal);
     if (!request.isCurrent()) return;
     detail.value = result;
     if (selectBatchTab) {

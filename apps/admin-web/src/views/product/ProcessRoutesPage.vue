@@ -215,7 +215,7 @@ import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../utils/route-message-box';
-import { useRowPending } from '../../utils/useRowPending';
+import { useRowPending } from '../../composables/use-row-pending';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessRoutesList } from './composables/useProcessRoutesList';
 import RouteFormDialog from './components/RouteFormDialog.vue';

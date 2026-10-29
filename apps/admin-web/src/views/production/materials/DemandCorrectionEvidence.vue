@@ -1,0 +1,264 @@
+<template>
+  <section>
+    <el-descriptions
+      :column="mode === 'command' ? 2 : 3"
+      border
+    >
+      <el-descriptions-item label="工单 / 任务"
+        >{{ check.workOrderNo }} / {{ check.batchNo }}</el-descriptions-item
+      >
+      <el-descriptions-item label="当前需求"
+        >id:{{ check.demandId }} ·
+        {{ DEMAND_GENERATION_GROUP_TYPE_LABELS[check.demandType] }}</el-descriptions-item
+      >
+      <el-descriptions-item label="物料 / 版本 / 单位"
+        >{{ check.itemCode }} / {{ check.materialVariantCode }} /
+        {{ check.unit }}</el-descriptions-item
+      >
+      <template v-if="mode === 'full'">
+        <el-descriptions-item label="原补料单">{{
+          check.supplementNo ?? '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="原始需求">{{
+          check.parentDemandId ? `id:${check.parentDemandId}` : '—'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="来源说明">{{
+          check.sourceReason ?? '—'
+        }}</el-descriptions-item>
+      </template>
+      <el-descriptions-item label="当前目标总量">{{
+        quantity(check.currentTotalQuantity)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="历次累计已领">{{
+        quantity(check.issuedQuantity)
+      }}</el-descriptions-item>
+      <el-descriptions-item
+        v-if="mode === 'full'"
+        label="旧需求待关闭余量"
+        >{{ quantity(check.oldRemainingQuantity) }}</el-descriptions-item
+      >
+    </el-descriptions>
+    <p v-if="mode === 'full'">
+      原方案和已领料记录保留。替代需求只承接剩余量；退料另行办理，不抵减累计已领。
+    </p>
+    <el-table
+      v-if="mode === 'full'"
+      :data="check.chain"
+      size="small"
+    >
+      <el-table-column
+        label="需求"
+        width="110"
+        ><template #default="{ row }">id:{{ row.demandId }}</template></el-table-column
+      >
+      <el-table-column
+        label="替代自"
+        width="110"
+        ><template #default="{ row }">{{
+          row.replacesDemandId ? `id:${row.replacesDemandId}` : '—'
+        }}</template></el-table-column
+      >
+      <el-table-column label="原数量"
+        ><template #default="{ row }">{{ quantity(row.demandQuantity) }}</template></el-table-column
+      >
+      <el-table-column label="已领"
+        ><template #default="{ row }">{{
+          quantity(row.outboundQuantity)
+        }}</template></el-table-column
+      >
+      <el-table-column label="保留剩余"
+        ><template #default="{ row }">{{
+          quantity(row.remainingQuantity)
+        }}</template></el-table-column
+      >
+      <el-table-column label="关闭原因"
+        ><template #default="{ row }">{{
+          row.closeCause ? DEMAND_CLOSE_CAUSE_LABELS[row.closeCause as DemandCloseCause] : '—'
+        }}</template></el-table-column
+      >
+    </el-table>
+    <template v-if="mode === 'full' && check.supplementRequirements.length">
+      <h4>原补料方案与当前要求</h4>
+      <p
+        v-for="line in check.originalPlan"
+        :key="line.originalDemandId"
+      >
+        原方案 id:{{ line.planId }}：原始需求 id:{{ line.originalDemandId }}，计划补料
+        {{ quantity(line.plannedQuantity) }}。
+      </p>
+      <el-table
+        :data="check.supplementRequirements"
+        size="small"
+      >
+        <el-table-column
+          label="需求"
+          width="110"
+          ><template #default="{ row }">id:{{ row.demandId }}</template></el-table-column
+        >
+        <el-table-column
+          prop="itemCode"
+          label="物料编码"
+        /><el-table-column
+          prop="materialVariantCode"
+          label="精确版本"
+        />
+        <el-table-column label="状态"
+          ><template #default="{ row }">{{
+            row.pendingCorrectionId
+              ? MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending
+              : DEMAND_BUSINESS_STATUS_LABELS[row.businessStatus as DemandBusinessStatus]
+          }}</template></el-table-column
+        >
+        <el-table-column label="累计领料 / 当前待领"
+          ><template #default="{ row }"
+            >{{ quantity(row.outboundQuantity) }} /
+            {{ quantity(row.businessStatus === 'active' ? row.remainingQuantity : 0) }}
+            {{ row.unit }}</template
+          ></el-table-column
+        >
+        <el-table-column
+          label="替代自"
+          width="110"
+          ><template #default="{ row }">{{
+            row.replacesDemandId ? `id:${row.replacesDemandId}` : '—'
+          }}</template></el-table-column
+        >
+      </el-table>
+    </template>
+    <section
+      v-if="mode === 'command' && check.supplementNo"
+      class="impact-group"
+    >
+      <h4>补料履约依据</h4>
+      <p>原补料单 {{ check.supplementNo }}；本次更正继续归属该单，原确认方案保留。</p>
+      <p
+        v-for="requirement in otherActiveRequirements"
+        :key="requirement.demandId"
+      >
+        同单需求 id:{{ requirement.demandId }} · {{ requirement.itemCode }} /
+        {{ requirement.materialVariantCode }}：待领 {{ quantity(requirement.remainingQuantity) }}
+        {{ requirement.unit }}，{{
+          requirement.pendingCorrectionId
+            ? MATERIAL_DEMAND_PROGRESS_LABELS.correction_pending
+            : DEMAND_BUSINESS_STATUS_LABELS[requirement.businessStatus]
+        }}。
+      </p>
+      <p v-if="otherActiveRequirements.length">
+        同单其他有效要求仍须满足，批准本次更正不会免除这些要求。
+      </p>
+    </section>
+    <template v-if="check.reservations.length">
+      <h4>批准后释放的未出库预留</h4>
+      <el-table
+        :data="check.reservations"
+        size="small"
+      >
+        <el-table-column
+          v-if="mode === 'full'"
+          label="分配"
+          ><template #default="{ row }">id:{{ row.allocationId }}</template></el-table-column
+        ><el-table-column
+          prop="inventoryBatchCode"
+          label="库存批次"
+        />
+        <el-table-column label="释放数量"
+          ><template #default="{ row }">{{ quantity(row.quantity) }}</template></el-table-column
+        >
+      </el-table>
+    </template>
+    <el-alert
+      v-if="check.pendingOutboundNos.length"
+      type="warning"
+      :closable="false"
+      :title="`须先处理待出库单：${check.pendingOutboundNos.join('、')}`"
+    >
+      涉及当前需求的待出库单须送审前处理；混合单据还关联其他需求，请核对整单影响范围。
+    </el-alert>
+    <template v-if="check.authorizations.length">
+      <h4>原补产授权影响</h4>
+      <p
+        v-for="authorization in check.authorizations"
+        :key="authorization.id"
+      >
+        授权 id:{{ authorization.id }}：{{ authorization.stepName }}，{{
+          quantity(authorization.quantity)
+        }}
+        件。仅在原补料单全部有效要求满足后放行。
+      </p>
+      <template
+        v-if="
+          check.zeroRemainderImpact &&
+          newRemainingQuantity !== undefined &&
+          newRemainingQuantity >= 0
+        "
+      >
+        <p v-if="newRemainingQuantity !== 0">
+          本次仍需新建需求并领齐后才能放行补产，批准更正不会立即增加可执行额度。
+        </p>
+        <template v-else-if="check.zeroRemainderImpact.fulfillsSupplement">
+          <p>
+            按本次核对结果，批准后原补料单将齐套，原补产授权可激活。实际办理仍须满足当前负责人及任务阶段资格。
+          </p>
+          <p>
+            本次激活补产
+            {{ quantity(check.zeroRemainderImpact.activatedSupplementQuantity) }}，各道统一上限为
+            {{
+              quantity(check.zeroRemainderImpact.upperLimitQuantity)
+            }}。工序状态保持，实际继续加工须明确重开。
+          </p>
+        </template>
+        <p v-else-if="!check.zeroRemainderImpact.hasConfirmedIssue">
+          本次免除剩余后整单仍无真实领料，不自动放行补产。
+        </p>
+        <p v-else>
+          仍有未满足要求：{{
+            check.zeroRemainderImpact.blockingDemandIds.map((id) => `id:${id}`).join('、')
+          }}，批准本次更正不放行补产。
+        </p>
+      </template>
+      <p>最终批准重新核对上述依据；实际齐套与授权激活结果保存在更正记录中。</p>
+      <p>整张补料单零领料、全部要求免除时，不自动放行补产。</p>
+    </template>
+  </section>
+</template>
+<script setup lang="ts">
+import { computed } from 'vue';
+import type {
+  DemandCorrectionCheck,
+  DemandCloseCause,
+  DemandBusinessStatus,
+} from '@company/contracts';
+import {
+  DEMAND_CLOSE_CAUSE_LABELS,
+  DEMAND_BUSINESS_STATUS_LABELS,
+  MATERIAL_DEMAND_PROGRESS_LABELS,
+  DEMAND_GENERATION_GROUP_TYPE_LABELS,
+} from '@company/constants';
+import { formatQuantity as quantity } from '../../../utils/quantity';
+const props = withDefaults(
+  defineProps<{
+    check: DemandCorrectionCheck;
+    newRemainingQuantity?: number;
+    mode?: 'full' | 'command';
+  }>(),
+  { mode: 'full', newRemainingQuantity: undefined },
+);
+const otherActiveRequirements = computed(() =>
+  props.check.supplementRequirements.filter(
+    (requirement) =>
+      requirement.businessStatus === 'active' && requirement.demandId !== props.check.demandId,
+  ),
+);
+</script>
+<style scoped>
+section p {
+  color: var(--el-text-color-regular);
+  line-height: 1.6;
+}
+h4 {
+  margin-bottom: 8px;
+}
+.impact-group {
+  margin-top: 16px;
+}
+</style>
