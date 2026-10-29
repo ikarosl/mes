@@ -15,7 +15,7 @@ import {
   PURCHASE_ORDER_MAX_LINES,
   PURCHASE_ORDER_MAX_DEMANDS,
   PURCHASE_ORDER_MAX_QUANTITY,
-  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+  PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
 } from '@company/constants';
 import { RequestError } from '@company/request';
 import { procurementApi } from '../../../api/procurement';
@@ -23,8 +23,9 @@ import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 import { useProcurementCommand } from './useProcurementCommand';
+import { previewPurchaseLineAmount } from '../purchase-line-amount';
 
-export interface PurchaseDraftRow {
+interface PurchaseDraftRow {
   key: string;
   itemId: string;
   itemCode: string;
@@ -35,6 +36,8 @@ export interface PurchaseDraftRow {
   plannedQuantity: number | undefined;
   taxExclusiveAmount: string;
   taxInclusiveAmount: string;
+  taxRatePercent: string;
+  manualTotalAmount: string;
   sources: PurchaseOrderLineSource[];
   ready: boolean;
 }
@@ -82,6 +85,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
         plannedQuantity: row.plannedQuantity,
         taxExclusiveAmount: row.taxExclusiveAmount.trim(),
         taxInclusiveAmount: row.taxInclusiveAmount.trim(),
+        taxRatePercent: row.taxRatePercent.trim(),
+        manualTotalAmount: row.manualTotalAmount.trim(),
         demandIds: row.sources.map((source) => source.demandId),
       })),
     });
@@ -106,11 +111,10 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
           (sourceType.value === 'stock' || row.sources.length > 0) &&
           row.itemId &&
           row.materialVariantId &&
-          row.taxExclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
-          row.taxInclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
           Number.isInteger(row.plannedQuantity) &&
           Number(row.plannedQuantity) > 0 &&
-          Number(row.plannedQuantity) <= PURCHASE_ORDER_MAX_QUANTITY,
+          Number(row.plannedQuantity) <= PURCHASE_ORDER_MAX_QUANTITY &&
+          previewPurchaseLineAmount(row).amount !== null,
       ),
   );
 
@@ -204,6 +208,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
             plannedQuantity: undefined,
             taxExclusiveAmount: '',
             taxInclusiveAmount: '',
+            taxRatePercent: PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
+            manualTotalAmount: '',
             sources: [],
             ready: true,
           };
@@ -349,6 +355,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
         plannedQuantity: Number(line.plannedQuantity),
         taxExclusiveAmount: line.taxExclusiveAmount ?? '',
         taxInclusiveAmount: line.taxInclusiveAmount ?? '',
+        taxRatePercent: line.taxRatePercent,
+        manualTotalAmount: line.totalAmountSource === 'manual' ? (line.totalAmount ?? '') : '',
         sources: line.sources.map((source) => ({ ...source })),
         ready: Boolean(detail.supplementReason),
       })) ?? [];
@@ -403,6 +411,8 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       plannedQuantity: undefined,
       taxExclusiveAmount: '',
       taxInclusiveAmount: '',
+      taxRatePercent: PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
+      manualTotalAmount: '',
       sources: [],
       ready: false,
     });
@@ -443,6 +453,7 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
   };
   const save = async (): Promise<void> => {
     if (!canSave.value || !(await checkOriginal()) || !(await resolveSources())) return;
+    if (!canSave.value) return;
     if (new Set(rows.value.map(identity)).size !== rows.value.length) {
       EMessage.warning('相同物料及精确版本请合并为一行；不同供应商请另建采购单');
       return;
@@ -452,14 +463,20 @@ export function usePurchaseOrderEditor(onSaved: (id: string) => void | Promise<v
       workOrderId: sourceType.value === 'demand' ? workOrderId.value : null,
       sourceType: sourceType.value,
       remark: remark.value.trim() || null,
-      items: rows.value.map((row) => ({
-        itemId: row.itemId,
-        materialVariantId: row.materialVariantId,
-        plannedQuantity: Number(row.plannedQuantity),
-        taxExclusiveAmount: row.taxExclusiveAmount.trim() || null,
-        taxInclusiveAmount: row.taxInclusiveAmount.trim() || null,
-        demandIds: row.sources.map((source) => source.demandId),
-      })),
+      items: rows.value.map((row) => {
+        const amount = previewPurchaseLineAmount(row).amount;
+        if (!amount) throw new RangeError('请核对采购数量与金额');
+        return {
+          itemId: row.itemId,
+          materialVariantId: row.materialVariantId,
+          plannedQuantity: Number(row.plannedQuantity),
+          taxExclusiveAmount: amount.taxExclusiveAmount,
+          taxInclusiveAmount: amount.taxInclusiveAmount,
+          taxRatePercent: amount.taxRatePercent,
+          manualTotalAmount: amount.manualTotalAmount,
+          demandIds: row.sources.map((source) => source.demandId),
+        };
+      }),
     };
     const target = original.value;
     const payload: CreatePurchaseOrderPayload | UpdatePurchaseOrderPayload = target

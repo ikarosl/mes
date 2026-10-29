@@ -9,7 +9,7 @@
       <span
         class="receipt-purchase"
         :title="`采购单 ${receipt.purchaseNo}`"
-        >采购单 {{ receipt.purchaseNo }}</span
+        >采购单 <strong class="identity-value">{{ receipt.purchaseNo }}</strong></span
       >
       <span
         class="receipt-suppliers"
@@ -33,8 +33,12 @@
         <span
           v-if="showAssociation"
           class="receipt-association"
-          ><span class="association-label">当前关联：</span
-          >{{ receipt.order?.inspectionNo ?? '未关联' }}</span
+          ><span class="association-label">当前关联： </span
+          ><strong
+            v-if="receipt.order"
+            class="identity-value"
+            >{{ receipt.order.inspectionNo }}</strong
+          ><template v-else>未关联</template></span
         >
         <div
           v-if="$slots.default"
@@ -93,7 +97,13 @@ withDefaults(
   white-space: nowrap;
 }
 .receipt-number {
+  color: var(--el-text-color-primary);
   font-size: 14px;
+  font-weight: 600;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .receipt-purchase,
 .receipt-suppliers {

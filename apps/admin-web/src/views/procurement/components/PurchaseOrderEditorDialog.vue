@@ -105,8 +105,10 @@
         >
       </div>
       <p class="help">
-        采购数量独立填写，不分摊到需求；金额按采购单位填写单价，正式下单后冻结。
-        同物料及精确版本只保留一行，不同供应商请另建采购单。
+        <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
+        手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
+        采购数量独立填写，不分摊需求；下单后数量锁定，可在“查看/编辑”更正单价、税率及总额。
+        同物料同精确版本仅保留一行，不同供应商另建单。
         <template v-if="supplement">补单来源固定，原采购行或原到货选错须取消草稿后重建。</template>
       </p>
       <el-table
@@ -125,15 +127,23 @@
               title="本行补单来源"
             >
               <el-descriptions-item label="原采购"
-                >{{ originalLine(row.key)?.originPurchaseNo }} · 原采购行 ID：
-                {{ originalLine(row.key)?.originOrderLineId }}</el-descriptions-item
+                ><strong class="identity-value">{{
+                  originalLine(row.key)?.originPurchaseNo
+                }}</strong>
+                · 采购行 ID：
+                <strong class="identity-value">{{
+                  originalLine(row.key)?.originOrderLineId
+                }}</strong></el-descriptions-item
               >
               <el-descriptions-item label="原到货单号"
-                >{{ originalLine(row.key)?.originReceiptNo ?? '未提供' }} · 原到货明细 ID：{{
+                ><span :class="{ 'identity-value': originalLine(row.key)?.originReceiptNo }">{{
+                  originalLine(row.key)?.originReceiptNo ?? '未提供'
+                }}</span>
+                · 到货行 ID：<strong class="identity-value">{{
                   originalLine(row.key)?.originReceiptLineId
-                }}</el-descriptions-item
+                }}</strong></el-descriptions-item
               >
-              <el-descriptions-item label="创建时到货行id">{{
+              <el-descriptions-item label="补单依据">{{
                 originalLine(row.key)?.supplementEvidence
               }}</el-descriptions-item>
             </el-descriptions>
@@ -184,28 +194,61 @@
           width="75"
         />
         <el-table-column
-          label="无税金额"
+          label="无税单价"
           min-width="180"
         >
           <template #default="{ row }">
             <el-input
               v-model="row.taxExclusiveAmount"
               :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+              inputmode="decimal"
               placeholder="按采购单位填写单价（选填）"
-              :aria-label="`${row.itemName || '本行'}无税金额`"
+              :aria-label="`${row.itemName || '本行'}无税单价`"
             />
           </template>
         </el-table-column>
         <el-table-column
-          label="含税金额"
+          label="含税单价"
           min-width="180"
         >
           <template #default="{ row }">
             <el-input
               v-model="row.taxInclusiveAmount"
               :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+              inputmode="decimal"
               placeholder="按采购单位填写单价（选填）"
-              :aria-label="`${row.itemName || '本行'}含税金额`"
+              :aria-label="`${row.itemName || '本行'}含税单价`"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="税率（%）"
+          width="140"
+        >
+          <template #default="{ row }">
+            <el-input
+              v-model="row.taxRatePercent"
+              inputmode="decimal"
+              :placeholder="PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT"
+              :aria-label="`${row.itemName || '本行'}税率百分比`"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column
+          label="含税总金额"
+          min-width="250"
+        >
+          <template #default="{ row }">
+            <PurchaseLineTotalAmountInput
+              v-model:manual-total-amount="row.manualTotalAmount"
+              :planned-quantity="row.plannedQuantity"
+              :tax-exclusive-amount="row.taxExclusiveAmount"
+              :tax-inclusive-amount="row.taxInclusiveAmount"
+              :tax-rate-percent="row.taxRatePercent"
+              :item-name="row.itemName"
+              :saved-total-amount="originalLine(row.key)?.totalAmount"
+              :saved-total-amount-source="originalLine(row.key)?.totalAmountSource"
+              :disabled="command.locked.value"
             />
           </template>
         </el-table-column>
@@ -283,18 +326,22 @@
 </template>
 
 <script setup lang="ts">
+import { onScopeDispose } from 'vue';
 import {
   PURCHASE_ORDER_SOURCE_TYPE_LABELS,
   PURCHASE_ORDER_MAX_QUANTITY,
   PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+  PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
 } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
+import { useTabsStore } from '../../../stores/tabs';
 import { usePurchaseOrderEditor } from '../composables/usePurchaseOrderEditor';
 import ProcurementDemandPickerDialog from './ProcurementDemandPickerDialog.vue';
 import PurchaseOrderSources from './PurchaseOrderSources.vue';
 import PurchaseMaterialSelect from './PurchaseMaterialSelect.vue';
 import PurchaseSupplierSelect from './PurchaseSupplierSelect.vue';
 import ProcurementWorkOrderPickerDialog from './ProcurementWorkOrderPickerDialog.vue';
+import PurchaseLineTotalAmountInput from './PurchaseLineTotalAmountInput.vue';
 const emit = defineEmits<{ saved: [string] }>();
 const {
   visible,
@@ -335,10 +382,17 @@ const originalLine = (id: string) => original.value?.items.find((line) => line.i
 const beforeClose = (): void => {
   void close();
 };
+onScopeDispose(
+  useTabsStore().registerCloseGuard('procurement-orders', async () => !visible.value || close()),
+);
 defineExpose({ open, close, visible, locked: command.locked });
 </script>
 
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .notice {
   margin-bottom: 16px;
 }

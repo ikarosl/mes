@@ -87,8 +87,10 @@
         <span v-if="locationLoading">正在定位到货及来源采购单…</span>
         <span v-else-if="locationError">{{ locationError }}</span>
         <span v-else
-          >当前定位：{{ focusedReceipt?.receipt.receiptNo
-          }}<template v-if="focusedLineId"> · 到货明细 id:{{ focusedLineId }}</template></span
+          >当前定位： <strong class="identity-value">{{ focusedReceipt?.receipt.receiptNo }}</strong
+          ><template v-if="focusedLineId">
+            · 到货行 ID：<strong class="identity-value">{{ focusedLineId }}</strong></template
+          ></span
         >
         <el-button
           v-if="locationError"
@@ -502,6 +504,10 @@ onActivated(() => {
 });
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .query-panel {
   padding: 20px 20px 4px;
   margin-bottom: 16px;
@@ -565,8 +571,8 @@ onActivated(() => {
   overflow-wrap: anywhere;
 }
 .order-number {
-  color: var(--el-color-primary);
-  font-weight: 500;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .order-remark {
   flex: 1 1 160px;

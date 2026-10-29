@@ -30,20 +30,24 @@
             :sources="row.sources"
           />
           <p v-if="row.originPurchaseOrderId">
-            原采购：<el-button
+            原采购：
+            <el-button
               link
               type="primary"
+              class="source-order-number"
               :disabled="disabled"
               @click="$emit('navigate', row.originPurchaseOrderId)"
               >{{ row.originPurchaseNo }}</el-button
             >
-            · 原采购行 ID：{{ row.originOrderLineId }}
+            · 采购行 ID：<strong class="identity-value">{{ row.originOrderLineId }}</strong>
           </p>
           <p v-if="row.supplementEvidence">补单依据：{{ row.supplementEvidence }}</p>
           <p v-if="row.originReceiptLineId">
-            原到货单号：{{ row.originReceiptNo ?? '未提供' }} · 原到货明细 ID：{{
-              row.originReceiptLineId
-            }}
+            原到货单号：
+            <span :class="{ 'identity-value': row.originReceiptNo }">{{
+              row.originReceiptNo ?? '未提供'
+            }}</span>
+            · 到货行 ID：<strong class="identity-value">{{ row.originReceiptLineId }}</strong>
             <el-button
               v-if="auth.can(PERMISSIONS.warehouse.receipts.view)"
               link
@@ -104,18 +108,6 @@
       ></el-table-column
     >
     <el-table-column
-      label="无税金额"
-      min-width="160"
-    >
-      <template #default="{ row }">{{ row.taxExclusiveAmount ?? '—' }}</template>
-    </el-table-column>
-    <el-table-column
-      label="含税金额"
-      min-width="160"
-    >
-      <template #default="{ row }">{{ row.taxInclusiveAmount ?? '—' }}</template>
-    </el-table-column>
-    <el-table-column
       v-if="order.supplementReason !== 'excess_purchase'"
       label="累计到货"
       width="100"
@@ -159,7 +151,7 @@
     >
     <el-table-column
       label="操作"
-      width="220"
+      width="200"
       fixed="right"
       ><template #default="{ row }">
         <div class="line-actions">
@@ -172,13 +164,6 @@
             :disabled="disabled"
             @click="$emit('supplement', row.id)"
             >补单</el-button
-          >
-          <el-button
-            link
-            type="primary"
-            :disabled="disabled"
-            @click="$emit('supplements', row.id)"
-            >相关补单</el-button
           >
           <el-button
             v-if="order.status === 'ordered' && row.status === 'open'"
@@ -199,14 +184,27 @@
             @click="$emit('reopen-line', row.id)"
             >恢复此行</el-button
           >
-          <el-button
-            v-if="row.fulfillmentMode === 'new_arrival'"
-            link
-            type="primary"
+          <el-dropdown
+            trigger="click"
             :disabled="disabled"
-            @click="$emit('receipt-records', row.id)"
-            >到货记录</el-button
           >
+            <el-button
+              link
+              type="primary"
+              :disabled="disabled"
+              >更多 <el-icon><ArrowDown /></el-icon
+            ></el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item @click="$emit('supplements', row.id)">相关补单</el-dropdown-item>
+                <el-dropdown-item
+                  v-if="row.fulfillmentMode === 'new_arrival'"
+                  @click="$emit('receipt-records', row.id)"
+                  >到货记录</el-dropdown-item
+                >
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </div>
       </template></el-table-column
     >
@@ -215,6 +213,7 @@
 <script setup lang="ts">
 import { nextTick, onActivated, onDeactivated, onMounted, onUnmounted, ref, watch } from 'vue';
 import type { TableInstance } from 'element-plus';
+import { ArrowDown } from '@element-plus/icons-vue';
 import type {
   PurchaseOrderDetail,
   PurchaseOrderLine,
@@ -398,7 +397,15 @@ onUnmounted(() => {
 }
 .purchase-line-id {
   color: var(--el-text-color-primary);
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.source-order-number {
+  --el-button-font-weight: 600;
 }
 :deep(.source-line-highlight td) {
   background: var(--el-color-primary-light-9) !important;

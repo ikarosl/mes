@@ -14,7 +14,9 @@
       <el-descriptions-item
         v-if="section === 'identity'"
         label="采购行 ID"
-        >id:{{ line.purchaseOrderLineId }}</el-descriptions-item
+        ><strong class="identity-value">{{
+          line.purchaseOrderLineId
+        }}</strong></el-descriptions-item
       >
       <el-descriptions-item
         v-if="section === 'all'"
@@ -33,8 +35,8 @@
       }}</el-descriptions-item>
       <el-descriptions-item
         v-if="section === 'all'"
-        label="到货明细 ID"
-        >id:{{ line.id }}</el-descriptions-item
+        label="到货行 ID"
+        ><strong class="identity-value">{{ line.id }}</strong></el-descriptions-item
       >
     </el-descriptions>
     <template v-if="section === 'all'">
@@ -179,6 +181,10 @@ const quantityText = (value: string): string =>
 const isKnownZero = (value: string): boolean => value.trim() !== '' && Number(value) === 0;
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .line-summary :deep(.el-descriptions__cell) {
   overflow-wrap: anywhere;
 }

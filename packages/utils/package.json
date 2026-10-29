@@ -21,7 +21,9 @@
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
   "dependencies": {
-    "@company/contracts": "workspace:*"
+    "@company/constants": "workspace:*",
+    "@company/contracts": "workspace:*",
+    "decimal.js": "catalog:"
   },
   "devDependencies": {
     "typescript": "catalog:",

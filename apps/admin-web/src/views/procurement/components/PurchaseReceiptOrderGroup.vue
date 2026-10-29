@@ -178,8 +178,8 @@ const emit = defineEmits<{
   overflow-wrap: anywhere;
 }
 .order-number {
-  color: var(--el-color-primary);
-  font-weight: 500;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .order-disclosure {
   display: inline-flex;

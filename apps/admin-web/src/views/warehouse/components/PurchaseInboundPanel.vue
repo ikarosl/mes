@@ -232,8 +232,12 @@
           class="review-group"
         >
           <div class="review-heading">
-            <strong>到货 {{ group.receiptNo }}</strong>
-            <span>登记采购 {{ group.receiptPurchaseNo }}</span>
+            <span class="review-title"
+              >到货单 <span class="identity-value">{{ group.receiptNo }}</span></span
+            >
+            <span
+              >登记采购 <span class="identity-value">{{ group.receiptPurchaseNo }}</span></span
+            >
           </div>
           <el-table
             :data="group.items"
@@ -241,13 +245,13 @@
             scrollbar-always-on
           >
             <el-table-column
-              label="到货明细 ID / 来源采购"
+              label="到货行 ID / 来源采购"
               min-width="180"
               ><template #default="{ row }"
                 ><div class="muted">本次第 {{ targetRowNumbers.get(row.rowKey) }} 行</div>
-                <div>id:{{ row.source.receiptLineId }}</div>
+                <div class="identity-value">{{ row.source.receiptLineId }}</div>
                 <div class="muted">
-                  {{ row.source.purchaseNo }}
+                  <span class="identity-value">{{ row.source.purchaseNo }}</span>
                 </div></template
               ></el-table-column
             >
@@ -787,10 +791,14 @@ onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', releases.c
   font-size: 13px;
   line-height: 22px;
 }
-.review-heading strong {
+.review-title {
   color: var(--el-text-color-primary);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 400;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .review-actions {
   display: flex;

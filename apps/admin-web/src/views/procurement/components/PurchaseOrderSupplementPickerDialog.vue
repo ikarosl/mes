@@ -9,7 +9,7 @@
     @update:model-value="close"
   >
     <div class="picker-context">
-      <strong>{{ purchaseNo }}</strong>
+      <strong class="identity-value">{{ purchaseNo }}</strong>
       <span>{{ reason ? PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS[reason] : '' }}</span>
       <span>{{
         replacingLineId
@@ -77,7 +77,9 @@
               >
             </span>
             <span>{{ line.materialVariantCode }}</span>
-            <span>采购行 ID：{{ line.id }}</span>
+            <span
+              >采购行 ID：<strong class="identity-value">{{ line.id }}</strong></span
+            >
           </button>
         </div>
       </aside>
@@ -89,8 +91,8 @@
           <div class="basis-heading">
             <strong>{{ currentLine.itemName }} · {{ currentLine.materialVariantCode }}</strong>
             <span
-              >采购行 ID：{{ currentLine.id }} · 原计划 {{ currentLine.plannedQuantity }}
-              {{ currentLine.unit }}</span
+              >采购行 ID：<strong class="identity-value">{{ currentLine.id }}</strong> · 原计划
+              {{ currentLine.plannedQuantity }} {{ currentLine.unit }}</span
             >
           </div>
           <InlineHint v-if="isAlreadyAdded(currentLine.id)">
@@ -130,7 +132,11 @@
               v-if="currentPage.receiptLineId"
               class="located-basis"
             >
-              <span>定位到货明细 ID：{{ currentPage.receiptLineId }}</span>
+              <span
+                >定位到货行 ID：<strong class="identity-value">{{
+                  currentPage.receiptLineId
+                }}</strong></span
+              >
               <el-button
                 link
                 type="primary"
@@ -144,14 +150,20 @@
               class="current-choice"
             >
               <span v-if="currentChoice.selectedExcess"
-                >已选 {{ currentChoice.selectedExcess.receiptNo }} · 明细 ID：{{
+                >已选
+                <strong class="identity-value">{{ currentChoice.selectedExcess.receiptNo }}</strong>
+                · 到货行 ID：<strong class="identity-value">{{
                   currentChoice.selectedExcess.id
-                }}</span
+                }}</strong></span
               >
               <span v-else-if="currentChoice.selectedQuality"
-                >已选 {{ currentChoice.selectedQuality.receiptNo }} · 明细 ID：{{
+                >已选
+                <strong class="identity-value">{{
+                  currentChoice.selectedQuality.receiptNo
+                }}</strong>
+                · 到货行 ID：<strong class="identity-value">{{
                   currentChoice.selectedQuality.receiptLineId
-                }}</span
+                }}</strong></span
               >
               <el-button
                 link
@@ -187,11 +199,12 @@
                     :model-value="currentChoice?.selectedExcess?.id"
                     :value="candidate.id"
                     :disabled="disabled || loading || currentPage.error"
-                    :aria-label="`选择到货 ${candidate.receiptNo} 明细 ${candidate.id}`"
+                    :aria-label="`选择到货 ${candidate.receiptNo}，到货行 ID：${candidate.id}`"
                     class="basis-radio"
                     @change="selectExcess(candidate)"
-                    ><strong
-                      >{{ candidate.receiptNo }} · 明细 ID：{{ candidate.id }}</strong
+                    ><span
+                      ><strong class="identity-value">{{ candidate.receiptNo }}</strong> · 到货行
+                      ID：<strong class="identity-value">{{ candidate.id }}</strong></span
                     ></el-radio
                   >
                   <div class="candidate-information">
@@ -230,11 +243,14 @@
                     :model-value="currentChoice?.selectedQuality?.receiptLineId"
                     :value="candidate.receiptLineId"
                     :disabled="disabled || loading || currentPage.error"
-                    :aria-label="`选择到货 ${candidate.receiptNo} 明细 ${candidate.receiptLineId}`"
+                    :aria-label="`选择到货 ${candidate.receiptNo}，到货行 ID：${candidate.receiptLineId}`"
                     class="basis-radio"
                     @change="selectQuality(candidate)"
-                    ><strong
-                      >{{ candidate.receiptNo }} · 明细 ID：{{ candidate.receiptLineId }}</strong
+                    ><span
+                      ><strong class="identity-value">{{ candidate.receiptNo }}</strong> · 到货行
+                      ID：<strong class="identity-value">{{
+                        candidate.receiptLineId
+                      }}</strong></span
                     ></el-radio
                   >
                   <div class="candidate-information">
@@ -367,6 +383,10 @@ defineExpose({ open, close, visible });
 </script>
 
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 :global(.el-dialog.supplement-picker-dialog) {
   height: 90%;
 }

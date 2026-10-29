@@ -18,7 +18,8 @@
     >
       <InboundGroupHeader
         :expanded="!collapsedInboundIds.has(order.inboundId)"
-        :title="`入库单 ${order.inboundNo}`"
+        title-label="入库单"
+        :title="order.inboundNo"
         :count-label="`本单 ${order.detailCount} 条实际入库明细`"
         @toggle="toggleInbound(order.inboundId)"
       >
@@ -77,20 +78,29 @@
                       receiptLineId: row.procurementSource.receipt.receiptLineId,
                     })
                   "
-                  >{{ row.procurementSource.receipt.receiptNo }} · id:{{
-                    row.procurementSource.receipt.receiptLineId
-                  }}</el-button
+                  ><span class="source-link-text">
+                    <span class="identity-value">{{
+                      row.procurementSource.receipt.receiptNo
+                    }}</span>
+                    · 到货行 ID
+                    <span class="identity-value">{{
+                      row.procurementSource.receipt.receiptLineId
+                    }}</span></span
+                  ></el-button
                 >
                 <span v-else>
-                  {{ row.procurementSource.receipt.receiptNo }} · id:{{
+                  <span class="identity-value">{{ row.procurementSource.receipt.receiptNo }}</span>
+                  · 到货行 ID
+                  <span class="identity-value">{{
                     row.procurementSource.receipt.receiptLineId
-                  }}
+                  }}</span>
                 </span>
               </template>
               <span
                 v-else-if="row.procurementReceiptLineId"
                 class="muted"
-                >来源信息未完整提供<br />到货明细 id:{{ row.procurementReceiptLineId }}</span
+                >来源信息未完整提供<br />到货行 ID
+                <span class="identity-value">{{ row.procurementReceiptLineId }}</span></span
               >
               <span
                 v-else
@@ -137,14 +147,24 @@
                           row.procurementSource.purchaseOrder.purchaseOrderLineId,
                       })
                     "
-                    >{{ row.procurementSource.purchaseOrder.purchaseOrderNo }} · id:{{
-                      row.procurementSource.purchaseOrder.purchaseOrderLineId
-                    }}</el-button
+                    ><span class="source-link-text">
+                      <span class="identity-value">{{
+                        row.procurementSource.purchaseOrder.purchaseOrderNo
+                      }}</span>
+                      · 采购行 ID
+                      <span class="identity-value">{{
+                        row.procurementSource.purchaseOrder.purchaseOrderLineId
+                      }}</span></span
+                    ></el-button
                   >
                   <span v-else>
-                    {{ row.procurementSource.purchaseOrder.purchaseOrderNo }} · id:{{
+                    <span class="identity-value">{{
+                      row.procurementSource.purchaseOrder.purchaseOrderNo
+                    }}</span>
+                    · 采购行 ID
+                    <span class="identity-value">{{
                       row.procurementSource.purchaseOrder.purchaseOrderLineId
-                    }}
+                    }}</span>
                   </span>
                 </div>
                 <div>
@@ -328,10 +348,23 @@ const supplierSummary = (order: PurchaseInboundOrderItem): string =>
   line-height: 1.7;
 }
 .source-link {
+  max-width: 100%;
   height: auto;
+  font-weight: 400;
   white-space: normal;
   text-align: left;
   overflow-wrap: anywhere;
+}
+.source-link-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.source-link .identity-value {
+  color: inherit;
 }
 .source-label {
   color: var(--el-text-color-secondary);

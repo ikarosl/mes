@@ -19,7 +19,11 @@
         prop="purchaseNo"
         label="补单号"
         min-width="180"
-      />
+      >
+        <template #default="{ row }"
+          ><strong class="identity-value">{{ row.purchaseNo }}</strong></template
+        >
+      </el-table-column>
       <el-table-column
         prop="supplierName"
         label="供应商"
@@ -180,6 +184,10 @@ watch(visible, (value) => {
 defineExpose({ open, close, visible });
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .help {
   color: #6b7280;
   font-size: 13px;

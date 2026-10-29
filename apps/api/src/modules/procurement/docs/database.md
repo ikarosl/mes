@@ -57,7 +57,10 @@
 | item_id / material_variant_id | ID | FK materials(id)；组合 FK material_variants(id,material_id) |
 | item_code_snapshot / material_variant_code_snapshot / unit_snapshot | VARCHAR(100)／VARCHAR(180)／VARCHAR(20) | 身份编码及单位快照 |
 | planned_quantity | INT，CHECK 1..99999999 | 本行独立计划采购量，不分摊需求 |
-| tax_exclusive_amount / tax_inclusive_amount | VARCHAR(100) NULL | 无税金额／含税金额，均为按采购单位手填的单价文本 |
+| tax_exclusive_amount / tax_inclusive_amount | VARCHAR(100) NULL | 无税单价／含税单价，均为按采购单位手填的非负十进制字符串 |
+| tax_rate_percent | DECIMAL(7,4) NOT NULL DEFAULT 13，CHECK 0..100 | 本行百分比税率 |
+| total_amount | VARCHAR(128) NULL | 最终含税总额，规范为 2 位小数字符串 |
+| total_amount_source | VARCHAR(16) NULL，CHECK manual／calculated | 总额来源，与 total_amount 成对为空或非空 |
 | status | VARCHAR(30) DEFAULT draft，CHECK draft／open／closed／cancelled | 本行采购跟进状态 |
 | origin_order_line_id | ID NULL，自 FK | 补单原采购行 |
 | origin_receipt_line_id | ID NULL | 与原采购行组合 FK procurement_receipt_line(id,purchase_order_line_id) |
@@ -67,7 +70,9 @@
 
 唯一键为 `(purchase_order_id,line_no)`、`(purchase_order_id,item_id,material_variant_id)`、`(id,purchase_order_id)`、`(id,item_id,material_variant_id)`；业务索引为 `(origin_order_line_id,id)`。CHECK 要求两个 origin ID 同时空或同时非空，原采购行与 supplement_evidence 同时空或同时非空且说明有效；existing_receipt 必须有两个原来源。补因决定履约方式的跨表关系仍由命令核验，不能只由本行 CHECK 证明。
 
-两项金额由应用 trim，省略、null 或空文本统一为 NULL，不解析数值或参与计算。它们不是数量或库存成本字段，正式下单后与计划一起冻结；补单只保存此次输入，缺省为 NULL，不复制原行金额。`trg_procurement_order_line_amounts_frozen` 以逐字节、NULL 安全比较拒绝非草稿行、非草稿根或曾下单根的金额变化；现有身份、来源和计划冻结继续由命令锁内核验。完整输入语义由[采购订单](purchase-orders.md#明细采购单位单价)维护。
+单价列以 CHECK 拒绝非普通十进制或负数文本，不限制其小数位；长度由列上限保证。税率物理使用 DECIMAL，驱动按字符串读取，应用写入前拒绝超范围或超过 4 位小数，不能依赖数据库舍入。总额 CHECK 约束非负、固定 2 位小数，并要求总额及来源同时为 NULL，或总额非 NULL 且来源为 manual／calculated；不能只更新其中一项。最终总额及来源是唯一持久化结果，不另存 manual_total_amount；请求的手填值由来源为 manual 的总额投影恢复。输入默认、推算优先级及舍入规则只由[采购订单](purchase-orders.md#明细采购单位单价)维护。
+
+`trg_procurement_order_line_amounts_frozen` 拒绝非草稿行、非草稿根或曾下单根的计划量变化；对两项单价、税率、总额及来源的变化，正式单据只允许已下单／已结束根下 open／closed 行更正，取消采购拒绝。单价、总额与来源使用逐字节、NULL 安全比较，身份、来源和计划冻结继续由命令锁内核验。主单金额更正命令核对根及目标行版本，原子更新各变更行及根的修改审计与 version；原因及前后金额快照保存于同事务 `operation_logs`，具体 action、目标及 JSON 字段见[金额更正](purchase-orders.md#正式下单后的金额更正)。不新增金额历史表，不改物流事实。补单单价和总额初始为空、税率取录入默认，不复制原行报价。
 
 ### procurement_order_line_source
 
@@ -125,4 +130,12 @@ HTTP 资源使用 `/procurement/purchase-orders`，领域使用 `PurchaseOrder`�
 
 ## 主单供应商与金额迁移
 
-`202610280002-purchase-order-supplier-and-amounts` 新增主单 supplier_id 及其 FK／查询索引，移除行 supplier_id 及其 FK／索引，将同单行身份唯一键缩为物料与精确版本，并新增两项可空金额文本及上述冻结触发器。up/down 均在永久 DDL 前要求采购主行、到货主单、采购来源入库明细和全部 HTTP 幂等记录为空，不推导旧主单供应商、不回填金额或改写库存历史。down 仅在守卫通过后恢复空的逐行供应商结构并移除新字段和触发器；当前 Inventory 来源触发器不依赖采购行供应商，无需替换。停写及恢复顺序见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280002采购主单供应商与明细金额)，开发样例由[演示入口](../../../../../../packages/database/demo/README.md)重建。
+`202610280002-purchase-order-supplier-and-amounts` 新增主单 supplier_id 及其 FK／查询索引，移除行 supplier_id 及其 FK／索引，将同单行身份唯一键缩为物料与精确版本，并新增两项可空金额文本及当时的两项单价冻结触发器。up/down 均在永久 DDL 前要求采购主行、到货主单、采购来源入库明细和全部 HTTP 幂等记录为空，不推导旧主单供应商、不回填金额或改写库存历史。down 仅在守卫通过后恢复空的逐行供应商结构并移除新字段和触发器；当前 Inventory 来源触发器不依赖采购行供应商，无需替换。停写及恢复顺序见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280002采购主单供应商与明细金额)，开发样例由[演示入口](../../../../../../packages/database/demo/README.md)重建。
+
+## 明细税率与最终总额迁移
+
+`202610280003-purchase-order-line-total-amounts` 追加行税率、最终总额及来源列，增加单价数值、税率和总额配对 CHECK，并替换金额冻结触发器，当时冻结正式计划量、单价和税率，仅总额允许专用命令更正。up/down 均在永久 DDL 前要求采购主行、到货主单、采购来源入库明细和全部 HTTP 幂等记录为空，不解析旧自由文本单价、不回填推算或手填来源。down 另拒绝已有当时总额更正动作审计，守卫通过后移除新增列与 CHECK，恢复 202610280002 的金额冻结触发器；该已执行迁移原文件保持不变。精确停写与回退边界见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280003采购行税率与最终总额)。
+
+`202610280004-purchase-order-amount-corrections` 只替换同一冻结触发器，在保留计划量和两项单价冻结的前提下，允许正式可更正行修改税率及总额／来源；不新增字段或表。up/down 均可在非空业务库执行，不改写现有行、版本、审计或幂等数据；down 恢复 202610280003 的触发器规则，不撤销已经保存的更正。切换应用及失败恢复要求见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280004采购税率与总额批量更正)。
+
+`202610280005-purchase-order-price-corrections` 继续替换同一触发器，允许正式可更正行补填或更正两项单价、税率及总额／来源，计划量继续冻结；不新增字段或表。up/down 均可在非空业务库执行，不改写现有业务、版本、审计或幂等数据；down 精确恢复 202610280004 的单价冻结规则，不撤销已保存的更正。202610280003／202610280004 已执行文件保持不变，匹配应用及 scope 切换见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280005采购报价与金额更正)。

@@ -17,7 +17,7 @@ export interface IncomingInspectionReceiptState {
   loaded: boolean;
   error: string;
 }
-export interface IncomingInspectionOrderGroup {
+interface IncomingInspectionOrderGroup {
   order: QualityIncomingInspectionOrderItem;
   page: number;
   total: number;

@@ -457,9 +457,8 @@
                   }}</template
                 >
                 <template v-else-if="row.procurementAllocationId"
-                  >到货分配 ID：{{ row.procurementAllocationId }}<br />到货明细 #{{
-                    row.procurementReceiptLineId
-                  }}</template
+                  >到货分配 ID：{{ row.procurementAllocationId }}<br />到货行 ID
+                  <span class="identity-value">{{ row.procurementReceiptLineId }}</span></template
                 >
                 <span v-else>入库明细 #{{ row.inboundDetailId }}</span>
               </template> </el-table-column
@@ -774,6 +773,10 @@ watch(viewMode, refreshCurrentView);
   display: flex;
   flex-direction: column;
   gap: 16px;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .shortage {
   color: #ef4444;

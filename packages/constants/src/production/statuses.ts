@@ -70,8 +70,6 @@ export const BATCH_STEP_ABNORMAL_REVIEW_STATUS_LABELS = {
 
 export const REWORK_STATUSES = ['pending', 'doing', 'completed', 'cancelled'] as const;
 
-export const PRODUCTION_SCRAP_SUPPLEMENT_PLAN_STATUSES = ['draft', 'confirmed'] as const;
-
 export const REWORK_STATUS_LABELS = {
   pending: '待返工',
   doing: '返工中',
@@ -79,38 +77,11 @@ export const REWORK_STATUS_LABELS = {
   cancelled: '已取消',
 } as const;
 
-export const PRODUCTION_EXECUTION_COMPLETION_BLOCKERS = [
-  'batch_not_doing',
-  'no_route_step',
-  'required_step_incomplete',
-] as const;
-
 export const PRODUCTION_EXECUTION_COMPLETION_BLOCKER_LABELS = {
   batch_not_doing: '批次尚未进入生产执行状态',
   no_route_step: '批次没有工序',
   required_step_incomplete: '仍有工序未完成',
 } as const;
-
-export const BATCH_STEP_REPORT_DEPENDENCY_KINDS = [
-  'abnormal_disposition',
-  'replacement_report',
-  'rework_source',
-  'rework_completion',
-  'scrap_record',
-] as const;
-
-export const BATCH_STEP_REPORT_REVERSAL_BLOCKED_CODES = [
-  'batch_not_allowed',
-  'approval_pending',
-  'not_found',
-  'step_mismatch',
-  'version_changed',
-  'not_effective_normal',
-  'business_dependency',
-  'normal_only',
-  'historical_normal_only',
-  'step_not_started',
-] as const;
 
 export const MAX_BATCH_STEP_REPORT_REVERSALS = 100;
 export const PRODUCTION_REPORT_QUANTITY_MAX = 99_999_999;
@@ -260,18 +231,6 @@ export const ALLOCATION_STATUS_LABELS = {
 } as const;
 
 /** 单条生产物料需求的分配/出库展示进度，不包含需求持久化业务状态。 */
-export const MATERIAL_DEMAND_PROGRESS_STATUSES = [
-  'pending_allocation',
-  'partially_allocated',
-  'allocated',
-  'shortage',
-  'partially_outbound',
-  'outbound',
-  'cancelled',
-  'closed',
-  'correction_pending',
-] as const;
-
 export const MATERIAL_DEMAND_PROGRESS_LABELS = {
   pending_allocation: '待分配',
   partially_allocated: '部分分配',
@@ -289,11 +248,6 @@ export const OUTBOUND_ORDER_STATUS_LABELS = {
   completed: '已出库',
   cancelled: '已取消',
 } as const;
-
-export const MATERIAL_OUTBOUND_BLOCKED_CODES = [
-  'allocation_incomplete',
-  'no_orderable_allocation',
-] as const;
 
 export const MATERIAL_OUTBOUND_BLOCKED_LABELS = {
   allocation_incomplete: '物料尚未形成可制单分配，请先完成分配',

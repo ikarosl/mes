@@ -38,7 +38,7 @@
       v-if="selectedTarget"
       class="selected-target"
     >
-      已选目标：<strong>{{ selectedTarget.inspectionNo }}</strong>
+      已选目标： <strong class="identity-value">{{ selectedTarget.inspectionNo }}</strong>
     </p>
     <div
       v-loading="loading"
@@ -63,7 +63,7 @@
           @change="$emit('choose', target)"
         >
           <span class="target-identity">
-            <strong>{{ target.inspectionNo }}</strong>
+            <strong class="identity-value">{{ target.inspectionNo }}</strong>
             <el-tag
               v-if="target.id === prohibitedId"
               type="info"
@@ -119,6 +119,10 @@ defineEmits<{
 </script>
 
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .association-target-picker {
   display: flex;
   flex: 1;

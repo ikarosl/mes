@@ -24,7 +24,7 @@ import { useTabsStore } from '../../../stores/tabs';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 
-export type IncomingInspectionAssociationMode = 'create' | 'manage' | 'move' | 'remark';
+type IncomingInspectionAssociationMode = 'create' | 'manage' | 'move' | 'remark';
 interface AssociationDraft {
   receipt: QualityIncomingInspectionReceiptItem;
   target: QualityIncomingInspectionOrderReference | null;
@@ -662,7 +662,6 @@ export function useIncomingInspectionOrderAssociation(onChanged: () => void) {
     focusedReceipt,
     remark,
     loading,
-    ready,
     error,
     conflict,
     submitting,
@@ -671,7 +670,6 @@ export function useIncomingInspectionOrderAssociation(onChanged: () => void) {
     status,
     locked,
     controlsDisabled,
-    dirty,
     canSubmit,
     recoveryMessage,
     associated,

@@ -16,7 +16,8 @@
     >
       <InboundGroupHeader
         :expanded="!collapsedInboundIds.has(order.id)"
-        :title="`入库单 ${order.orderNo}`"
+        title-label="入库单"
+        :title="order.orderNo"
         :count-label="`本单 ${activeOtherInventoryLines(order).length} 条有效明细`"
         @toggle="toggleInbound(order.id)"
       >

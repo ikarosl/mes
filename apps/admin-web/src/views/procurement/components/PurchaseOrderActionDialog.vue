@@ -25,7 +25,9 @@
           :column="2"
           border
         >
-          <el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item>
+          <el-descriptions-item label="采购单"
+            ><strong class="identity-value">{{ detail.purchaseNo }}</strong></el-descriptions-item
+          >
           <el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item>
           <el-descriptions-item label="状态">
             <el-tag v-bind="purchaseOrderStatusTag(detail.status)">{{
@@ -35,7 +37,7 @@
           <el-descriptions-item
             v-if="actionLine"
             label="采购行 ID"
-            >{{ actionLine.id }}</el-descriptions-item
+            ><strong class="identity-value">{{ actionLine.id }}</strong></el-descriptions-item
           >
           <el-descriptions-item
             v-if="actionLine"
@@ -79,7 +81,11 @@
             prop="id"
             label="采购行 ID"
             min-width="110"
-          />
+          >
+            <template #default="{ row }"
+              ><strong class="identity-value">{{ row.id }}</strong></template
+            >
+          </el-table-column>
           <el-table-column
             prop="materialVariantCode"
             label="物料精确版本"
@@ -96,16 +102,57 @@
             width="70"
           />
           <el-table-column
-            label="无税金额"
+            label="无税单价"
             min-width="140"
           >
+            <template #header><span title="按本行采购单位填写的无税单价">无税单价</span></template>
             <template #default="{ row }">{{ row.taxExclusiveAmount ?? '—' }}</template>
           </el-table-column>
           <el-table-column
-            label="含税金额"
+            label="含税单价"
             min-width="140"
           >
+            <template #header><span title="按本行采购单位填写的含税单价">含税单价</span></template>
             <template #default="{ row }">{{ row.taxInclusiveAmount ?? '—' }}</template>
+          </el-table-column>
+          <el-table-column
+            label="税率"
+            width="95"
+          >
+            <template #default="{ row }">{{ row.taxRatePercent }}%</template>
+          </el-table-column>
+          <el-table-column
+            label="含税总金额"
+            min-width="190"
+          >
+            <template #default="{ row }">
+              <template v-if="mode === 'place'">
+                <div class="placement-total">
+                  <span>本次下单：</span>
+                  <span v-if="placementAmount(row)?.totalAmount === null">待填写无税单价</span>
+                  <PurchaseLineTotalAmount
+                    v-else
+                    :total-amount="placementAmount(row)?.totalAmount ?? null"
+                    :total-amount-source="placementAmount(row)?.totalAmountSource ?? null"
+                  />
+                </div>
+                <div
+                  v-if="placementAmountDiffers(row)"
+                  class="placement-total saved-total"
+                >
+                  <span>已保存总金额：</span>
+                  <PurchaseLineTotalAmount
+                    :total-amount="row.totalAmount"
+                    :total-amount-source="row.totalAmountSource"
+                  />
+                </div>
+              </template>
+              <PurchaseLineTotalAmount
+                v-else
+                :total-amount="row.totalAmount"
+                :total-amount-source="row.totalAmountSource"
+              />
+            </template>
           </el-table-column>
           <el-table-column
             v-if="detail.supplementReason === 'quality_replacement'"
@@ -113,12 +160,17 @@
             min-width="230"
           >
             <template #default="{ row }">
-              <div>{{ row.originReceiptNo }} · 到货明细 ID：{{ row.originReceiptLineId }}</div>
+              <div>
+                <strong class="identity-value">{{ row.originReceiptNo }}</strong> · 到货行
+                ID：<strong class="identity-value">{{ row.originReceiptLineId }}</strong>
+              </div>
             </template>
           </el-table-column>
         </el-table>
         <p v-if="mode === 'place'">
-          确认下单后，本单供应商及各物料行的版本、数量、金额和来源将锁定。
+          <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
+          手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
+          确认下单后，供应商、物料及精确版本、采购数量和来源将锁定；单价、税率及总金额可在“查看/编辑”中填写原因更正。
         </p>
         <p v-else-if="mode === 'cancel'">
           草稿可整单取消；已下单采购须没有属于本单的到货记录（含已作废登记）。取消后整单及物料行均不可恢复。
@@ -212,10 +264,12 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { PurchaseOrderDetail } from '@company/contracts';
+import type { PurchaseOrderDetail, PurchaseOrderLine } from '@company/contracts';
 import { PURCHASE_ORDER_STATUS_LABELS } from '@company/constants';
 import { DialogWidth } from '../../../utils/dialog';
 import { purchaseOrderStatusTag } from '../purchase-order-presentation';
+import { previewPurchaseLineAmount } from '../purchase-line-amount';
+import PurchaseLineTotalAmount from './PurchaseLineTotalAmount.vue';
 import {
   usePurchaseOrderActions,
   type PurchaseOrderAction,
@@ -260,6 +314,29 @@ const confirmationLines = computed(() => {
   const items = actionOrder.value?.items ?? detail.value?.items ?? [];
   return mode.value === 'close-order' ? items.filter((line) => line.status === 'open') : items;
 });
+const placementAmounts = computed(
+  () =>
+    new Map(
+      confirmationLines.value.map((line) => [
+        line.id,
+        previewPurchaseLineAmount({
+          plannedQuantity: line.plannedQuantity,
+          taxExclusiveAmount: line.taxExclusiveAmount ?? '',
+          taxInclusiveAmount: line.taxInclusiveAmount ?? '',
+          taxRatePercent: line.taxRatePercent,
+          manualTotalAmount: line.totalAmountSource === 'manual' ? (line.totalAmount ?? '') : '',
+        }).amount,
+      ]),
+    ),
+);
+const placementAmount = (line: PurchaseOrderLine) => placementAmounts.value.get(line.id) ?? null;
+const placementAmountDiffers = (line: PurchaseOrderLine): boolean => {
+  const amount = placementAmount(line);
+  return (
+    amount !== null &&
+    (amount.totalAmount !== line.totalAmount || amount.totalAmountSource !== line.totalAmountSource)
+  );
+};
 const isLastOpenLine = computed(
   () => actionOrder.value?.items.filter((line) => line.status === 'open').length === 1,
 );
@@ -303,6 +380,10 @@ const beforeClose = () => {
 defineExpose({ open, close, visible, locked: command.locked });
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .el-alert,
 .el-descriptions,
 .el-table {
@@ -311,5 +392,15 @@ defineExpose({ open, close, visible, locked: command.locked });
 p {
   line-height: 1.7;
   color: #606266;
+}
+.placement-total {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 4px;
+}
+.saved-total {
+  margin-top: 4px;
+  color: var(--el-text-color-regular);
+  font-size: 12px;
 }
 </style>

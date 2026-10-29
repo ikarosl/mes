@@ -4,7 +4,7 @@
       type="button"
       class="inbound-group-toggle"
       :aria-expanded="expanded"
-      :aria-label="`${expanded ? '收起' : '展开'}${title}`"
+      :aria-label="`${expanded ? '收起' : '展开'}${titleLabel ? `${titleLabel} ` : ''}${title}`"
       @click="$emit('toggle')"
     >
       <span class="group-action">
@@ -16,7 +16,10 @@
         /></el-icon>
         <span>{{ expanded ? '收起' : '展开' }}</span>
       </span>
-      <strong class="group-title">{{ title }}</strong>
+      <span class="group-title">
+        <span v-if="titleLabel">{{ titleLabel + ' ' }}</span>
+        <strong class="group-title-value">{{ title }}</strong>
+      </span>
       <span class="group-count">{{ countLabel }}</span>
     </button>
     <slot />
@@ -27,7 +30,7 @@
 import { ArrowDown } from '@element-plus/icons-vue';
 
 defineOptions({ name: 'InboundGroupHeader' });
-defineProps<{ expanded: boolean; title: string; countLabel: string }>();
+defineProps<{ expanded: boolean; titleLabel?: string; title: string; countLabel: string }>();
 defineEmits<{ toggle: [] }>();
 </script>
 
@@ -62,8 +65,11 @@ defineEmits<{ toggle: [] }>();
 .group-title {
   color: var(--el-text-color-primary);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+.group-title-value {
+  font-weight: 600;
 }
 .inbound-group-toggle:focus-visible {
   outline: 2px solid var(--el-color-primary);

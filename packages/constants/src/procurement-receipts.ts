@@ -46,22 +46,11 @@ export const RECEIPT_RETURN_REASONS = [
   'procurement_termination',
   'manual_rejection',
 ] as const;
-export const PURCHASE_FULFILLMENT_MODES = ['new_arrival', 'existing_receipt'] as const;
 export const PURCHASE_FULFILLMENT_MODE_LABELS = {
   new_arrival: '等待新到货',
   existing_receipt: '已有到货补购',
 } as const;
 
-export const RECEIPT_ROUND_STATUSES = [
-  'uninspected',
-  'reviewing',
-  'reinspection_required',
-  'quality_rejected',
-  'awaiting_acceptance',
-  'finalized',
-  'voided',
-  'superseded',
-] as const;
 export const RECEIPT_ROUND_STATUS_LABELS = {
   uninspected: '待检验',
   reviewing: '检验中',

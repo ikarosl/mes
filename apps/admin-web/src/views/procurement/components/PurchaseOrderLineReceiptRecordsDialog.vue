@@ -10,8 +10,12 @@
         border
         class="records-context"
       >
-        <el-descriptions-item label="采购单号">{{ context.purchaseNo }}</el-descriptions-item>
-        <el-descriptions-item label="采购行 ID">{{ context.lineId }}</el-descriptions-item>
+        <el-descriptions-item label="采购单号"
+          ><strong>{{ context.purchaseNo }}</strong></el-descriptions-item
+        >
+        <el-descriptions-item label="采购行 ID"
+          ><strong>{{ context.lineId }}</strong></el-descriptions-item
+        >
         <el-descriptions-item label="物料 / 精确版本">
           <div>{{ context.itemName }}</div>
           <div>{{ context.materialVariantCode }}</div>
@@ -40,7 +44,7 @@
             v-model="keyword"
             clearable
             maxlength="100"
-            placeholder="到货单号 / 明细 ID / 供应商批号"
+            placeholder="到货单号 / 到货行 ID / 供应商批号"
             class="records-keyword"
           />
         </el-form-item>
@@ -87,7 +91,7 @@
           </template>
         </el-table-column>
         <el-table-column
-          label="到货明细 ID"
+          label="到货行 ID"
           min-width="135"
         >
           <template #default="{ row }">

@@ -65,17 +65,17 @@ export class IncomingInspectionReceiptCandidateQueryDto
   @IsIn(QUALITY_INCOMING_INSPECTION_RECEIPT_ASSOCIATIONS)
   association?: QualityIncomingInspectionReceiptCandidateQuery['association'];
 }
-export class IncomingInspectionExpectedOrderDto implements QualityIncomingInspectionExpectedOrder {
+class IncomingInspectionExpectedOrderDto implements QualityIncomingInspectionExpectedOrder {
   @Matches(ID) orderId!: string;
   @IsInt() @Min(0) @Max(2147483647) expectedVersion!: number;
 }
-export class IncomingInspectionInitialReceiptDto implements QualityIncomingInspectionInitialReceipt {
+class IncomingInspectionInitialReceiptDto implements QualityIncomingInspectionInitialReceipt {
   @Matches(ID) receiptId!: string;
   @ValidateIf((value: IncomingInspectionInitialReceiptDto) => value.fromOrderId !== null)
   @Matches(ID)
   fromOrderId!: string | null;
 }
-export class IncomingInspectionAssociationChangeDto
+class IncomingInspectionAssociationChangeDto
   extends IncomingInspectionInitialReceiptDto
   implements QualityIncomingInspectionAssociationChange
 {

@@ -17,7 +17,10 @@
       class="history-context"
     >
       <span
-        ><strong>{{ sourceLine.receiptNo }}</strong> · id:{{ sourceLine.id }}</span
+        ><strong class="identity-value">{{ sourceLine.receiptNo }}</strong> · 到货行 ID：<strong
+          class="identity-value"
+          >{{ sourceLine.id }}</strong
+        ></span
       >
       <span>{{ sourceLine.itemName }}（{{ sourceLine.itemCode }}）</span>
       <span>物料版本：{{ sourceLine.materialVariantCode }}</span>
@@ -416,15 +419,20 @@
                 type="primary"
                 class="source-purchase-link"
                 @click="goSourcePurchase"
-                >{{ sourceLine.purchaseNo }} · 采购第
-                {{ sourceLine.purchaseOrderLineNo }} 行</el-button
+                ><span
+                  ><strong class="source-order-number">{{ sourceLine.purchaseNo }}</strong> · 采购第
+                  {{ sourceLine.purchaseOrderLineNo }} 行</span
+                ></el-button
               >
               <span v-else>
-                {{ sourceLine.purchaseNo }} · 采购第 {{ sourceLine.purchaseOrderLineNo }} 行
+                <strong class="identity-value">{{ sourceLine.purchaseNo }}</strong> · 采购第
+                {{ sourceLine.purchaseOrderLineNo }} 行
               </span>
               <div class="id-pair">
                 <span>采购行 ID：</span>
-                <span class="history-id">{{ sourceLine.purchaseOrderLineId }}</span>
+                <strong class="history-id identity-value">{{
+                  sourceLine.purchaseOrderLineId
+                }}</strong>
               </div>
             </div>
           </template>
@@ -789,6 +797,13 @@ defineExpose({ open, close, visible, locked: computed(() => false) });
 </script>
 
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.source-order-number {
+  font-weight: 600;
+}
 .history-context {
   display: flex;
   flex-wrap: wrap;

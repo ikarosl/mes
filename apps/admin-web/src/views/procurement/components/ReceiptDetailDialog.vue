@@ -7,6 +7,15 @@
     :before-close="beforeClose"
     :close-on-click-modal="false"
   >
+    <template #header="{ titleId, titleClass }">
+      <span
+        :id="titleId"
+        :class="[titleClass, 'document-title']"
+        >到货详情<template v-if="detail">
+          · <strong class="identity-value">{{ detail.receiptNo }}</strong></template
+        ></span
+      >
+    </template>
     <div v-loading="receiptLoading">
       <el-alert
         v-if="readError"
@@ -26,7 +35,8 @@
           border
           size="small"
           class="receipt-header"
-          ><el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item
+          ><el-descriptions-item label="采购单"
+            ><strong class="identity-value">{{ detail.purchaseNo }}</strong></el-descriptions-item
           ><el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item
           ><el-descriptions-item label="实际到货时间">{{
             formatDateTimeForDisplay(detail.receivedAt)
@@ -74,7 +84,10 @@
                 :aria-current="activeLine === line.id ? 'true' : undefined"
                 @click="selectLine(line.id)"
               >
-                <span class="line-identity">id:{{ line.id }} · {{ line.itemName }}</span>
+                <span class="line-identity"
+                  >到货行 ID：<strong class="identity-value">{{ line.id }}</strong> ·
+                  <strong class="identity-value">{{ line.itemName }}</strong></span
+                >
                 <span class="line-version">{{ line.materialVariantCode }}</span>
                 <span class="line-version"
                   >供应商批号 {{ line.supplierBatchCode || '未提供' }}</span
@@ -727,6 +740,13 @@ defineExpose({
 });
 </script>
 <style scoped>
+.document-title {
+  font-weight: 400;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .notice {
   margin-bottom: 16px;
 }
@@ -797,7 +817,7 @@ defineExpose({
   border-color: var(--el-color-primary);
 }
 .line-identity {
-  font-weight: 600;
+  font-weight: 400;
 }
 .line-version,
 .action-note {

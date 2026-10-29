@@ -28,7 +28,9 @@
             aria-hidden="true"
             ><ArrowRight
           /></el-icon>
-          <strong>到货单 {{ header.receiptNo }}</strong>
+          <span class="receipt-title"
+            >到货单 <strong class="receipt-number">{{ header.receiptNo }}</strong></span
+          >
           <span class="fold-action">{{ expanded ? '收起物料' : '展开物料' }}</span>
         </button>
       </template>
@@ -353,10 +355,13 @@ const hasQualityPrimary = (row: ProcurementReceiptLineListItem): boolean =>
   outline: 2px solid var(--el-color-primary);
   outline-offset: 2px;
 }
-.receipt-disclosure strong {
+.receipt-title {
   font-size: 14px;
-  font-weight: 500;
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+.receipt-number {
+  font-weight: 600;
 }
 .receipt-fold-icon {
   flex-shrink: 0;

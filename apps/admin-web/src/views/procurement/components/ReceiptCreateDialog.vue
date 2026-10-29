@@ -50,7 +50,10 @@
           prop="purchaseNo"
           label="采购单号"
           min-width="180"
-        /><el-table-column
+          ><template #default="{ row }"
+            ><strong class="identity-value">{{ row.purchaseNo }}</strong></template
+          ></el-table-column
+        ><el-table-column
           label="供应商"
           min-width="210"
           show-overflow-tooltip
@@ -89,7 +92,7 @@
     >
       <div class="order-context">
         <div>
-          <strong>{{ order.purchaseNo }}</strong>
+          <strong class="identity-value">{{ order.purchaseNo }}</strong>
           <span>供应商 {{ order.supplierName }}</span>
         </div>
         <div class="toolbar">
@@ -341,6 +344,10 @@ const beforeClose = (): void => {
 defineExpose({ open, close, visible, locked: command.locked });
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .notice {
   margin-bottom: 16px;
 }

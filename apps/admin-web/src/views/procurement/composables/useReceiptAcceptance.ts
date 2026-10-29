@@ -396,7 +396,6 @@ export function useReceiptAcceptance(
     receivedQuantityInput,
     receivedQuantityError,
     receivedQuantityChanged,
-    executedQuantity,
     limit,
     total,
     inboundTotal,

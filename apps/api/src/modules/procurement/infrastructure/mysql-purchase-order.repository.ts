@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
-import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
   CreatePurchaseOrderPayload,
   UpdatePurchaseOrderPayload,
@@ -22,6 +22,7 @@ import type {
   PurchaseOrderDraftLine,
   PurchaseFulfillmentMode,
   ProcurementDemandCandidate,
+  CorrectPurchaseOrderAmountsPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
@@ -33,7 +34,10 @@ import {
 import { ProductionProcurementQuery } from '../../production/public.js';
 import { InventoryInboundQuery } from '../../inventory/public.js';
 import { PurchaseOrderRepository } from '../application/ports/purchase-order.repository.js';
-import { normalizePurchaseDraft } from '../domain/purchase-order.policy.js';
+import {
+  normalizePurchaseDraft,
+  normalizePurchaseLineAmount,
+} from '../domain/purchase-order.policy.js';
 import {
   listPurchaseOrders,
   getPurchaseOrder,
@@ -64,6 +68,7 @@ import {
   auditOrder,
   requireOrderWithoutReceiptFacts,
 } from './mysql-purchase-order.write.js';
+import { correctPurchaseOrderAmounts } from './mysql-purchase-order-amounts.operation.js';
 import {
   requireSupplementIdentity,
   requireSupplementCreationEligibility,
@@ -168,7 +173,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           order.source_type !== payload.sourceType
         )
           return orderError(
-            '补单只能调整计划量、金额文本与备注，供应商、原采购、物料和需求追溯不能改变',
+            '补单只能调整计划量、单价、税率、总额与备注，供应商、原采购、物料和需求追溯不能改变',
           );
         origins = lines.map((line, index) => {
           const next = payload.items[index];
@@ -182,7 +187,7 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
               JSON.stringify(sortedIds(next.demandIds))
           )
             return orderError(
-              '补单只能调整计划量、金额文本与备注，供应商、原采购、物料和需求追溯不能改变',
+              '补单只能调整计划量、单价、税率、总额与备注，供应商、原采购、物料和需求追溯不能改变',
             );
           return {
             lineId: String(line.origin_order_line_id),
@@ -267,10 +272,24 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
       const refMap = new Map(refs.map((ref) => [`${ref.itemId}:${ref.materialVariantId}`, ref]));
       for (const line of lines) {
         const ref = refMap.get(`${line.item_id}:${line.material_variant_id}`)!;
-        await connection.execute(
-          `UPDATE procurement_order_line SET item_code_snapshot=?,material_variant_code_snapshot=?,unit_snapshot=?,status='open',version=version+1,updated_by=? WHERE id=?`,
-          [ref.itemCode, ref.materialVariantCode, ref.unit, context.actorId, line.id],
+        const amount = normalizePurchaseLineAmount(toAmountInput(line));
+        const [result] = await connection.execute<ResultSetHeader>(
+          `UPDATE procurement_order_line SET item_code_snapshot=?,material_variant_code_snapshot=?,unit_snapshot=?,tax_exclusive_amount=?,tax_inclusive_amount=?,tax_rate_percent=?,total_amount=?,total_amount_source=?,status='open',version=version+1,updated_by=? WHERE id=? AND version=?`,
+          [
+            ref.itemCode,
+            ref.materialVariantCode,
+            ref.unit,
+            amount.taxExclusiveAmount,
+            amount.taxInclusiveAmount,
+            amount.taxRatePercent,
+            amount.totalAmount,
+            amount.totalAmountSource,
+            context.actorId,
+            line.id,
+            line.version,
+          ],
         );
+        requireOptimisticUpdate(result.affectedRows);
       }
       await connection.execute(
         "UPDATE procurement_order SET status='ordered',ordered_by=?,ordered_at=NOW(),version=version+1,updated_by=? WHERE id=?",
@@ -443,6 +462,17 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     });
   }
 
+  correctAmounts(
+    id: string,
+    payload: CorrectPurchaseOrderAmountsPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult> {
+    return withTransaction(this.pool, async (connection) => {
+      const order = await this.lockRoots(connection, id, await readLines(connection, id));
+      return correctPurchaseOrderAmounts(connection, order, payload, context);
+    });
+  }
+
   supplement(
     id: string,
     payload: CreatePurchaseOrderSupplementPayload,
@@ -475,6 +505,8 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
         items: selected.map((line, index) => ({
           taxExclusiveAmount: payload.items[index]!.taxExclusiveAmount ?? null,
           taxInclusiveAmount: payload.items[index]!.taxInclusiveAmount ?? null,
+          taxRatePercent: payload.items[index]!.taxRatePercent,
+          manualTotalAmount: payload.items[index]!.manualTotalAmount ?? null,
           itemId: String(line.item_id),
           materialVariantId: String(line.material_variant_id),
           plannedQuantity: payload.items[index]!.plannedQuantity,
@@ -637,10 +669,17 @@ const toDraftLines = (
   sources: Map<string, string[]>,
 ): PurchaseOrderDraftLine[] =>
   lines.map((line) => ({
-    taxExclusiveAmount: line.tax_exclusive_amount,
-    taxInclusiveAmount: line.tax_inclusive_amount,
+    ...toAmountInput(line),
     itemId: String(line.item_id),
     materialVariantId: String(line.material_variant_id),
     plannedQuantity: Number(line.planned_quantity),
     demandIds: sources.get(String(line.id)) ?? [],
   }));
+
+const toAmountInput = (line: OrderLineRow) => ({
+  plannedQuantity: Number(line.planned_quantity),
+  taxExclusiveAmount: line.tax_exclusive_amount,
+  taxInclusiveAmount: line.tax_inclusive_amount,
+  taxRatePercent: line.tax_rate_percent,
+  manualTotalAmount: line.total_amount_source === 'manual' ? line.total_amount : null,
+});

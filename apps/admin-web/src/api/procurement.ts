@@ -25,6 +25,7 @@ import type {
   ClosePurchaseOrderPayload,
   ClosePurchaseOrderLinePayload,
   ReopenPurchaseOrderLinePayload,
+  CorrectPurchaseOrderAmountsPayload,
   CreatePurchaseOrderSupplementPayload,
   PurchaseOrderCommandResult,
   ProcurementDemandCandidateQuery,
@@ -404,6 +405,12 @@ export const procurementApi = {
     key: string,
   ): Promise<PurchaseOrderCommandResult> =>
     command(`/procurement/purchase-order-lines/${id}/actions/reopen`, data, key),
+  correctOrderAmounts: (
+    id: string,
+    data: CorrectPurchaseOrderAmountsPayload,
+    key: string,
+  ): Promise<PurchaseOrderCommandResult> =>
+    command(`/procurement/purchase-orders/${id}/actions/correct-amounts`, data, key),
   createSupplement: (
     id: string,
     data: CreatePurchaseOrderSupplementPayload,

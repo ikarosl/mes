@@ -29,13 +29,17 @@
             aria-hidden="true"
             ><ArrowRight
           /></el-icon>
-          <strong>到货单 {{ receipt.receiptNo }}</strong>
+          <span class="receipt-title"
+            >到货单 <strong class="receipt-number">{{ receipt.receiptNo }}</strong></span
+          >
           <span class="fold-action">{{ expanded ? '收起物料' : '展开物料' }}</span>
         </button>
       </template>
       <template #receipt-meta>
         <div class="receipt-source-meta">
-          <span class="source-meta">采购单 {{ receipt.purchaseNo }}</span>
+          <span class="source-meta"
+            >采购单 <strong class="identity-value">{{ receipt.purchaseNo }}</strong></span
+          >
         </div>
         <div class="receipt-actions">
           <el-button
@@ -166,6 +170,10 @@ function lineAction(item: ProcurementInboundInspectionLineItem): string {
 }
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .incoming-receipt {
   position: relative;
   min-width: 0;
@@ -216,9 +224,12 @@ function lineAction(item: ProcurementInboundInspectionLineItem): string {
   text-align: left;
   cursor: pointer;
 }
-.receipt-disclosure strong {
-  font-weight: 600;
+.receipt-title {
+  font-weight: 400;
   overflow-wrap: anywhere;
+}
+.receipt-number {
+  font-weight: 600;
 }
 .receipt-disclosure:hover {
   background: var(--el-fill-color-light);

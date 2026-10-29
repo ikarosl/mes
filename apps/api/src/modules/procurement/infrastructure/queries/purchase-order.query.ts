@@ -30,7 +30,7 @@ type OrderDisplayRow = OrderRow & {
 };
 const ORDER_DISPLAY_SELECT = `SELECT o.id,o.purchase_no,o.supplier_id,s.supplier_name,o.work_order_id,o.source_type,o.supplement_reason,o.status,o.remark,o.version,o.ordered_at,o.created_at,o.updated_at,w.work_order_no,(SELECT COUNT(*) FROM procurement_order_line l WHERE l.purchase_order_id=o.id) line_count FROM procurement_order o JOIN procurement_supplier s ON s.id=o.supplier_id LEFT JOIN work_orders w ON w.id=o.work_order_id`;
 const LINE_COLUMNS =
-  'l.id,l.purchase_order_id,l.tax_exclusive_amount,l.tax_inclusive_amount,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.supplement_evidence,l.fulfillment_mode';
+  'l.id,l.purchase_order_id,l.tax_exclusive_amount,l.tax_inclusive_amount,l.tax_rate_percent,l.total_amount,l.total_amount_source,l.line_no,l.item_id,l.material_variant_id,l.item_code_snapshot,l.material_variant_code_snapshot,l.unit_snapshot,l.planned_quantity,l.status,l.version,l.origin_order_line_id,l.origin_receipt_line_id,l.supplement_evidence,l.fulfillment_mode';
 
 export const listPurchaseOrders = async (
   db: Db,
@@ -138,6 +138,9 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       lineNo: row.line_no,
       taxExclusiveAmount: row.tax_exclusive_amount,
       taxInclusiveAmount: row.tax_inclusive_amount,
+      taxRatePercent: row.tax_rate_percent,
+      totalAmount: row.total_amount,
+      totalAmountSource: row.total_amount_source,
       itemId: String(row.item_id),
       itemCode: row.item_code_snapshot,
       itemName: row.material_name,

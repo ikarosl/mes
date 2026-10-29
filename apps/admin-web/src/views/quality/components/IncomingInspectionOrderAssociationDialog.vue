@@ -34,7 +34,9 @@
           v-if="order"
           class="order-identity"
         >
-          <strong>质检单 {{ order.inspectionNo }}</strong>
+          <span
+            >质检单 <strong class="identity-value">{{ order.inspectionNo }}</strong></span
+          >
         </p>
         <el-form
           label-position="top"
@@ -76,7 +78,9 @@
           v-else-if="mode === 'manage' && order"
           class="order-context"
         >
-          <strong>质检单 {{ order.inspectionNo }}</strong>
+          <span
+            >质检单 <strong class="identity-value">{{ order.inspectionNo }}</strong></span
+          >
           <p><span>主单备注</span>{{ order.remark || '未填写备注' }}</p>
         </header>
         <InlineHint>
@@ -267,11 +271,15 @@
                 class="move-preview"
                 role="status"
               >
-                <strong>{{ focusedDraft.receipt.receiptNo }}</strong>
+                <strong class="identity-value">{{ focusedDraft.receipt.receiptNo }}</strong>
                 <div class="association-path">
-                  <span>{{ orderLabel(focusedDraft.receipt.order) }}</span>
+                  <span :class="{ 'identity-value': Boolean(focusedDraft.receipt.order) }">{{
+                    orderLabel(focusedDraft.receipt.order)
+                  }}</span>
                   <span aria-hidden="true">→</span>
-                  <strong>{{ orderLabel(focusedDraft.target) }}</strong>
+                  <span :class="{ 'identity-value': Boolean(focusedDraft.target) }">{{
+                    orderLabel(focusedDraft.target)
+                  }}</span>
                 </div>
                 <span class="muted">保存后生效</span>
               </div>
@@ -336,11 +344,16 @@
                       >{{ changeLabel(draft) }}</el-tag
                     >
                     <div class="association-path">
-                      <span>{{ orderLabel(draft.receipt.order) }}</span>
+                      <span :class="{ 'identity-value': Boolean(draft.receipt.order) }">{{
+                        orderLabel(draft.receipt.order)
+                      }}</span>
                       <span aria-hidden="true">→</span>
-                      <strong>{{
-                        mode === 'create' ? '本次新建质检主单' : orderLabel(draft.target)
-                      }}</strong>
+                      <span
+                        :class="{ 'identity-value': mode !== 'create' && Boolean(draft.target) }"
+                        >{{
+                          mode === 'create' ? '本次新建质检主单' : orderLabel(draft.target)
+                        }}</span
+                      >
                     </div>
                   </div>
                   <template #actions>
@@ -566,6 +579,10 @@ defineExpose({ open, close, visible, locked });
 </script>
 
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 :global(.el-dialog.association-workbench) {
   height: 760px;
 }
@@ -723,9 +740,6 @@ defineExpose({ open, close, visible, locked });
   font-size: 13px;
   line-height: 1.6;
   overflow-wrap: anywhere;
-}
-.association-path strong {
-  color: var(--el-text-color-primary);
 }
 .move-destinations {
   display: flex;

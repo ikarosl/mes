@@ -16,7 +16,8 @@
     >
       <InboundGroupHeader
         :expanded="!collapsedWorkOrderIds.has(group.workOrderId)"
-        :title="`工单 ${group.workOrderNo}`"
+        title-label="工单"
+        :title="group.workOrderNo"
         :count-label="`本页 ${group.items.length} 条待入库明细`"
         @toggle="toggleWorkOrder(group.workOrderId)"
       >

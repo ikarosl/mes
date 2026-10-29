@@ -34,8 +34,12 @@
           min-width="175"
         >
           <template #default="{ row }">
-            <div>{{ row.purchaseNo }}</div>
-            <div class="help">采购行 id:{{ row.purchaseOrderLineId }}</div>
+            <div>
+              <strong class="identity-value">{{ row.purchaseNo }}</strong>
+            </div>
+            <div class="help">
+              采购行 ID：<strong class="identity-value">{{ row.purchaseOrderLineId }}</strong>
+            </div>
           </template>
         </el-table-column>
         <el-table-column
@@ -203,6 +207,10 @@ watch(
 );
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .purchase-toolbar {
   display: flex;
   align-items: center;

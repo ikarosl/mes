@@ -9,31 +9,8 @@ export const APPROVAL_SCENE_LABELS: Readonly<Record<string, string>> = {
   [APPROVAL_SCENE_CODES.demandCorrection]: '需求更正与关闭',
   [APPROVAL_SCENE_CODES.batchCloseout]: '生产任务结案',
 };
-export const APPROVAL_FLOW_VERSION_STATUSES = ['draft', 'published', 'discarded'] as const;
 export const APPROVAL_INSTANCE_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
-export const APPROVAL_STEP_STATUSES = [
-  'waiting',
-  'pending',
-  'blocked',
-  'approved',
-  'rejected',
-  'cancelled',
-] as const;
-export const APPROVAL_ACTION_TYPES = [
-  'submitted',
-  'approved',
-  'rejected',
-  'withdrawn',
-  'assignment_blocked',
-  'reassigned',
-] as const;
 export const APPROVAL_LIST_SCOPES = ['todo', 'mine', 'all'] as const;
-export const APPROVAL_BLOCKED_REASONS = ['no_eligible_assignee'] as const;
-export const APPROVAL_SUBJECT_TYPES = [
-  'product',
-  'production_demand_correction',
-  'production_batch_closeout',
-] as const;
 export const APPROVAL_INSTANCE_STATUS_LABELS = {
   pending: '审批中',
   approved: '已通过',
@@ -63,9 +40,4 @@ export const APPROVAL_ACTION_TYPE_LABELS = {
   withdrawn: '撤回申请',
   assignment_blocked: '人员分派阻塞',
   reassigned: '重新分派',
-} as const;
-export const APPROVAL_FLOW_VERSION_STATUS_LABELS = {
-  draft: '草稿',
-  published: '已发布',
-  discarded: '已废弃',
 } as const;

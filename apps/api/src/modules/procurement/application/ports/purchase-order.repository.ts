@@ -18,6 +18,7 @@ import type {
   ClosePurchaseOrderLinePayload,
   ReopenPurchaseOrderLinePayload,
   ClosePurchaseOrderPayload,
+  CorrectPurchaseOrderAmountsPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
@@ -74,6 +75,11 @@ export abstract class PurchaseOrderRepository {
   abstract close(
     id: string,
     payload: ClosePurchaseOrderPayload,
+    context: CommandContext,
+  ): Promise<PurchaseOrderCommandResult>;
+  abstract correctAmounts(
+    id: string,
+    payload: CorrectPurchaseOrderAmountsPayload,
     context: CommandContext,
   ): Promise<PurchaseOrderCommandResult>;
   abstract supplement(

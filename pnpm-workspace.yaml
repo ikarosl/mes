@@ -17,6 +17,7 @@ catalog:
   bcryptjs: ^2.4.3
   class-transformer: ^0.5.1
   class-validator: ^0.14.4
+  decimal.js: ^10.6.0
   dotenv: ^16.6.1
   element-plus: ^2.10.8
   happy-dom: ^15.11.7

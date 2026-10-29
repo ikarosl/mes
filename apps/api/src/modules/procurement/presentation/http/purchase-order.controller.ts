@@ -17,6 +17,7 @@ import {
   REOPEN_PURCHASE_ORDER_LINE_SCOPE,
   CLOSE_PURCHASE_ORDER_SCOPE,
   CREATE_PURCHASE_ORDER_SUPPLEMENT_SCOPE,
+  CORRECT_PURCHASE_ORDER_AMOUNTS_SCOPE,
 } from '../../application/idempotency/procurement-idempotency-scopes.contract.js';
 import { ProcurementDomainExceptionFilter } from './procurement-domain-exception.filter.js';
 import {
@@ -33,6 +34,7 @@ import {
   ClosePurchaseOrderDto,
   ReopenPurchaseOrderLineDto,
   CreatePurchaseOrderSupplementDto,
+  CorrectPurchaseOrderAmountsDto,
   ProcurementDemandCandidateQueryDto,
   ProcurementDemandWorkOrderQueryDto,
   ResolveProcurementDemandsDto,
@@ -189,6 +191,17 @@ export class PurchaseOrderController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.close(id, body, context);
+  }
+  @Post('purchase-orders/:id/actions/correct-amounts')
+  @RequirePermission(PERMISSIONS.procurement.orders.update)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: CORRECT_PURCHASE_ORDER_AMOUNTS_SCOPE })
+  correctAmounts(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: CorrectPurchaseOrderAmountsDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.correctAmounts(id, body, context);
   }
   @Post('purchase-orders/:id/supplements')
   @RequirePermission(PERMISSIONS.procurement.orders.create)

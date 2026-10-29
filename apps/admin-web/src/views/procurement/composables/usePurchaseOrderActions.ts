@@ -59,6 +59,9 @@ export function usePurchaseOrderActions(
               next.plannedQuantity !== line.plannedQuantity ||
               next.taxExclusiveAmount !== line.taxExclusiveAmount ||
               next.taxInclusiveAmount !== line.taxInclusiveAmount ||
+              next.taxRatePercent !== line.taxRatePercent ||
+              next.totalAmount !== line.totalAmount ||
+              next.totalAmountSource !== line.totalAmountSource ||
               next.itemId !== line.itemId ||
               next.materialVariantId !== line.materialVariantId ||
               next.fulfillmentMode !== line.fulfillmentMode

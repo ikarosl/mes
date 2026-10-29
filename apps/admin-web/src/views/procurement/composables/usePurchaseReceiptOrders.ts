@@ -410,22 +410,15 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     receiptLineId = '',
     matches: () => boolean = () => true,
   ): Promise<boolean> {
-    if ((!receiptId && !receiptLineId) || !locationRead.isActive()) return false;
+    if (!receiptId || !locationRead.isActive()) return false;
     locationRevision += 1;
     const read = locationRead.begin(matches);
     locationLoading.value = true;
     locationError.value = '';
     try {
-      let targetId = receiptId;
-      if (!targetId) {
-        const location = await procurementApi.locateReceiptLine(receiptLineId, read.signal);
-        if (!read.isCurrent()) return false;
-        if (location.receiptLineId !== receiptLineId) throw new Error('到货明细定位不匹配');
-        targetId = location.receiptId;
-      }
-      const result = await procurementApi.receiptWorklistLines(targetId, read.signal);
+      const result = await procurementApi.receiptWorklistLines(receiptId, read.signal);
       if (!read.isCurrent()) return false;
-      validateLines(result, targetId);
+      validateLines(result, receiptId);
       if (receiptLineId && !result.items.some((line) => line.id === receiptLineId))
         throw new Error('指定到货明细不属于该到货单');
       const group = groups.value.find(
@@ -437,11 +430,11 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
         if (!group.loaded || group.error) await loadReceipts(group, false, false);
         if (!read.isCurrent()) return false;
         purchaseOrder = group.purchaseOrder;
-        if (group.receipts.some((receipt) => receipt.id === targetId) && isCurrentGroup(group)) {
-          cancelChild(`receipt:${targetId}`);
-          group.lines[targetId] = loadedState(result);
-          group.expandedReceipts.add(targetId);
-          focusedReceipt.value = group.lines[targetId]!;
+        if (group.receipts.some((receipt) => receipt.id === receiptId) && isCurrentGroup(group)) {
+          cancelChild(`receipt:${receiptId}`);
+          group.lines[receiptId] = loadedState(result);
+          group.expandedReceipts.add(receiptId);
+          focusedReceipt.value = group.lines[receiptId]!;
         } else focusedReceipt.value = loadedState(result);
       } else {
         purchaseOrder = await procurementApi.getReceiptPurchaseOrder(

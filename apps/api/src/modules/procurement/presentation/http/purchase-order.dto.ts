@@ -23,6 +23,7 @@ import {
   PURCHASE_ORDER_STATUSES,
   PURCHASE_ORDER_MAX_LINES,
   PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+  PURCHASE_ORDER_TOTAL_AMOUNT_MAX_LENGTH,
   PURCHASE_ORDER_MAX_DEMANDS,
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
@@ -62,7 +63,7 @@ export class PurchaseQualityReplacementCandidateQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) receiptLineId?: string;
 }
-export class PurchaseOrderAmountTextDto {
+class PurchaseOrderAmountTextDto {
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -73,8 +74,17 @@ export class PurchaseOrderAmountTextDto {
   @IsString()
   @MaxLength(PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH)
   taxInclusiveAmount?: string | null;
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  taxRatePercent?: string | null;
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(PURCHASE_ORDER_TOTAL_AMOUNT_MAX_LENGTH)
+  manualTotalAmount?: string | null;
 }
-export class PurchaseOrderDraftLineDto extends PurchaseOrderAmountTextDto {
+class PurchaseOrderDraftLineDto extends PurchaseOrderAmountTextDto {
   @Matches(/^[1-9]\d{0,19}$/) itemId!: string;
   @Matches(/^[1-9]\d{0,19}$/) materialVariantId!: string;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) plannedQuantity!: number;
@@ -110,7 +120,35 @@ export class CancelPurchaseOrderDto extends PurchaseOrderVersionDto {
 export class ClosePurchaseOrderDto extends CancelPurchaseOrderDto {}
 export class ClosePurchaseOrderLineDto extends CancelPurchaseOrderDto {}
 export class ReopenPurchaseOrderLineDto extends CancelPurchaseOrderDto {}
-export class CreatePurchaseOrderSupplementLineDto extends PurchaseOrderAmountTextDto {
+class CorrectPurchaseOrderAmountsLineDto extends PurchaseOrderVersionDto {
+  @Matches(/^[1-9]\d{0,19}$/) id!: string;
+  @ValidateIf((_object, value) => value !== null)
+  @Transform(trim)
+  @IsString()
+  @MaxLength(PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH)
+  taxExclusiveAmount!: string | null;
+  @ValidateIf((_object, value) => value !== null)
+  @Transform(trim)
+  @IsString()
+  @MaxLength(PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH)
+  taxInclusiveAmount!: string | null;
+  @Transform(trim) @IsString() taxRatePercent!: string;
+  @ValidateIf((_object, value) => value !== null)
+  @Transform(trim)
+  @IsString()
+  @MaxLength(PURCHASE_ORDER_TOTAL_AMOUNT_MAX_LENGTH)
+  manualTotalAmount!: string | null;
+}
+export class CorrectPurchaseOrderAmountsDto extends CancelPurchaseOrderDto {
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(PURCHASE_ORDER_MAX_LINES)
+  @ArrayUnique((item: CorrectPurchaseOrderAmountsLineDto | null | undefined) => item?.id)
+  @ValidateNested({ each: true })
+  @Type(() => CorrectPurchaseOrderAmountsLineDto)
+  items!: CorrectPurchaseOrderAmountsLineDto[];
+}
+class CreatePurchaseOrderSupplementLineDto extends PurchaseOrderAmountTextDto {
   @Matches(/^[1-9]\d{0,19}$/) originOrderLineId!: string;
   @Matches(/^[1-9]\d{0,19}$/) originReceiptLineId!: string;
   @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) plannedQuantity!: number;

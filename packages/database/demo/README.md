@@ -43,7 +43,7 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 
 工单样例与通用日计数在种子运行器的同一事务中写入，前缀读取共享映射；重复加载不再取号。初始计划日期为加载日及其后第七日。样例的外部订单号承担演示标记，修改后再次加载会视为样例缺失；它不是正式工单编号，也不用于推算序列。
 
-拆表及采购供应商层级迁移要求空业务库；先从空库执行完整 migration 和系统初始化，再显式运行 demo。`202610280002` 还保护全部 HTTP 幂等记录，已有开发数据不转换为主单供应商，具体守卫和停写要求见[迁移安全](../docs/migration-safety.md#202610280002采购主单供应商与明细金额)。
+拆表、采购供应商层级及行金额迁移要求空业务库；先从空库执行完整 migration 和系统初始化，再显式运行 demo。`202610280002`、`202610280003` 还保护全部 HTTP 幂等记录，已有开发数据不转换为主单供应商或新金额来源，具体守卫和停写要求见[迁移安全](../docs/migration-safety.md#202610280002采购主单供应商与明细金额)及[行金额迁移](../docs/migration-safety.md#202610280003采购行税率与最终总额)。
 
 演示路线所有工序统一报工；操作工通过既有工序操作权限明确开始、完成及重开本人负责工序，数量达标不自动完成。
 
@@ -59,9 +59,35 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 | `[demo-purchase-state-ordered]` | 已下单，三行进行中 | 逐行结束、最后一行使主单结束、恢复任一行使主单恢复、整单结束；核对主行状态及通用操作日志中的原因 |
 | `[demo-purchase-state-cancel]` | 已下单，三行进行中 | 无到货整单取消；也可先结束部分行再取消，核对已取消不可恢复及通用操作日志中的原因 |
 
-每张样例单只有一个主单供应商：草稿与结束／恢复样例为演示共批供应商甲，取消样例为乙。三行依次使用 `demo-stock-multi-v1-A` 10 根、`demo-stock-multi-v1-B` 15 根及 `demo-stock-meter-v1-A` 5 米，保持同单精确物料版本唯一。首行两项采购单位单价含超 JavaScript 安全精度的长文本及尾零，其他行为空，供核对文本保存及正式冻结，不作税额运算。
+每张样例单只有一个主单供应商：草稿与结束／恢复样例为演示共批供应商甲，取消样例为乙。三行依次使用 `demo-stock-multi-v1-A` 10 根、`demo-stock-multi-v1-B` 15 根及 `demo-stock-meter-v1-A` 5 米，保持同单精确物料版本唯一。首行两项采购单位单价含超 JavaScript 安全精度的普通十进制字符串及尾零，税率为 13，新建样例总额以无税单价、采购量及税率推算并标为 calculated；含税单价只作记录。其他行无价格且总额／来源为空，供核对精度、空值及正式单金额更正。演示种子只补缺失样例，不回写既有总额；金额补填与更正样例由下节独立准备。
 
 样例只提供采购跟进场景，不包含实际到货。重新加载 demo 不恢复已取消／已结束的样例，也不覆盖采购编辑；标记位于备注开头，手动移除标记后再次加载会按缺失样例补建。需要再次验证可新建独立备料单。
+
+## 采购金额补填与更正的人工验收准备
+
+完成 `db:init`、显式加载 demo 并启动匹配当前 migration 的 API 后，使用[采购金额准备脚本](../../../scripts/prepare-procurement-amount-demo.mjs)。脚本通过正式采购 API 建单、下单、结束、取消及按主单补填或更正两项单价、税率与手填总额，不直接写业务表，不属于正式测试集；字段和算法由[采购金额契约](../../../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)维护。
+
+```bash
+ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-amount-demo.mjs prepare
+ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-amount-demo.mjs report
+```
+
+未指定模式时只读报告。脚本使用初始化管理员环境凭证，不输出密码或令牌；要求非 production 环境及 `ALLOW_DEMO_SEED=1`。API 默认 `http://127.0.0.1:3002/api`，可用 `PROCUREMENT_AMOUNT_DEMO_API_BASE_URL` 指定；远程地址额外要求 HTTPS 和 `PROCUREMENT_AMOUNT_DEMO_ALLOW_REMOTE=1`。脚本不进入初始化、部署或 CI 自动链路。
+
+默认备注标记为 `[demo-procurement-amount-v4]`；设置 1～40 位字母、数字、下划线或连字符的 `PROCUREMENT_AMOUNT_DEMO_TAG` 后，标记带对应 tag。同标记已有采购时只报告，不覆盖手工编辑、不续写部分流程，也不重写其他版本标记的样例；失败保留已提交事实且不自动重试，重新准备使用新 TAG。报告返回真实采购单／行 ID、主行版本、金额和来源，以及更正成功审计中的前后值与原因；`initialReadinessIssues` 只对照初始样例，不代表用户验收或正式测试通过。
+
+一次准备 11 张单行独立备料采购，均属于演示共批供应商甲、使用 `demo-stock-multi-v1-A`，不生成到货或库存事实：
+
+| 场景标记 | 初始样例与人工核对目标 |
+| --- | --- |
+| inclusive-only-stays-null | 只有含税报价时，修改报价仍保持空总额／来源 |
+| both-quotes-exclusive-basis、inclusive-clear-total-unchanged | 两价并存时按无税价推算；修改或清空含税价不改变自动总额，报价更正仍保存和审计 |
+| exclusive-add-with-inclusive、exclusive-clear-keeps-inclusive | 补填无税价后产生自动总额；清空无税价后即使保留含税价，总额仍为空 |
+| manual-zero-before-calculation | 报价及税率变化时保留手填 0 覆盖 |
+| clear-manual-with-only-inclusive、clear-manual-uses-exclusive | 清空手填总额后，分别得到空总额或无税价推算值 |
+| round-exclusive-half-up | 已结束采购保留无税价推算及最终两位小数舍入，不使用高额含税报价计算 |
+| rate-change-with-inclusive | 两价并存时修改税率，按无税价重新推算 |
+| exclusive-zero-keeps-calculated | 无税单价 0 得有效 0.00，修改含税报价不改变 calculated 来源 |
 
 ## 共用本次新批次的人工验收准备
 

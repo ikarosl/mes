@@ -19,11 +19,14 @@
     >
       <InboundGroupHeader
         :expanded="!collapsedReceiptIds.has(group.receiptId)"
-        :title="`到货 ${group.receiptNo}`"
+        title-label="到货单"
+        :title="group.receiptNo"
         :count-label="`本页 ${group.items.length} 条可入明细`"
         @toggle="toggleReceipt(group.receiptId)"
       >
-        <span class="receipt-meta">登记采购 {{ group.receiptPurchaseNo }}</span>
+        <span class="receipt-meta"
+          >登记采购 <span class="identity-value">{{ group.receiptPurchaseNo }}</span></span
+        >
         <span class="receipt-meta">到货 {{ formatDateTimeForDisplay(group.receivedAt) }}</span>
         <el-checkbox
           :model-value="releases.isPageGroupSelected(group.items)"
@@ -58,13 +61,13 @@
               <el-checkbox
                 :model-value="releases.isSelected(row.allocationId)"
                 :disabled="releases.locked.value"
-                :aria-label="`${releases.isSelected(row.allocationId) ? '取消可入明细选择' : '选择可入明细'} ${row.receiptNo} · id:${row.receiptLineId} ${row.itemCode} ${row.purchaseNo}`"
+                :aria-label="`${releases.isSelected(row.allocationId) ? '取消可入明细选择' : '选择可入明细'} ${row.receiptNo} · 到货行 ID ${row.receiptLineId} ${row.itemCode} ${row.purchaseNo}`"
                 @change="releases.toggle(row)"
               />
             </template>
           </el-table-column>
           <el-table-column
-            label="到货明细 ID"
+            label="到货行 ID"
             min-width="130"
           >
             <template #default="{ row }">
@@ -74,12 +77,12 @@
                 type="primary"
                 link
                 @click="goSource('procurement-receipts', { receiptLineId: row.receiptLineId })"
-                >id:{{ row.receiptLineId }}</el-button
+                ><span class="identity-value">{{ row.receiptLineId }}</span></el-button
               >
               <span
                 v-else
-                class="cell-wrap"
-                >id:{{ row.receiptLineId }}</span
+                class="cell-wrap identity-value"
+                >{{ row.receiptLineId }}</span
               >
             </template>
           </el-table-column>
@@ -108,11 +111,11 @@
                     purchaseOrderLineId: row.purchaseOrderLineId,
                   })
                 "
-                >{{ row.purchaseNo }}</el-button
+                ><span class="identity-value">{{ row.purchaseNo }}</span></el-button
               >
               <span
                 v-else
-                class="cell-wrap"
+                class="cell-wrap identity-value"
                 >{{ row.purchaseNo }}</span
               >
             </template>
@@ -247,9 +250,17 @@ const releaseGroups = computed<ReceiptPageGroup[]>(() => {
 }
 .source-link {
   height: auto;
+  font-weight: 400;
   white-space: normal;
   text-align: left;
   overflow-wrap: anywhere;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
+.source-link .identity-value {
+  color: inherit;
 }
 .cell-wrap {
   overflow-wrap: anywhere;

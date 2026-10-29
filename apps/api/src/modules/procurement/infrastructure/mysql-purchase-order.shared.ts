@@ -3,6 +3,7 @@ import type {
   PurchaseOrderItem,
   PurchaseFulfillmentMode,
   PurchaseOrderLineStatus,
+  PurchaseOrderTotalAmountSource,
 } from '@company/contracts';
 import { PROCUREMENT_ERROR_CODES } from '@company/constants';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
@@ -29,6 +30,9 @@ export type OrderLineRow = RowDataPacket & {
   purchase_order_id: number;
   tax_exclusive_amount: string | null;
   tax_inclusive_amount: string | null;
+  tax_rate_percent: string;
+  total_amount: string | null;
+  total_amount_source: PurchaseOrderTotalAmountSource | null;
   line_no: number;
   item_id: number;
   material_variant_id: number;

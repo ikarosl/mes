@@ -33,7 +33,7 @@
         <template v-if="order">
           <span
             >{{ isExcessSource ? '当前超量补单' : '原采购单' }}
-            <strong>{{ order.purchaseNo }}</strong></span
+            <strong class="identity-value">{{ order.purchaseNo }}</strong></span
           >
           <span
             >工单 <strong>{{ order.workOrderNo || '独立备料' }}</strong></span
@@ -57,8 +57,11 @@
           :tone="originTarget ? 'info' : 'warning'"
         >
           <template v-if="originTarget">
-            本单 {{ order.purchaseNo }} 记录已有到货补购；继续办理补单请前往原采购单
-            {{ originTarget.purchaseNo }}。
+            本单
+            <strong class="identity-value">{{ order.purchaseNo }}</strong>
+            记录已有到货补购；继续办理补单请前往原采购单
+            <strong class="identity-value">{{ originTarget.purchaseNo }}</strong
+            >。
             <el-button
               link
               type="primary"
@@ -71,7 +74,7 @@
           </template>
           <template v-else
             >本单
-            {{ order.purchaseNo }}
+            <strong class="identity-value">{{ order.purchaseNo }}</strong>
             的冻结原采购来源缺失或不一致，请核对各行来源后前往原采购单办理。</template
           >
         </InlineHint>
@@ -105,7 +108,7 @@
             }}。
           </InlineHint>
           <InlineHint v-else-if="pendingLocation?.lineId"
-            >已定位采购行 <strong>id:{{ pendingLocation.lineId }}</strong
+            >已定位采购行 ID：<strong class="identity-value">{{ pendingLocation.lineId }}</strong
             >；先选择补单类型，再选择具体依据。</InlineHint
           >
           <section class="supplement-lines">
@@ -148,14 +151,18 @@
               <div class="selected-basis">
                 <div class="basis-identity">
                   <span v-if="draft.selectedExcess"
-                    >已选依据 {{ draft.selectedExcess.receiptNo }} · 明细 ID：{{
+                    >已选依据
+                    <strong class="identity-value">{{ draft.selectedExcess.receiptNo }}</strong> ·
+                    到货行 ID：<strong class="identity-value">{{
                       draft.selectedExcess.id
-                    }}</span
+                    }}</strong></span
                   >
                   <span v-else-if="draft.selectedQuality"
-                    >已选依据 {{ draft.selectedQuality.receiptNo }} · 明细 ID：{{
+                    >已选依据
+                    <strong class="identity-value">{{ draft.selectedQuality.receiptNo }}</strong> ·
+                    到货行 ID：<strong class="identity-value">{{
                       draft.selectedQuality.receiptLineId
-                    }}</span
+                    }}</strong></span
                   >
                   <el-button
                     link
@@ -202,18 +209,42 @@
                     <span>{{ draft.line.unit }}</span>
                   </div>
                 </el-form-item>
-                <el-form-item label="无税金额">
+                <el-form-item label="无税单价">
                   <el-input
                     v-model="draft.taxExclusiveAmount"
                     :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+                    inputmode="decimal"
                     placeholder="按采购单位填写单价（选填）"
                   />
                 </el-form-item>
-                <el-form-item label="含税金额">
+                <el-form-item label="含税单价">
                   <el-input
                     v-model="draft.taxInclusiveAmount"
                     :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+                    inputmode="decimal"
                     placeholder="按采购单位填写单价（选填）"
+                  />
+                </el-form-item>
+                <el-form-item label="税率（%）">
+                  <el-input
+                    v-model="draft.taxRatePercent"
+                    inputmode="decimal"
+                    :placeholder="PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT"
+                    :aria-label="`${draft.line.itemName}税率百分比`"
+                  />
+                </el-form-item>
+                <el-form-item
+                  label="含税总金额"
+                  class="total-amount-field"
+                >
+                  <PurchaseLineTotalAmountInput
+                    v-model:manual-total-amount="draft.manualTotalAmount"
+                    :planned-quantity="draft.quantity"
+                    :tax-exclusive-amount="draft.taxExclusiveAmount"
+                    :tax-inclusive-amount="draft.taxInclusiveAmount"
+                    :tax-rate-percent="draft.taxRatePercent"
+                    :item-name="draft.line.itemName"
+                    :disabled="editingLocked"
                   />
                 </el-form-item>
                 <el-form-item
@@ -236,6 +267,11 @@
                   />
                 </el-form-item>
               </el-form>
+              <p class="amount-help">
+                <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
+                手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
+                下单后采购数量锁定，可在“查看/编辑”更正单价、税率及总额。
+              </p>
             </article>
             <el-form
               v-if="remarkExpanded || remark"
@@ -312,6 +348,7 @@ import type { PurchaseOrderSupplementReason } from '@company/contracts';
 import {
   PURCHASE_ORDER_MAX_QUANTITY,
   PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+  PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
   PURCHASE_ORDER_SUPPLEMENT_REASONS,
   PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS,
 } from '@company/constants';
@@ -322,6 +359,7 @@ import { excessSupplementOrigin } from '../supplement-origin';
 import RelatedSupplementsDialog from './RelatedSupplementsDialog.vue';
 import SupplementReceiptQuantities from './SupplementReceiptQuantities.vue';
 import PurchaseOrderSupplementPickerDialog from './PurchaseOrderSupplementPickerDialog.vue';
+import PurchaseLineTotalAmountInput from './PurchaseLineTotalAmountInput.vue';
 import {
   usePurchaseOrderSupplement,
   type SupplementDraftLine,
@@ -460,6 +498,10 @@ defineExpose({ open, close, visible, locked: editingLocked });
 </script>
 
 <style scoped>
+.supplement-dialog .identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .supplement-dialog {
   display: grid;
   gap: 14px;
@@ -536,6 +578,15 @@ defineExpose({ open, close, visible, locked: editingLocked });
 }
 .evidence-field {
   grid-column: 1 / -1;
+}
+.total-amount-field {
+  grid-column: span 2;
+}
+.amount-help {
+  margin: 0;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+  line-height: 1.6;
 }
 .line-form :deep(.el-form-item),
 .remark-form :deep(.el-form-item) {

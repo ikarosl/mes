@@ -20,6 +20,7 @@ import type {
   RelatedPurchasesQuery,
   ProcurementDemandCandidateQuery,
   ProcurementDemandWorkOrderQuery,
+  CorrectPurchaseOrderAmountsPayload,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -30,7 +31,8 @@ import { MaterialVariantQuery } from '../../product/public.js';
 import { ProductionProcurementQuery } from '../../production/public.js';
 import {
   normalizePurchaseDraft,
-  normalizePurchaseAmountText,
+  normalizePurchaseLineAmount,
+  normalizePurchaseAmountsCorrection,
 } from '../domain/purchase-order.policy.js';
 import { PurchaseOrderRepository } from './ports/purchase-order.repository.js';
 import {
@@ -42,6 +44,7 @@ import {
   REOPEN_PURCHASE_ORDER_LINE_SCOPE,
   CLOSE_PURCHASE_ORDER_SCOPE,
   CREATE_PURCHASE_ORDER_SUPPLEMENT_SCOPE,
+  CORRECT_PURCHASE_ORDER_AMOUNTS_SCOPE,
 } from './idempotency/procurement-idempotency-scopes.contract.js';
 import { purchaseOrderResultCodec } from './idempotency/purchase-order-result.codec.js';
 @Injectable()
@@ -250,6 +253,23 @@ export class PurchaseOrderService {
     });
     return execution.result;
   }
+  async correctAmounts(
+    id: string,
+    payload: CorrectPurchaseOrderAmountsPayload,
+    context: IdempotentCommandContext,
+  ): Promise<PurchaseOrderCommandResult> {
+    const body = normalizePurchaseAmountsCorrection(payload);
+    const execution = await this.idempotency.execute({
+      scope: CORRECT_PURCHASE_ORDER_AMOUNTS_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: purchaseOrderResultCodec,
+      handler: () => this.repository.correctAmounts(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
   async supplement(
     id: string,
     payload: CreatePurchaseOrderSupplementPayload,
@@ -257,14 +277,19 @@ export class PurchaseOrderService {
   ): Promise<PurchaseOrderCommandResult> {
     const body = {
       supplementReason: payload.supplementReason,
-      items: payload.items.map((item) => ({
-        originOrderLineId: item.originOrderLineId,
-        originReceiptLineId: item.originReceiptLineId,
-        plannedQuantity: item.plannedQuantity,
-        taxExclusiveAmount: normalizePurchaseAmountText(item.taxExclusiveAmount),
-        taxInclusiveAmount: normalizePurchaseAmountText(item.taxInclusiveAmount),
-        supplementEvidence: item.supplementEvidence.trim(),
-      })),
+      items: payload.items.map((item) => {
+        const amount = normalizePurchaseLineAmount(item);
+        return {
+          originOrderLineId: item.originOrderLineId,
+          originReceiptLineId: item.originReceiptLineId,
+          plannedQuantity: item.plannedQuantity,
+          taxExclusiveAmount: amount.taxExclusiveAmount,
+          taxInclusiveAmount: amount.taxInclusiveAmount,
+          taxRatePercent: amount.taxRatePercent,
+          manualTotalAmount: amount.manualTotalAmount,
+          supplementEvidence: item.supplementEvidence.trim(),
+        };
+      }),
       remark: payload.remark?.trim() || null,
     };
     const execution = await this.idempotency.execute({

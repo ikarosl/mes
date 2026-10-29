@@ -52,10 +52,6 @@ export const STEP_STATUS_META: StatusMeta<BatchStepStatus>[] = [
   { value: 'terminated', label: BATCH_STEP_STATUS_LABELS.terminated, type: 'info' },
 ];
 
-export const STEP_STATUS_LABELS: Record<string, string> = Object.fromEntries(
-  STEP_STATUS_META.map((item) => [item.value, item.label]),
-);
-
 export const orderStatusMeta = (status: WorkOrderStatus): StatusMeta<WorkOrderStatus> =>
   ORDER_STATUS_META.find((item) => item.value === status) ?? ORDER_STATUS_META[0];
 
@@ -111,12 +107,6 @@ export const formatQuantityDifference = (value: string | null | undefined): stri
   const amount = Number(value);
   return `${amount > 0 ? '+' : ''}${formatQuantity(value)}`;
 };
-
-/** 工单剩余可分配数量 */
-export const getWorkOrderRemaining = (order: {
-  plannedQuantity: string | number;
-  assignedQuantity: string | number;
-}): number => Math.max(Number(order.plannedQuantity) - Number(order.assignedQuantity), 0);
 
 /** 根据用户选项解析负责人显示名 */
 export const resolveOwnerName = (

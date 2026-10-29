@@ -18,7 +18,8 @@
     >
       <InboundGroupHeader
         :expanded="!collapsedInboundIds.has(order.inboundId)"
-        :title="`入库单 ${order.inboundNo}`"
+        title-label="入库单"
+        :title="order.inboundNo"
         :count-label="`本单 ${order.details.length} 条实际入库明细`"
         @toggle="toggleInbound(order.inboundId)"
       >

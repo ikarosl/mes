@@ -1,27 +1,75 @@
-import type { CreatePurchaseOrderPayload } from '@company/contracts';
+import type {
+  CorrectPurchaseOrderAmountsPayload,
+  CreatePurchaseOrderPayload,
+} from '@company/contracts';
 import {
   PROCUREMENT_ERROR_CODES,
-  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
   PURCHASE_ORDER_MAX_DEMANDS,
   PURCHASE_ORDER_MAX_LINES,
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
+import { calculatePurchaseLineAmount } from '@company/utils';
 import { ProcurementDomainError } from './procurement.errors.js';
 
-export const normalizePurchaseAmountText = (value: string | null | undefined): string | null => {
-  if (value === undefined || value === null) return null;
-  if (typeof value !== 'string')
+export const normalizePurchaseLineAmount = (
+  input: Parameters<typeof calculatePurchaseLineAmount>[0],
+): ReturnType<typeof calculatePurchaseLineAmount> => {
+  try {
+    return calculatePurchaseLineAmount(input);
+  } catch (error) {
+    if (error instanceof RangeError)
+      throw new ProcurementDomainError(PROCUREMENT_ERROR_CODES.invalidPurchaseOrder, error.message);
+    throw error;
+  }
+};
+
+export const normalizePurchaseAmountsCorrection = (
+  payload: CorrectPurchaseOrderAmountsPayload,
+): CorrectPurchaseOrderAmountsPayload => {
+  if (!payload.items.length || payload.items.length > PURCHASE_ORDER_MAX_LINES)
     throw new ProcurementDomainError(
       PROCUREMENT_ERROR_CODES.invalidPurchaseOrder,
-      '采购金额须为文本',
+      '金额更正须包含 1～100 条已变更明细',
     );
-  const text = value.trim();
-  if ([...text].length > PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH)
+  const reason = payload.reason.trim();
+  if (!reason || reason.length > 2000)
     throw new ProcurementDomainError(
       PROCUREMENT_ERROR_CODES.invalidPurchaseOrder,
-      `采购金额文本最多 ${PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH} 字符`,
+      '金额更正须填写不超过 2000 字的原因',
     );
-  return text || null;
+  const lineIds = new Set<string>();
+  const items = payload.items.map((item) => {
+    if (lineIds.has(item.id))
+      throw new ProcurementDomainError(
+        PROCUREMENT_ERROR_CODES.invalidPurchaseOrder,
+        '金额更正不能重复提交同一采购行',
+      );
+    lineIds.add(item.id);
+    if (
+      (typeof item.taxExclusiveAmount !== 'string' && item.taxExclusiveAmount !== null) ||
+      (typeof item.taxInclusiveAmount !== 'string' && item.taxInclusiveAmount !== null)
+    )
+      throw new ProcurementDomainError(
+        PROCUREMENT_ERROR_CODES.invalidPurchaseOrder,
+        '两项采购单价须明确填写十进制字符串或 null',
+      );
+    const amount = normalizePurchaseLineAmount({
+      plannedQuantity: 1,
+      taxExclusiveAmount: item.taxExclusiveAmount,
+      taxInclusiveAmount: item.taxInclusiveAmount,
+      taxRatePercent: item.taxRatePercent,
+      manualTotalAmount: item.manualTotalAmount,
+    });
+    return {
+      id: item.id,
+      version: item.version,
+      taxExclusiveAmount: amount.taxExclusiveAmount,
+      taxInclusiveAmount: amount.taxInclusiveAmount,
+      taxRatePercent: amount.taxRatePercent,
+      manualTotalAmount: amount.manualTotalAmount,
+    };
+  });
+  return { version: payload.version, items, reason };
 };
 
 export const normalizePurchaseDraft = (
@@ -54,12 +102,15 @@ export const normalizePurchaseDraft = (
     if (payload.sourceType === 'stock' && demandIds.length) invalid('独立备料采购不能关联生产需求');
     if (demandIds.length !== line.demandIds.length) invalid('同一采购行不能重复关联需求');
     sourceCount += demandIds.length;
+    const amount = normalizePurchaseLineAmount(line);
     return {
       itemId: line.itemId,
       materialVariantId: line.materialVariantId,
       plannedQuantity: line.plannedQuantity,
-      taxExclusiveAmount: normalizePurchaseAmountText(line.taxExclusiveAmount),
-      taxInclusiveAmount: normalizePurchaseAmountText(line.taxInclusiveAmount),
+      taxExclusiveAmount: amount.taxExclusiveAmount,
+      taxInclusiveAmount: amount.taxInclusiveAmount,
+      taxRatePercent: amount.taxRatePercent,
+      manualTotalAmount: amount.manualTotalAmount,
       demandIds,
     };
   });

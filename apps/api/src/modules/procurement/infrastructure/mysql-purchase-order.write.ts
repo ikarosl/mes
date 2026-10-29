@@ -12,6 +12,7 @@ import { PROCUREMENT_ERROR_CODES } from '@company/constants';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { requireOptimisticUpdate } from '../../../common/persistence/optimistic-lock.js';
+import { normalizePurchaseLineAmount } from '../domain/purchase-order.policy.js';
 import type { InventoryMaterialEligibility } from '../../product/public.js';
 import {
   type OrderLineRow,
@@ -86,10 +87,11 @@ export const insertLines = async (
   const map = new Map(references.map((row) => [`${row.itemId}:${row.materialVariantId}`, row]));
   for (const [index, line] of lines.entries()) {
     const origin = origins?.[index];
+    const amount = normalizePurchaseLineAmount(line);
     const ref = map.get(`${line.itemId}:${line.materialVariantId}`);
     if (!ref) return orderError('采购物料资格已变化');
     const [result] = await connection.execute<ResultSetHeader>(
-      `INSERT INTO procurement_order_line(purchase_order_id,line_no,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,planned_quantity,tax_exclusive_amount,tax_inclusive_amount,origin_order_line_id,supplement_evidence,origin_receipt_line_id,fulfillment_mode,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      `INSERT INTO procurement_order_line(purchase_order_id,line_no,item_id,material_variant_id,item_code_snapshot,material_variant_code_snapshot,unit_snapshot,planned_quantity,tax_exclusive_amount,tax_inclusive_amount,tax_rate_percent,total_amount,total_amount_source,origin_order_line_id,supplement_evidence,origin_receipt_line_id,fulfillment_mode,created_by,updated_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       [
         id,
         index + 1,
@@ -99,8 +101,11 @@ export const insertLines = async (
         ref.materialVariantCode,
         ref.unit,
         line.plannedQuantity,
-        line.taxExclusiveAmount ?? null,
-        line.taxInclusiveAmount ?? null,
+        amount.taxExclusiveAmount,
+        amount.taxInclusiveAmount,
+        amount.taxRatePercent,
+        amount.totalAmount,
+        amount.totalAmountSource,
         origin?.lineId ?? null,
         origin?.evidence ?? null,
         origin?.receiptLineId ?? null,

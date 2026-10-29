@@ -41,11 +41,17 @@
             {{ line.supplierName }} · {{ line.supplierBatchCode || '未提供批号' }}
           </el-descriptions-item>
           <el-descriptions-item label="来源采购">
-            {{ line.purchaseNo }} · 采购行 ID：{{ line.purchaseOrderLineId }}
+            <strong class="identity-value">{{ line.purchaseNo }}</strong> · 采购行 ID：<strong
+              class="identity-value"
+              >{{ line.purchaseOrderLineId }}</strong
+            >
           </el-descriptions-item>
           <el-descriptions-item label="当前轮次">
             第 {{ line.currentRound.roundNo }} 轮 ·
-            {{ RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status] }} · 到货明细 ID：{{ line.id }}
+            {{ RECEIPT_ROUND_STATUS_LABELS[line.currentRound.status] }} · 到货行 ID：<strong
+              class="identity-value"
+              >{{ line.id }}</strong
+            >
           </el-descriptions-item>
         </el-descriptions>
         <el-alert
@@ -386,6 +392,10 @@ const beforeClose = () => {
 defineExpose({ open, close, visible, locked: command.locked });
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .notice {
   margin: 16px 0;
 }

@@ -2,7 +2,9 @@
   <div class="receipt-group">
     <div class="receipt-heading">
       <slot name="receipt-title"
-        ><strong>到货单 {{ receipt.receiptNo }}</strong></slot
+        ><span class="receipt-title"
+          >到货单 <strong class="receipt-number">{{ receipt.receiptNo }}</strong></span
+        ></slot
       >
       <el-tag
         v-if="voidRecord ?? receipt.lines[0]?.void"
@@ -34,7 +36,7 @@
         </colgroup>
         <thead>
           <tr>
-            <th scope="col">明细 ID</th>
+            <th scope="col">到货行 ID</th>
             <th scope="col">物料 / 精确版本</th>
             <slot name="column-headings" />
           </tr>
@@ -48,7 +50,7 @@
             :class="{ highlighted: highlightedLineId === rowId(row) }"
           >
             <td class="receipt-line-id">
-              到货 id:{{ rowId(row) }}
+              <strong class="receipt-line-id-value">{{ rowId(row) }}</strong>
               <el-tag
                 v-if="highlightedLineId === rowId(row)"
                 size="small"
@@ -111,12 +113,16 @@ defineSlots<{
   color: var(--el-text-color-primary);
   font-size: 14px;
 }
+.receipt-title {
+  font-weight: 400;
+  overflow-wrap: anywhere;
+}
+.receipt-number {
+  font-weight: 600;
+}
 .document-meta {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.receipt-group + .receipt-group {
-  border-top: 1px solid var(--el-border-color-lighter);
 }
 .receipt-table-scroll {
   overflow-x: auto;
@@ -160,6 +166,9 @@ defineSlots<{
   overflow-wrap: anywhere;
 }
 .receipt-line-id {
+  font-weight: 400;
+}
+.receipt-line-id-value {
   font-weight: 600;
 }
 .supplier-name {

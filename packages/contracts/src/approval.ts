@@ -172,10 +172,3 @@ export interface ApprovalDecisionCommand extends VersionedCommand {
 export interface ApprovalCommentCommand extends VersionedCommand {
   comment?: string;
 }
-export const APPROVAL_API = {
-  scenes: '/approval/scenes',
-  roleOptions: '/approval/role-options',
-  userOptions: '/approval/user-options',
-  instances: '/approval/instances',
-  bom: '/approval/bom',
-} as const;

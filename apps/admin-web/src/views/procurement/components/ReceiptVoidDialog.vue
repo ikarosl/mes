@@ -35,8 +35,12 @@
           border
           class="notice"
         >
-          <el-descriptions-item label="到货单">{{ detail.receiptNo }}</el-descriptions-item>
-          <el-descriptions-item label="采购单">{{ detail.purchaseNo }}</el-descriptions-item>
+          <el-descriptions-item label="到货单"
+            ><strong class="identity-value">{{ detail.receiptNo }}</strong></el-descriptions-item
+          >
+          <el-descriptions-item label="采购单"
+            ><strong class="identity-value">{{ detail.purchaseNo }}</strong></el-descriptions-item
+          >
           <el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item>
           <el-descriptions-item label="作废范围"
             >整单 {{ detail.voiding.lines.length }} 条明细</el-descriptions-item
@@ -64,9 +68,13 @@
         >
           <el-table-column
             prop="id"
-            label="到货明细 ID"
+            label="到货行 ID"
             min-width="110"
-          />
+          >
+            <template #default="{ row }"
+              ><strong class="identity-value">{{ row.id }}</strong></template
+            >
+          </el-table-column>
           <el-table-column
             label="物料 / 精确版本"
             min-width="200"
@@ -171,6 +179,10 @@ const beforeClose = (): void => {
 defineExpose({ open, close, visible, locked: command.locked });
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .notice {
   margin-bottom: 16px;
 }

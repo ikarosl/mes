@@ -86,6 +86,13 @@
         :closable="false"
         class="focus-notice"
       >
+        <template #title
+          ><span class="focus-title"
+            >当前定位：
+            <strong class="identity-value">{{ expansion.focused.value.purchaseNo }}</strong
+            ><template v-if="focusedOutsidePage">（临时置顶）</template></span
+          ></template
+        >
         <span v-if="focusedOutsidePage">该单不在当前查询页，分页总数仍对应查询结果。</span>
         <el-button
           link
@@ -138,8 +145,8 @@
             <div class="purchase-order-identity">
               <el-button
                 :id="`purchase-order-${row.id}`"
+                class="purchase-order-number"
                 link
-                type="primary"
                 @click="expansion.setExpanded(row.id, !expansion.expanded.value.includes(row.id))"
                 >{{ row.purchaseNo }}</el-button
               >
@@ -216,12 +223,11 @@
           <template #default="{ row }">
             <div class="purchase-order-actions">
               <el-button
-                v-if="row.status === 'draft'"
                 link
                 type="primary"
                 :disabled="blocked"
-                @click="edit(row.id)"
-                >编辑草稿</el-button
+                @click="viewOrEdit(row.id)"
+                >查看/编辑</el-button
               >
               <el-button
                 v-if="row.status === 'draft'"
@@ -279,6 +285,10 @@
       ref="actions"
       @changed="actionChanged"
     />
+    <PurchaseOrderDetailsDialog
+      ref="details"
+      @changed="actionChanged($event, null)"
+    />
     <RelatedSupplementsDialog
       ref="supplements"
       @navigate="navigateRelatedSupplement"
@@ -329,6 +339,7 @@ import {
 import type { RelatedSupplementLocation } from './purchase-order-location';
 import PurchaseOrderEditorDialog from './components/PurchaseOrderEditorDialog.vue';
 import PurchaseOrderActionDialog from './components/PurchaseOrderActionDialog.vue';
+import PurchaseOrderDetailsDialog from './components/PurchaseOrderDetailsDialog.vue';
 import PurchaseOrderExpandedRows from './components/PurchaseOrderExpandedRows.vue';
 import RelatedSupplementsDialog from './components/RelatedSupplementsDialog.vue';
 import PurchaseOrderSupplementDialog from './components/PurchaseOrderSupplementDialog.vue';
@@ -387,6 +398,7 @@ const { tablePanel, actionColumnWidth } = useTableActionColumn(
 );
 const editor = ref<InstanceType<typeof PurchaseOrderEditorDialog>>(),
   actions = ref<InstanceType<typeof PurchaseOrderActionDialog>>(),
+  details = ref<InstanceType<typeof PurchaseOrderDetailsDialog>>(),
   supplement = ref<InstanceType<typeof PurchaseOrderSupplementDialog>>(),
   supplements = ref<InstanceType<typeof RelatedSupplementsDialog>>(),
   receiptRecords = ref<InstanceType<typeof PurchaseOrderLineReceiptRecordsDialog>>();
@@ -475,19 +487,31 @@ const beginNavigation = (): void => {
 const blocked = computed(
   () =>
     navigating.value ||
-    Boolean(editor.value?.locked || actions.value?.locked || supplement.value?.locked),
+    Boolean(
+      editor.value?.locked ||
+      actions.value?.locked ||
+      details.value?.locked ||
+      supplement.value?.locked,
+    ),
 );
 const releaseDialogs = async (
   current: () => boolean = () => active && route.name === 'procurement-orders',
 ): Promise<boolean> => {
   if (!current()) return false;
-  if (editor.value?.locked || actions.value?.locked || supplement.value?.locked) {
+  if (
+    editor.value?.locked ||
+    actions.value?.locked ||
+    details.value?.locked ||
+    supplement.value?.locked
+  ) {
     EMessage.warning('请先确认当前操作结果，再切换采购记录');
     return false;
   }
   if (editor.value?.visible && !(await editor.value.close())) return false;
   if (!current()) return false;
   if (actions.value?.visible && !(await actions.value.close())) return false;
+  if (!current()) return false;
+  if (details.value?.visible && !(await details.value.close())) return false;
   if (!current()) return false;
   if (supplement.value?.visible && !(await supplement.value.close())) return false;
   if (!current()) return false;
@@ -588,7 +612,7 @@ const create = async (
     finishNavigation();
   }
 };
-const edit = async (id: string): Promise<void> => {
+const viewOrEdit = async (id: string): Promise<void> => {
   if (navigating.value) return;
   const revision = routeRevision;
   const operation = ++navigationRevision;
@@ -596,13 +620,9 @@ const edit = async (id: string): Promise<void> => {
   beginNavigation();
   try {
     if (!(await releaseDialogs(current))) return;
-    const value = await expansion.read(id, true);
+    const value = await details.value?.open(id);
     if (!value || !current()) return;
-    if (value.status !== 'draft') {
-      EMessage.warning('该采购已不是草稿，请刷新列表');
-      return;
-    }
-    await editor.value?.open(value.sourceType, value);
+    if (value.status === 'draft') await editor.value?.open(value.sourceType, value);
   } finally {
     finishNavigation();
   }
@@ -821,6 +841,13 @@ onScopeDispose(deactivate);
 .focus-notice {
   margin-bottom: 8px;
 }
+.focus-title {
+  font-weight: 400;
+}
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .focus-notice :deep(.el-alert__description) {
   display: flex;
   align-items: center;
@@ -832,6 +859,10 @@ onScopeDispose(deactivate);
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 8px;
+}
+.purchase-order-number {
+  --el-button-text-color: var(--el-text-color-primary);
+  --el-button-font-weight: 600;
 }
 .purchase-order-actions {
   display: inline-flex;

@@ -7,7 +7,7 @@ import type {
 import {
   PURCHASE_ORDER_MAX_LINES,
   PURCHASE_ORDER_MAX_QUANTITY,
-  PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH,
+  PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
 } from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -20,11 +20,14 @@ import {
   type SupplementBasisConfirmation,
 } from '../supplement-basis';
 import { useProcurementCommand } from './useProcurementCommand';
+import { previewPurchaseLineAmount } from '../purchase-line-amount';
 
 export interface SupplementDraftLine extends SupplementBasisChoice {
   quantity: number | undefined;
   taxExclusiveAmount: string;
   taxInclusiveAmount: string;
+  taxRatePercent: string;
+  manualTotalAmount: string;
   evidence: string;
   basisError: boolean;
 }
@@ -92,8 +95,8 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
           Number.isInteger(draft.quantity) &&
           Number(draft.quantity) > 0 &&
           Number(draft.quantity) <= PURCHASE_ORDER_MAX_QUANTITY &&
-          draft.taxExclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
-          draft.taxInclusiveAmount.trim().length <= PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH &&
+          previewPurchaseLineAmount({ ...draft, plannedQuantity: draft.quantity }).amount !==
+            null &&
           Boolean(draft.evidence.trim()),
       ),
   );
@@ -181,6 +184,8 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
         quantity: undefined,
         taxExclusiveAmount: '',
         taxInclusiveAmount: '',
+        taxRatePercent: PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT,
+        manualTotalAmount: '',
         evidence: '',
         basisError: false,
       })),
@@ -342,17 +347,26 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
       }
       const body: CreatePurchaseOrderSupplementPayload = {
         supplementReason: targetReason,
-        items: drafts.value.map((draft) => ({
-          originOrderLineId: draft.line.id,
-          originReceiptLineId:
-            targetReason === 'excess_purchase'
-              ? draft.selectedExcess!.id
-              : draft.selectedQuality!.receiptLineId,
-          plannedQuantity: Number(draft.quantity),
-          taxExclusiveAmount: draft.taxExclusiveAmount.trim() || null,
-          taxInclusiveAmount: draft.taxInclusiveAmount.trim() || null,
-          supplementEvidence: draft.evidence.trim(),
-        })),
+        items: drafts.value.map((draft) => {
+          const amount = previewPurchaseLineAmount({
+            ...draft,
+            plannedQuantity: draft.quantity,
+          }).amount;
+          if (!amount) throw new RangeError('请核对补单数量与金额');
+          return {
+            originOrderLineId: draft.line.id,
+            originReceiptLineId:
+              targetReason === 'excess_purchase'
+                ? draft.selectedExcess!.id
+                : draft.selectedQuality!.receiptLineId,
+            plannedQuantity: Number(draft.quantity),
+            taxExclusiveAmount: amount.taxExclusiveAmount,
+            taxInclusiveAmount: amount.taxInclusiveAmount,
+            taxRatePercent: amount.taxRatePercent,
+            manualTotalAmount: amount.manualTotalAmount,
+            supplementEvidence: draft.evidence.trim(),
+          };
+        }),
         remark: remark.value.trim() || null,
       };
       await command.run(
@@ -380,7 +394,6 @@ export function usePurchaseOrderSupplement(onSaved: (id: string) => void) {
     eligibleLines,
     command,
     canSave,
-    dirty,
     editingLocked,
     submittingCheck,
     open,

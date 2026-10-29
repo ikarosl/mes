@@ -38,7 +38,8 @@
           v-if="excessOrigin"
           class="origin-purchase"
         >
-          原采购单 <strong>{{ excessOrigin.purchaseNo }}</strong> · 本单记录已有到货补购
+          原采购单 <strong class="identity-value">{{ excessOrigin.purchaseNo }}</strong> ·
+          本单记录已有到货补购
         </span>
         <InlineHint
           v-else
@@ -120,6 +121,10 @@ const openSupplement = (): void => {
 };
 </script>
 <style scoped>
+.identity-value {
+  color: var(--el-text-color-primary);
+  font-weight: 600;
+}
 .order-lines {
   box-sizing: border-box;
   position: sticky;
