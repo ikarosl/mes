@@ -32,6 +32,7 @@ const allowedTables = new Set([
   'procurement_receipt_allocation',
   'notifications',
   'notification_recipients',
+  'business_templates',
   'approval_flow_definitions',
   'approval_flow_versions',
   'approval_flow_steps',

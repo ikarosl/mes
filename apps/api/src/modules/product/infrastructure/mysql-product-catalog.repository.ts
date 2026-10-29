@@ -8,6 +8,7 @@ import type {
   ProductMaterialItem,
   ProductOption,
   ProductPayload,
+  ProductUpdatePayload,
   ReplaceProductMaterialsCommand,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -45,7 +46,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
     return this.products.createProduct(payload, audit);
   }
 
-  updateProduct(id: string, payload: ProductPayload, audit: CommandContext): Promise<void> {
+  updateProduct(id: string, payload: ProductUpdatePayload, audit: CommandContext): Promise<void> {
     return this.products.updateProduct(id, payload, audit);
   }
 

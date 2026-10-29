@@ -7,6 +7,7 @@ import {
   IsInt,
   IsNotEmpty,
   IsNumberString,
+  IsObject,
   IsOptional,
   IsString,
   MaxLength,
@@ -21,13 +22,16 @@ import {
   PRODUCT_ITEM_KINDS,
   SYSTEM_STATUS,
   TECHNICAL_FILE_STORAGE_PROVIDERS,
+  TECHNICAL_FILE_TYPES,
 } from '@company/constants';
 import type {
+  JsonTableData,
   ProcessRouteStatus,
   ProductAcquireMethod,
   ProductItemKind,
   ReplaceProductMaterialsCommand,
   TechnicalFileStorageProvider,
+  TechnicalFileType,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
@@ -58,6 +62,10 @@ export class TechnicalFileQueryDto extends PageQueryDto {
   @IsOptional()
   @IsIn(TECHNICAL_FILE_STORAGE_PROVIDERS)
   storageProvider?: TechnicalFileStorageProvider;
+  @IsOptional() @IsIn(TECHNICAL_FILE_TYPES) fileType?: TechnicalFileType;
+}
+export class TechnicalFileUploadDto {
+  @IsOptional() @IsIn(TECHNICAL_FILE_TYPES) fileType?: TechnicalFileType;
 }
 export class ProductListQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(255) keyword?: string;
@@ -75,11 +83,10 @@ export class MaterialDto {
   @IsNumberString() categoryId!: string;
   @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
   @IsIn(PRODUCT_ACQUIRE_METHODS) acquireMethod!: ProductAcquireMethod;
+  /** 当前暂停物料参数录入；字段及校验保留，管理端新建传空表、编辑原样回传。 */
   @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ProductSpecValueDto)
-  specValues?: ProductSpecValueDto[];
+  @IsObject()
+  specValues?: JsonTableData;
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
   @IsOptional() @IsString() remark?: string | null;
 }
@@ -95,7 +102,13 @@ export class MaterialVariantDto {
   @IsNumberString() materialId!: string;
   @IsString() @IsNotEmpty() @MaxLength(32) majorVersion!: string;
   @IsString() @IsNotEmpty() @MaxLength(32) minorVersion!: string;
+  @IsNumberString() specificationFileId!: string;
   @IsOptional() @IsString() @MaxLength(255) remark?: string | null;
+}
+export class MaterialVariantSpecificationDto {
+  @IsNumberString() specificationFileId!: string;
+  @ValidateIf((_, value) => value !== null) @IsNumberString() expectedSpecificationFileId!:
+    string | null;
 }
 export class ProcessRouteQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(255) keyword?: string;
@@ -116,11 +129,6 @@ export class ProcessStepQueryDto extends PageQueryDto {
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled])
   status?: number;
 }
-export class ProductSpecValueDto {
-  @IsString() @IsNotEmpty() @MaxLength(100) key!: string;
-  @IsString() @MaxLength(255) value!: string;
-  @IsOptional() @IsString() @MaxLength(20) unit?: string;
-}
 export class ProductDto {
   @IsString() @IsNotEmpty() @MaxLength(100) itemCode!: string;
   @IsString() @IsNotEmpty() @MaxLength(200) productName!: string;
@@ -128,12 +136,15 @@ export class ProductDto {
   @IsString() @IsNotEmpty() @MaxLength(20) unit!: string;
   @IsIn(PRODUCT_ACQUIRE_METHODS) acquireMethod!: ProductAcquireMethod;
   @IsOptional()
-  @IsArray()
-  @ValidateNested({ each: true })
-  @Type(() => ProductSpecValueDto)
-  specValues?: ProductSpecValueDto[];
+  @IsObject()
+  specValues?: JsonTableData;
+  @IsNumberString() specificationFileId!: string;
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
   @IsOptional() @IsString() remark?: string | null;
+}
+export class ProductUpdateDto extends ProductDto {
+  @ValidateIf((_, value) => value !== null) @IsNumberString() expectedSpecificationFileId!:
+    string | null;
 }
 export class ProductMaterialDto {
   @IsNumberString() materialId!: string;

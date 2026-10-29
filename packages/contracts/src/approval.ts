@@ -1,6 +1,6 @@
 import type { PageQuery, VersionedCommand } from './common.js';
 import type { UserOption } from './system.js';
-import type { ProductSpecValue } from './product/product.js';
+import type { JsonTableData } from './template.js';
 import type { DemandCorrectionApprovalSnapshot } from './production/demand-correction.js';
 import type {
   BatchCloseoutApprovalSnapshot,
@@ -112,7 +112,7 @@ export interface BomApprovalSnapshot {
   itemCode: string;
   productName: string;
   unit: string;
-  specValues: ProductSpecValue[];
+  specValues: JsonTableData;
   materials: {
     id: string;
     materialId: string;

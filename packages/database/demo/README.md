@@ -10,6 +10,7 @@
 - Product：三个同名不同编码成品、两个同名基础物料 `m1.077.012` / `m1.077.013`、六个大小版本、仅关联基础物料的 BOM，以及可在创建批量任务时手动选择的独立工艺路线；
 - 库存选择器样例：`demo-stock-multi` 含两个启用版本和一个停用版本；`demo-stock-meter` 与其同名、编码及单位不同；另含停用物料、只有停用版本的物料，以及启用／停用的两个同名成品。主数据只补缺，不覆盖已有状态或编辑。
 - 入库归批样例：[`012-inbound-grouping-demo.sql`](012-inbound-grouping-demo.sql) 只补“演示共批供应商甲／乙”两条供应商主数据；采购正式分配及成品批准授权仍须通过业务流程准备，不在种子中伪造。
+- 表格模板：[`015-business-template-demo.sql`](015-business-template-demo.sql) 补充规格参数、独立交接事项、空行表格及停用样例，仅按系统内唯一名称补缺，不覆盖已有内容、版本或启停／删除状态；不依赖产品或物料样例。改名后重跑会补回原名样例。
 - 采购跟进样例：[`013-purchase-order-status-demo.sql`](013-purchase-order-status-demo.sql) 提供草稿取消、三行结束／恢复、无到货整单取消三张独立备料采购单；只补缺失标记，不覆盖已办理状态，不生成到货、质检、正式分配或库存事实。
 - Production：一张批量工单与一张研发工单，编号按[统一业务编号](../../../apps/api/docs/business-numbering.md)的工单类型分配；`demo-mass-001` / `demo-research-001` 放入外部订单号作为重复加载时的补缺标记。均为草稿，不自动下达、选版本、生成需求或库存流水。
 
@@ -20,7 +21,7 @@
 | 账号 | 角色编码 | 验收职责 |
 | --- | --- | --- |
 | `operator-001`、`operator-002` | `operator` | 本人负责工序的开始、完成、重开与报工 |
-| `production-001` | `production` | 产品资料、工单与任务、独立报工记录查看、用料分配、产出及审批处理；库存仅查看 |
+| `production-001` | `production` | 产品资料、工单与任务、独立报工记录查看、用料分配、产出及审批处理；模板与库存仅查看 |
 | `warehouse-001` | `warehouse` | 采购到货及整单登记作废、库存查询、出入库、退料、领料损耗和盘点 |
 | `procurement-001` | `procurement` | 供应商和采购单，不办理到货、质检或库存记账 |
 | `quality-001` | `quality` | 来料检验与复核、成品质检、工序专检，不办理库存记账 |
@@ -51,6 +52,10 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 演示路线所有工序统一报工；操作工通过既有工序操作权限明确开始、完成及重开本人负责工序，数量达标不自动完成。
 
 工序专检通过既有业务入口准备执行中的批量任务后办理，不由演示种子生成正式质检或生产处置事实。`quality-001` 负责登记和更正，`production-001` 负责在生产执行页处理不合格及后续返工或报废。生产演示角色显式包含独立的 `production:execution-records:view`，并另有专检查看权限用于追溯；产线最小权限验收须另用仅有生产报工记录查看及异常管理权限的账号，确认处理不依赖生产任务或质检页面权限。只读验收账号只分配报工记录查看及其生产分组，不授予任务查看或动作权限；既有角色不由迁移自动补授新权限。
+
+## 规格书的人工验收准备
+
+SQL demo 不伪造对象存储 locator，成品和精确版本初始规格书可以为空。加载 demo 后，通过成品编辑和精确物料版本的规格书入口上传真实文件，再核对下载、替换及并发冲突；在审成品仍遵守冻结规则。规格书的必填、文件类型与关联规则由 [Product](../../../apps/api/src/modules/product/docs/product-rules.md#成品与精确物料版本规格书)所有。
 
 ## 采购跟进状态的人工验收准备
 
@@ -94,40 +99,22 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 
 ## 补单来源与物流解耦的人工验收准备
 
-完成 `db:init`、显式加载 demo 并启动本地 API 后，使用[准备脚本](../../../scripts/prepare-procurement-supplement-demo.mjs)生成业务样例。采购、到货、质检、定稿、入库及退回全部通过正式 API 办理；脚本不直接写业务表，不属于正式测试集。
+显式加载 demo 后，选用“演示共批供应商甲”和 `demo-stock-multi-v1-A`，通过业务入口分别准备以下独立场景。采购、到货、质检、定稿、入库及退回均按实际流程办理，不由 seed 生成事实。
 
-```bash
-ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-supplement-demo.mjs prepare
-ALLOW_DEMO_SEED=1 node scripts/prepare-procurement-supplement-demo.mjs report
-```
-
-未指定模式时只读报告。脚本读取初始化管理员的环境凭证，不输出密码或令牌；要求非生产环境及显式 `ALLOW_DEMO_SEED=1`。API 默认 `http://127.0.0.1:3002/api`，可用 `PROCUREMENT_SUPPLEMENT_DEMO_API_BASE_URL` 指定；远程地址额外要求 HTTPS 和 `PROCUREMENT_SUPPLEMENT_DEMO_ALLOW_REMOTE=1`。不会进入初始化、部署或 CI 自动执行链路。
-
-默认备注标记为 `[demo-supplement-decoupled-v1]`，报告提供实际单号和明细 ID，不依赖固定 ID。已有标记时只报告、不继续写入；失败会保留已完成的真实事实并报告，不盲目重试。需要新一组样例可设置由字母、数字、下划线或连字符组成的 `PROCUREMENT_SUPPLEMENT_DEMO_TAG`，或重建开发库后重新准备。
-
-| 场景标记 | 准备结果与人工核对目标 |
+| 场景 | 准备结果与人工核对目标 |
 | --- | --- |
-| `excess-original`、`excess-before-inbound`、`excess-after-inbound` | 原采购计划 100、到货及实入 120；分别在实入前、后办理 20 的超量补单。原采购保持 120／120，补单无自身物流统计和到货记录 |
-| `quality-original`、`quality-old-draft`、`quality-old-continued` | 原到货 100，质量分配 A 为可入 95／待退 5，更正 B 为 97／3；两张补单均固定原到货，另一张旧草稿改量、下单并自身到货入库 5。核对同到货唯一候选、相关补单及独立统计 |
-| `source-uninspected`、`source-all-pending`、`source-all-return` | 未检、全待处理、全超发待退来源不具备新建超量补单资格 |
-| `source-quality-returned-history` | 质量实际退回 2 后剩余 8 全部可入，当前无质量待退，该到货仍可作为新质量补单来源 |
+| 超量补单办理时机 | 原采购计划 100、到货及实入 120；分别在实入前、后办理 20 的超量补单。原采购保持 120／120，补单无自身物流统计和到货记录 |
+| 质量分配更正与已有补单 | 原到货 100，质量分配 A 为可入 95／待退 5，更正 B 为 97／3；两张补单均固定原到货，另一张旧草稿改量、下单并自身到货入库 5。核对同到货唯一候选、相关补单及独立统计 |
+| 不具备超量补单资格的来源 | 分别准备未检、全待处理、全超发待退的到货，核对不能作为新超量补单来源 |
+| 历史质量退回 | 质量实际退回 2 后剩余 8 全部可入，当前无质量待退，该到货仍可作为新质量补单来源 |
 
-总计准备 10 张采购单、7 张到货单；超量样例的两张 20 用于比较办理时机，不表示应重复补购。成功报告应为 `prepared: true`、`initialReadinessIssues: []`。
+超量样例的两张 20 用于比较办理时机，不表示应重复补购。
 
 ## 质量补单按原到货关联的人工验收准备
 
 两类补单都只保存原采购行、原到货明细和补购说明，不选择或保存分配 ID，也不提供分配依据更正入口。仓库入退仍使用真实 allocation；采购候选按到货明细去重，两类候选均核对整次到货的到货量、当前可入库、已入库、待退回及已退回。质量原因资格与全部原因的展示退回量分别核对，口径见[候选查询](../../../apps/api/src/modules/procurement/docs/receipt-queries.md#入库候选及正式分配)。
 
-已有上一节的独立来源样例时，可追加一张小量历史退回草稿，不重复准备基础十张订单：
-
-```bash
-ALLOW_DEMO_SEED=1 PROCUREMENT_SUPPLEMENT_DEMO_TAG='<已有来源tag>' node scripts/prepare-procurement-supplement-demo.mjs prepare-history
-ALLOW_DEMO_SEED=1 PROCUREMENT_SUPPLEMENT_DEMO_TAG='<已有来源tag>' node scripts/prepare-procurement-supplement-demo.mjs report
-```
-
-`prepare-history` 复用 `source-quality-returned-history`，要求其候选当前待退为 0、真实质量已退为 2，创建 `quality-history-receipt-draft` 草稿并保留供采购员手工下单。已有同场景标记时不追加；失败不盲目重试。报告提供实际采购单／行及原到货 ID。人工验收核对当前轮仅可入 8、历史已退 2 时仍可按原到货新建和下单；处理轮变化不改已建补单来源，采购员手动决定补购量，不以待退或累计补单量封顶。
-
-该模式只通过正式 API 补充演示数据，不修改已有单据、实际退回或库存事实。
+复用上一节的历史质量退回来源，在候选当前待退为 0、真实质量已退为 2 时新建小量质量补单草稿，再由采购员下单。核对当前轮仅可入 8、历史已退 2 时仍可按原到货新建和下单；处理轮变化不改已建补单来源，采购员手动决定补购量，不以待退或累计补单量封顶。
 
 ## BOM 审批演示
 

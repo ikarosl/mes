@@ -10,7 +10,7 @@ NestJS 组合根，负责启动、全局管道／过滤器／拦截器、模块�
 
 ## 相关文档
 
-- 业务模块：[Identity](src/modules/identity/README.md)、[Approval](src/modules/approval/README.md)、[Notification](src/modules/notification/README.md)、[Product](src/modules/product/README.md)、[Production](src/modules/production/README.md)、[Procurement](src/modules/procurement/README.md)、[Quality](src/modules/quality/README.md)、[Inventory](src/modules/inventory/README.md)。
+- 业务模块：[Identity](src/modules/identity/README.md)、[Approval](src/modules/approval/README.md)、[Notification](src/modules/notification/README.md)、[Template](src/modules/template/README.md)、[Product](src/modules/product/README.md)、[Production](src/modules/production/README.md)、[Procurement](src/modules/procurement/README.md)、[Quality](src/modules/quality/README.md)、[Inventory](src/modules/inventory/README.md)。
 - 平台约束：[业务编号](docs/business-numbering.md)、[命令上下文](docs/command-context.md)、[事务审计](docs/audit.md)、[幂等性](docs/idempotency.md)。
 - 权限目录：[Identity 目录来源、发布与鉴权边界](src/modules/identity/docs/database.md#14-permissions)；具体只读消费者与写动作权限由各模块接口文档维护。
 

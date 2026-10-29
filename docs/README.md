@@ -32,6 +32,7 @@
 - [API](../apps/api/README.md)：[命令上下文](../apps/api/docs/command-context.md)、[事务审计](../apps/api/docs/audit.md)、[幂等性](../apps/api/docs/idempotency.md)
 - [Identity](../apps/api/src/modules/identity/README.md)：[数据库设计](../apps/api/src/modules/identity/docs/database.md)
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
+- [Template](../apps/api/src/modules/template/README.md)：独立系统模板、通用 JSON 表格内容与[数据库设计](../apps/api/src/modules/template/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)
 - [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货、实收修订和仓库处置编排
 - [Quality](../apps/api/src/modules/quality/README.md)：来料与成品检验、复检、明确放行，以及工序专检与不可变检查事实

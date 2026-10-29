@@ -9,7 +9,7 @@ export const PROCESS_ROUTE_STATUSES = ['draft', 'enabled', 'disabled', 'archived
 
 export const TECHNICAL_FILE_STORAGE_PROVIDERS = ['s3'] as const;
 
-export const TECHNICAL_FILE_TYPES = ['sop'] as const;
+export const TECHNICAL_FILE_TYPES = ['sop', 'specification'] as const;
 
 export const PRODUCT_BOM_STATUSES = ['draft', 'pending_approval', 'approved'] as const;
 export const PRODUCT_BOM_STATUS_LABELS = {

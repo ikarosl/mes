@@ -46,6 +46,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'stock_check_detail',
   ]),
   notification: Object.freeze(['notifications', 'notification_recipients']),
+  template: Object.freeze(['business_templates']),
   approval: Object.freeze([
     'approval_flow_definitions',
     'approval_flow_versions',

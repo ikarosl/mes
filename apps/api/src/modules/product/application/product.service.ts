@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
+  JsonTableData,
   ProcessRoutePayload,
   ProcessRouteQuery,
   ProcessRouteStatus,
@@ -12,12 +13,22 @@ import type {
   MaterialVariantItem,
   MaterialVariantListQuery,
   MaterialVariantPayload,
+  MaterialVariantSpecificationPayload,
   MaterialListQuery,
   MaterialPayload,
   ProductListQuery,
   ProductPayload,
+  ProductUpdatePayload,
   TechnicalFileQuery,
+  TechnicalFileUploadPayload,
 } from '@company/contracts';
+import {
+  TECHNICAL_FILE_EXTENSIONS,
+  TECHNICAL_FILE_MAX_SIZE_BYTES,
+  TECHNICAL_FILE_MIME_TYPES_BY_EXTENSION,
+  TECHNICAL_FILE_TYPES,
+} from '@company/constants';
+import { normalizeJsonTable } from '@company/utils';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
@@ -56,9 +67,17 @@ export class ProductService {
   listTechnicalFiles(query: TechnicalFileQuery) {
     return this.technicalFiles.listTechnicalFiles(query);
   }
-  async uploadTechnicalFile(file: TechnicalFileUpload, audit: CommandContext) {
+  async uploadTechnicalFile(
+    file: TechnicalFileUpload,
+    audit: CommandContext,
+    payload: TechnicalFileUploadPayload = {},
+  ) {
     this.validateTechnicalFile(file);
-    const stored = await this.storage.storeSop(file);
+    const fileType = payload.fileType ?? 'sop';
+    if (!(TECHNICAL_FILE_TYPES as readonly string[]).includes(fileType)) {
+      throw new ProductDomainError('INVALID_INPUT', '技术文件用途不合法');
+    }
+    const stored = await this.storage.store(file, fileType);
     try {
       return await this.technicalFiles.createTechnicalFile(stored, audit);
     } catch (error) {
@@ -69,10 +88,6 @@ export class ProductService {
   async downloadTechnicalFile(id: string) {
     const file = await this.technicalFiles.getTechnicalFile(id);
     return { file, stream: await this.storage.read(file) };
-  }
-  deleteTechnicalFile(id: string, audit: CommandContext) {
-    // 软删除：停用并标记删除，对象存储内容保留，供历史路线和生产记录追溯。
-    return this.technicalFiles.deleteTechnicalFile(id, audit);
   }
   listProducts(query: ProductListQuery) {
     return this.catalog.listProducts(query);
@@ -137,8 +152,15 @@ export class ProductService {
   createProduct(payload: ProductPayload, audit: CommandContext) {
     return this.catalog.createProduct(this.cleanProduct(payload), audit);
   }
-  updateProduct(id: string, payload: ProductPayload, audit: CommandContext) {
-    return this.catalog.updateProduct(id, this.cleanProduct(payload), audit);
+  updateProduct(id: string, payload: ProductUpdatePayload, audit: CommandContext) {
+    return this.catalog.updateProduct(
+      id,
+      {
+        ...this.cleanProduct(payload),
+        expectedSpecificationFileId: payload.expectedSpecificationFileId,
+      },
+      audit,
+    );
   }
   setProductStatus(id: string, status: number, audit: CommandContext) {
     return this.catalog.setProductStatus(id, status, audit);
@@ -158,6 +180,7 @@ export class ProductService {
         materialId: payload.materialId,
         majorVersion: payload.majorVersion.trim(),
         minorVersion: payload.minorVersion.trim(),
+        specificationFileId: payload.specificationFileId,
         remark: payload.remark?.trim() || null,
       },
       audit,
@@ -165,6 +188,13 @@ export class ProductService {
   }
   setMaterialVariantStatus(id: string, status: number, audit: CommandContext) {
     return this.materialVariants.setStatus(id, status, audit);
+  }
+  setMaterialVariantSpecification(
+    id: string,
+    payload: MaterialVariantSpecificationPayload,
+    audit: CommandContext,
+  ) {
+    return this.materialVariants.setSpecification(id, payload, audit);
   }
   replaceMaterials(id: string, command: ReplaceProductMaterialsCommand, audit: CommandContext) {
     requireValidBomReplacement(command);
@@ -181,7 +211,7 @@ export class ProductService {
   }
   async uploadProcessStepSop(id: string, file: TechnicalFileUpload, audit: CommandContext) {
     this.validateTechnicalFile(file);
-    const stored = await this.storage.storeSop(file);
+    const stored = await this.storage.store(file, 'sop');
     try {
       await this.processSteps.attachProcessStepSop(id, stored, audit);
     } catch (error) {
@@ -240,10 +270,24 @@ export class ProductService {
   }
   private validateTechnicalFile(file: TechnicalFileUpload) {
     if (!file.buffer.length) throw new ProductDomainError('INVALID_INPUT', '上传文件不能为空');
-    if (file.buffer.length > 20 * 1024 * 1024) {
+    if (file.buffer.length > TECHNICAL_FILE_MAX_SIZE_BYTES) {
       throw new ProductDomainError('INVALID_INPUT', '技术文件不能超过 20 MiB');
     }
     if (!file.originalName.trim()) throw new ProductDomainError('INVALID_INPUT', '文件名不能为空');
+    if (file.originalName.length > 255) {
+      throw new ProductDomainError('INVALID_INPUT', '原始文件名不能超过 255 个字符');
+    }
+    const extension = file.originalName.split('.').at(-1)?.toLowerCase();
+    if (!(TECHNICAL_FILE_EXTENSIONS as readonly string[]).includes(extension ?? '')) {
+      throw new ProductDomainError('INVALID_INPUT', '不支持的技术文件类型');
+    }
+    const allowed =
+      TECHNICAL_FILE_MIME_TYPES_BY_EXTENSION[
+        extension as (typeof TECHNICAL_FILE_EXTENSIONS)[number]
+      ];
+    if (!(allowed as readonly string[]).includes(file.mimeType)) {
+      throw new ProductDomainError('INVALID_INPUT', '文件 MIME 类型与扩展名不匹配');
+    }
   }
   private cleanProduct(payload: ProductPayload): ProductPayload {
     return {
@@ -252,13 +296,7 @@ export class ProductService {
       productName: payload.productName.trim(),
       unit: payload.unit.trim(),
       remark: payload.remark?.trim() || null,
-      specValues: (payload.specValues ?? [])
-        .filter((item) => item.key.trim())
-        .map((item) => ({
-          key: item.key.trim(),
-          value: item.value.trim(),
-          unit: item.unit?.trim() || undefined,
-        })),
+      specValues: this.cleanSpecifications(payload.specValues),
     };
   }
   private cleanMaterial(payload: MaterialPayload): MaterialPayload {
@@ -268,14 +306,18 @@ export class ProductService {
       materialName: payload.materialName.trim(),
       unit: payload.unit.trim(),
       remark: payload.remark?.trim() || null,
-      specValues: (payload.specValues ?? [])
-        .filter((item) => item.key.trim())
-        .map((item) => ({
-          key: item.key.trim(),
-          value: item.value.trim(),
-          unit: item.unit?.trim() || undefined,
-        })),
+      specValues: this.cleanSpecifications(payload.specValues),
     };
+  }
+  private cleanSpecifications(value: JsonTableData | undefined): JsonTableData {
+    try {
+      return normalizeJsonTable(value === undefined ? { columns: [], rows: [] } : value);
+    } catch (error) {
+      throw new ProductDomainError(
+        'INVALID_INPUT',
+        error instanceof Error ? error.message : '规格参数格式不合法',
+      );
+    }
   }
   private cleanProcessStep(payload: ProcessStepPayload): ProcessStepPayload {
     return {

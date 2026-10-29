@@ -59,7 +59,8 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 | `bom_locked_by`    | `BIGINT UNSIGNED` | BOM 最后一级批准人；未批准时为空            |
 | `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
 | `acquire_method`   | `VARCHAR(32)`     | `self_made`、`outsourced`、`purchased`  |
-| `spec_values`      | `JSON`            | 轻量规格参数；纯记录，不参与整数数量计算 |
+| `spec_values`      | `JSON NOT NULL`   | 完整规格参数表格，结构见[规格参数存储](#规格参数存储与迁移) |
+| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前成品唯一规格书，关联 `technical_files.id` |
 | `status`           | `TINYINT`         | `1` 启用、`0` 停用                      |
 | `remark`           | `TEXT`            | 备注                                    |
 | 审计字段            | 见统一规则        | 主数据审计字段                          |
@@ -71,6 +72,7 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 - 外键：`FOREIGN KEY (category_id) REFERENCES item_categories(id)`
 - 外键：`default_route_id -> process_routes.id ON DELETE SET NULL`，在工艺表创建后追加
 - 外键：`bom_locked_by -> users.id`
+- 外键：`specification_file_id -> technical_files.id ON DELETE RESTRICT`，配套索引 `idx_products_specification_file`；文件用途、启用和未删除资格由 Product 写事务校验。
 - 检查约束：`CHECK (bom_locked_at IS NOT NULL OR bom_locked_by IS NULL)`
 - 检查约束：`CHECK (acquire_method IN ('self_made', 'outsourced', 'purchased'))`
 - 检查约束：`CHECK (status IN (0, 1))`
@@ -87,6 +89,8 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 职责：维护 BOM 引用的基础物料编码，例如 `m1.077.012`。名称（例如“微带”）仅用于展示和搜索，分类可表达“半成品 → 微带电路”；两者都不决定物料唯一身份。
 
+本表的参数由同一基础物料全部版本共用；不保存规格书字段。每个精确版本的规格书由 `material_variants` 自身引用，边界见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
+
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED` | 自增主键，独立于成品 ID |
@@ -95,7 +99,7 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 | `category_id` | `BIGINT UNSIGNED` | `item_categories.id`，必须是 `material` 分类 |
 | `unit` | `VARCHAR(20)` | 固定基础单位，不允许修改或换算 |
 | `acquire_method` | `VARCHAR(32)` | `self_made`、`outsourced`、`purchased` |
-| `spec_values` | `JSON` | 基础物料共有的轻量规格记录 |
+| `spec_values` | `JSON NOT NULL` | 基础物料全部版本共用的规格参数表格；当前暂停录入，保留规则见[规格参数 JSON](product-rules.md#规格参数-json) |
 | `status` | `TINYINT` | `0/1` |
 | `remark` | `TEXT` | 可空备注 |
 | 审计字段 | 见统一规则 | `created_by/at`、`updated_by/at`、`is_deleted`、`deleted_by/at` |
@@ -103,6 +107,14 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 约束：`UNIQUE (material_code)`；分类和操作者外键；状态与软删除标志只允许 `0/1`；删除必须同时保存删除人和时间。物料编码和单位由更新触发器保护。名称不唯一；物料与成品分别保证各自编码唯一，不建立跨表编码注册表。
 
 分类类型由 Product 写事务校验，分类对象类型创建后不可修改，无论是否存在引用。物料自身不拥有 BOM 或生产工单；`self_made` 只保留获取方式，不提前开放自产半成品入库能力。
+
+#### 规格参数存储与迁移
+
+`products.spec_values` 与 `materials.spec_values` 保存[完整规格参数 JSON](product-rules.md#规格参数-json)，不保存模板引用。数据库不设置 JSON 默认值；应用在省略参数时写入业务空表。两表分别通过 `chk_products_spec_values_table`、`chk_materials_spec_values_table` 限定根为对象、仅含 `columns` 和 `rows` 两个数组字段，列与单元格细节由共享规范化工具校验。
+
+迁移 `202610280007-product-json-table-specifications` 期间暂停 Product 资料及 BOM 审批写入，升级后同步切换匹配应用。up 保留旧数组顺序和单元格原文，转换为“参数名称／参数值／单位”三列；缺失或 null 单元格补为空字符串，原 SQL／JSON null 统一为空表，主数据审计时间与版本保持。未知旧字段、非文本值、超过新表格容量的旧数据在转换前拒绝；不截断或猜测内容。
+
+旧 BOM 审批快照不可改写；up 在首个永久 DDL 和数据转换前拒绝旧版本或旧规格结构的相关审批申请，命中时按开发数据库统一初始化约定重建。down 在永久 DDL 前拒绝任何 BOM 审批历史，以及无法无损表示为旧字段的表格；只允许业务空表或上述固定三列、完整字符串行且满足旧字段长度的记录。允许回退时直接还原行数组，不伪造模板关联或审批证据。DDL 与数据转换不能整体回滚，失败恢复遵守[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。
 
 ```text
 products → product_materials → materials → material_variants
@@ -192,26 +204,26 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 ## 2.1 `technical_files`
 
-职责：保存 SOP、检验附件和追溯附件的元数据，文件内容通过存储端口访问，兼容本地、S3、OSS 和 MinIO。
+职责：保存 SOP 与规格书的元数据，文件内容通过 Product 的 S3-compatible 存储端口访问。其他附件用途尚未接入本能力。
 
 | 字段               | 类型              | 说明                            |
 | ------------------ | ----------------- | ------------------------------- |
 | `id`               | `BIGINT UNSIGNED` | 主键，自增                      |
-| `file_name`        | `VARCHAR(255)`    | 业务文件名                      |
+| `file_name`        | `VARCHAR(255)`    | 文件名，新上传直接使用原始文件名 |
 | `original_name`    | `VARCHAR(255)`    | 上传时原始文件名                |
-| `storage_provider` | `VARCHAR(32)`     | `local`、`s3`、`oss`、`minio`   |
-| `bucket`           | `VARCHAR(128)`    | Bucket，本地存储可为空          |
+| `storage_provider` | `VARCHAR(32)`     | 当前仅使用 `s3`，含 S3-compatible 服务 |
+| `bucket`           | `VARCHAR(128)`    | 物理列可空，当前 S3 写入必须保存稳定 Bucket |
 | `object_key`       | `VARCHAR(500)`    | 存储对象键，不保存临时签名 URL  |
 | `mime_type`        | `VARCHAR(128)`    | MIME 类型                       |
 | `size_bytes`       | `BIGINT UNSIGNED` | 文件大小                        |
 | `checksum_sha256`  | `CHAR(64)`        | 内容摘要                        |
-| `file_type`        | `VARCHAR(64)`     | `sop`、`inspection`、`trace` 等 |
-| `version_no`       | `VARCHAR(64)`     | 文件版本                        |
+| `file_type`        | `VARCHAR(64)`     | `sop`、`specification` |
+| `version_no`       | `VARCHAR(64) NULL` | SOP 版本非空；规格书固定为空 |
 | `status`           | `TINYINT`         | `1` 启用、`0` 停用              |
 | `remark`           | `VARCHAR(255)`    | 备注                            |
 | 审计字段           | 见统一规则        | 主数据审计字段                  |
 
-约束：`UNIQUE (storage_provider, bucket, object_key)`；`CHECK (size_bytes >= 0)`。
+约束：`UNIQUE (storage_provider, bucket, object_key)`；`CHECK (size_bytes >= 0)`；`chk_technical_files_type` 限定 `file_type IN ('sop','specification')`；`chk_technical_files_version` 要求 SOP 的 `version_no IS NOT NULL`、规格书的 `version_no IS NULL`。新文件创建独立元数据与对象，不修改既有内容和 SOP 版本。
 
 ## 2.2 `process_steps`
 
@@ -291,6 +303,7 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 | `major_version`       | `VARCHAR(32)`     | 主版本                            |
 | `minor_version`       | `VARCHAR(32)`     | 次版本                            |
 | `variant_code`        | `VARCHAR(180)`    | 服务端生成且创建后不可修改的编码   |
+| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前精确版本唯一规格书 |
 | `status`              | `TINYINT`         | `1` 启用、`0` 停用                 |
 | `is_deleted`          | `TINYINT`         | 软删除标记                         |
 
@@ -304,6 +317,8 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 物料版本约束：`UNIQUE (material_id, major_version, minor_version)`、`UNIQUE (variant_code)`、`UNIQUE (id, material_id)`；版本编码由基础物料编码与大小版本生成。版本表同样保存完整主数据审计字段与备注，身份字段创建后不可修改。不同基础物料可以具有相同大小版本号。
 
+`specification_file_id -> technical_files.id ON DELETE RESTRICT`，配套索引 `idx_material_variants_specification_file`。规格书替换只更新该关联及修改审计，不改精确版本身份、编码、大小版本或基础物料参数；文件用途和可绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
+
 BOM 只选择基础物料，不能固定大小版本。版本候选不等于管理员已经认可替代：Production 按任务类型决定是否允许选择另一版本：批量同任务锁版，研发按每次需求选版，详见[工单物料版本规则](../../production/docs/database/work-orders-and-batches.md)。已停用版本继续用于历史查询，但不允许新增需求选择。
 
 ## 3. 数据库实施与应用适配边界
@@ -313,6 +328,14 @@ BOM 只选择基础物料，不能固定大小版本。版本候选不等于管�
 拆表迁移仅接受空业务表，遇到既有成品、物料版本、路线或工单时在任何结构改动前拒绝执行，应重置开发库后从第一条 migration 重建。回滚同样只接受空业务表。不得修改已执行 migration，不设置双写或影子表。
 
 迁移执行条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)；待验收和未完成事项见[路线图](../../../../../../docs/roadmap.md)。
+
+### 规格书关联迁移
+
+`202610280001-product-specification-files` 先为技术文件用途建立 CHECK，再给成品和精确物料版本追加可空外键，不推测或回填既有资料。物理空值明确表示尚未补充真实规格书；应用的新建与资料保存必须提交有效规格书，独立启停命令不强制补资料。此可空性不提供省略规格书的新建入口，也不建立影子表或兼容双写。
+
+切换期间暂停 Product 资料及技术文件写入，迁移后切换匹配应用。现存非 SOP／规格书用途会使首个 DDL 失败，不删除或改写其数据。down 在任何永久 DDL 前拒绝成品或精确版本存在非空规格书引用，包含软删除主数据；允许回退时移除本次外键、支撑索引、列和用途 CHECK，技术文件元数据、对象及操作日志保持。MySQL DDL 不能整体回滚，中断后遵守通用迁移恢复约定。
+
+`202610280003-product-specification-file-metadata` 将版本列改为可空，规格书名称归一为原始文件名并清空版本，SOP 数据和快照保持；回退限制及执行条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280003规格书文件元数据)。
 
 ### 物料名称的跨模块展示读取
 

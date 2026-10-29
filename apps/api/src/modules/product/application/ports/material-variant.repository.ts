@@ -2,6 +2,7 @@ import type {
   MaterialOption,
   MaterialVariantItem,
   MaterialVariantListQuery,
+  MaterialVariantSpecificationPayload,
   PageResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
@@ -23,6 +24,7 @@ export interface CreateMaterialVariantCommand {
   materialId: string;
   majorVersion: string;
   minorVersion: string;
+  specificationFileId: string;
   remark: string | null;
 }
 
@@ -62,4 +64,9 @@ export abstract class MaterialVariantRepository extends MaterialVariantQuery {
     context: CommandContext,
   ): Promise<{ id: string; variantCode: string }>;
   abstract setStatus(id: string, status: number, context: CommandContext): Promise<void>;
+  abstract setSpecification(
+    id: string,
+    payload: MaterialVariantSpecificationPayload,
+    context: CommandContext,
+  ): Promise<void>;
 }

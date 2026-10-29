@@ -10,6 +10,8 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 - [采购与入库](docs/procurement-inbound.md)、[来料检验与定稿](docs/incoming-inspection-adoption.md)、[成品质检与产出](docs/finished-inspections.md)、[工序专检与生产处理](docs/process-inspections.md)：专题前端约束。
 - [其他入出库](docs/other-inventory-orders.md)：草稿、精确库存对象、新批次组、库存候选、整单确认和未知结果保护。
 - [业务人员配置与工单负责人](docs/business-user-candidates.md)：角色配置草稿、并发核对及人员候选与历史姓名的边界。
+- [系统模板管理](docs/business-templates.md)：独立模板页面、列与预设行、编辑并发及跨业务应用边界。
+- [成品、基础物料与精确版本编辑](docs/product-master-data.md)：规格书上传、关联并发及规格参数模板的草稿边界。
 - [成品产出清单、复检与入库操作手册](../../docs/manuals/finished-output-inspection-inbound.md)：使用步骤和当前限制。
 
 ## 验证

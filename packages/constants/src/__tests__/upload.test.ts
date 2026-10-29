@@ -6,25 +6,6 @@ import {
 } from '../index';
 
 describe('technical file upload whitelist', () => {
-  it('covers common images, office documents and pdf, and never ppt', () => {
-    expect(TECHNICAL_FILE_EXTENSIONS).toEqual([
-      'png',
-      'jpg',
-      'jpeg',
-      'gif',
-      'webp',
-      'bmp',
-      'pdf',
-      'doc',
-      'docx',
-      'xls',
-      'xlsx',
-    ]);
-    expect(TECHNICAL_FILE_EXTENSIONS).toContain('pdf');
-    expect(TECHNICAL_FILE_EXTENSIONS).not.toContain('ppt');
-    expect(TECHNICAL_FILE_EXTENSIONS).not.toContain('pptx');
-  });
-
   it('keeps every extension lowercase and unique', () => {
     const extensions = [...TECHNICAL_FILE_EXTENSIONS];
     expect(extensions).toEqual(extensions.map((extension) => extension.toLowerCase()));

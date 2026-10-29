@@ -16,7 +16,7 @@ SET @product_category_id = (SELECT id FROM item_categories WHERE category_code =
 
 -- Names are search/display values and intentionally repeat across different codes.
 INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
-SELECT sample.item_code, '微带20-30', @product_category_id, 'pcs', 'self_made', JSON_ARRAY(), 1, @demo_actor_id, @demo_actor_id
+SELECT sample.item_code, '微带20-30', @product_category_id, 'pcs', 'self_made', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), 1, @demo_actor_id, @demo_actor_id
 FROM (
   SELECT 'p-micro-20-30' item_code UNION ALL
   SELECT 'p-micro-20-30-02' UNION ALL SELECT 'p-micro-20-30-03'
@@ -24,7 +24,7 @@ FROM (
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.item_code = sample.item_code);
 
 INSERT INTO materials (material_code, material_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
-SELECT sample.material_code, '微带', @material_category_id, 'pcs', 'purchased', JSON_ARRAY(), 1, @demo_actor_id, @demo_actor_id
+SELECT sample.material_code, '微带', @material_category_id, 'pcs', 'purchased', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), 1, @demo_actor_id, @demo_actor_id
 FROM (SELECT 'm1.077.012' material_code UNION ALL SELECT 'm1.077.013') sample
 WHERE NOT EXISTS (SELECT 1 FROM materials m WHERE m.material_code = sample.material_code);
 

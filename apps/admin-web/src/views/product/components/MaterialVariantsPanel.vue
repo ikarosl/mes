@@ -45,6 +45,22 @@
         width="120"
       />
       <el-table-column
+        label="规格书"
+        min-width="220"
+      >
+        <template #default="{ row }">
+          <TechnicalFileCell
+            :file-name="row.specificationFile?.originalName ?? null"
+            :pending-action="
+              fileActionVariantId === row.id ? fileActions.pendingAction.value : null
+            "
+            :disabled="Boolean(fileActions.pendingAction.value)"
+            @preview="viewSpecification(row, 'preview')"
+            @download="viewSpecification(row, 'download')"
+          />
+        </template>
+      </el-table-column>
+      <el-table-column
         label="状态"
         width="100"
         ><template #default="{ row }"
@@ -61,8 +77,13 @@
       >
       <el-table-column
         label="操作"
-        width="110"
+        width="190"
         ><template #default="{ row }"
+          ><el-button
+            link
+            type="primary"
+            @click="$emit('replace-specification', row)"
+            >替换规格书</el-button
           ><el-button
             v-if="canChangeStatus"
             link
@@ -77,6 +98,9 @@
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
+import TechnicalFileCell from '../../../components/TechnicalFileCell.vue';
+import { useTechnicalFileActions } from '../../../composables/useTechnicalFileActions';
 import type { MaterialVariantItem } from '@company/contracts';
 import { useMaterialVariants } from '../composables/useMaterialVariants';
 
@@ -85,12 +109,24 @@ const props = defineProps<{
   snapshotRevision: number;
   canChangeStatus: boolean;
 }>();
-defineEmits<{ (event: 'change-status', variant: MaterialVariantItem): void }>();
+defineEmits<{
+  (event: 'change-status', variant: MaterialVariantItem): void;
+  (event: 'replace-specification', variant: MaterialVariantItem): void;
+}>();
 
 const { variants, loading, errorMessage, load } = useMaterialVariants(
   () => props.materialId,
   () => props.snapshotRevision,
 );
+const fileActionVariantId = ref<string | null>(null);
+const fileActions = useTechnicalFileActions(
+  () =>
+    variants.value.find((row) => row.id === fileActionVariantId.value)?.specificationFile ?? null,
+);
+const viewSpecification = (variant: MaterialVariantItem, action: 'preview' | 'download'): void => {
+  fileActionVariantId.value = variant.id;
+  void fileActions[action]();
+};
 </script>
 
 <style scoped>

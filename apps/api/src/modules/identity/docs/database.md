@@ -92,6 +92,8 @@
 
 `parent_id` 只表达目录分组及角色配置界面的层级。授予模块、页面或宿主节点不会在后端继承其子权限；选择子权限也不会隐式授予父节点。管理端菜单、路由和整页读取按各自页面权限控制，页面内动作仍由每个后端接口的 `RequirePermission` 独立鉴权。跨页面共用的只读接口可以声明精确的 any-of，合法消费者和授权集由最近的接口所有者文档维护；不把动作权限扩成整页读取或分配能力。
 
+写入口需要多个独立能力时使用 `RequireAllPermissions`，逐项复用相同权限匹配规则，全部命中才放行；与 `RequirePermission` 同时声明时两组条件也须同时成立。既有 `RequirePermission` 数组继续表示 any-of，不能用它表达主数据写入与文件绑定同时授权。
+
 `route_path`（共享条目中的 `routePath`）只用于定位前端页面；内嵌功能和独立动作允许为空，不伪造并不存在的页面。`api_method/api_path` 是可空的目录说明元数据，不是路径匹配鉴权规则，也不能表达一个权限覆盖的全部端点；当前 catalog 均为 `null`，实际授权以 Controller 声明为准。
 
 到货办理、库存查看、采购／成品入库确认和生产领料出库归属 `warehouse`；正式需求、分配及需求更正归属 `production`；供应商和采购订单归属 `procurement`；检验归属 `quality`。例如到货办理仍由 Procurement Controller 和业务事实所有者执行，`warehouse` 编码不授权跨模块写表。

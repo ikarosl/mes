@@ -388,27 +388,33 @@ const checks = [
     message: '通用 persistence helper 不得直接依赖 Nest HTTP/框架异常',
   },
   // application / domain 层不得从 @nestjs/common 导入 Nest HTTP 异常；application 不得依赖 SDK
-  ...['identity', 'product', 'production', 'approval', 'procurement', 'quality'].flatMap(
-    (module) => [
-      {
-        directory: `apps/api/src/modules/${module}/application`,
-        pattern: nestHttpExceptionImportPattern,
-        message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
-      },
-      {
-        directory: `apps/api/src/modules/${module}/domain`,
-        pattern: nestHttpExceptionImportPattern,
-        message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
-      },
-      {
-        directory: `apps/api/src/modules/${module}/application`,
-        pattern: applicationSdkPattern,
-        message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
-      },
-    ],
-  ),
+  ...[
+    'identity',
+    'product',
+    'production',
+    'approval',
+    'procurement',
+    'quality',
+    'template',
+  ].flatMap((module) => [
+    {
+      directory: `apps/api/src/modules/${module}/application`,
+      pattern: nestHttpExceptionImportPattern,
+      message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
+    },
+    {
+      directory: `apps/api/src/modules/${module}/domain`,
+      pattern: nestHttpExceptionImportPattern,
+      message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
+    },
+    {
+      directory: `apps/api/src/modules/${module}/application`,
+      pattern: applicationSdkPattern,
+      message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
+    },
+  ]),
   // application 层不得识别数据库驱动错误码（实现错误由 infrastructure 映射）
-  ...['product', 'production', 'approval'].flatMap((module) => [
+  ...['product', 'production', 'approval', 'template'].flatMap((module) => [
     {
       directory: `apps/api/src/modules/${module}/application`,
       pattern: dbDriverCodePattern,
@@ -416,7 +422,7 @@ const checks = [
     },
   ]),
   // application port 不得泄漏 mysql2 类型
-  ...['identity', 'product', 'production', 'approval'].flatMap((module) => [
+  ...['identity', 'product', 'production', 'approval', 'template'].flatMap((module) => [
     {
       directory: `apps/api/src/modules/${module}/application/ports`,
       pattern: /from ['"]mysql2(?:\/promise)?['"]/i,
@@ -486,7 +492,7 @@ const checks = [
   {
     directory: 'apps/api/src',
     pattern:
-      /from ['"]\.\/modules\/(?:identity|product|production|approval)\/(?!public(?:\.js)?['"])[^'"]*['"]/,
+      /from ['"]\.\/modules\/(?:identity|product|production|approval|template)\/(?!public(?:\.js)?['"])[^'"]*['"]/,
     message:
       '组合根 app.module.ts 只能通过模块 public.ts 引用业务模块，不得引用模块内部层（application/domain/presentation/infrastructure）',
     fileMatch: (relative) => relative === 'apps/api/src/app.module.ts',

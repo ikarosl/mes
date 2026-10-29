@@ -12,10 +12,10 @@ import {
 import {
   productBomDefinition,
   readProductCatalogRecord,
-  readProductSpecValues,
   requireProductCatalogCategory,
   writeProductCatalogAudit,
 } from './mysql-product-catalog.persistence.js';
+import { readProductSpecTable } from './mysql-product.shared.js';
 
 /** Product 所有的审批冻结、永久锁定和草稿恢复均复用原事务连接。 */
 export class MysqlProductBomApproval {
@@ -92,9 +92,7 @@ export class MysqlProductBomApproval {
         itemCode: product.item_code,
         productName: product.product_name,
         unit: product.unit,
-        specValues: readProductSpecValues<BomApprovalSnapshot['specValues'][number]>(
-          product.spec_values,
-        ),
+        specValues: readProductSpecTable(product.spec_values),
         materials: rows.map((row) => ({
           id: String(row.id),
           materialId: String(row.material_id),

@@ -94,7 +94,7 @@ export function requireBomSubmissionProduct(
     product.itemKind !== 'finished_product' ||
     product.acquireMethod !== 'self_made'
   ) {
-    throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有已启用的自制成品可以提交 BOM 审批');
+    throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有已启用的自制产品可以提交 BOM 审批');
   }
 }
 

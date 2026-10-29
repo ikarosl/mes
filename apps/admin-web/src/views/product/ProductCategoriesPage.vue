@@ -220,7 +220,7 @@ const { isRowPending, beginRow, endRow } = useRowPending();
 const itemKindLabels: Record<ProductItemKind, string> = {
   // 分类名称仍可为“半成品”；这里只表达它与物料共用同一业务语义。
   material: '物料（含半成品）',
-  finished_product: '成品',
+  finished_product: '产品',
 };
 const itemKindLabel = (kind: ProductItemKind) => itemKindLabels[kind];
 

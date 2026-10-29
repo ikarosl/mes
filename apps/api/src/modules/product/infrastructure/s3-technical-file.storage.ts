@@ -7,6 +7,7 @@ import {
 import { createHash, randomUUID } from 'node:crypto';
 import { extname } from 'node:path';
 import { Readable } from 'node:stream';
+import type { TechnicalFileType } from '@company/contracts';
 import type { TechnicalFileStorageConfig } from '../../../config/env.js';
 import { toBeijingCompactTimestamp, toBeijingISOString } from '../../../common/time/date-time.js';
 import {
@@ -39,7 +40,7 @@ export class S3TechnicalFileStorage implements TechnicalFileStorage {
     this.client = client ?? createS3Client(options);
   }
 
-  async storeSop(file: TechnicalFileUpload) {
+  async store(file: TechnicalFileUpload, fileType: TechnicalFileType) {
     const now = new Date();
     const [beijingDate] = toBeijingISOString(now).split('T');
     const [year, month] = beijingDate.split('-');
@@ -47,7 +48,7 @@ export class S3TechnicalFileStorage implements TechnicalFileStorage {
       .toLowerCase()
       .replace(/[^.a-z0-9]/g, '')
       .slice(0, 12);
-    const objectKey = ['sop', year, month, `${randomUUID()}${extension}`].join('/');
+    const objectKey = [fileType, year, month, `${randomUUID()}${extension}`].join('/');
     try {
       await this.client.send(
         new PutObjectCommand({
@@ -70,8 +71,8 @@ export class S3TechnicalFileStorage implements TechnicalFileStorage {
       mimeType: file.mimeType,
       sizeBytes: file.buffer.length,
       checksumSha256: createHash('sha256').update(file.buffer).digest('hex'),
-      fileType: 'sop' as const,
-      versionNo: toBeijingCompactTimestamp(now),
+      fileType,
+      versionNo: fileType === 'sop' ? toBeijingCompactTimestamp(now) : null,
     };
   }
 

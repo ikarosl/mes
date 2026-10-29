@@ -12,6 +12,7 @@ import { createRequestId } from '../http/request-context.middleware.js';
 
 export const IS_PUBLIC = 'isPublic';
 export const REQUIRED_PERMISSION = 'requiredPermission';
+export const REQUIRED_ALL_PERMISSIONS = 'requiredAllPermissions';
 export const AUDIT_IN_APPLICATION = 'auditInApplication';
 export const IDEMPOTENT_ENDPOINT = 'idempotentEndpoint';
 
@@ -34,6 +35,9 @@ export const Public = () => SetMetadata(IS_PUBLIC, true);
  */
 export const RequirePermission = (permission: string | readonly string[]) =>
   SetMetadata(REQUIRED_PERMISSION, permission);
+/** 每一项均须命中；用于主数据命令与独立文件绑定权限同时成立的入口。 */
+export const RequireAllPermissions = (permissions: readonly string[]) =>
+  SetMetadata(REQUIRED_ALL_PERMISSIONS, permissions);
 export const AuditInApplication = () => SetMetadata(AUDIT_IN_APPLICATION, true);
 
 /**

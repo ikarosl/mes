@@ -1,8 +1,18 @@
 # @company/utils
 
-前后端共享的纯数据规范化函数。当前导出生产批次创建、物料出库 payload 的规范化逻辑，Production／Inventory 共用的整数数量函数，以及北京时间表示函数。
+前后端共享的纯数据规范化函数。当前导出生产批次创建、物料出库 payload 的规范化逻辑、Production／Inventory 共用的整数数量函数、北京时间表示函数，以及轻量 JSON 表格规范化。
 
 本包不访问网络、数据库或应用状态，也不拥有业务用例；新增函数必须确有跨消费者复用价值，并保持确定性和无副作用。
+
+## JSON 表格
+
+`normalizeJsonTable(value)` 校验并复制 [contracts 的 `JsonTableData`](../contracts/src/template.ts)：根对象只有 `columns` 和 `rows`。`columns` 是按显示顺序排列的 `{ key,label }` 数组，最多 20 列；`key` 以 ASCII 字母开头，仅含字母、数字及下划线，最多 64 字符，区分大小写且唯一，禁用 `constructor`、`prototype` 和 `__proto__`。`label` trim 后必填，最多 100 字符。列定义只表达身份、名称与顺序。
+
+`rows` 最多 200 行，每行是以列 key 为键、文本为值的对象；缺失单元格补 `''`，未定义列和非字符串值拒绝，每个单元格最多 1000 字符，文本原样保留。空业务表格为 `{ columns:[],rows:[] }`；无列时不能包含数据行。非法结构和超限输入抛出中文 `Error`，所属用例映射为自身领域错误。
+
+表格的单项上限与 [HTTP JSON 请求体总容量](../../docs/api-conventions.md#1-基础约定)同时适用；提交时，包含表格及其他业务字段的完整请求须满足总容量限制。
+
+业务模块直接保存完整表格 JSON，并拥有各自资料的权限、状态和写入规则；模板要求的最少列数由 Template 用例维护。本包不执行表达式，也不提供动态表单规则。
 
 ## 日期与时间
 

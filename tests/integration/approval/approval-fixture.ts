@@ -334,6 +334,7 @@ export const createUser = async (
     name,
   ]);
 
+// TODO(approval-json-table-fixture): 恢复依赖本夹具的审批鉴权、事务、通知与并发验证；高重要性，旧规格数组及省略物料规格已不满足当前表约束且正式测试暂缓；获正式测试授权后补齐 JsonTableData 夹具并同步版本 3 证据断言，保留现行审批旅程。
 export const createProduct = async (
   pool: Pool,
   current: Fixture,

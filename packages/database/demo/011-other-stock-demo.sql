@@ -46,7 +46,7 @@ SET @other_stock_demo_material_category = (SELECT id FROM item_categories WHERE 
 SET @other_stock_demo_product_category = (SELECT id FROM item_categories WHERE category_code = 'product-microstrip-001');
 
 INSERT INTO materials (material_code, material_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
-SELECT sample.code, sample.name, @other_stock_demo_material_category, sample.unit, 'purchased', JSON_ARRAY(), sample.status,
+SELECT sample.code, sample.name, @other_stock_demo_material_category, sample.unit, 'purchased', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), sample.status,
   @other_stock_demo_actor, @other_stock_demo_actor
 FROM (
   SELECT 'demo-stock-multi' code, '库存演示连接线' name, '根' unit, 1 status UNION ALL
@@ -74,7 +74,7 @@ WHERE NOT EXISTS (
 );
 
 INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
-SELECT sample.code, '库存演示控制组件', @other_stock_demo_product_category, '套', 'self_made', JSON_ARRAY(), sample.status,
+SELECT sample.code, '库存演示控制组件', @other_stock_demo_product_category, '套', 'self_made', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), sample.status,
   @other_stock_demo_actor, @other_stock_demo_actor
 FROM (SELECT 'demo-stock-product' code, 1 status UNION ALL SELECT 'demo-stock-product-disabled', 0) sample
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.item_code = sample.code);

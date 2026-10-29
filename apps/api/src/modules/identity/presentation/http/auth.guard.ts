@@ -9,7 +9,11 @@ import { Reflector } from '@nestjs/core';
 import { permissionMatches } from '@company/constants';
 import { AuthService } from '../../application/auth.service.js';
 import { AuditRepository } from '../../application/ports/audit.repository.js';
-import { IS_PUBLIC, REQUIRED_PERMISSION } from '../../../../common/security/auth.decorators.js';
+import {
+  IS_PUBLIC,
+  REQUIRED_PERMISSION,
+  REQUIRED_ALL_PERMISSIONS,
+} from '../../../../common/security/auth.decorators.js';
 import { AuthenticationError } from '../../domain/auth.errors.js';
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -50,7 +54,14 @@ export class AuthGuard implements CanActivate {
       REQUIRED_PERMISSION,
       [context.getHandler(), context.getClass()],
     );
-    if (!permissionMatches(user.permissions, permission)) {
+    const allPermissions = this.reflector.getAllAndOverride<readonly string[] | undefined>(
+      REQUIRED_ALL_PERMISSIONS,
+      [context.getHandler(), context.getClass()],
+    );
+    const hasAllPermissions = (allPermissions ?? []).every((required) =>
+      permissionMatches(user.permissions, required),
+    );
+    if (!permissionMatches(user.permissions, permission) || !hasAllPermissions) {
       await this.writeDenied(request, user.id, 'HTTP 403');
       return false;
     }

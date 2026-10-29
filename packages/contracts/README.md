@@ -16,6 +16,7 @@
 | 认证、用户、角色与权限 | [Identity](../../apps/api/src/modules/identity/README.md)；系统管理使用 `system.ts` 的 `System*` 契约 |
 | 通知查询与首次已读 | [Notification](../../apps/api/src/modules/notification/README.md#接口及权限登记) |
 | 产品、BOM 与候选 | [Product](../../apps/api/src/modules/product/README.md) |
+| 系统表格模板与共享 JSON 表格 | [Template](../../apps/api/src/modules/template/README.md)；`JsonTableData` 的结构规范化由 [utils](../utils/README.md#json-表格) 所有，业务资料保存规则由各模块维护 |
 | 工单、任务与产出汇总 | [工单与任务](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md) |
 | 需求、替代与补料 | [需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md) |
 | 收尾投影与审批证据 | [结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md) |

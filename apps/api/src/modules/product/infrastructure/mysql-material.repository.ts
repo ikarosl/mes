@@ -14,7 +14,7 @@ import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { MaterialRepository } from '../application/ports/material.repository.js';
 import { ProductDomainError } from '../domain/product.errors.js';
-import { mapProductWriteError } from './mysql-product.shared.js';
+import { mapProductWriteError, readProductSpecTable } from './mysql-product.shared.js';
 
 type Db = Pool | PoolConnection;
 type MaterialRow = RowDataPacket & {
@@ -26,7 +26,7 @@ type MaterialRow = RowDataPacket & {
   category_name: string;
   unit: string;
   acquire_method: MaterialListItem['acquireMethod'];
-  spec_values: string | object | null;
+  spec_values: string | object;
   status: number;
   remark: string | null;
   updated_at: Date | null;
@@ -100,7 +100,7 @@ export class MysqlMaterialRepository extends MaterialRepository {
         categoryName: row.category_name,
         unit: row.unit,
         acquireMethod: row.acquire_method,
-        specValues: this.json<MaterialListItem['specValues'][number]>(row.spec_values),
+        specValues: readProductSpecTable(row.spec_values),
         status: row.status,
         variantCount: variantCounts.get(String(row.id)) ?? 0,
         remark: row.remark,
@@ -147,7 +147,7 @@ export class MysqlMaterialRepository extends MaterialRepository {
           payload.categoryId,
           payload.unit,
           payload.acquireMethod,
-          JSON.stringify(payload.specValues ?? []),
+          JSON.stringify(payload.specValues ?? { columns: [], rows: [] }),
           payload.status,
           payload.remark ?? null,
           audit.actorId,
@@ -181,7 +181,7 @@ export class MysqlMaterialRepository extends MaterialRepository {
           payload.materialName,
           payload.categoryId,
           payload.acquireMethod,
-          JSON.stringify(payload.specValues ?? []),
+          JSON.stringify(payload.specValues ?? { columns: [], rows: [] }),
           payload.status,
           payload.remark ?? null,
           audit.actorId,
@@ -258,9 +258,5 @@ export class MysqlMaterialRepository extends MaterialRepository {
 
   private date(value: Date | null) {
     return value ? toBeijingISOString(value) : null;
-  }
-  private json<T>(value: string | object | null): T[] {
-    if (!value) return [];
-    return (typeof value === 'string' ? JSON.parse(value) : value) as T[];
   }
 }
