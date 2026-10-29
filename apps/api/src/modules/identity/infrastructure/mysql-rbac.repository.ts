@@ -613,12 +613,19 @@ export class MysqlRbacRepository implements RbacRepository {
       );
       const role = roles[0];
       if (!role) return { status: 'not-found' };
-      const [counts] = await connection.query<(RowDataPacket & { count: number })[]>(
-        'SELECT COUNT(*) count FROM user_roles WHERE role_id=?',
+      const [memberships] = await connection.query<(RowDataPacket & { user_id: string })[]>(
+        'SELECT user_id FROM user_roles WHERE role_id=? ORDER BY user_id LIMIT 1 FOR SHARE',
         [roleId],
       );
-      if ((counts[0]?.count ?? 0) > 0)
+      if (memberships.length > 0)
         return { status: 'conflict', message: '角色仍有关联用户，不能删除' };
+      // 配置保存先锁候选角色，再替换关联；这里只读关联而不反向锁配置或用户。
+      const [configurations] = await connection.query<(RowDataPacket & { config_id: string })[]>(
+        'SELECT config_id FROM user_candidate_config_roles WHERE role_id=? ORDER BY config_id LIMIT 1 FOR SHARE',
+        [roleId],
+      );
+      if (configurations.length > 0)
+        return { status: 'conflict', message: '角色仍被业务人员配置引用，不能删除' };
       await connection.execute('DELETE FROM role_permissions WHERE role_id=?', [roleId]);
       await connection.execute('UPDATE roles SET deleted_at=NOW(),status=? WHERE id=?', [
         SYSTEM_STATUS.disabled,

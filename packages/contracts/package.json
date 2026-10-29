@@ -20,6 +20,9 @@
     "test:run": "vitest run --config ../../vitest.config.ts src",
     "typecheck:test": "tsc -p tsconfig.test.json --noEmit"
   },
+  "dependencies": {
+    "@company/constants": "workspace:*"
+  },
   "devDependencies": {
     "typescript": "catalog:",
     "vitest": "catalog:"

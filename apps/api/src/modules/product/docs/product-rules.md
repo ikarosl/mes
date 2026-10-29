@@ -22,6 +22,18 @@
 
 所有路线的所有工序均须报工，不提供报工开关；路线步骤契约和表结构不保存是否报工字段。
 
+## 成品与精确物料版本规格书
+
+每个成品、每个精确物料版本各维护一份当前规格书，引用 Product `technical_files` 的 `specification` 文件。基础物料不拥有规格书；其参数仍由所有版本共用。新建成品、新建精确版本和保存成品资料时必须提供启用且未删除的规格书；既有未关联记录显式返回空值，补充真实文件后才可保存资料。停用／启用仍是独立状态命令，不以资料补齐改变其既有资格。
+
+规格书替换创建新的文件记录和存储对象，只更换当前关联，不覆盖旧文件内容，不改变成品／物料的编码、基础单位、大小版本或库存身份；文件名和版本边界见[上传契约](technical-files.md#用途与上传契约)。未绑定的已登记文件和替换前文件继续保留；绑定失败、取消表单及主数据软删除都不触发对象清理。关联前后文件 ID 与主数据修改在同一事务审计，不补造审批或主管角色；成品 BOM 在审时仍冻结全部普通资料编辑。规格书关联不增加 Production 的快照或选版资格规则。
+
+成品更新使用 `ProductUpdatePayload.expectedSpecificationFileId`，精确版本替换使用 `PATCH /product/material-variants/:id/specification` 的同名字段；两者都须从读取结果原样回传当前文件 ID 或 `null`。事务锁定主数据后比较实际关联，旧值不符返回 `409 CONFLICT`，不能用最后一次保存覆盖并发替换。保存时还要锁定并复核目标文件的用途、状态和删除标记，防止与文件软删除竞态。
+
+创建成品需要 `product:products:create` 和 `product:files:attach`；创建精确版本需要 `product:material-variants:create` 和 `product:files:attach`。成品编辑继续要求 `product:products:update`，仅关联变化时额外校验 `product:files:attach`；服务端先按期望值做并发核对，不能靠伪造期望值绕过绑定授权。精确版本规格书替换需要 `product:materials:update` 和 `product:files:attach`。文件上传、目录查询、下载分别使用现有文件上传、查看、下载权限，上传成功不授予任何主数据写入资格。
+
+成品列表和物料版本读取携带 `specificationFileId` 与 `specificationFile` 元数据，缺失关联均为 `null`；只对本次结果集关联的文件批量补充元数据，不改变成品分页、基础物料分页或版本候选的业务资格。
+
 ## 成品列表与筛选
 
 每个成品有独立的 `products.id` 和永久唯一编码；成品名称是可重复的展示与搜索字段，不形成父成品、成品类型或名称组。同名成品分别维护自身的分类、基础单位、BOM 和启停状态。
@@ -55,7 +67,7 @@
 
 `ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
 
-BOM 审批证据仅接受当前结构版本 2；开发环境通过数据重置切换，不保留版本 1 兼容读取或补造缺失字段。
+BOM 审批证据仅接受当前结构版本 3，规格参数按送审时的完整 JSON 表格冻结；不保留旧版本兼容读取或补造缺失字段。升级时已有旧 BOM 审批证据由迁移守卫拒绝，不能改写历史申请，边界见[数据库设计](database.md#规格参数存储与迁移)。
 
 `PUT /products/:id/materials` 的请求体为 `{ version, items }`，不是裸数组。`version` 必填，使用成品列表返回的聚合版本；DTO 校验非负整数，Product 在同一事务锁成品根后核对版本，再替换明细、递增版本并写成功审计。旧版本返回 `409 CONFLICT`，缺失或非法版本返回 `400 VALIDATION_ERROR`。保存成功后重新读取成品版本，再用新版本提交 BOM 审批；未保存的本地修改不能直接送审。
 
@@ -115,8 +127,16 @@ Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生�
 | `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view` |
 | `/process-steps/options` | 工序及工艺路线配置 | `product:processes:view`、`product:routes:view` |
 | `/process-routes/options` | 工艺路线及生产工单／任务 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
-| `/users/options` | 工艺路线及生产工单／任务的负责人候选 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
+| `/users/options` | 工艺路线及生产任务的负责人候选 | `product:routes:view`、`production:tasks:view` |
 
 目录来源、分组及逐接口授权规则由 [Identity](../../identity/docs/database.md#14-permissions)维护；候选读取不授予主数据编辑、采购、生产或库存写入资格。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
 
 候选响应只包含选择所需最小字段；状态、关键词和业务筛选在服务端处理。生产新选版与采购用途候选不能混用，历史展示引用更不能作为写入资格。页面局部读取失败遵守[管理端错误处理](../../../../../admin-web/docs/http-error-handling.md)，不借候选 403 触发整页全局跳转。
+
+## 规格参数 JSON
+
+成品与基础物料分别将 `specValues` 保存为完整的 `JsonTableData`：`{ columns: [{ key, label }], rows: [{ [key]: string }] }`。列定义和行顺序均属于本条主数据；没有参数时保存 `{ columns: [], rows: [] }`，省略该字段也按空表处理，旧数组格式拒绝写入。表格的结构、文本和大小边界由[共享规范化工具](../../../../../../packages/utils/README.md#json-表格)统一维护，参数单元格保留原文，不参与数量计算。
+
+基础物料当前暂停规格参数录入；管理端新建提交空表，编辑原样回传已有 `specValues`。接口字段及校验保持，已有参数继续保留。
+
+通用模板由 [Template](../../template/README.md) 所有，Product 不登记业务模板场景。应用模板只将当前模板的列和行复制到表单草稿，保存资料继续通过 Product 接口执行权限、状态与业务校验。Product 不保存模板 ID 或引用，模板后续编辑不联动草稿、已保存规格参数或审批证据，也不改变物料版本、BOM 或规格书关联。

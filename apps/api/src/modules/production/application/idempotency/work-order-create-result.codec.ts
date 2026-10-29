@@ -33,6 +33,7 @@ const createdWorkOrderSchema: z.ZodType<WorkOrderDetail> = z
     customerName: nullableString,
     qualityLevel: nullableString,
     workOrderOwnerId: nullableString,
+    ownerName: nullableString,
     planStartDate: z.string(),
     planEndDate: z.string(),
     assignedQuantity: z.string(),

@@ -1,5 +1,8 @@
 import { workOrderAssignedQuantitySql } from './mysql-work-order-allocation.sql.js';
-import type { WorkOrderReleaseContext } from '../../application/ports/production.repository.js';
+import type {
+  WorkOrderReleaseContext,
+  WorkOrderUpdateContext,
+} from '../../application/ports/production.repository.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
@@ -251,6 +254,21 @@ export class MysqlWorkOrderRepository {
           : {}),
       });
       return this.getDetail(connection, id);
+    });
+  }
+
+  async withUpdateTransaction<T>(
+    workOrderId: string,
+    action: (workOrder: WorkOrderUpdateContext) => Promise<T>,
+  ): Promise<T> {
+    return withTransaction(this.pool, async (connection) => {
+      const order = await findWorkOrder(connection, workOrderId, true);
+      if (order.status !== 'draft')
+        throw new ProductionDomainError('INVALID_STATE', '只有草稿工单可以编辑');
+      return action({
+        workOrderOwnerId:
+          order.work_order_owner_id === null ? null : String(order.work_order_owner_id),
+      });
     });
   }
 

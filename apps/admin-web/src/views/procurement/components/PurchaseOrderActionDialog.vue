@@ -167,11 +167,9 @@
             </template>
           </el-table-column>
         </el-table>
-        <p v-if="mode === 'place'">
-          <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
-          手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
-          确认下单后，供应商、物料及精确版本、采购数量和来源将锁定；单价、税率及总金额可在“查看/编辑”中填写原因更正。
-        </p>
+        <PurchaseOrderAmountHelp v-if="mode === 'place'">
+          确认下单后，供应商、物料及精确版本和来源将锁定；更正金额时需填写原因。
+        </PurchaseOrderAmountHelp>
         <p v-else-if="mode === 'cancel'">
           草稿可整单取消；已下单采购须没有属于本单的到货记录（含已作废登记）。取消后整单及物料行均不可恢复。
         </p>
@@ -270,6 +268,7 @@ import { DialogWidth } from '../../../utils/dialog';
 import { purchaseOrderStatusTag } from '../purchase-order-presentation';
 import { previewPurchaseLineAmount } from '../purchase-line-amount';
 import PurchaseLineTotalAmount from './PurchaseLineTotalAmount.vue';
+import PurchaseOrderAmountHelp from './PurchaseOrderAmountHelp.vue';
 import {
   usePurchaseOrderActions,
   type PurchaseOrderAction,

@@ -24,10 +24,8 @@ const request = async <T>(config: RetryRequestConfig): Promise<T> => {
 };
 const orderPath = (direction: OtherInventoryDirection): string =>
   direction === 'inbound' ? '/warehouse/other-inbounds' : '/warehouse/other-outbounds';
-const writeOptions = (idempotencyKey: string): RetryRequestConfig => ({
+const idempotencyOptions = (idempotencyKey: string): RetryRequestConfig => ({
   headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
-  retryIdempotentWrite: true,
-  retryTimes: 2,
 });
 
 export const otherInventoryApi = {
@@ -54,7 +52,7 @@ export const otherInventoryApi = {
     idempotencyKey: string,
   ) =>
     request<OtherInventoryOrder>({
-      ...writeOptions(idempotencyKey),
+      ...idempotencyOptions(idempotencyKey),
       url: orderPath(direction),
       method: 'POST',
       data,
@@ -66,7 +64,7 @@ export const otherInventoryApi = {
     idempotencyKey: string,
   ) =>
     request<OtherInventoryOrder>({
-      ...writeOptions(idempotencyKey),
+      ...idempotencyOptions(idempotencyKey),
       url: `${orderPath(direction)}/${orderId}`,
       method: 'PATCH',
       data,
@@ -78,7 +76,7 @@ export const otherInventoryApi = {
     idempotencyKey: string,
   ) =>
     request<OtherInventoryOrder>({
-      ...writeOptions(idempotencyKey),
+      ...idempotencyOptions(idempotencyKey),
       url: `${orderPath(direction)}/${orderId}/actions/confirm`,
       method: 'POST',
       data: { version },
@@ -90,7 +88,7 @@ export const otherInventoryApi = {
     idempotencyKey: string,
   ) =>
     request<OtherInventoryOrder>({
-      ...writeOptions(idempotencyKey),
+      ...idempotencyOptions(idempotencyKey),
       url: `${orderPath(direction)}/${orderId}/actions/cancel`,
       method: 'POST',
       data,

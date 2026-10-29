@@ -16,8 +16,6 @@ async function execute<T>(
       method: 'POST',
       data,
       headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
       skipErrorHandling: true,
     };
     return (await httpClient.request<T>(config)).data;

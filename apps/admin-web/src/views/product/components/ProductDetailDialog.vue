@@ -31,18 +31,39 @@
         label="规格参数"
         :span="2"
       >
+        <JsonTableEditor
+          :model-value="row.specValues"
+          readonly
+        />
+      </el-descriptions-item>
+      <el-descriptions-item
+        label="规格书"
+        :span="2"
+      >
         <div
-          v-if="row.specValues?.length"
-          class="spec-tags"
+          v-if="row.specificationFile"
+          class="file-attachment"
         >
-          <el-tag
-            v-for="item in row.specValues"
-            :key="item.key"
-            effect="plain"
-            >{{ formatSpecItem(item) }}</el-tag
+          <span>{{ row.specificationFile.originalName }}</span>
+          <el-button
+            v-if="canPreviewFile(row.specificationFile.originalName)"
+            link
+            type="primary"
+            :loading="fileActions.pendingAction.value === 'preview'"
+            :disabled="Boolean(fileActions.pendingAction.value)"
+            @click="fileActions.preview"
+            >预览</el-button
+          >
+          <el-button
+            link
+            type="primary"
+            :loading="fileActions.pendingAction.value === 'download'"
+            :disabled="Boolean(fileActions.pendingAction.value)"
+            @click="fileActions.download"
+            >下载</el-button
           >
         </div>
-        <span v-else>-</span>
+        <span v-else>未上传规格书</span>
       </el-descriptions-item>
       <el-descriptions-item
         label="备注"
@@ -57,15 +78,21 @@
 import { PRODUCT_BOM_STATUS_LABELS } from '@company/constants';
 import type { ProductItemKind, ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import { canPreviewFile } from '../../../utils/file-preview';
+import { useTechnicalFileActions } from '../../../composables/useTechnicalFileActions';
 
-defineProps<{
+const props = defineProps<{
   visible: boolean;
   row: ProductListItem | null;
   itemKindLabel: (kind: ProductItemKind) => string;
   acquireMethodLabels: Record<string, string>;
-  formatSpecItem: (item: { key: string; value: string; unit?: string }) => string;
 }>();
+const fileActions = useTechnicalFileActions(
+  () => props.row?.specificationFile ?? null,
+  () => props.visible,
+);
 
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
@@ -81,9 +108,14 @@ const bomStatusLabel = (row: ProductListItem): string => {
 </script>
 
 <style scoped>
-.spec-tags {
+.file-attachment {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 12px;
+  overflow-wrap: anywhere;
+}
+.file-attachment .el-button {
+  margin: 0;
 }
 </style>

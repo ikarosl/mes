@@ -88,8 +88,6 @@ const command = <T = PurchaseOrderCommandResult>(
     method,
     data,
     headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-    retryIdempotentWrite: true,
-    retryTimes: 2,
   });
 
 export const procurementApi = {

@@ -12,15 +12,16 @@ API wrapper 统一使用 [httpClient](../src/api/http.ts)。启动时先配置�
 
 | 请求 | 可自动重试的失败 |
 | --- | --- |
-| GET／HEAD／OPTIONS | 无响应或 HTTP ≥500 |
-| 显式 `retryIdempotentWrite: true` 且带原 `Idempotency-Key` 的写请求 | 无响应或 502／503／504 |
-| 普通写请求、未启用幂等端点、文件上传 | 不自动重试 |
+| GET／HEAD／OPTIONS | 无响应或 HTTP >500 |
+| POST／PUT／PATCH／DELETE 等其他方法，包括幂等命令与文件上传 | 不自动重试 |
 
-`skipRetry`、请求取消或 signal 已中止均禁止重试。`retryTimes` 是首次之后的次数，默认 1；延迟为 300ms × 当前重试次数。普通写入 500 和 `IDEMPOTENCY_RESULT_CORRUPT` 不自动重试，避免重复确定性失败。所有写重放保留原内容与键；只看 POST 方法不能判断是否具备幂等能力。
+`skipRetry`、请求取消或 signal 已中止均禁止传输重试。`retryTimes` 只控制安全方法首次之后的次数，默认 1；延迟为 300ms × 当前重试次数。HTTP 500 和 `IDEMPOTENCY_RESULT_CORRUPT` 对所有方法均不自动重试，避免重复服务端错误。
+
+写请求的无响应、超时、网络失败与 5xx 均直接交由调用方处理，减少人工业务操作中的隐藏请求与故障放大。幂等键不授予传输层自动重试资格；结果未知时保留原请求、原键与待核对状态，已启用幂等的命令由用户手动恢复，未启用的命令先核对业务结果。不得因关闭自动重试而清空意图、自动换键或解冻未确认的输入；完整生命周期见[管理端架构](architecture.md#5-写意图与错误)。
 
 ## 5. 认证恢复
 
-Access Token 仅在内存，Refresh Token 仅用 HttpOnly Cookie。普通请求需要内存会话；过期时间无效或距到期不超过 30 秒时先刷新，再注入 Token。401 可触发一次刷新并重放原请求，重放设置 `skipRefresh` 防循环；不得为此改动原幂等键。
+Access Token 仅在内存，Refresh Token 仅用 HttpOnly Cookie。普通请求需要内存会话；过期时间无效或距到期不超过 30 秒时先刷新，再注入 Token。401 可触发一次刷新并重放原请求，重放设置 `skipRefresh` 防循环；不得为此改动原幂等键。这是写请求禁止传输自动重试之外的认证恢复例外，依据是 API 在业务执行前拒绝无效凭证；`skipRetry` 不关闭该路径。
 
 页面初始化尝试恢复会话，失败转登录并保留目标路由。`refreshPromise` 只合并单个 AuthClient 实例内的并发刷新，不是多标签页锁；BroadcastChannel 的退出同步也不提供跨标签刷新互斥。
 
@@ -67,4 +68,4 @@ API wrapper 用 `toRequestError` 规范化错误。已有 RequestError 保留引
 
 当前先判断 `status === 0` 再判断 `ECONNABORTED`，无响应超时会显示网络失败。此处记录现状，不能据文档宣称超时文案已修复；整改状态见[路线图](../../../docs/roadmap.md)。
 
-其他易误用边界：去重仅按对象引用；Refresh 并发锁不跨标签；`preserveErrorMessage` 只改变 401；硬刷新不恢复本地写意图。维护时按[测试策略](../../../docs/testing-strategy.md)验证拦截器顺序、取消不重试、写入重试矩阵、认证子请求失败及同一错误只提示一次，不能用应用构建代替这些行为验证。
+其他易误用边界：去重仅按对象引用；Refresh 并发锁不跨标签；`preserveErrorMessage` 只改变 401；硬刷新不恢复本地写意图。维护时按[测试策略](../../../docs/testing-strategy.md)验证拦截器顺序、取消不重试、写请求不自动重试与原请求手动恢复、认证子请求失败及同一错误只提示一次，不能用应用构建代替这些行为验证。

@@ -108,16 +108,12 @@ describe('warehouseApi', () => {
         reasonType: '搬运损坏',
       },
       headers: { 'Idempotency-Key': 'create-loss-key' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
     expect(request).toHaveBeenNthCalledWith(4, {
       url: '/warehouse/scraps/20/actions/confirm',
       method: 'POST',
       data: { version: 2 },
       headers: { 'Idempotency-Key': 'confirm-loss-key' },
-      retryIdempotentWrite: true,
-      retryTimes: 2,
     });
   });
 });

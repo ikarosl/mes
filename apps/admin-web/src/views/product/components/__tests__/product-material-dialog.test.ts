@@ -30,7 +30,6 @@ const product = (id: string): ProductListItem =>
     defaultRouteName: null,
     unit: 'pcs',
     acquireMethod: 'self_made',
-    specValues: [],
     status: 1,
     materialCount: 0,
     bomLockedAt: null,

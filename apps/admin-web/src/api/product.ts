@@ -21,6 +21,7 @@ import type {
   ReplaceProductMaterialsCommand,
   MaterialVariantItem,
   MaterialVariantPayload,
+  MaterialVariantSpecificationPayload,
   MaterialListItem,
   MaterialListQuery,
   MaterialOption,
@@ -28,8 +29,10 @@ import type {
   ProductOption,
   PageResult,
   ProductPayload,
+  ProductUpdatePayload,
   TechnicalFileListItem,
   TechnicalFileQuery,
+  TechnicalFileUploadPayload,
   UserOption,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
@@ -49,17 +52,6 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 const base = '/product';
-const cleanProductPayload = (data: ProductPayload): ProductPayload => ({
-  ...data,
-  specValues: (data.specValues ?? [])
-    .filter((item) => item.key.trim())
-    .map((item) => ({
-      key: item.key.trim(),
-      value: item.value.trim(),
-      unit: item.unit?.trim() || undefined,
-    })),
-});
-
 export const productApi = {
   technicalFiles: (params: TechnicalFileQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<TechnicalFileListItem>>({
@@ -67,8 +59,31 @@ export const productApi = {
       url: `${base}/technical-files`,
       params,
     }),
-  technicalFileContent: (id: string) =>
+  uploadTechnicalFile: (
+    file: File,
+    metadata: TechnicalFileUploadPayload,
+    options: { signal?: AbortSignal; onUploadProgress?: (percentage: number) => void } = {},
+  ) => {
+    const data = new FormData();
+    data.append('file', file);
+    if (metadata.fileType) data.append('fileType', metadata.fileType);
+    return request<{ id: string }>({
+      url: `${base}/technical-files`,
+      method: 'POST',
+      data,
+      timeout: 0,
+      skipRetry: true,
+      skipErrorHandling: true,
+      signal: options.signal,
+      onUploadProgress: (event) => {
+        if (options.onUploadProgress && event.total)
+          options.onUploadProgress(Math.min(100, Math.round((event.loaded / event.total) * 100)));
+      },
+    });
+  },
+  technicalFileContent: (id: string, options: ReadRequestOptions = {}) =>
     request<Blob>({
+      ...options,
       url: `${base}/technical-files/${id}/content`,
       responseType: 'blob',
       timeout: 0,
@@ -96,13 +111,13 @@ export const productApi = {
     request<{ id: string }>({
       url: `${base}/products`,
       method: 'POST',
-      data: cleanProductPayload(data),
+      data: data,
     }),
-  updateProduct: (id: string, data: ProductPayload) =>
+  updateProduct: (id: string, data: ProductUpdatePayload) =>
     request<void>({
       url: `${base}/products/${id}`,
       method: 'PATCH',
-      data: cleanProductPayload(data),
+      data: data,
     }),
   setProductStatus: (id: string, status: number) =>
     request<void>({ url: `${base}/products/${id}/status`, method: 'PATCH', data: { status } }),
@@ -122,6 +137,13 @@ export const productApi = {
       url: `${base}/material-variants/${id}/status`,
       method: 'PATCH',
       data: { status },
+    }),
+  replaceMaterialVariantSpecification: (id: string, data: MaterialVariantSpecificationPayload) =>
+    request<void>({
+      url: `${base}/material-variants/${id}/specification`,
+      method: 'PATCH',
+      data,
+      skipRetry: true,
     }),
   materialList: (params: MaterialListQuery, options: ReadRequestOptions = {}) =>
     request<PageResult<MaterialListItem>>({ ...options, url: `${base}/materials`, params }),

@@ -65,6 +65,7 @@ migration 的物理位置不表示业务所有权。业务表设计跟随代码�
 - [Approval 数据库设计](../../apps/api/src/modules/approval/docs/database.md)
 - [Notification 数据库设计](../../apps/api/src/modules/notification/docs/database.md)
 - [Product 数据库设计](../../apps/api/src/modules/product/docs/database.md)
+- [Template 数据库设计](../../apps/api/src/modules/template/docs/database.md)
 - [Procurement 数据库设计](../../apps/api/src/modules/procurement/docs/database.md)
 - [Quality 数据库设计](../../apps/api/src/modules/quality/docs/database.md)
 - [Inventory 数据库设计](../../apps/api/src/modules/inventory/docs/database.md)

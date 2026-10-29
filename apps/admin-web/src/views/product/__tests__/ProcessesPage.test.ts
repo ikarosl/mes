@@ -6,14 +6,13 @@ import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest';
 import { createPinia } from 'pinia';
 import ProcessesPage from '../ProcessesPage.vue';
 
-const { list, setStatus, confirm, success, error, warning, info, technicalFileContent, uploadSop } =
+const { list, setStatus, confirm, success, error, info, technicalFileContent, uploadSop } =
   vi.hoisted(() => ({
     list: vi.fn(),
     setStatus: vi.fn(),
     confirm: vi.fn(),
     success: vi.fn(),
     error: vi.fn(),
-    warning: vi.fn(),
     info: vi.fn(),
     technicalFileContent: vi.fn(),
     uploadSop: vi.fn(),
@@ -34,7 +33,7 @@ vi.mock('../../../utils/route-message-box', () => ({
   RouteMessageBox: { confirm },
 }));
 vi.mock('../../../utils/message', () => ({
-  EMessage: { success, error, warning, info },
+  EMessage: { success, error, warning: vi.fn(), info },
 }));
 
 const processRow = {
@@ -180,7 +179,6 @@ describe('ProcessesPage SOP upload', () => {
     list.mockResolvedValue({ items: [processRow], total: 1, page: 1, pageSize: 10 });
     uploadSop.mockReset();
     uploadSop.mockResolvedValue(undefined);
-    warning.mockReset();
     info.mockReset();
   });
 
@@ -192,26 +190,6 @@ describe('ProcessesPage SOP upload', () => {
     await uploadButton!.trigger('click');
     await nextTick();
   };
-
-  it('rejects an invalid selected file before it can be submitted', async () => {
-    const wrapper = mountPage();
-    await openUploadDialog(wrapper);
-    const upload = wrapper.findComponent({ name: 'ElUpload' });
-    const file = new File(['presentation'], '培训.ppt', { type: 'application/vnd.ms-powerpoint' });
-
-    await (upload.props('onChange') as (file: UploadFile, files: UploadFiles) => void)(
-      { uid: 1, name: file.name, raw: file } as UploadFile,
-      [{ uid: 1, name: file.name, raw: file } as UploadFile],
-    );
-
-    expect(warning).toHaveBeenCalledWith(expect.stringContaining('不支持的文件类型'));
-    const submit = wrapper
-      .findAll('button')
-      .filter((button) => button.text().trim() === '上传文件')
-      .at(-1);
-    await submit!.trigger('click');
-    expect(uploadSop).not.toHaveBeenCalled();
-  });
 
   it('forwards upload controls and treats a user cancellation as a non-error', async () => {
     uploadSop.mockRejectedValue({ code: 'ERR_CANCELED' });

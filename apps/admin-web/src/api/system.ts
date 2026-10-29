@@ -19,6 +19,9 @@ import {
   type UpdateSystemRolePayload,
   type UpdateSystemUserPayload,
   type UpdateSystemUserStatusPayload,
+  type UserCandidateConfigItem,
+  type UserCandidateSceneCode,
+  type UpdateUserCandidateConfigRequest,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -40,8 +43,24 @@ export const systemApi = {
       url: SYSTEM_API.departmentOptions,
       skipErrorHandling: true,
     }),
-  roleOptions: () =>
-    request<SystemRoleOption[]>({ url: SYSTEM_API.roleOptions, skipErrorHandling: true }),
+  roleOptions: (signal?: AbortSignal) =>
+    request<SystemRoleOption[]>({ url: SYSTEM_API.roleOptions, signal, skipErrorHandling: true }),
+  userCandidateConfigs: (signal?: AbortSignal) =>
+    request<UserCandidateConfigItem[]>({
+      url: SYSTEM_API.userCandidateConfigs,
+      signal,
+      skipErrorHandling: true,
+    }),
+  updateUserCandidateConfig: (
+    sceneCode: UserCandidateSceneCode,
+    data: UpdateUserCandidateConfigRequest,
+  ) =>
+    request<UserCandidateConfigItem>({
+      url: `${SYSTEM_API.userCandidateConfigs}/${sceneCode}`,
+      method: 'PUT',
+      data,
+      skipErrorHandling: true,
+    }),
   createUser: (data: CreateSystemUserPayload) =>
     request<{ id: string }>({ url: SYSTEM_API.users, method: 'POST', data }),
   updateUser: (id: string, data: UpdateSystemUserPayload) =>

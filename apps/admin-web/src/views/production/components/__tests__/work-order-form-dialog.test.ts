@@ -44,8 +44,6 @@ const openDialog = async (overrides: Record<string, unknown> = {}) => {
         },
       ],
       productOptionsStatus: 'ready',
-      userOptions: [{ id: 'u1', displayName: '张三' }],
-      userOptionsStatus: 'ready',
       submitting: false,
       ...overrides,
     },
@@ -80,7 +78,6 @@ const emitVisibleChange = async (wrapper: DialogWrapper, placeholder: string): P
 const eventCounts = (wrapper: DialogWrapper) => ({
   products: wrapper.emitted('refresh-products')?.length ?? 0,
   routes: wrapper.emitted('refresh-routes')?.length ?? 0,
-  users: wrapper.emitted('refresh-users')?.length ?? 0,
 });
 
 describe('WorkOrderFormDialog', () => {
@@ -92,38 +89,21 @@ describe('WorkOrderFormDialog', () => {
 
     const after = eventCounts(wrapper);
     expect(after.products).toBe(before.products + 1);
-    expect(after.users).toBe(before.users);
     expect(after.routes).toBe(0);
   });
 
-  it('expanding the user select refreshes only users', async () => {
-    const wrapper = await openDialog();
-    const before = eventCounts(wrapper);
-
-    await emitVisibleChange(wrapper, '请选择工单负责人');
-
-    const after = eventCounts(wrapper);
-    expect(after.users).toBe(before.users + 1);
-    expect(after.products).toBe(before.products);
-    expect(after.routes).toBe(0);
-  });
-
-  it('opening the dialog refreshes only products and users, never routes', async () => {
+  it('opening the dialog refreshes products, never routes', async () => {
     const wrapper = await openDialog();
     expect(wrapper.emitted('refresh-products')).toHaveLength(1);
-    expect(wrapper.emitted('refresh-users')).toHaveLength(1);
     expect(wrapper.emitted('refresh-routes')).toBeUndefined();
   });
 
-  it('binds the select loading state to the candidate status', async () => {
+  it('binds the product select loading state to the candidate status', async () => {
     const wrapper = await openDialog({
       productOptionsStatus: 'loading',
-      userOptionsStatus: 'loading',
     });
     const productButton = wrapper.findAll('.select-stub').find((b) => b.text() === '请选择产品');
-    const userButton = wrapper.findAll('.select-stub').find((b) => b.text() === '请选择工单负责人');
     expect(productButton!.attributes('loading')).toBe('true');
-    expect(userButton!.attributes('loading')).toBe('true');
   });
 
   it('requires both work-order plan dates', async () => {

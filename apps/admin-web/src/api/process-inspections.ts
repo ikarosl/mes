@@ -27,8 +27,6 @@ const write = <T>(url: string, data: unknown, key: string): Promise<T> =>
     method: 'POST',
     data,
     headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-    retryIdempotentWrite: true,
-    retryTimes: 2,
   });
 
 export const processInspectionsApi = {

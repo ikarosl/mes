@@ -48,6 +48,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'stock_check_detail',
   ]),
   notification: Object.freeze(['notifications', 'notification_recipients']),
+  template: Object.freeze(['business_templates']),
   approval: Object.freeze([
     'approval_flow_definitions',
     'approval_flow_versions',
@@ -65,6 +66,8 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'user_roles',
     'role_permissions',
     'refresh_tokens',
+    'user_candidate_configs',
+    'user_candidate_config_roles',
   ]),
   product: Object.freeze([
     'product_categories', // Retired name; historical migrations retain ownership.

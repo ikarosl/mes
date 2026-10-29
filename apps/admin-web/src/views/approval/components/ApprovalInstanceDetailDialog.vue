@@ -69,16 +69,14 @@
       </el-descriptions>
 
       <div
-        v-if="bomSnapshot?.specValues.length"
+        v-if="bomSnapshot?.specValues.rows.length"
         class="spec-list"
       >
-        <span class="spec-label">成品规格：</span>
-        <span
-          v-for="spec in bomSnapshot?.specValues"
-          :key="`${spec.key}-${spec.value}`"
-          class="spec-item"
-          >{{ spec.key }}：{{ spec.value }}{{ spec.unit ? ` ${spec.unit}` : '' }}</span
-        >
+        <span class="spec-label">产品规格：</span>
+        <JsonTableEditor
+          :model-value="bomSnapshot.specValues"
+          readonly
+        />
       </div>
 
       <section class="section-block">
@@ -335,6 +333,7 @@
 </template>
 
 <script setup lang="ts">
+import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import { computed, ref, watch } from 'vue';
 import {
   APPROVAL_ACTION_TYPE_LABELS,
@@ -531,10 +530,7 @@ const withdraw = (): void => emit('withdraw', comment.value.trim());
 .spec-label {
   color: #6b7280;
 }
-.spec-item {
-  display: inline-block;
-  margin-right: 14px;
-}
+
 .section-block {
   margin-top: 20px;
 }

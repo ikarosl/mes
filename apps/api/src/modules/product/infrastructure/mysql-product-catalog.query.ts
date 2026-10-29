@@ -6,12 +6,12 @@ import type {
   ProductListQuery,
   ProductMaterialItem,
   ProductOption,
+  TechnicalFileListItem,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
-import {
-  readProductCatalogRecord,
-  readProductSpecValues,
-} from './mysql-product-catalog.persistence.js';
+import { readSpecificationFiles } from './mysql-specification-file.persistence.js';
+import { readProductCatalogRecord } from './mysql-product-catalog.persistence.js';
+import { readProductSpecTable } from './mysql-product.shared.js';
 
 /** 展示读取与候选投影不承担 BOM 编辑或审批资格判断。 */
 export class MysqlProductCatalogQuery {
@@ -55,7 +55,8 @@ export class MysqlProductCatalogQuery {
         item_kind: ProductItemKind;
         unit: string;
         acquire_method: ProductListItem['acquireMethod'];
-        spec_values: string | object | null;
+        spec_values: string | object;
+        specification_file_id: number | null;
         status: number;
         material_count: number;
         bom_locked_at: Date | null;
@@ -68,7 +69,7 @@ export class MysqlProductCatalogQuery {
       })[]
     >(
       `SELECT p.id,p.item_code,p.product_name,p.category_id,c.category_code,c.category_name,c.item_kind,
-                    p.unit,p.acquire_method,p.spec_values,p.status,
+                    p.unit,p.acquire_method,p.spec_values,p.specification_file_id,p.status,
                     COUNT(pm.id) material_count,p.bom_locked_at,p.bom_locked_by,p.bom_status,
                     p.bom_approval_instance_id,p.version,p.remark,p.updated_at
              FROM products p JOIN item_categories c ON c.id=p.category_id
@@ -77,7 +78,11 @@ export class MysqlProductCatalogQuery {
              ORDER BY p.product_name,p.category_id,p.item_code,p.id LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
-    const items = rows.map((row) => this.mapProduct(row));
+    const files = await readSpecificationFiles(
+      this.pool,
+      rows.map((row) => row.specification_file_id),
+    );
+    const items = rows.map((row) => this.mapProduct(row, files));
     return { items, total: Number(countRow?.total ?? 0), page, pageSize };
   }
 
@@ -151,27 +156,31 @@ export class MysqlProductCatalogQuery {
     return value ? toBeijingISOString(value) : null;
   }
 
-  private mapProduct(row: {
-    id: number;
-    item_code: string;
-    product_name: string;
-    category_id: number;
-    category_code: string;
-    category_name: string;
-    item_kind: ProductItemKind;
-    unit: string;
-    acquire_method: ProductListItem['acquireMethod'];
-    spec_values: string | object | null;
-    status: number;
-    material_count: number;
-    bom_locked_at: Date | null;
-    bom_locked_by: number | null;
-    bom_status: ProductListItem['bomStatus'];
-    bom_approval_instance_id: number | null;
-    version: number;
-    remark: string | null;
-    updated_at: Date | null;
-  }): ProductListItem {
+  private mapProduct(
+    row: {
+      id: number;
+      item_code: string;
+      product_name: string;
+      category_id: number;
+      category_code: string;
+      category_name: string;
+      item_kind: ProductItemKind;
+      unit: string;
+      acquire_method: ProductListItem['acquireMethod'];
+      spec_values: string | object;
+      specification_file_id: number | null;
+      status: number;
+      material_count: number;
+      bom_locked_at: Date | null;
+      bom_locked_by: number | null;
+      bom_status: ProductListItem['bomStatus'];
+      bom_approval_instance_id: number | null;
+      version: number;
+      remark: string | null;
+      updated_at: Date | null;
+    },
+    files: Map<string, TechnicalFileListItem>,
+  ): ProductListItem {
     return {
       id: String(row.id),
       itemCode: row.item_code,
@@ -182,7 +191,13 @@ export class MysqlProductCatalogQuery {
       itemKind: row.item_kind,
       unit: row.unit,
       acquireMethod: row.acquire_method,
-      specValues: readProductSpecValues<ProductListItem['specValues'][number]>(row.spec_values),
+      specValues: readProductSpecTable(row.spec_values),
+      specificationFileId:
+        row.specification_file_id === null ? null : String(row.specification_file_id),
+      specificationFile:
+        row.specification_file_id === null
+          ? null
+          : (files.get(String(row.specification_file_id)) ?? null),
       status: row.status,
       materialCount: Number(row.material_count),
       bomLockedAt: this.date(row.bom_locked_at),

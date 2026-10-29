@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Delete,
   Get,
   Param,
@@ -16,12 +17,14 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { PERMISSIONS } from '@company/constants';
-import type { MaterialVariantItem } from '@company/contracts';
+import { PERMISSIONS, permissionMatches } from '@company/constants';
+import type { MaterialVariantItem, UserProfile } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
   CurrentCommandContext,
+  CurrentUser,
+  RequireAllPermissions,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { ProductService } from '../../application/product.service.js';
@@ -35,9 +38,11 @@ import {
   ProductCategoryDto,
   ProductCategoryQueryDto,
   ProductDto,
+  ProductUpdateDto,
   ProductListQueryDto,
   ProductIdParamDto,
   MaterialVariantDto,
+  MaterialVariantSpecificationDto,
   MaterialVariantQueryDto,
   MaterialVariantMaterialParamDto,
   MaterialListQueryDto,
@@ -47,6 +52,7 @@ import {
   StatusDto,
   SetDefaultSopDto,
   TechnicalFileQueryDto,
+  TechnicalFileUploadDto,
 } from './dto/product.dto.js';
 import { decodeMultipartFileName } from './multipart-file-name.js';
 import {
@@ -70,6 +76,7 @@ export class ProductController {
       keyword: query.keyword?.trim() || undefined,
       status: query.status,
       storageProvider: query.storageProvider,
+      fileType: query.fileType,
     });
   }
 
@@ -79,9 +86,10 @@ export class ProductController {
   @UseInterceptors(FileInterceptor('file', technicalFileUploadOptions))
   uploadTechnicalFile(
     @UploadedFile() file: UploadedSop | undefined,
+    @Body() body: TechnicalFileUploadDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
-    return this.service.uploadTechnicalFile(toTechnicalFileUpload(file), audit);
+    return this.service.uploadTechnicalFile(toTechnicalFileUpload(file), audit, body);
   }
 
   @Get('technical-files/:id/content')
@@ -97,17 +105,6 @@ export class ProductController {
     response.setHeader('X-Content-Type-Options', 'nosniff');
     return new StreamableFile(stream);
   }
-
-  /**
-   * 技术文件删除能力暂不对外开放。
-   *
-   * 恢复 DELETE /technical-files/:id 前必须同时满足：
-   * 1. 仅软删除 technical_files 元数据，禁止物理删除对象存储内容；
-   * 2. 删除前校验 process_steps 与有效 process_route_steps 的当前引用；
-   * 3. 历史生产任务必须通过 batch_step_records 冻结的对象定位快照下载 SOP，
-   *    不得再依赖 technical_files 当前状态或通用有效文件下载接口；
-   * 4. 保留删除审计，并补齐当前引用、历史快照和并发场景的集成测试。
-   */
 
   @Get('categories')
   @RequirePermission(PERMISSIONS.product.categories.view)
@@ -259,13 +256,26 @@ export class ProductController {
     return this.service.listMaterialVariantsByMaterial(materialId);
   }
   @Post('material-variants')
-  @RequirePermission(PERMISSIONS.product.materialVariants.create)
+  @RequireAllPermissions([
+    PERMISSIONS.product.materialVariants.create,
+    PERMISSIONS.product.files.attach,
+  ])
   @AuditInApplication()
   createMaterialVariant(
     @Body() body: MaterialVariantDto,
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.createMaterialVariant(body, audit);
+  }
+  @Patch('material-variants/:id/specification')
+  @RequireAllPermissions([PERMISSIONS.product.materials.update, PERMISSIONS.product.files.attach])
+  @AuditInApplication()
+  materialVariantSpecification(
+    @Param() { id }: ProductIdParamDto,
+    @Body() body: MaterialVariantSpecificationDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.setMaterialVariantSpecification(id, body, audit);
   }
   @Patch('material-variants/:id/status')
   @RequirePermission(PERMISSIONS.product.materialVariants.changeStatus)
@@ -278,7 +288,7 @@ export class ProductController {
     return this.service.setMaterialVariantStatus(id, body.status, audit);
   }
   @Post('products')
-  @RequirePermission(PERMISSIONS.product.products.create)
+  @RequireAllPermissions([PERMISSIONS.product.products.create, PERMISSIONS.product.files.attach])
   @AuditInApplication()
   createProduct(@Body() body: ProductDto, @CurrentCommandContext() audit: CommandContext) {
     return this.service.createProduct(body, audit);
@@ -288,9 +298,16 @@ export class ProductController {
   @AuditInApplication()
   updateProduct(
     @Param() { id }: ProductIdParamDto,
-    @Body() body: ProductDto,
+    @Body() body: ProductUpdateDto,
     @CurrentCommandContext() audit: CommandContext,
+    @CurrentUser() user: UserProfile,
   ) {
+    if (
+      body.specificationFileId !== body.expectedSpecificationFileId &&
+      !permissionMatches(user.permissions, PERMISSIONS.product.files.attach)
+    ) {
+      throw new ForbiddenException('没有绑定技术文件的权限');
+    }
     return this.service.updateProduct(id, body, audit);
   }
   @Patch('products/:id/status')
@@ -451,12 +468,8 @@ export class ProductController {
     return this.service.replaceRouteSteps(id, body.items, audit);
   }
   @Get('users/options')
-  // 跨页面选项授权：工艺路线页（默认负责人）、生产工单/任务页（负责人下拉）任一视图权限即可读取
-  @RequirePermission([
-    PERMISSIONS.product.routes.view,
-    PERMISSIONS.production.orders.view,
-    PERMISSIONS.production.tasks.view,
-  ])
+  // 跨页面选项授权：工艺路线页（默认负责人）、生产任务页（负责人下拉）任一视图权限即可读取
+  @RequirePermission([PERMISSIONS.product.routes.view, PERMISSIONS.production.tasks.view])
   userOptions() {
     return this.service.listUserOptions();
   }
@@ -467,7 +480,7 @@ interface ResponseHeaders {
 }
 
 const toTechnicalFileUpload = (file: UploadedSop | undefined) => {
-  if (!file) throw new BadRequestException('请选择要上传的 SOP 文件');
+  if (!file) throw new BadRequestException('请选择要上传的技术文件');
   const originalName = decodeMultipartFileName(file.originalname);
   assertTechnicalFileType(originalName, file.mimetype);
   return {

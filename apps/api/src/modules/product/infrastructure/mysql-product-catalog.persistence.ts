@@ -20,7 +20,8 @@ export interface ProductCatalogRecord extends RowDataPacket {
   bom_status: ProductBomStatus;
   bom_approval_instance_id: number | null;
   version: number;
-  spec_values: string | object | null;
+  spec_values: string | object;
+  specification_file_id: number | null;
 }
 
 export async function readProductCatalogRecord(
@@ -29,7 +30,7 @@ export async function readProductCatalogRecord(
   lock = false,
 ): Promise<ProductCatalogRecord> {
   const [[row]] = await db.query<ProductCatalogRecord[]>(
-    `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.unit,p.bom_locked_at,p.bom_status,p.bom_approval_instance_id,p.version,p.spec_values
+    `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.unit,p.bom_locked_at,p.bom_status,p.bom_approval_instance_id,p.version,p.spec_values,p.specification_file_id
            FROM products p JOIN item_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
     [id],
   );
@@ -71,7 +72,7 @@ export async function requireProductCatalogCategory(
     throw new ProductDomainError('INVALID_CATEGORY', '只能选择已启用的产品分类');
   }
   if (row.item_kind !== 'finished_product') {
-    throw new ProductDomainError('INVALID_CATEGORY', '成品只能选择成品分类');
+    throw new ProductDomainError('INVALID_CATEGORY', '产品只能选择产品分类');
   }
   return row;
 }
@@ -99,9 +100,4 @@ export async function writeProductCatalogAudit(
     requestId: audit.requestId,
     userAgent: audit.userAgent,
   });
-}
-
-export function readProductSpecValues<T>(value: string | object | null): T[] {
-  if (!value) return [];
-  return (typeof value === 'string' ? JSON.parse(value) : value) as T[];
 }

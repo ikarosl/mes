@@ -5,7 +5,7 @@ export const PRODUCT_BOM_APPROVAL_SCENE = {
   code: APPROVAL_SCENE_CODES.bom,
   module: 'product',
   name: 'BOM 审批',
-  description: '核对成品技术定义和 BOM；全部节点通过后永久锁定',
+  description: '核对产品技术定义和 BOM；全部节点通过后永久锁定',
   subjectType: 'product',
   businessAssigneeSources: [],
   requiredFinalAssigneeSourceCode: null,

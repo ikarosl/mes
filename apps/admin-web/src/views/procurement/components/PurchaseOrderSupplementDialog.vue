@@ -267,11 +267,7 @@
                   />
                 </el-form-item>
               </el-form>
-              <p class="amount-help">
-                <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
-                手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
-                下单后采购数量锁定，可在“查看/编辑”更正单价、税率及总额。
-              </p>
+              <PurchaseOrderAmountHelp class="amount-help" />
             </article>
             <el-form
               v-if="remarkExpanded || remark"
@@ -360,6 +356,7 @@ import RelatedSupplementsDialog from './RelatedSupplementsDialog.vue';
 import SupplementReceiptQuantities from './SupplementReceiptQuantities.vue';
 import PurchaseOrderSupplementPickerDialog from './PurchaseOrderSupplementPickerDialog.vue';
 import PurchaseLineTotalAmountInput from './PurchaseLineTotalAmountInput.vue';
+import PurchaseOrderAmountHelp from './PurchaseOrderAmountHelp.vue';
 import {
   usePurchaseOrderSupplement,
   type SupplementDraftLine,

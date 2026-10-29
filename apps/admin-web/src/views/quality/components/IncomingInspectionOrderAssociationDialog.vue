@@ -88,6 +88,7 @@
           {{ QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS }}
           张；检验、实收和库存事实保持原有依据。
         </InlineHint>
+        <InlineHint tone="warning"> 若现场已贴有质检单号，调整关联后请同步更新标签。 </InlineHint>
 
         <div class="association-panes">
           <section
@@ -183,7 +184,7 @@
               >
                 <el-empty
                   v-if="!leftLoading && !leftError && !visibleReceipts.length"
-                  :description="isCandidatePanel ? '未找到符合条件的到货' : '本单暂无关联到货'"
+                  :description="leftEmptyMessage"
                   :image-size="56"
                 />
                 <IncomingInspectionAssociationReceiptCard
@@ -534,6 +535,11 @@ const leftLoading = computed(() =>
 const leftError = computed(() =>
   isCandidatePanel.value ? candidateError.value : associatedError.value,
 );
+const leftEmptyMessage = computed(() => {
+  if (isCandidatePanel.value) return '未找到符合条件的到货';
+  if (associatedTotal.value === 0) return '本单暂无关联到货';
+  return '当前页暂无关联到货，请切换分页或刷新目录';
+});
 const listActionsDisabled = computed(
   () =>
     controlsDisabled.value ||
@@ -605,6 +611,9 @@ defineExpose({ open, close, visible, locked });
 }
 .association-workspace > .notice {
   margin-bottom: 0;
+}
+.association-workspace > .inline-hint {
+  flex-shrink: 0;
 }
 .order-identity {
   color: var(--el-text-color-primary);

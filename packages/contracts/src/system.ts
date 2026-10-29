@@ -1,3 +1,4 @@
+import type { UserCandidateSceneCode } from '@company/constants';
 import type { PageQuery, PermissionType, OperationResult } from './common.js';
 
 export interface SystemUserListItem {
@@ -168,6 +169,25 @@ export interface UserOption {
   displayName: string;
 }
 
+export type { UserCandidateSceneCode };
+
+export interface UserCandidateConfigItem {
+  sceneCode: UserCandidateSceneCode;
+  sceneName: string;
+  configId: string | null;
+  version: number | null;
+  roleIds: string[];
+  /** 已选角色回显包括停用角色；当前可选项由角色选项接口提供。 */
+  roles: SystemRoleOption[];
+  candidateCount: number;
+}
+
+export interface UpdateUserCandidateConfigRequest {
+  /** 首次保存为 null，之后携带当前配置版本。 */
+  version: number | null;
+  roleIds: string[];
+}
+
 export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '认证登录', value: 'auth' },
   { label: '系统管理', value: 'system' },
@@ -187,4 +207,5 @@ export const SYSTEM_API = {
   roles: '/system/roles',
   permissions: '/system/permissions',
   logs: '/system/logs',
+  userCandidateConfigs: '/system/user-candidate-configs',
 } as const;

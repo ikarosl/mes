@@ -6,6 +6,7 @@ import type {
   ApprovalInstanceDetail,
   BomApprovalSnapshot,
 } from '@company/contracts';
+import { normalizeJsonTable } from '@company/utils';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import {
   ApprovalSubjectHandlerRegistry,
@@ -41,7 +42,7 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
     const preparation = await this.call(() =>
       this.products.prepareBomApproval(subjectId, expectedVersion, audit),
     );
-    return { ...preparation, snapshotSchemaVersion: 2, businessAssigneeResolutions: [] };
+    return { ...preparation, snapshotSchemaVersion: 3, businessAssigneeResolutions: [] };
   }
 
   /** Approval 创建申请后调用：绑定申请并冻结编辑，返回递增后的产品版本。 */
@@ -112,7 +113,7 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
     snapshot: unknown,
     schemaVersion: number,
   ): Promise<Pick<ApprovalInstanceDetail, 'subjectSnapshot' | 'materialNames'>> {
-    if (schemaVersion !== 2 || !this.isBomSnapshot(snapshot)) {
+    if (schemaVersion !== 3 || !this.isBomSnapshot(snapshot)) {
       throw new ApprovalSubjectError('CONFLICT', 'BOM 审批证据结构无法读取');
     }
     return {
@@ -144,20 +145,15 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
   private isBomSnapshot(value: unknown): value is BomApprovalSnapshot {
     if (!value || typeof value !== 'object') return false;
     const row = value as Record<string, unknown>;
+    try {
+      normalizeJsonTable(row.specValues);
+    } catch {
+      return false;
+    }
     return (
       ['productId', 'itemCode', 'productName', 'unit'].every(
         (key) => typeof row[key] === 'string',
       ) &&
-      Array.isArray(row.specValues) &&
-      row.specValues.every((item: unknown) => {
-        if (!item || typeof item !== 'object') return false;
-        const spec = item as Record<string, unknown>;
-        return (
-          typeof spec.key === 'string' &&
-          typeof spec.value === 'string' &&
-          (spec.unit === undefined || typeof spec.unit === 'string')
-        );
-      }) &&
       Array.isArray(row.materials) &&
       row.materials.every((item: unknown) => {
         if (!item || typeof item !== 'object') return false;

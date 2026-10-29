@@ -23,7 +23,6 @@ describe('validateTechnicalFileUpload', () => {
   it('rejects file types outside the whitelist with the supported list', () => {
     const message = validateTechnicalFileUpload(fileOf('脚本.exe'));
     expect(message).toBe(`不支持的文件类型，仅支持：${TECHNICAL_FILE_EXTENSIONS.join('、')}`);
-    expect(validateTechnicalFileUpload(fileOf('演示.ppt'))).toContain('不支持的文件类型');
     expect(validateTechnicalFileUpload(fileOf('无扩展名'))).toContain('不支持的文件类型');
   });
 

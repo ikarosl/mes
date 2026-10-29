@@ -2,7 +2,7 @@
 
 > [返回 Identity 文档](../README.md)。
 
-Identity 主数据适用[公共审计列规则中的例外](../../../../../../docs/database-conventions.md#统一审计规则)，各表沿用下列字段。人工管理命令的事务日志要求见[认证与管理边界](../README.md#认证与管理边界)。
+`departments/users/roles/permissions` 适用[公共审计列规则中的例外](../../../../../../docs/database-conventions.md#统一审计规则)，沿用下列字段；新增人员配置使用完整配置审计列，不扩大例外范围。人工管理命令的事务日志要求见[认证与管理边界](../README.md#认证与管理边界)。
 
 ## 1.1 `departments`
 
@@ -92,6 +92,8 @@ Identity 主数据适用[公共审计列规则中的例外](../../../../../../do
 
 `parent_id` 只表达目录分组及角色配置界面的层级。授予模块、页面或宿主节点不会在后端继承其子权限；选择子权限也不会隐式授予父节点。管理端菜单、路由和整页读取按各自页面权限控制，页面内动作仍由每个后端接口的 `RequirePermission` 独立鉴权。跨页面共用的只读接口可以声明精确的 any-of，合法消费者和授权集由最近的接口所有者文档维护；不把动作权限扩成整页读取或分配能力。
 
+写入口需要多个独立能力时使用 `RequireAllPermissions`，逐项复用相同权限匹配规则，全部命中才放行；与 `RequirePermission` 同时声明时两组条件也须同时成立。既有 `RequirePermission` 数组继续表示 any-of，不能用它表达主数据写入与文件绑定同时授权。
+
 `route_path`（共享条目中的 `routePath`）只用于定位前端页面；内嵌功能和独立动作允许为空，不伪造并不存在的页面。`api_method/api_path` 是可空的目录说明元数据，不是路径匹配鉴权规则，也不能表达一个权限覆盖的全部端点；当前 catalog 均为 `null`，实际授权以 Controller 声明为准。
 
 到货办理、库存查看、采购／成品入库确认和生产领料出库归属 `warehouse`；正式需求、分配及需求更正归属 `production`；供应商和采购订单归属 `procurement`；检验归属 `quality`。例如到货办理仍由 Procurement Controller 和业务事实所有者执行，`warehouse` 编码不授权跨模块写表。
@@ -135,3 +137,32 @@ Identity 主数据适用[公共审计列规则中的例外](../../../../../../do
 | `created_at`      | `DATETIME`        | 创建时间              |
 
 约束：`UNIQUE (jti)`；索引 `(user_id, revoked_at, expires_at)`；`user_id -> users.id ON DELETE CASCADE`。
+
+## 1.8 `user_candidate_configs`
+
+职责：保存受控业务场景的当前候选角色集合根；场景与资格语义由[业务人员候选](user-candidates.md)所有。
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED` | 自增主键 |
+| `scene_code` | `VARCHAR(100)` | 场景稳定自然键，永久唯一 |
+| `version` | `INT` | 非负乐观版本，默认 `0`；API 首次保存为 `1` |
+| `created_by` | `BIGINT UNSIGNED` | 创建人，可空，引用 `users.id` |
+| `created_at` | `DATETIME` | 创建时间，默认当前时间 |
+| `updated_by` | `BIGINT UNSIGNED` | 最近配置人，可空，引用 `users.id` |
+| `updated_at` | `DATETIME` | 最近修改时间，自动更新 |
+| `is_deleted` | `TINYINT` | 默认 `0` |
+| `deleted_by` | `BIGINT UNSIGNED` | 删除人，可空，引用 `users.id` |
+| `deleted_at` | `DATETIME` | 删除时间，可空 |
+
+约束：`UNIQUE (scene_code)` 不包含删除标志；`CHECK (version >= 0)`；未删除时删除人、删除时间均为空，删除时二者均非空。当前不开放配置删除接口。场景是可扩展的代码目录引用，不建立数据库枚举 CHECK；应用只允许已登记场景。
+
+## 1.9 `user_candidate_config_roles`
+
+| 字段 | 类型 | 说明 |
+| --- | --- | --- |
+| `config_id` | `BIGINT UNSIGNED` | 配置根 ID |
+| `role_id` | `BIGINT UNSIGNED` | 候选角色 ID |
+| `created_at` | `DATETIME` | 关联创建时间，默认当前时间 |
+
+约束：`PRIMARY KEY (config_id, role_id)`；索引 `(role_id, config_id)` 支持角色引用检查。`config_id -> user_candidate_configs.id ON DELETE CASCADE`；`role_id -> roles.id` 禁止物理删除被引用角色；软删除保护由 Identity 管理命令在当前事务中执行。纯关联表不保存用户名单或另一份角色条件，配置变更的前后集合由同事务 `operation_logs` 追溯。

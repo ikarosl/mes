@@ -56,6 +56,15 @@ export const PERMISSIONS = {
     },
     permissions: { view: 'system:permission:view' },
     logs: { view: 'system:log:view' },
+    userCandidates: {
+      view: 'system:user-candidates:view',
+      configure: 'system:user-candidates:configure',
+    },
+    templates: {
+      view: 'system:templates:view',
+      create: 'system:templates:create',
+      update: 'system:templates:update',
+    },
   },
   product: {
     view: 'product:view',

@@ -14,6 +14,6 @@ export function requireConfigurableProduct(product: ConfigurableProduct): void {
     product.acquireMethod !== 'self_made' ||
     product.itemKind === 'material'
   ) {
-    throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有已启用的自制成品可以配置 BOM');
+    throw new ProductDomainError('INVALID_PRODUCT_KIND', '只有已启用的自制产品可以配置 BOM');
   }
 }

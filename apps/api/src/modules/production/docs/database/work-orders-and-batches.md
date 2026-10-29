@@ -4,7 +4,7 @@
 
 工单与生产任务创建时，服务端在各自创建事务内分别按 `work_order`、`production_batch` 类型取号。前缀映射入口、格式、北京自然日日序列、平台序列表及回滚边界由[统一业务编号](../../../../../docs/business-numbering.md)维护。创建和编辑请求都不接受工单号，创建任务请求不接受批次号；编号随创建事实固定，取消、关闭和重新下达均不回收。
 
-`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v4`；任务创建 scope 为 `production.batch.create.v13`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。任务创建结果保存轻量任务概览，不包含工序、开工说明或开工物料快照；结果结构与 scope 固定，开发切换遵守[幂等 scope 版本规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。
+`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v5`；任务创建 scope 为 `production.batch.create.v13`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。任务创建结果保存轻量任务概览，不包含工序、开工说明或开工物料快照；结果结构与 scope 固定，开发切换遵守[幂等 scope 版本规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。
 
 `202609170003-work-order-auto-number` 是原工单日序列表的历史迁移；追加迁移 `202609280001-business-number-daily-sequence` 在空业务库切换为统一平台序列并删除旧序列表。旧编号不转换，开发数据经统一初始化入口重建；当前应用不读写 `work_order_daily_sequence`。
 
@@ -82,7 +82,7 @@
 | `planned_quantity`      | `INT`   | 工单计划生产数量                                                 |
 | `customer_name`         | `VARCHAR(255)`    | 客户名称，可为空                                                 |
 | `quality_level`         | `VARCHAR(50)`     | 客户自定义质量等级代码，可为空                                   |
-| `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人；草稿可为空，下达必须为有效用户                             |
+| `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人；草稿可为空，下达必须符合工单负责人场景资格                 |
 | `plan_start_date`       | `DATE`            | 计划开始日期，可为空                                             |
 | `plan_end_date`         | `DATE`            | 计划完工日期，可为空                                             |
 | `status`                | `VARCHAR(30)`     | `draft`、`released`、`doing`、`completed`、`cancelled`、`closed` |
@@ -122,12 +122,22 @@
 - 工单处于 `released` 或 `doing` 且仍有未分配计划量时均可继续创建生产批次；首批次开工不冻结工单剩余任务拆分能力。
 - 当前生产领料与批准成品入库关联 `production_batches`；其他自产半成品入库不属于当前范围。
 - 产品快照在工单下达时冻结，后续修改产品主数据不得回写历史工单。
-- 工单下达事务先锁工单，确认 `work_order_owner_id` 非空，再通过 Identity 公开能力复核账号启用且未删除；草稿仍允许暂缺负责人。下达只校验账号，不授予审批权限，任务结案送审时由 Approval 独立检查 `approval:decide`。
+- 工单负责人选择与下达使用下节的固定场景资格；草稿仍允许暂缺负责人。
 - 负责人仅可随草稿编辑，下达后不提供负责人转交接口。结案送审固定当时的负责人及来源工单证据，后续节点不重新解析或自动替换人员。
 - `quality_level` 是客户自定义等级，不建立固定状态字典或 `CHECK`；如后续需要客户级等级主数据，必须另行建模，不能把自由文本解释为质量结论。
 - 工单实际开工时间不单独持久化，由所属批次的最早 `started_at` 推导；工单实际完工时间由已完工批次的 `completed_at` 汇总，避免形成第二执行事实来源。
 
 当前采用单一 BOM 模型，不建设 BOM 版本头、版本行或当前版本指针。BOM 最终审批通过时，由 Product 与审批同事务写入 `products.bom_locked_at/bom_locked_by`；批量任务创建通过 Product 公开能力验证已批准及当前物料资格，研发任务不依赖 BOM；此后 `product_materials` 永久只读。任务取消、需求完成、库存归零和路线状态变化都不能解锁。原则性用料变化必须创建新产品和新编码，再显式复制、复核 BOM 与路线。产品名称等展示字段修改不改变稳定产品身份，也不破坏既有 ID 引用。
+
+#### 工单负责人候选与历史展示
+
+工单负责人使用受控场景 `production.work_order_owner`。Identity 拥有[场景角色配置和人员资格](../../../identity/docs/database.md)，Production 只通过其公开候选服务读取与复核；具体角色由配置选择，业务代码不依赖角色编码。未配置或配置无有效角色时没有候选，管理员也须满足相同资格。该场景只接入工单，不改变生产任务、路线默认负责人或工序派工的人员规则。
+
+`GET /production/work-orders/owner-options` 无场景参数，返回全部当前合资格的 `UserOption[]`，不分页、不截断。合法消费者为工单页的新建、草稿编辑及下一轮研发表单，授权集为 `production:orders:view`；调用者不能指定其他场景。列表、详情和返回工单的命令另以 `ownerName` 返回原负责人当前显示姓名，通过 Identity 历史引用批量解析；退出候选、停用或软删除不抹去历史姓名，空负责人或无法解析时为 `null`。历史姓名不构成当前可选资格。
+
+创建工单和草稿编辑的最终负责人非空时，必须在业务写入事务内按该场景复核；未修改负责人 ID 的草稿编辑也须检查保留的负责人，明确清空则允许保存。下达先锁定并重新读取工单，要求负责人非空后再复核，不信任之前候选或草稿的判断。编辑和下达的锁序为工单根 → Identity 资格锁 → 所需 Product 资格读取 → 后续工单写入；Identity 内部人员、配置和角色锁序由其所有者维护。资格锁、业务写入与成功审计保持同一事务；创建的资格复核只在幂等首次执行 handler 内办理，成功重放保留原响应，包括创建时姓名，不因后来配置变化失败。
+
+配置变化只影响以后新建、草稿编辑和下达的资格，不改写已下达工单负责人，也不替换已冻结审批人。结案送审仍按[结案审批](production-termination.md)独立核验审批资格；不能从候选角色自动推导审批权限或提前要求 `approval:decide`。
 
 #### 工单审批接入目标结构（尚未实施）
 

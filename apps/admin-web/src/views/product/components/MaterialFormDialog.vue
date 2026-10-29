@@ -4,9 +4,12 @@
     :title="editingMaterialId ? '编辑物料' : '新增物料'"
     :width="DialogWidth.lg"
     :close-on-click-modal="false"
+    :before-close="beforeClose"
+    :show-close="!submitting"
+    :close-on-press-escape="!submitting"
     @update:model-value="$emit('update:visible', $event)"
     @open="$emit('refresh-options')"
-    @closed="resetForm"
+    @closed="visible || resetForm()"
   >
     <el-form
       class="dialog-form"
@@ -90,65 +93,6 @@
         </el-form-item>
       </div>
 
-      <div class="form-section-title">规格参数</div>
-      <div class="spec-toolbar">
-        <el-button
-          type="primary"
-          :icon="Plus"
-          @click="addSpecRow"
-          >新增参数</el-button
-        >
-      </div>
-      <el-table
-        :data="form.specValues"
-        class="spec-table"
-      >
-        <el-table-column
-          label="参数名称"
-          min-width="180"
-        >
-          <template #default="{ row }"
-            ><el-input
-              v-model="row.key"
-              placeholder="例如：厚度"
-          /></template>
-        </el-table-column>
-        <el-table-column
-          label="参数值"
-          min-width="180"
-        >
-          <template #default="{ row }"
-            ><el-input
-              v-model="row.value"
-              placeholder="例如：0.254"
-          /></template>
-        </el-table-column>
-        <el-table-column
-          label="单位"
-          width="130"
-        >
-          <template #default="{ row }"
-            ><el-input
-              v-model="row.unit"
-              placeholder="mm"
-          /></template>
-        </el-table-column>
-        <el-table-column
-          label="操作"
-          width="90"
-          align="center"
-        >
-          <template #default="{ $index }"
-            ><el-button
-              link
-              type="danger"
-              @click="removeSpecRow($index)"
-              >删除</el-button
-            ></template
-          >
-        </el-table-column>
-      </el-table>
-
       <div class="form-section-title remark-title">备注说明</div>
       <el-form-item label="备注">
         <el-input
@@ -160,7 +104,11 @@
       </el-form-item>
     </el-form>
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button
+        :disabled="submitting"
+        @click="close"
+        >取消</el-button
+      >
       <el-button
         type="primary"
         :loading="submitting"
@@ -172,8 +120,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive } from 'vue';
-import { Plus } from '@element-plus/icons-vue';
+import { computed, reactive, ref } from 'vue';
 import type {
   MaterialListItem,
   ProductAcquireMethod,
@@ -182,6 +129,9 @@ import type {
 import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
+import { useDraftCloseGuard } from '../../../composables/useDraftCloseGuard';
+import { normalizeJsonTable } from '@company/utils';
+import type { JsonTableData } from '@company/contracts';
 
 export type MaterialFormValue = {
   materialCode: string;
@@ -190,7 +140,8 @@ export type MaterialFormValue = {
   unit: string;
   acquireMethod: ProductAcquireMethod;
   enabled: boolean;
-  specValues: Array<{ key: string; value: string; unit: string }>;
+  // 暂停物料参数录入；新增使用空表格，编辑保留已存参数，避免保存其他资料时清空。
+  specValues: JsonTableData;
   remark: string;
 };
 
@@ -213,10 +164,18 @@ const initialForm = (): MaterialFormValue => ({
   unit: 'pcs',
   acquireMethod: 'purchased',
   enabled: true,
-  specValues: [],
+  specValues: { columns: [], rows: [] },
   remark: '',
 });
 const form = reactive<MaterialFormValue>(initialForm());
+const baseline = ref(JSON.stringify(form));
+const { close, beforeClose } = useDraftCloseGuard({
+  visible: () => props.visible,
+  busy: () => props.submitting,
+  dirty: () => JSON.stringify(form) !== baseline.value,
+  label: '基础物料资料',
+  onClose: () => emit('update:visible', false),
+});
 const categoryChoices = computed(() =>
   buildLiveOptions(
     props.categoryOptions.filter((item) => item.itemKind === 'material'),
@@ -224,8 +183,11 @@ const categoryChoices = computed(() =>
     (item) => item.id,
   ),
 );
-const resetForm = () => Object.assign(form, initialForm());
-const setForm = (row: MaterialListItem) =>
+const resetForm = () => {
+  Object.assign(form, initialForm());
+  baseline.value = JSON.stringify(form);
+};
+const setForm = (row: MaterialListItem) => {
   Object.assign(form, {
     materialCode: row.materialCode,
     materialName: row.materialName,
@@ -233,16 +195,13 @@ const setForm = (row: MaterialListItem) =>
     unit: row.unit,
     acquireMethod: row.acquireMethod,
     enabled: row.status === 1,
-    specValues: row.specValues.map((item) => ({
-      key: item.key,
-      value: item.value,
-      unit: item.unit ?? '',
-    })),
+    specValues: normalizeJsonTable(row.specValues),
     remark: row.remark ?? '',
   });
-const addSpecRow = () => form.specValues.push({ key: '', value: '', unit: '' });
-const removeSpecRow = (index: number) => form.specValues.splice(index, 1);
+  baseline.value = JSON.stringify(form);
+};
 const handleSubmit = () => {
+  if (props.submitting) return;
   if (!form.materialCode.trim() || !form.materialName.trim() || !form.unit.trim()) {
     EMessage.warning('请填写基础物料编码、物料名称和单位');
     return;
@@ -282,22 +241,7 @@ defineExpose({ resetForm, setForm });
 }
 .dialog-form :deep(.el-input),
 .dialog-form :deep(.el-select),
-.dialog-form :deep(.el-textarea),
-.spec-table :deep(.el-input) {
+.dialog-form :deep(.el-textarea) {
   width: 100%;
-}
-.spec-toolbar {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
-}
-.spec-table {
-  width: 100%;
-}
-.spec-table :deep(.el-table__header th) {
-  height: 48px;
-  background: #f9fafb;
-  color: #1f2937;
-  font-weight: 600;
 }
 </style>

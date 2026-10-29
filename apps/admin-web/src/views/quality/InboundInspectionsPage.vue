@@ -88,15 +88,16 @@
       </div>
       <section
         v-if="focusedReceipt && !focusedIsInPage"
-        class="document-block located-block"
+        class="located-block"
+        :class="focusedOrder ? 'document-block' : 'located-receipt'"
       >
-        <div class="document-heading">
+        <div
+          v-if="focusedOrder"
+          class="document-heading"
+        >
           <div class="order-identity located-identity">
             <span class="order-title">
-              <template v-if="focusedOrder"
-                >质检单 <span class="order-number">{{ focusedOrder.inspectionNo }}</span></template
-              >
-              <template v-else>未关联质检主单</template>
+              质检单 <span class="order-number">{{ focusedOrder.inspectionNo }}</span>
             </span>
             <el-tag
               size="small"
@@ -112,8 +113,14 @@
           </div>
           <span class="document-meta">此到货不在当前目录页，不计入分页总数</span>
         </div>
-        <div class="receipt-directory located-directory">
-          <div class="receipt-tree">
+        <InlineHint v-else>
+          <strong>该到货单尚未关联质检单。</strong>已定位到此到货，可继续查看明细和检验记录。
+        </InlineHint>
+        <div
+          class="receipt-directory located-directory"
+          :class="{ 'unassigned-directory': !focusedOrder }"
+        >
+          <div :class="{ 'receipt-tree': focusedOrder }">
             <IncomingInspectionReceipt
               :receipt="focusedReceipt.receipt"
               :state="focusedReceipt"
@@ -205,7 +212,11 @@
             <template v-else>
               <el-empty
                 v-if="group.loaded && !group.receipts.length"
-                description="本页没有关联到货；空主单与编号继续保留"
+                :description="
+                  group.total === 0
+                    ? '该质检单当前没有关联到货，单号仍保留'
+                    : '当前页暂无关联到货，请切换分页或刷新目录'
+                "
                 :image-size="56"
               />
               <div
@@ -630,7 +641,14 @@ onActivated(() => {
 .located-block {
   border-color: var(--el-color-primary-light-5);
 }
+.located-receipt {
+  min-width: 0;
+  margin: 0 16px 18px;
+}
 .located-directory {
   padding-bottom: 16px;
+}
+.unassigned-directory {
+  padding: 12px 0 0;
 }
 </style>

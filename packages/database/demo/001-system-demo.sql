@@ -76,6 +76,7 @@ JOIN permissions p ON p.code IN (
   'dashboard:view',
   'approval:view',
   'approval:decide',
+  'system:templates:view',
   'warehouse:inventory:view',
   'product:view',
   'product:products:view',

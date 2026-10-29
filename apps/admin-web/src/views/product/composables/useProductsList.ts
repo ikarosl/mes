@@ -40,7 +40,7 @@ export function useProductsList() {
       products.value = result.items;
       total.value = result.total;
     } catch (error) {
-      if (token === requestToken) EMessage.error(error, '成品资料加载失败');
+      if (token === requestToken) EMessage.error(error, '产品资料加载失败');
     } finally {
       if (token === requestToken) loading.value = false;
     }

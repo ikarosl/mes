@@ -25,6 +25,8 @@
 
 各运行器及源码／构建产物入口见[数据库包](packages/database/README.md)，服务器初始化见[运维手册](ops/runbooks/database-initialization.md)，演示账号和重复加载边界见[演示数据](packages/database/demo/README.md)。真实 MySQL 集成测试的专用库、环境变量及命令见[测试策略](docs/testing-strategy.md#业务-mysql-integration)。
 
+基于演示数据、通过业务 API 准备采购与来料质检场景，见[场景数据工具](tools/demo/README.md)。工程脚本、场景工具与本地临时文件的职责划分见[编码规范](docs/coding-standards.md#工程脚本与临时文件)。
+
 ## 验证
 
 ```text

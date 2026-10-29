@@ -1,4 +1,6 @@
 import type { PageQuery } from '../common.js';
+import type { JsonTableData } from '../template.js';
+import type { TechnicalFileListItem } from './technical-file.js';
 
 export type ProductItemKind = 'material' | 'finished_product';
 
@@ -45,12 +47,6 @@ export interface ProductCategoryPayload {
   remark?: string | null;
 }
 
-export interface ProductSpecValue {
-  key: string;
-  value: string;
-  unit?: string;
-}
-
 export interface ProductListItem {
   id: string;
   itemCode: string;
@@ -61,7 +57,9 @@ export interface ProductListItem {
   itemKind: ProductItemKind;
   unit: string;
   acquireMethod: ProductAcquireMethod;
-  specValues: ProductSpecValue[];
+  specValues: JsonTableData;
+  specificationFileId: string | null;
+  specificationFile: TechnicalFileListItem | null;
   status: number;
   materialCount: number;
   bomLockedAt: string | null;
@@ -80,9 +78,15 @@ export interface ProductPayload {
   categoryId: string;
   unit: string;
   acquireMethod: ProductAcquireMethod;
-  specValues?: ProductSpecValue[];
+  specValues?: JsonTableData;
+  specificationFileId: string;
   status: number;
   remark?: string | null;
+}
+
+export interface ProductUpdatePayload extends ProductPayload {
+  /** 从读取结果回传当前关联，防止并发替换覆盖。 */
+  expectedSpecificationFileId: string | null;
 }
 
 export interface ProductOption {
@@ -137,6 +141,8 @@ export interface MaterialVariantItem {
   majorVersion: string;
   minorVersion: string;
   variantCode: string;
+  specificationFileId: string | null;
+  specificationFile: TechnicalFileListItem | null;
   status: number;
   remark: string | null;
   updatedAt: string | null;
@@ -146,7 +152,13 @@ export interface MaterialVariantPayload {
   materialId: string;
   majorVersion: string;
   minorVersion: string;
+  specificationFileId: string;
   remark?: string | null;
+}
+
+export interface MaterialVariantSpecificationPayload {
+  specificationFileId: string;
+  expectedSpecificationFileId: string | null;
 }
 
 export interface MaterialListQuery extends PageQuery {
@@ -166,7 +178,8 @@ export interface MaterialListItem {
   categoryName: string;
   unit: string;
   acquireMethod: ProductAcquireMethod;
-  specValues: ProductSpecValue[];
+  /** 当前暂停物料参数录入；保留已保存表格供编辑时原样回传。 */
+  specValues: JsonTableData;
   status: number;
   /** 未软删除的全部版本数，包含停用版本。 */
   variantCount: number;
@@ -180,7 +193,8 @@ export interface MaterialPayload {
   categoryId: string;
   unit: string;
   acquireMethod: ProductAcquireMethod;
-  specValues?: ProductSpecValue[];
+  /** 当前暂停物料参数录入；管理端新建提交空表，编辑原样回传已有值。 */
+  specValues?: JsonTableData;
   status: number;
   remark?: string | null;
 }

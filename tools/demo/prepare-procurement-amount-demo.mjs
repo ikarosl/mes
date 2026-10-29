@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { loadWorkspaceEnv } from '../packages/config/dist/index.js';
-import { calculatePurchaseLineAmount } from '../packages/utils/dist/index.js';
+import { loadWorkspaceEnv } from '../../packages/config/dist/index.js';
+import { calculatePurchaseLineAmount } from '../../packages/utils/dist/index.js';
 
 loadWorkspaceEnv({ quiet: true });
 
@@ -164,7 +164,7 @@ const scenarios = [
 function configuration() {
   const mode = process.argv[2] ?? 'report';
   if (!['prepare', 'report'].includes(mode) || process.argv.length > 3)
-    throw new Error('用法：node scripts/prepare-procurement-amount-demo.mjs [prepare|report]');
+    throw new Error('用法：node tools/demo/prepare-procurement-amount-demo.mjs [prepare|report]');
   if (process.env.ALLOW_DEMO_SEED !== '1') throw new Error('必须显式设置 ALLOW_DEMO_SEED=1');
   if (process.env.NODE_ENV?.trim().toLowerCase() === 'production')
     throw new Error('禁止在 production 环境准备或查询演示数据');

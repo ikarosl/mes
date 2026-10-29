@@ -103,7 +103,7 @@ const knownIdempotencyScopes = [
   'procurement.inbound.confirm.v6',
   'production.batch.create.v9',
   'production.finished-inbound.confirm.v3',
-  'production.work-order.create.v4',
+  'production.work-order.create.v5',
   'procurement.receipt.correct.v3',
   'procurement.receipt.void.v3',
   'procurement.receipt.void.v2',
@@ -383,13 +383,11 @@ const checks = [
     message: 'IdempotencyKeyGuard 只能定义在项目级 infrastructure/idempotency 中',
     exclude: ['apps/api/src/infrastructure/idempotency/idempotency-key.guard.ts'],
   },
-  // 管理端只有已完成后端闭环的 API wrapper 可发送幂等头并开启非安全方法重试。
+  // 管理端只有已完成后端闭环的 API wrapper 可发送幂等头。
   {
     directory: 'apps/admin-web/src',
-    pattern:
-      /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:|\bretryIdempotentWrite\s*:)/,
-    message:
-      '只有已登记的 production API wrapper 可设置 Idempotency-Key/retryIdempotentWrite；新增调用必须先登记后端幂等契约',
+    pattern: /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:)/,
+    message: '只有已登记的 API wrapper 可设置 Idempotency-Key；新增调用必须先登记后端幂等契约',
     exclude: [
       'apps/admin-web/src/api/other-inventory.ts',
       'apps/admin-web/src/api/production.ts',
@@ -410,27 +408,33 @@ const checks = [
     message: '通用 persistence helper 不得直接依赖 Nest HTTP/框架异常',
   },
   // application / domain 层不得从 @nestjs/common 导入 Nest HTTP 异常；application 不得依赖 SDK
-  ...['identity', 'product', 'production', 'approval', 'procurement', 'quality'].flatMap(
-    (module) => [
-      {
-        directory: `apps/api/src/modules/${module}/application`,
-        pattern: nestHttpExceptionImportPattern,
-        message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
-      },
-      {
-        directory: `apps/api/src/modules/${module}/domain`,
-        pattern: nestHttpExceptionImportPattern,
-        message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
-      },
-      {
-        directory: `apps/api/src/modules/${module}/application`,
-        pattern: applicationSdkPattern,
-        message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
-      },
-    ],
-  ),
+  ...[
+    'identity',
+    'product',
+    'production',
+    'approval',
+    'procurement',
+    'quality',
+    'template',
+  ].flatMap((module) => [
+    {
+      directory: `apps/api/src/modules/${module}/application`,
+      pattern: nestHttpExceptionImportPattern,
+      message: `${module}/application 不得从 @nestjs/common 导入 Nest HTTP 异常；业务失败应抛出协议无关的模块错误`,
+    },
+    {
+      directory: `apps/api/src/modules/${module}/domain`,
+      pattern: nestHttpExceptionImportPattern,
+      message: `${module}/domain 不得从 @nestjs/common 导入 Nest HTTP 异常`,
+    },
+    {
+      directory: `apps/api/src/modules/${module}/application`,
+      pattern: applicationSdkPattern,
+      message: `${module}/application 不得直接依赖数据库、存储等 SDK 包`,
+    },
+  ]),
   // application 层不得识别数据库驱动错误码（实现错误由 infrastructure 映射）
-  ...['product', 'production', 'approval'].flatMap((module) => [
+  ...['product', 'production', 'approval', 'template'].flatMap((module) => [
     {
       directory: `apps/api/src/modules/${module}/application`,
       pattern: dbDriverCodePattern,
@@ -438,7 +442,7 @@ const checks = [
     },
   ]),
   // application port 不得泄漏 mysql2 类型
-  ...['identity', 'product', 'production', 'approval'].flatMap((module) => [
+  ...['identity', 'product', 'production', 'approval', 'template'].flatMap((module) => [
     {
       directory: `apps/api/src/modules/${module}/application/ports`,
       pattern: /from ['"]mysql2(?:\/promise)?['"]/i,
@@ -508,7 +512,7 @@ const checks = [
   {
     directory: 'apps/api/src',
     pattern:
-      /from ['"]\.\/modules\/(?:identity|product|production|approval)\/(?!public(?:\.js)?['"])[^'"]*['"]/,
+      /from ['"]\.\/modules\/(?:identity|product|production|approval|template)\/(?!public(?:\.js)?['"])[^'"]*['"]/,
     message:
       '组合根 app.module.ts 只能通过模块 public.ts 引用业务模块，不得引用模块内部层（application/domain/presentation/infrastructure）',
     fileMatch: (relative) => relative === 'apps/api/src/app.module.ts',

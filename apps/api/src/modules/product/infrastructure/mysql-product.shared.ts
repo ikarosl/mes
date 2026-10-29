@@ -1,4 +1,15 @@
+import type { JsonTableData } from '@company/contracts';
+import { normalizeJsonTable } from '@company/utils';
 import { ProductDomainError } from '../domain/product.errors.js';
+
+/** 数据库只保存表格对象；旧数组数据须通过 migration 转换。 */
+export const readProductSpecTable = (value: unknown): JsonTableData => {
+  try {
+    return normalizeJsonTable(typeof value === 'string' ? JSON.parse(value) : value);
+  } catch {
+    throw new ProductDomainError('CONFLICT', '规格参数数据结构无法读取');
+  }
+};
 
 /**
  * 把数据库驱动错误映射为稳定的模块错误。application 层不得识别 `ER_DUP_ENTRY` 等驱动错误码，

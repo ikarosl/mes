@@ -19,7 +19,6 @@ const {
   error,
   productOptions,
   routeOptions,
-  userOptions,
 } = vi.hoisted(() => ({
   listOrders: vi.fn(),
   getOrder: vi.fn(),
@@ -33,7 +32,6 @@ const {
   error: vi.fn(),
   productOptions: vi.fn(),
   routeOptions: vi.fn(),
-  userOptions: vi.fn(),
 }));
 
 // 模拟 API 模块，避免发起真实 HTTP 请求（ECONNREFUSED）。
@@ -41,7 +39,6 @@ vi.mock('../../../api/product', () => ({
   productApi: {
     productOptions,
     routeOptions,
-    userOptions,
   },
 }));
 vi.mock('../../../api/production', () => ({
@@ -125,8 +122,6 @@ describe('ProductionOrdersPage', () => {
     productOptions.mockResolvedValue([]);
     routeOptions.mockReset();
     routeOptions.mockResolvedValue([]);
-    userOptions.mockReset();
-    userOptions.mockResolvedValue([]);
   });
 
   it('renders the query panel with search fields', () => {

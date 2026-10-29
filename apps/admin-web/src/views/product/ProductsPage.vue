@@ -2,7 +2,7 @@
   <main class="catalog-page">
     <el-tabs v-model="viewMode"
       ><el-tab-pane
-        label="成品"
+        label="产品"
         name="products" /><el-tab-pane
         label="物料"
         name="materials"
@@ -17,7 +17,7 @@
           ><el-input
             v-model="activeQuery.keyword"
             clearable
-            :placeholder="viewMode === 'products' ? '名称或成品编码' : '名称、基础编码或版本编码'"
+            :placeholder="viewMode === 'products' ? '名称或产品编码' : '名称、基础编码或版本编码'"
         /></el-form-item>
         <el-form-item label="分类"
           ><el-select
@@ -52,7 +52,7 @@
       </el-form>
     </section>
     <section
-      ref="productTablePanel"
+      ref="catalogTablePanel"
       class="table-panel"
     >
       <TableToolbar :total="activeTotal"
@@ -62,7 +62,7 @@
             type="primary"
             :icon="Plus"
             @click="openCreateProduct"
-            >新增成品</el-button
+            >新增产品</el-button
           >
           <el-button
             v-if="viewMode === 'materials' && auth.can(PERMISSIONS.product.materials.create)"
@@ -101,12 +101,12 @@
         :data="products.products.value"
         row-key="id"
         class="data-table"
-        empty-text="暂无成品"
+        empty-text="暂无产品"
       >
         <!-- 数据列按最小宽度的比例分摊余宽，操作列按实际按钮宽度保留。 -->
         <el-table-column
-          label="成品"
-          min-width="220"
+          label="产品"
+          min-width="200"
           ><template #default="{ row }"
             ><div class="product-identity">
               <strong>{{ row.productName }}</strong>
@@ -116,11 +116,11 @@
         >
         <el-table-column
           label="规格摘要"
-          min-width="200"
+          min-width="180"
           ><template #default="{ row }"
             ><el-tooltip
               :content="formatSpecSummary(row.specValues)"
-              :disabled="!row.specValues.length"
+              :disabled="!row.specValues.rows.length"
               :show-after="300"
               :popper-style="{ maxWidth: '480px', whiteSpace: 'normal', overflowWrap: 'anywhere' }"
               placement="top"
@@ -129,9 +129,27 @@
           ></el-table-column
         >
         <el-table-column
+          label="规格书"
+          min-width="200"
+        >
+          <template #default="{ row }">
+            <TechnicalFileCell
+              :file-name="row.specificationFile?.originalName ?? null"
+              :pending-action="
+                productFileActionId === row.id
+                  ? productSpecificationActions.pendingAction.value
+                  : null
+              "
+              :disabled="Boolean(productSpecificationActions.pendingAction.value)"
+              @preview="viewProductSpecification(row, 'preview')"
+              @download="viewProductSpecification(row, 'download')"
+            />
+          </template>
+        </el-table-column>
+        <el-table-column
           prop="categoryName"
           label="分类"
-          min-width="180"
+          min-width="120"
           show-overflow-tooltip
         /><el-table-column
           prop="unit"
@@ -141,7 +159,7 @@
         />
         <el-table-column
           label="BOM"
-          min-width="140"
+          min-width="130"
           ><template #default="{ row }"
             ><el-tag
               :type="bomTag(row).type"
@@ -152,7 +170,7 @@
         >
         <el-table-column
           label="状态"
-          min-width="100"
+          min-width="80"
           ><template #default="{ row }"
             ><el-tag :type="row.status === 1 ? 'success' : 'info'">{{
               row.status === 1 ? '启用' : '停用'
@@ -161,11 +179,11 @@
         >
         <el-table-column
           label="操作"
-          :width="productActionColumnWidth"
+          :width="actionColumnWidth"
           fixed="right"
-          ><template #header><span class="product-actions-heading">操作</span></template>
+          ><template #header><span class="catalog-actions-heading">操作</span></template>
           <template #default="{ row }"
-            ><div class="product-row-actions">
+            ><div class="catalog-row-actions">
               <el-button
                 link
                 type="primary"
@@ -223,6 +241,7 @@
                 :snapshot-revision="materials.snapshotRevision.value"
                 :can-change-status="auth.can(PERMISSIONS.product.materialVariants.changeStatus)"
                 @change-status="toggleVariantStatus"
+                @replace-specification="replaceVariantSpecification"
               />
               <div
                 v-else-if="isMaterialViewActive"
@@ -243,7 +262,7 @@
         >
         <el-table-column
           label="基础物料"
-          min-width="250"
+          min-width="260"
           ><template #default="{ row }"
             ><strong>{{ row.materialCode }}</strong>
             <div class="secondary">{{ row.materialName }}</div></template
@@ -252,19 +271,21 @@
         <el-table-column
           prop="categoryName"
           label="分类"
-          min-width="170"
+          min-width="160"
+          show-overflow-tooltip
         /><el-table-column
           prop="variantCount"
           label="版本数"
-          width="100"
+          min-width="110"
         /><el-table-column
           prop="unit"
           label="单位"
-          width="90"
+          min-width="90"
+          show-overflow-tooltip
         />
         <el-table-column
           label="状态"
-          width="90"
+          min-width="100"
           ><template #default="{ row }"
             ><el-tag :type="row.status === 1 ? 'success' : 'info'">{{
               row.status === 1 ? '启用' : '停用'
@@ -273,28 +294,31 @@
         >
         <el-table-column
           label="操作"
-          width="250"
+          :width="actionColumnWidth"
           fixed="right"
-          ><template #default="{ row }"
-            ><el-button
-              v-if="auth.can(PERMISSIONS.product.materials.update)"
-              link
-              type="primary"
-              @click="openEditMaterial(row)"
-              >编辑</el-button
-            ><el-button
-              v-if="auth.can(PERMISSIONS.product.materialVariants.create)"
-              link
-              type="primary"
-              @click="openCreateVariant(row)"
-              >新增版本</el-button
-            ><el-button
-              v-if="auth.can(PERMISSIONS.product.materials.changeStatus)"
-              link
-              :type="row.status === 1 ? 'danger' : 'success'"
-              @click="toggleMaterialStatus(row)"
-              >{{ row.status === 1 ? '停用' : '启用' }}</el-button
-            ></template
+          ><template #header><span class="catalog-actions-heading">操作</span></template>
+          <template #default="{ row }"
+            ><div class="catalog-row-actions">
+              <el-button
+                v-if="auth.can(PERMISSIONS.product.materials.update)"
+                link
+                type="primary"
+                @click="openEditMaterial(row)"
+                >编辑</el-button
+              ><el-button
+                v-if="auth.can(PERMISSIONS.product.materialVariants.create)"
+                link
+                type="primary"
+                @click="openCreateVariant(row)"
+                >新增版本</el-button
+              ><el-button
+                v-if="auth.can(PERMISSIONS.product.materials.changeStatus)"
+                link
+                :type="row.status === 1 ? 'danger' : 'success'"
+                @click="toggleMaterialStatus(row)"
+                >{{ row.status === 1 ? '停用' : '启用' }}</el-button
+              >
+            </div></template
           ></el-table-column
         >
       </el-table>
@@ -312,6 +336,7 @@
       :visible="productDialogVisible"
       :editing-product-id="editingProductId"
       :editing-product-locked="editingProductLocked"
+      :current-product="currentEditingProduct"
       :category-options="categorySource.options.value"
       :item-kind-labels="itemKindLabels"
       :submitting="submitting"
@@ -322,9 +347,8 @@
     <ProductDetailDialog
       :visible="detailVisible"
       :row="detailRow"
-      :item-kind-label="() => '成品'"
+      :item-kind-label="() => '产品'"
       :acquire-method-labels="acquireMethodLabels"
-      :format-spec-item="formatSpecItem"
       @update:visible="detailVisible = $event"
     />
     <ProductMaterialDialog
@@ -349,9 +373,11 @@
     <MaterialVariantFormDialog
       :visible="variantDialogVisible"
       :material="activeMaterial"
+      :variant="specificationVariant"
       :submitting="submitting"
       @update:visible="variantDialogVisible = $event"
       @save="saveVariant"
+      @save-specification="saveVariantSpecification"
     />
   </main>
 </template>
@@ -365,6 +391,7 @@ import type {
   MaterialListItem,
   MaterialPayload,
   MaterialVariantItem,
+  MaterialVariantSpecificationPayload,
   ProductAcquireMethod,
   ProductItemKind,
   ProductListItem,
@@ -385,7 +412,10 @@ import ProductDetailDialog from './components/ProductDetailDialog.vue';
 import ProductMaterialDialog, { type MaterialRow } from './components/ProductMaterialDialog.vue';
 import MaterialFormDialog, { type MaterialFormValue } from './components/MaterialFormDialog.vue';
 import MaterialVariantFormDialog from './components/MaterialVariantFormDialog.vue';
+import type { MaterialVariantFormValue } from './components/MaterialVariantFormDialog.vue';
 import MaterialVariantsPanel from './components/MaterialVariantsPanel.vue';
+import { useTechnicalFileActions } from '../../composables/useTechnicalFileActions';
+import TechnicalFileCell from '../../components/TechnicalFileCell.vue';
 
 defineOptions({ name: 'ProductsPage' });
 type ViewMode = 'products' | 'materials';
@@ -398,20 +428,26 @@ const viewMode = ref<ViewMode>(route.query.tab === 'materials' ? 'materials' : '
 const pageActive = ref(true);
 const isMaterialViewActive = computed(() => pageActive.value && viewMode.value === 'materials');
 const materials = useMaterialsList(() => isMaterialViewActive.value);
-const { tablePanel: productTablePanel, actionColumnWidth: productActionColumnWidth } =
+const { tablePanel: catalogTablePanel, actionColumnWidth: actionColumnWidth } =
   useTableActionColumn(
-    () => (viewMode.value === 'products' ? products.products.value : null),
-    '.product-row-actions, .product-actions-heading',
+    () => (viewMode.value === 'products' ? products.products.value : materials.materials.value),
+    '.catalog-row-actions, .catalog-actions-heading',
   );
 const expandedMaterialRowKeys = ref<string[]>([]);
+let initializeMaterialExpansion = true;
 const materialDetailsReady = ref(false);
 const materialRowKeys = computed(() => materials.materials.value.map((material) => material.id));
 watch(
   materials.snapshotRevision,
   () => {
-    expandedMaterialRowKeys.value = expandedMaterialRowKeys.value.filter((key) =>
-      materialRowKeys.value.includes(key),
-    );
+    if (initializeMaterialExpansion) {
+      expandedMaterialRowKeys.value = materialRowKeys.value.slice(0, 1);
+      initializeMaterialExpansion = false;
+    } else {
+      expandedMaterialRowKeys.value = expandedMaterialRowKeys.value.filter((key) =>
+        materialRowKeys.value.includes(key),
+      );
+    }
     materialDetailsReady.value = true;
   },
   { flush: 'sync' },
@@ -447,12 +483,13 @@ const activePageSize = computed(() =>
 );
 const itemKindLabels: Record<ProductItemKind, string> = {
   material: '物料',
-  finished_product: '成品',
+  finished_product: '产品',
 };
 const acquireMethodLabels = { self_made: '自制', outsourced: '委外', purchased: '外购' };
 const loadActive = () => (viewMode.value === 'products' ? products.load() : materials.load());
 const prepareMaterialNavigation = () => {
   collapseAllRows();
+  initializeMaterialExpansion = true;
   materialDetailsReady.value = false;
 };
 const searchActive = () => {
@@ -499,6 +536,31 @@ const editingMaterialId = ref<string | null>(null);
 const activeProduct = ref<ProductListItem | null>(null);
 const activeMaterial = ref<MaterialListItem | null>(null);
 const detailRow = ref<ProductListItem | null>(null);
+const currentEditingProduct = computed(
+  () => products.products.value.find((row) => row.id === editingProductId.value) ?? null,
+);
+const specificationVariant = ref<MaterialVariantItem | null>(null);
+const productFileActionId = ref<string | null>(null);
+const productSpecificationActions = useTechnicalFileActions(
+  () =>
+    products.products.value.find((row) => row.id === productFileActionId.value)
+      ?.specificationFile ?? null,
+  () => pageActive.value && viewMode.value === 'products',
+);
+const viewProductSpecification = (
+  product: ProductListItem,
+  action: 'preview' | 'download',
+): void => {
+  if (!product.specificationFile) return;
+  productFileActionId.value = product.id;
+  void productSpecificationActions[action]();
+};
+const replaceVariantSpecification = (variant: MaterialVariantItem): void => {
+  activeMaterial.value =
+    materials.materials.value.find((row) => row.id === variant.materialId) ?? null;
+  specificationVariant.value = variant;
+  variantDialogVisible.value = true;
+};
 // 列表刷新会替换行对象；弹窗不能继续持有审批前的旧状态和版本。
 watch(products.products, (rows) => {
   const current = rows.find((product) => product.id === activeProduct.value?.id);
@@ -508,10 +570,14 @@ watch(products.products, (rows) => {
 });
 const productFormRef = ref<InstanceType<typeof ProductFormDialog>>();
 const materialFormRef = ref<InstanceType<typeof MaterialFormDialog>>();
-const formatSpecItem = (i: { key: string; value: string; unit?: string }) =>
-  `${i.key}：${i.value}${i.unit ? ` ${i.unit}` : ''}`;
-const formatSpecSummary = (items: ProductListItem['specValues']) =>
-  items.length ? items.map(formatSpecItem).join('，') : '—';
+const formatSpecSummary = (table: ProductListItem['specValues']) =>
+  table.rows.length
+    ? table.rows
+        .map((row) =>
+          table.columns.map((column) => `${column.label}：${row[column.key] || '—'}`).join('，'),
+        )
+        .join('；')
+    : '—';
 const bomTag = (r: ProductListItem): { label: string; type: 'info' | 'success' | 'warning' } => {
   if (r.bomStatus === 'pending_approval') return { label: '审批中', type: 'warning' };
   if (r.bomStatus === 'approved' || r.bomLockedAt) {
@@ -575,16 +641,26 @@ const saveProduct = (d: ProductFormValue) =>
         unit: d.unit,
         acquireMethod: d.acquireMethod as ProductAcquireMethod,
         specValues: d.specValues,
+        specificationFileId: d.specificationFileId,
         status: d.enabled ? 1 : 0,
         remark: d.remark || null,
       };
-      if (editingProductId.value) await productApi.updateProduct(editingProductId.value, p);
-      else await productApi.createProduct(p);
+      if (editingProductId.value) {
+        try {
+          await productApi.updateProduct(editingProductId.value, {
+            ...p,
+            expectedSpecificationFileId: d.expectedSpecificationFileId,
+          });
+        } catch (error) {
+          await products.load();
+          throw error;
+        }
+      } else await productApi.createProduct(p);
       productDialogVisible.value = false;
       await products.load();
     },
-    '成品已保存',
-    '成品保存失败',
+    '产品已保存',
+    '产品保存失败',
   );
 const saveBom = (rows: MaterialRow[]) =>
   activeProduct.value
@@ -643,6 +719,7 @@ const openEditMaterial = (r: MaterialListItem) => {
   materialDialogVisible.value = true;
 };
 const openCreateVariant = (r: MaterialListItem) => {
+  specificationVariant.value = null;
   activeMaterial.value = r;
   variantDialogVisible.value = true;
 };
@@ -667,7 +744,7 @@ const saveMaterial = (d: MaterialFormValue) =>
     '物料已保存',
     '物料保存失败',
   );
-const saveVariant = (d: { majorVersion: string; minorVersion: string; remark: string | null }) =>
+const saveVariant = (d: MaterialVariantFormValue) =>
   activeMaterial.value
     ? runSave(
         async () => {
@@ -679,6 +756,19 @@ const saveVariant = (d: { majorVersion: string; minorVersion: string; remark: st
         '物料版本新增失败',
       )
     : undefined;
+const saveVariantSpecification = (payload: MaterialVariantSpecificationPayload) => {
+  const target = specificationVariant.value;
+  if (!target) return;
+  return runSave(
+    async () => {
+      await productApi.replaceMaterialVariantSpecification(target.id, payload);
+      variantDialogVisible.value = false;
+      await materials.load();
+    },
+    '规格书已替换',
+    '规格书替换失败，请刷新版本列表核对当前规格书',
+  );
+};
 const toggleMaterialStatus = (r: MaterialListItem) =>
   confirmStatus(`${r.materialCode} / ${r.materialName}`, r.status, async () => {
     await productApi.setMaterialStatus(r.id, r.status === 1 ? 0 : 1);
@@ -781,18 +871,18 @@ onDeactivated(() => {
   -webkit-line-clamp: 2;
   overflow: hidden;
 }
-.product-row-actions {
+.catalog-row-actions {
   display: inline-flex;
   width: max-content;
   align-items: center;
   gap: 8px;
   white-space: nowrap;
 }
-.product-actions-heading {
+.catalog-actions-heading {
   display: inline-block;
   white-space: nowrap;
 }
-.product-row-actions :deep(.el-button) {
+.catalog-row-actions :deep(.el-button) {
   margin-left: 0;
   padding: 0;
 }

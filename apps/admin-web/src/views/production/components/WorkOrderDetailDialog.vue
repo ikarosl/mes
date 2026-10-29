@@ -47,7 +47,7 @@
           order.externalOrderNo || '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="负责人">{{
-          resolveOwnerName(order.workOrderOwnerId, userOptions)
+          order.ownerName || order.workOrderOwnerId || '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="客户名称">{{
           order.customerName || '-'
@@ -302,24 +302,18 @@
 <script setup lang="ts">
 import { computed } from 'vue';
 import { WORK_ORDER_TYPE_LABELS, WORK_ORDER_CLOSE_TYPE_LABELS } from '@company/constants';
-import type { UserOption, WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
+import type { WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import BatchApprovedOutput from './BatchApprovedOutput.vue';
 import { approvedUsableQuantity, plannedOutputGapText } from '../production-output-quantity';
 import { canStartNextResearchRound } from '../research-work-order';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
-import {
-  batchStatusMeta,
-  formatQuantity,
-  orderStatusMeta,
-  resolveOwnerName,
-} from '../production-status';
+import { batchStatusMeta, formatQuantity, orderStatusMeta } from '../production-status';
 
 const props = defineProps<{
   visible: boolean;
   loading?: boolean;
   order: WorkOrderDetail | null;
-  userOptions: UserOption[];
 }>();
 
 defineEmits<{

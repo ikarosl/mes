@@ -1,9 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { UnsupportedMediaTypeException } from '@nestjs/common';
 import {
   assertTechnicalFileExtension,
   assertTechnicalFileType,
-  technicalFileUploadOptions,
 } from '../technical-file-upload.validation.js';
 
 describe('technical file upload validation', () => {
@@ -14,15 +13,7 @@ describe('technical file upload validation', () => {
     },
   );
 
-  it('rejects powerpoint and unsupported extensions before Multer buffers the file', () => {
-    const callback = vi.fn();
-    technicalFileUploadOptions.fileFilter(
-      {},
-      { originalname: '培训.ppt', mimetype: 'application/vnd.ms-powerpoint' },
-      callback,
-    );
-
-    expect(callback).toHaveBeenCalledWith(expect.any(UnsupportedMediaTypeException), false);
+  it('rejects unsupported extensions', () => {
     expect(() => assertTechnicalFileExtension('script.exe')).toThrow(UnsupportedMediaTypeException);
   });
 

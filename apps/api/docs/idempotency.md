@@ -87,9 +87,9 @@ application 将 DTO 及嵌套 DTO 显式转成普通对象并完成 trim 后再�
 
 ## 9. 前端键生命周期
 
-局部 useIdempotentIntent 在首次正式提交时生成加密 UUID，firstAttemptAt 从此时起算 12 小时，并保存实际发送的参数／body／版本／令牌。成功或契约明确无副作用的业务 4xx 结束意图；网络中断及不确定结果保留原键原请求，修改内容不能静默换键。损坏结果或超窗口阻塞并要求核对，用户明确放弃后才可开始新意图。
+局部 useIdempotentIntent 在首次正式提交时生成加密 UUID，firstAttemptAt 从此时起算 12 小时，保存键与输入签名；所属 editor 另行保存实际发送的参数／body／版本／令牌。成功或契约明确无副作用的业务 4xx 结束意图；网络中断及不确定结果保留原键原请求，修改内容不能静默换键。损坏结果或超窗口阻塞并要求核对，用户明确放弃后才可开始新意图。
 
-当前仅内存保存，KeepAlive 可恢复，硬刷新不可恢复；只保存键或 payload hash 不构成闭环。会话变化销毁旧意图，API wrapper 只透传键，不持有或生成。前端实现及关闭保护见[管理端架构](../../admin-web/docs/architecture.md#5-写意图与错误)。只有启用幂等且携带原键的写请求可开启 retryIdempotentWrite，失败范围见[重试矩阵](../../admin-web/docs/http-error-handling.md#4-基础请求与重试)。
+当前仅内存保存，KeepAlive 可恢复，硬刷新不可恢复；只保存键或 payload hash 不构成闭环。会话变化销毁旧意图，API wrapper 只透传键，不持有或生成。前端实现及关闭保护见[管理端架构](../../admin-web/docs/architecture.md#5-写意图与错误)。后端幂等能力支持原请求手动恢复，不使前端写请求自动重试；传输策略及认证恢复例外见[HTTP 规则](../../admin-web/docs/http-error-handling.md#4-基础请求与重试)。
 
 ## 10. 清理与运行维护
 

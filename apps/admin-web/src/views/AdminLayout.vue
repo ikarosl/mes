@@ -206,11 +206,17 @@ const all = [
   { title: '用户管理', path: '/system/users', permission: PERMISSIONS.system.users.view },
   { title: '角色管理', path: '/system/roles', permission: PERMISSIONS.system.roles.view },
   {
+    title: '业务人员配置',
+    path: '/system/user-candidates',
+    permission: PERMISSIONS.system.userCandidates.view,
+  },
+  {
     title: '权限管理',
     path: '/system/permissions',
     permission: PERMISSIONS.system.permissions.view,
   },
   { title: '操作日志', path: '/system/logs', permission: PERMISSIONS.system.logs.view },
+  { title: '模板管理', path: '/system/templates', permission: PERMISSIONS.system.templates.view },
 ];
 const systemItems = computed(() => all.filter((item) => auth.can(item.permission)));
 
@@ -225,7 +231,7 @@ const approvalMenus = [
 const approvalItems = computed(() => approvalMenus.filter((item) => auth.can(item.permission)));
 
 const productMenus = [
-  { title: '成品与物料', path: '/product/products', permission: PERMISSIONS.product.products.view },
+  { title: '产品与物料', path: '/product/products', permission: PERMISSIONS.product.products.view },
   {
     title: '分类配置',
     path: '/product/categories',

@@ -104,13 +104,10 @@
           >添加物料</el-button
         >
       </div>
-      <p class="help">
-        <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
-        手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
-        采购数量独立填写，不分摊需求；下单后数量锁定，可在“查看/编辑”更正单价、税率及总额。
-        同物料同精确版本仅保留一行，不同供应商另建单。
+      <PurchaseOrderAmountHelp class="help">
+        采购数量独立填写，不分摊需求。 同物料同精确版本仅保留一行，不同供应商另建单。
         <template v-if="supplement">补单来源固定，原采购行或原到货选错须取消草稿后重建。</template>
-      </p>
+      </PurchaseOrderAmountHelp>
       <el-table
         :data="rows"
         row-key="key"
@@ -342,6 +339,7 @@ import PurchaseMaterialSelect from './PurchaseMaterialSelect.vue';
 import PurchaseSupplierSelect from './PurchaseSupplierSelect.vue';
 import ProcurementWorkOrderPickerDialog from './ProcurementWorkOrderPickerDialog.vue';
 import PurchaseLineTotalAmountInput from './PurchaseLineTotalAmountInput.vue';
+import PurchaseOrderAmountHelp from './PurchaseOrderAmountHelp.vue';
 const emit = defineEmits<{ saved: [string] }>();
 const {
   visible,

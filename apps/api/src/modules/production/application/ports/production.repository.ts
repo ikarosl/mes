@@ -29,6 +29,10 @@ export interface WorkOrderReleaseContext {
   workOrderOwnerId: string;
 }
 
+export interface WorkOrderUpdateContext {
+  workOrderOwnerId: string | null;
+}
+
 export abstract class ProductionRepository {
   abstract listWorkOrders(query: WorkOrderQuery): Promise<PageResult<WorkOrderItem>>;
   abstract listWorkOrderOptions(): Promise<WorkOrderOption[]>;
@@ -44,6 +48,10 @@ export abstract class ProductionRepository {
     product: ProductionProductSnapshot | undefined,
     audit: CommandContext,
   ): Promise<WorkOrderDetail>;
+  abstract withWorkOrderUpdateTransaction<T>(
+    workOrderId: string,
+    action: (workOrder: WorkOrderUpdateContext) => Promise<T>,
+  ): Promise<T>;
   abstract withWorkOrderReleaseTransaction<T>(
     workOrderId: string,
     action: (workOrder: WorkOrderReleaseContext) => Promise<T>,

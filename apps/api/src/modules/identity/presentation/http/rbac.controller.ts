@@ -65,7 +65,11 @@ export class RbacController {
     return this.rbac.listDepartmentOptions();
   }
   @Get('roles/options')
-  @RequirePermission(PERMISSIONS.system.users.view)
+  @RequirePermission([
+    PERMISSIONS.system.users.view,
+    PERMISSIONS.system.userCandidates.view,
+    PERMISSIONS.system.userCandidates.configure,
+  ])
   roleOptions() {
     return this.rbac.listRoleOptions();
   }

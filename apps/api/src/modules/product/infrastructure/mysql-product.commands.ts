@@ -1,9 +1,10 @@
 import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { ProductPayload } from '@company/contracts';
+import type { ProductPayload, ProductUpdatePayload } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
+import { requireSpecificationFile } from './mysql-specification-file.persistence.js';
 import {
   readProductCatalogRecord,
   requireProductCatalogCategory,
@@ -17,16 +18,18 @@ export class MysqlProductCommands {
   async createProduct(payload: ProductPayload, audit: CommandContext): Promise<{ id: string }> {
     return withTransaction(this.pool, async (connection) => {
       await requireProductCatalogCategory(connection, payload.categoryId);
+      await requireSpecificationFile(connection, payload.specificationFileId);
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,specification_file_id,status,remark,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [
           payload.itemCode,
           payload.productName,
           payload.categoryId,
           payload.unit,
           payload.acquireMethod,
-          JSON.stringify(payload.specValues ?? []),
+          JSON.stringify(payload.specValues ?? { columns: [], rows: [] }),
+          payload.specificationFileId,
           payload.status,
           payload.remark ?? null,
           audit.actorId,
@@ -47,9 +50,18 @@ export class MysqlProductCommands {
     );
   }
 
-  async updateProduct(id: string, payload: ProductPayload, audit: CommandContext): Promise<void> {
+  async updateProduct(
+    id: string,
+    payload: ProductUpdatePayload,
+    audit: CommandContext,
+  ): Promise<void> {
     await withTransaction(this.pool, async (connection) => {
       const before = await readProductCatalogRecord(connection, id, true);
+      const currentSpecificationFileId =
+        before.specification_file_id === null ? null : String(before.specification_file_id);
+      if (payload.expectedSpecificationFileId !== currentSpecificationFileId) {
+        throw new ProductDomainError('CONFLICT', '规格书已被其他人修改，请刷新后重试');
+      }
       if (before.bom_status === 'pending_approval') {
         throw new ProductDomainError('CONFLICT', 'BOM 审批中，产品资料暂时不能修改');
       }
@@ -76,6 +88,7 @@ export class MysqlProductCommands {
         );
       }
       await requireProductCatalogCategory(connection, payload.categoryId);
+      await requireSpecificationFile(connection, payload.specificationFileId);
       if (payload.acquireMethod !== 'self_made') {
         const [[dependent]] = await connection.query<(RowDataPacket & { bom_count: number })[]>(
           `SELECT (SELECT COUNT(*) FROM product_materials WHERE product_id=? AND is_deleted=0) bom_count`,
@@ -84,25 +97,33 @@ export class MysqlProductCommands {
         if ((dependent?.bom_count ?? 0) > 0) {
           throw new ProductDomainError(
             'INVALID_PRODUCT_KIND',
-            '已有 BOM 的成品必须保持为自制获取方式',
+            '已有 BOM 的产品必须保持为自制获取方式',
           );
         }
       }
       await connection.execute(
-        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,status=?,remark=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,specification_file_id=?,status=?,remark=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0`,
         [
           payload.productName,
           payload.categoryId,
           payload.unit,
           payload.acquireMethod,
-          JSON.stringify(payload.specValues ?? []),
+          JSON.stringify(payload.specValues ?? { columns: [], rows: [] }),
+          payload.specificationFileId,
           payload.status,
           payload.remark ?? null,
           audit.actorId,
           id,
         ],
       );
-      await writeProductCatalogAudit(connection, audit, 'product.update', id, before, payload);
+      await writeProductCatalogAudit(
+        connection,
+        audit,
+        'product.update',
+        id,
+        { ...before, specificationFileId: currentSpecificationFileId },
+        payload,
+      );
     }).catch((error) =>
       mapProductWriteError(error, '编码或版本已存在，软删除记录的自然键也不能复用'),
     );

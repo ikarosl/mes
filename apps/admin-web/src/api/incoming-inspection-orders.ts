@@ -31,8 +31,6 @@ const command = <T>(url: string, data: unknown, key: string, method = 'POST'): P
     method,
     data,
     headers: { [IDEMPOTENCY_KEY_HEADER]: key },
-    retryIdempotentWrite: true,
-    retryTimes: 2,
   });
 
 export const incomingInspectionOrdersApi = {

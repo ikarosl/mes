@@ -6,7 +6,6 @@ import {
   batchStatusMeta,
   formatQuantity,
   orderStatusMeta,
-  resolveOwnerName,
   stepStatusMeta,
 } from '../production-status';
 import {
@@ -49,18 +48,5 @@ describe('production-status', () => {
     expect(formatQuantity(null)).toBe('0');
     expect(formatQuantity(undefined)).toBe('0');
     expect(formatQuantity('abc')).toBe('-');
-  });
-
-  // TODO(production-work-order-remaining): 核对工单计划减有效任务分配的剩余额度及零边界；该数量不变量影响任务分配上限，旧前端计算器已无业务调用而暂缓覆盖；获正式测试授权后围绕服务端 remainingQuantity 契约与真实消费者恢复。
-
-  it('resolveOwnerName 解析负责人显示名', () => {
-    const users = [
-      { id: 'u1', displayName: '张三' },
-      { id: 'u2', displayName: '李四' },
-    ];
-    expect(resolveOwnerName('u1', users)).toBe('张三');
-    expect(resolveOwnerName('missing', users)).toBe('-');
-    expect(resolveOwnerName(null, users)).toBe('-');
-    expect(resolveOwnerName(undefined, users)).toBe('-');
   });
 });

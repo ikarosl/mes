@@ -119,6 +119,7 @@ export const mapWorkOrder = (row: WorkOrderRow): WorkOrderItem => ({
   customerName: row.customer_name,
   qualityLevel: row.quality_level,
   workOrderOwnerId: row.work_order_owner_id === null ? null : String(row.work_order_owner_id),
+  ownerName: null,
   planStartDate: toDateOnlyString(row.plan_start_date),
   planEndDate: toDateOnlyString(row.plan_end_date),
   assignedQuantity: String(row.assigned_quantity),

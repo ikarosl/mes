@@ -84,22 +84,67 @@
           />
         </el-form-item>
         <el-form-item label="负责人">
-          <el-select
-            v-model="form.workOrderOwnerId"
-            clearable
-            filterable
-            placeholder="请选择工单负责人"
-            :loading="props.userOptionsStatus === 'loading'"
-            @visible-change="(v: boolean) => v && $emit('refresh-users')"
-          >
-            <el-option
-              v-for="choice in userChoices"
-              :key="choice.value"
-              :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
-              :value="choice.value"
-              :disabled="choice.isUnavailable"
-            />
-          </el-select>
+          <div class="owner-field">
+            <div class="owner-picker">
+              <el-select
+                v-model="form.workOrderOwnerId"
+                clearable
+                filterable
+                placeholder="请选择工单负责人"
+                :loading="ownersLoading"
+                @change="rememberOwnerSelection"
+              >
+                <el-option
+                  v-for="owner in owners"
+                  :key="owner.id"
+                  :label="owner.displayName"
+                  :value="owner.id"
+                />
+                <el-option
+                  v-if="missingOwner"
+                  :label="missingOwner.label"
+                  :value="missingOwner.id"
+                  disabled
+                />
+                <template #empty>
+                  <div class="candidate-empty">
+                    {{
+                      ownersVerified
+                        ? '暂无候选人员，请联系管理员配置业务人员角色'
+                        : '请刷新负责人候选后重试'
+                    }}
+                  </div>
+                </template>
+              </el-select>
+              <el-button
+                :icon="Refresh"
+                :loading="ownersLoading"
+                aria-label="刷新负责人候选"
+                @click="refreshOwners"
+              />
+            </div>
+            <p
+              v-if="ownersError"
+              class="owner-warning"
+              role="status"
+            >
+              负责人候选读取失败，请刷新后再选择；也可清空负责人保存草稿。
+            </p>
+            <p
+              v-else-if="ownersVerified && !owners.length"
+              class="owner-note"
+              role="status"
+            >
+              暂无候选人员，请联系管理员配置业务人员角色；可不指定负责人保存草稿。
+            </p>
+            <p
+              v-if="isOwnerUnavailable"
+              class="owner-warning"
+              role="status"
+            >
+              原负责人已退出当前候选范围，请重新选择或清空。
+            </p>
+          </div>
         </el-form-item>
         <el-form-item label="客户名称">
           <el-input
@@ -162,10 +207,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, reactive, ref } from 'vue';
+import { computed, reactive, ref, watch } from 'vue';
+import { Refresh } from '@element-plus/icons-vue';
 import type {
   ProductOption,
-  UserOption,
   WorkOrderDetail,
   WorkOrderType,
   ResearchWorkOrderReference,
@@ -176,6 +221,7 @@ import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import type { RefreshableStatus } from '../../../composables/options/useRefreshableOptions';
+import { useWorkOrderOwnerOptions } from '../composables/use-work-order-owner-options';
 
 export type WorkOrderFormValue = {
   orderType: WorkOrderType;
@@ -196,23 +242,36 @@ const props = defineProps<{
   editingOrderId: string | null;
   productOptions: ProductOption[];
   productOptionsStatus: RefreshableStatus;
-  userOptions: UserOption[];
-  userOptionsStatus: RefreshableStatus;
   submitting: boolean;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'refresh-products'): void;
-  (e: 'refresh-users'): void;
   (e: 'save', data: WorkOrderFormValue): void;
 }>();
 
-/** 打开弹窗：刷新本弹窗实际需要的候选（产品 + 负责人），不刷新无关资源 */
+/** 工单负责人采用表单自己的完整候选，打开和显式刷新时核验。 */
+const {
+  owners,
+  loading: ownersLoading,
+  verified: ownersVerified,
+  error: ownersError,
+  refreshOwners,
+  invalidateOwners,
+} = useWorkOrderOwnerOptions(() => props.visible);
+
 const onOpen = (): void => {
   emit('refresh-products');
-  emit('refresh-users');
+  void refreshOwners();
 };
+
+watch(
+  () => props.visible,
+  (visible) => {
+    if (!visible) invalidateOwners();
+  },
+);
 
 const initialForm = (): WorkOrderFormValue => ({
   orderType: 'mass_production',
@@ -236,8 +295,18 @@ const dialogTitle = computed(() => {
 });
 const displayedWorkOrderNo = ref('');
 const previousResearchOrder = ref<ResearchWorkOrderReference | null>(null);
+const originalOwner = ref<{ id: string; name: string | null } | null>(null);
 
-/** 实时选项：产品和负责人（产品业务投影：仅成品） */
+const rememberOwnerSelection = (): void => {
+  const id = form.workOrderOwnerId;
+  const owner = owners.value.find((candidate) => candidate.id === id);
+  if (owner) originalOwner.value = { id, name: owner.displayName };
+  if (!id) originalOwner.value = null;
+};
+
+watch(owners, rememberOwnerSelection);
+
+/** 产品候选仍按既有方式消费，负责人独立保留缺失的原选择。 */
 const finishedProducts = computed(() =>
   props.productOptions.filter((product) => product.id !== previousResearchOrder.value?.productId),
 );
@@ -248,13 +317,14 @@ const productChoices = computed(() =>
     (item) => item.id,
   ),
 );
-const userChoices = computed(() =>
-  buildLiveOptions(
-    props.userOptions,
-    form.workOrderOwnerId ? [form.workOrderOwnerId] : [],
-    (item) => item.id,
-  ),
-);
+const missingOwner = computed(() => {
+  const id = form.workOrderOwnerId;
+  if (!id || owners.value.some((owner) => owner.id === id)) return null;
+  const name = originalOwner.value?.id === id ? originalOwner.value.name || id : id;
+  const state = ownersVerified.value ? '已失效' : '待核验';
+  return { id, label: `${name}（${state}）` };
+});
+const isOwnerUnavailable = computed(() => ownersVerified.value && Boolean(missingOwner.value));
 
 const formatProduct = (product: ProductOption): string =>
   `${product.itemCode} / ${product.productName}`;
@@ -263,11 +333,15 @@ const resetForm = (): void => {
   Object.assign(form, initialForm());
   displayedWorkOrderNo.value = '';
   previousResearchOrder.value = null;
+  originalOwner.value = null;
 };
 
 const setForm = (row: WorkOrderDetail): void => {
   displayedWorkOrderNo.value = row.workOrderNo;
   previousResearchOrder.value = row.previousResearchOrder;
+  originalOwner.value = row.workOrderOwnerId
+    ? { id: row.workOrderOwnerId, name: row.ownerName }
+    : null;
   Object.assign(form, {
     orderType: row.orderType,
     previousResearchOrderId: row.previousResearchOrderId,
@@ -285,6 +359,9 @@ const setForm = (row: WorkOrderDetail): void => {
 
 const startNextRound = (row: WorkOrderDetail): void => {
   resetForm();
+  originalOwner.value = row.workOrderOwnerId
+    ? { id: row.workOrderOwnerId, name: row.ownerName }
+    : null;
   previousResearchOrder.value = {
     id: row.id,
     workOrderNo: row.workOrderNo,
@@ -328,14 +405,12 @@ const handleSubmit = (): void => {
     EMessage.warning('所选产品已失效，请重新选择');
     return;
   }
-  if (
-    hasUnavailableSelection(
-      props.userOptions,
-      form.workOrderOwnerId ? [form.workOrderOwnerId] : [],
-      (item) => item.id,
-    )
-  ) {
-    EMessage.warning('所选负责人已失效，请重新选择');
+  if (form.workOrderOwnerId && !ownersVerified.value) {
+    EMessage.warning('请先刷新负责人候选，或清空负责人保存草稿');
+    return;
+  }
+  if (isOwnerUnavailable.value) {
+    EMessage.warning('所选负责人已退出当前候选范围，请重新选择或清空');
     return;
   }
   emit('save', { ...form });
@@ -375,5 +450,36 @@ defineExpose({ setForm, resetForm, startNextRound });
 }
 .dialog-form :deep(.el-button) {
   border-radius: 6px;
+}
+.owner-field {
+  width: 100%;
+}
+.owner-picker {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.owner-picker :deep(.el-select) {
+  flex: 1;
+  min-width: 0;
+}
+.owner-note,
+.owner-warning {
+  margin: 4px 0 0;
+  font-size: 12px;
+  line-height: 1.6;
+}
+.owner-note {
+  color: var(--el-text-color-regular);
+}
+.owner-warning {
+  color: var(--el-color-warning);
+}
+.candidate-empty {
+  max-width: 340px;
+  padding: 12px;
+  color: var(--el-text-color-secondary);
+  line-height: 1.6;
+  text-align: center;
 }
 </style>

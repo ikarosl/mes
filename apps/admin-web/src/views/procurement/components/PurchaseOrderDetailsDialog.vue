@@ -84,13 +84,19 @@
             ><span class="preserve-text">{{ order.remark }}</span></el-descriptions-item
           >
         </el-descriptions>
-        <p class="amount-help">
-          <template v-if="eligible">
-            <strong>自动含税总额 = 无税单价 × 采购数量 ×（1 + 税率 ÷ 100）。</strong><br />
-            手填总额优先；未填无税单价时不推算。含税单价仅作记录，不参与推算。<br />
+        <PurchaseOrderAmountHelp
+          v-if="eligible"
+          class="amount-help"
+        >
+          <template #editing-scope>
             可更正单价、税率及总额，采购数量及其他信息只读。多行修改统一保存，需填写原因。
           </template>
-          <template v-else>当前采购单仅供查看。</template>
+        </PurchaseOrderAmountHelp>
+        <p
+          v-else
+          class="amount-help"
+        >
+          当前采购单仅供查看。
         </p>
         <el-table
           :data="rows"
@@ -356,6 +362,7 @@ import {
 import PurchaseOrderSources from './PurchaseOrderSources.vue';
 import PurchaseLineTotalAmount from './PurchaseLineTotalAmount.vue';
 import PurchaseLineTotalAmountInput from './PurchaseLineTotalAmountInput.vue';
+import PurchaseOrderAmountHelp from './PurchaseOrderAmountHelp.vue';
 
 defineOptions({ name: 'PurchaseOrderDetailsDialog' });
 const emit = defineEmits<{ changed: [string] }>();

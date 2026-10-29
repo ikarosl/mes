@@ -99,36 +99,13 @@
           min-width="230"
         >
           <template #default="{ row }">
-            <template v-if="row.sopFileName">
-              <div class="sop-file-name">{{ row.sopFileName }}</div>
-              <div
-                v-if="auth.can(PERMISSIONS.product.files.download)"
-                class="sop-file-actions"
-              >
-                <el-button
-                  v-if="canPreviewFile(row.sopFileName)"
-                  link
-                  type="primary"
-                  :loading="isFileActionPending(row.id, 'preview')"
-                  :disabled="fileActionPending?.id === row.id"
-                  @click="previewSop(row)"
-                  >预览</el-button
-                >
-                <el-button
-                  link
-                  type="primary"
-                  :loading="isFileActionPending(row.id, 'download')"
-                  :disabled="fileActionPending?.id === row.id"
-                  @click="downloadSop(row)"
-                  >下载</el-button
-                >
-              </div>
-            </template>
-            <span
-              v-else
-              class="empty-text"
-              >未上传</span
-            >
+            <TechnicalFileCell
+              :file-name="row.sopFileName"
+              :pending-action="fileActionStepId === row.id ? fileActions.pendingAction.value : null"
+              :disabled="!row.defaultSopFileId || Boolean(fileActions.pendingAction.value)"
+              @preview="viewSop(row, 'preview')"
+              @download="viewSop(row, 'download')"
+            />
           </template>
         </el-table-column>
         <el-table-column
@@ -215,26 +192,21 @@
         :limit="1"
         :accept="UPLOAD_ACCEPT"
         :file-list="uploadFileList"
+        :disabled="uploading"
         :on-change="handleUploadChange"
         :on-remove="handleUploadRemove"
       >
         <el-icon class="upload-icon"><UploadFilled /></el-icon>
-        <div class="upload-text">将文件拖到这里，或点击选择文件</div>
+        <div>将文件拖到这里，或点击选择文件</div>
       </el-upload>
       <p class="upload-hint">
-        支持常见图片、PDF 和 Word/Excel 文件，单个文件不超过
+        支持图片、PDF、Word、Excel 和 PowerPoint，单个文件不超过
         {{ TECHNICAL_FILE_MAX_SIZE_MIB }} MiB。
       </p>
-      <div
+      <el-progress
         v-if="uploading"
-        class="upload-progress"
-      >
-        <el-progress
-          :percentage="uploadProgress"
-          :stroke-width="8"
-        />
-        <span>{{ uploadProgress }}%</span>
-      </div>
+        :percentage="uploadProgress"
+      />
       <template #footer>
         <el-button
           v-if="uploading"
@@ -265,7 +237,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { onDeactivated, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { Plus, Refresh, UploadFilled } from '@element-plus/icons-vue';
 import type { UploadFile, UploadFiles } from 'element-plus';
 import { PERMISSIONS } from '@company/constants';
@@ -279,7 +251,8 @@ import { useRowPending } from '../../utils/useRowPending';
 import { productApi } from '../../api/product';
 import { useAuthStore } from '../../stores/auth';
 import { useProcessSteps } from './composables/useProcessSteps';
-import { canPreviewFile, previewMimeOf } from '../../utils/file-preview';
+import TechnicalFileCell from '../../components/TechnicalFileCell.vue';
+import { useTechnicalFileActions } from '../../composables/useTechnicalFileActions';
 import {
   TECHNICAL_FILE_MAX_SIZE_MIB,
   UPLOAD_ACCEPT,
@@ -312,16 +285,79 @@ const processDialogVisible = ref(false);
 const uploadDialogVisible = ref(false);
 const detailDialogVisible = ref(false);
 const editingProcessId = ref<string | null>(null);
-const uploadFileList = ref<UploadFile[]>([]);
-const selectedFile = ref<File | null>(null);
 const uploadProcessId = ref<string | null>(null);
 const detailRow = ref<ProcessStepListItem | null>(null);
 const submitting = ref(false);
+const fileActionStepId = ref<string | null>(null);
+const processFormDialogRef = ref<InstanceType<typeof ProcessStepFormDialog> | null>(null);
+const uploadFileList = ref<UploadFile[]>([]);
 const uploading = ref(false);
 const uploadProgress = ref(0);
-const uploadAbortController = ref<AbortController | null>(null);
-const fileActionPending = ref<{ id: string; action: 'preview' | 'download' } | null>(null);
-const processFormDialogRef = ref<InstanceType<typeof ProcessStepFormDialog> | null>(null);
+let uploadController: AbortController | undefined;
+const stopUpload = (): void => {
+  uploadController?.abort();
+  uploadController = undefined;
+  uploading.value = false;
+};
+const handleUploadChange = (file: UploadFile, list: UploadFiles): void => {
+  if (uploading.value) return;
+  const message = file.raw ? validateTechnicalFileUpload(file.raw) : '无法读取所选文件';
+  if (message) {
+    EMessage.warning(message);
+    uploadFileList.value = list.filter((item) => item.uid !== file.uid).slice(-1);
+    return;
+  }
+  uploadFileList.value = [file];
+  uploadProgress.value = 0;
+};
+const handleUploadRemove = (): void => {
+  if (!uploading.value) uploadFileList.value = [];
+};
+const cancelUpload = (): void => {
+  stopUpload();
+  EMessage.info('上传已取消，请确认后手动重新上传');
+};
+const submitUpload = async (): Promise<void> => {
+  if (uploading.value || !uploadDialogVisible.value) return;
+  const file = uploadFileList.value[0]?.raw;
+  const processId = uploadProcessId.value;
+  if (!file || !processId) {
+    EMessage.warning('请选择要上传的技术文件');
+    return;
+  }
+  const message = validateTechnicalFileUpload(file);
+  if (message) {
+    EMessage.warning(message);
+    return;
+  }
+  const controller = new AbortController();
+  uploadController = controller;
+  uploading.value = true;
+  uploadProgress.value = 0;
+  try {
+    await productApi.uploadProcessStepSop(processId, file, {
+      signal: controller.signal,
+      onUploadProgress: (percentage) => {
+        if (uploadController === controller) uploadProgress.value = percentage;
+      },
+    });
+    if (uploadController !== controller) return;
+    uploadFileList.value = [];
+    EMessage.success('技术文件已上传');
+    uploadDialogVisible.value = false;
+    void loadSteps();
+  } catch (error) {
+    if (uploadController !== controller) return;
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ERR_CANCELED')
+      EMessage.info('上传已取消，请确认后手动重新上传');
+    else EMessage.error(error, '技术文件上传失败');
+  } finally {
+    if (uploadController === controller) stopUpload();
+  }
+};
+watch([uploadDialogVisible, uploadProcessId], stopUpload, { flush: 'sync' });
+onDeactivated(stopUpload);
+onScopeDispose(stopUpload);
 
 const openCreate = () => {
   editingProcessId.value = null;
@@ -334,11 +370,10 @@ const openEdit = (row: ProcessStepListItem) => {
   processDialogVisible.value = true;
 };
 const openUpload = (row: ProcessStepListItem) => {
+  stopUpload();
   uploadFileList.value = [];
-  selectedFile.value = null;
-  uploadProcessId.value = row.id;
   uploadProgress.value = 0;
-  uploadAbortController.value = null;
+  uploadProcessId.value = row.id;
   uploadDialogVisible.value = true;
 };
 const openDetail = (row: ProcessStepListItem) => {
@@ -346,55 +381,15 @@ const openDetail = (row: ProcessStepListItem) => {
   detailDialogVisible.value = true;
 };
 
-const isFileActionPending = (id: string, action: 'preview' | 'download') =>
-  fileActionPending.value?.id === id && fileActionPending.value.action === action;
-
-const fetchSopBlob = (row: ProcessStepListItem) => {
-  if (!row.defaultSopFileId) throw new Error('该工序未关联技术文件');
-  return productApi.technicalFileContent(row.defaultSopFileId);
-};
-
-const createPreviewObjectUrl = (blob: Blob, fileName: string) => {
-  const previewMime = previewMimeOf(fileName, blob.type);
-  const target =
-    previewMime && previewMime !== blob.type ? new Blob([blob], { type: previewMime }) : blob;
-  return URL.createObjectURL(target);
-};
-
-const previewSop = async (row: ProcessStepListItem) => {
-  if (fileActionPending.value) return;
-  fileActionPending.value = { id: row.id, action: 'preview' };
-  try {
-    const blob = await fetchSopBlob(row);
-    const url = createPreviewObjectUrl(blob, row.sopFileName ?? '');
-    window.open(url, '_blank', 'noopener');
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (error) {
-    EMessage.error(error, 'SOP 文件预览失败');
-  } finally {
-    fileActionPending.value = null;
-  }
-};
-
-const downloadSop = async (row: ProcessStepListItem) => {
-  if (fileActionPending.value) return;
-  fileActionPending.value = { id: row.id, action: 'download' };
-  try {
-    const blob = await fetchSopBlob(row);
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement('a');
-    anchor.href = url;
-    anchor.download = row.sopFileName ?? 'download';
-    anchor.style.display = 'none';
-    document.body.appendChild(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
-  } catch (error) {
-    EMessage.error(error, 'SOP 文件下载失败');
-  } finally {
-    fileActionPending.value = null;
-  }
+const fileActions = useTechnicalFileActions(() => {
+  const step = steps.value.find((row) => row.id === fileActionStepId.value);
+  return step?.defaultSopFileId && step.sopFileName
+    ? { id: step.defaultSopFileId, originalName: step.sopFileName }
+    : null;
+});
+const viewSop = (step: ProcessStepListItem, action: 'preview' | 'download'): void => {
+  fileActionStepId.value = step.id;
+  void fileActions[action]();
 };
 
 const submitProcess = async (payload: ProcessStepPayload) => {
@@ -409,64 +404,6 @@ const submitProcess = async (payload: ProcessStepPayload) => {
     EMessage.error(error, '工序保存失败');
   } finally {
     submitting.value = false;
-  }
-};
-
-const handleUploadChange = (uploadFile: UploadFile, uploadFiles: UploadFiles) => {
-  const file = uploadFile.raw;
-  if (!file) {
-    EMessage.warning('无法读取所选文件');
-    uploadFileList.value = uploadFiles.filter((item) => item.uid !== uploadFile.uid);
-    selectedFile.value = uploadFileList.value.at(-1)?.raw ?? null;
-    return;
-  }
-  const validationMessage = validateTechnicalFileUpload(file);
-  if (validationMessage) {
-    EMessage.warning(validationMessage);
-    uploadFileList.value = uploadFiles.filter((item) => item.uid !== uploadFile.uid);
-    selectedFile.value = uploadFileList.value.at(-1)?.raw ?? null;
-    return;
-  }
-  uploadFileList.value = [uploadFile];
-  selectedFile.value = file;
-};
-const handleUploadRemove = () => {
-  uploadFileList.value = [];
-  selectedFile.value = null;
-};
-const isUploadCanceled = (error: unknown) =>
-  error && typeof error === 'object' && (error as { code?: unknown }).code === 'ERR_CANCELED';
-const cancelUpload = () => uploadAbortController.value?.abort();
-const submitUpload = async () => {
-  if (!selectedFile.value || !uploadProcessId.value) {
-    EMessage.warning('请选择要上传的技术文件');
-    return;
-  }
-  const validationMessage = validateTechnicalFileUpload(selectedFile.value);
-  if (validationMessage) {
-    EMessage.warning(validationMessage);
-    return;
-  }
-  const controller = new AbortController();
-  uploadAbortController.value = controller;
-  uploadProgress.value = 0;
-  uploading.value = true;
-  try {
-    await productApi.uploadProcessStepSop(uploadProcessId.value, selectedFile.value, {
-      signal: controller.signal,
-      onUploadProgress: (percentage) => {
-        uploadProgress.value = percentage;
-      },
-    });
-    EMessage.success('技术文件已上传');
-    uploadDialogVisible.value = false;
-    await loadSteps();
-  } catch (error) {
-    if (isUploadCanceled(error)) EMessage.info('上传已取消，请确认后手动重新上传');
-    else EMessage.error(error, '技术文件上传失败');
-  } finally {
-    uploading.value = false;
-    uploadAbortController.value = null;
   }
 };
 
@@ -582,43 +519,13 @@ onMounted(loadSteps);
 .process-code {
   font-weight: 600;
 }
-.empty-text {
-  color: #9ca3af;
-}
-.sop-file-name {
-  color: #1f2937;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sop-file-actions {
-  display: flex;
-  gap: 12px;
-  margin-top: 2px;
-}
-
 .upload-icon {
-  color: #6b7280;
-  font-size: 36px;
-}
-.upload-text {
-  color: #1f2937;
+  font-size: 32px;
+  color: var(--el-text-color-secondary);
 }
 .upload-hint {
-  margin: 8px 0 0;
-  color: #6b7280;
   font-size: 12px;
-}
-.upload-progress {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 16px;
-  color: #6b7280;
-  font-size: 12px;
-}
-.upload-progress :deep(.el-progress) {
-  flex: 1;
+  color: var(--el-text-color-secondary);
 }
 
 @media (max-width: 1120px) {

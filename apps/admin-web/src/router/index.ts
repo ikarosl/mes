@@ -8,8 +8,10 @@ import LoginPage from '../views/LoginPage.vue';
 import DashboardPage from '../views/DashboardPage.vue';
 import UsersPage from '../views/system/UsersPage.vue';
 import RolesPage from '../views/system/RolesPage.vue';
+import SystemUserCandidates from '../views/system/SystemUserCandidates.vue';
 import PermissionsPage from '../views/system/PermissionsPage.vue';
 import LogsPage from '../views/system/LogsPage.vue';
+import TemplatesPage from '../views/system/TemplatesPage.vue';
 import NoPermissionPage from '../views/NoPermissionPage.vue';
 
 // 审批中心
@@ -114,6 +116,14 @@ export const router = createRouter({
           'RolesPage',
         ),
         page(
+          'system/user-candidates',
+          'system-user-candidates',
+          '业务人员配置',
+          SystemUserCandidates,
+          PERMISSIONS.system.userCandidates.view,
+          'SystemUserCandidates',
+        ),
+        page(
           'system/permissions',
           'system-permissions',
           '权限管理',
@@ -128,6 +138,15 @@ export const router = createRouter({
           LogsPage,
           PERMISSIONS.system.logs.view,
           'LogsPage',
+        ),
+
+        page(
+          'system/templates',
+          'system-templates',
+          '模板管理',
+          TemplatesPage,
+          PERMISSIONS.system.templates.view,
+          'TemplatesPage',
         ),
 
         // 审批中心
@@ -160,7 +179,7 @@ export const router = createRouter({
         page(
           'product/products',
           'product-products',
-          '成品与物料',
+          '产品与物料',
           ProductsPage,
           PERMISSIONS.product.products.view,
           'ProductsPage',
