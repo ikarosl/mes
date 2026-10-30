@@ -2,15 +2,13 @@
 
 ## 工单与任务自动编号
 
-工单与生产任务创建时，服务端在各自创建事务内分别按 `work_order`、`production_batch` 类型取号。前缀映射入口、格式、北京自然日日序列、平台序列表及回滚边界由[统一业务编号](../../../../../docs/business-numbering.md)维护。创建和编辑请求都不接受工单号，创建任务请求不接受批次号；编号随创建事实固定，取消、关闭和重新下达均不回收。
+工单与任务按[统一编号](../../../../../docs/business-numbering.md)分别使用 `work_order`、`production_batch` 类型，编号由服务端生成且不可改。公共字段、数量与审计遵守[数据库约定](../../../../../../../docs/database-conventions.md)；本章维护工单、任务的逐表结构、设计职责和业务边界。
 
-`POST /production/work-orders` 必须携带 `Idempotency-Key`，scope 为 `production.work-order.create.v5`；任务创建 scope 为 `production.batch.create.v14`。同键同规范化输入重放首次结果，不再次取号；同键异内容拒绝。产品和负责人资格仅在首次执行时核验，成功重放不受后来主数据变化影响。结果未知时客户端保留原键和输入，修改内容不得自动换键再创建。任务创建结果保存轻量任务概览，不包含工序、开工说明或开工物料快照；结果结构与 scope 固定，开发切换遵守[幂等 scope 版本规则](../../../../../docs/idempotency.md#13-scope-版本与开发重置)。
-
-`202609170003-work-order-auto-number` 是原工单日序列表的历史迁移；追加迁移 `202609280001-business-number-daily-sequence` 在空业务库切换为统一平台序列并删除旧序列表。旧编号不转换，开发数据经统一初始化入口重建；当前应用不读写 `work_order_daily_sequence`。
+工单与任务创建均要求 `Idempotency-Key`，scope 与结果定义见[应用幂等契约](../../application/idempotency/)。创建重放保留原产品与负责人快照，不因当前资格变化失败。任务创建结果为轻量概览，不含工序、开工说明或开工物料快照。
 
 ## 研发轮次关联与资料带出
 
-`work_orders.previous_research_order_id` 是可空的前序研发工单自引用外键，仅创建时设置，之后永久不变；索引为 `(previous_research_order_id,id)`。关联工单必须保持 `research` 类型，数据库 CHECK 保护该约束；插入触发器拒绝自指，更新触发器拒绝建立、移除或更换已有工单的前序关系。前序删除受外键限制，不级联删除研发历史。
+`work_orders.previous_research_order_id` 是可空的前序研发工单自引用外键，仅创建时设置，之后永久不变。关联工单必须保持 `research` 类型，数据库 CHECK 保护该约束；插入触发器拒绝自指，更新触发器拒绝建立、移除或更换已有工单的前序关系。前序删除受外键限制，不级联删除研发历史。
 
 新建续轮事务先锁定前序工单，确认其类型为研发、状态为 `completed` 或 `closed`，且本轮成品 ID 与前序不同，再分配新工单号并创建。旧轮产出可以仍待入库；续轮不改变旧轮结案、批准清单或入库资格。草稿编辑必须再次校验前序关联，不允许通过编辑改为批量单或改回前序成品。前序不能是取消单、草稿、已下达或生产中的单据；不存在“恢复旧轮”入口。
 
@@ -38,13 +36,13 @@
 | 工艺执行 | 创建时手动选择路线，冻结路线、工序与 SOP，按工序报工 | 不选择路线、不生成工序，使用任务级开始／结束 |
 | 领料损坏 | 仅记录实际损坏，需要更多物料另行人工提需 | 相同规则；不自动生成同版等量需求 |
 
-“同物料”按稳定 `materials.id` 判断，不按名称或分类。无版本锁仍要求实际需求、分配、领料保持精确版本一致，物料与版本当前有效、数量正整数、权限、审计、幂等及实际库存额度均继续校验。
+“同物料”按稳定 `materials.id` 判断，不按名称或分类。无版本锁也不放宽实际需求、分配和领料的精确版本一致性与生产用途资格。
 
 ### 批量任务确认与冻结
 
 `production_material_requirement_basis` 同时承担本任务 BOM 公式、`locked_material_variant_id` 和 `supplier_hint` 的冻结配置。管理员在任务初始需求窗口一次确认全部 BOM 行，基础、锁版提示、正式需求、任务状态和成功审计同事务提交。初次确认前可以调整选择，提交后不提供修改入口；需要另一版本时创建新任务，旧任务按实际执行情况取消或结案，正常完工历史不阻断其他任务选版。
 
-本表以 `UNIQUE(production_batch_id,material_id)` 明确一任务一物料一配置，版本归属及下游需求版本由组合外键约束。任务基础禁止更新、删除。研发不写基础；不保留 `work_order_material_versions`、工单配置接口或跨任务修改阻断。
+本表保证一任务一物料只有一份配置，版本归属及下游需求版本由组合外键约束。任务基础禁止更新、删除。研发不写基础；不保留 `work_order_material_versions`、工单配置接口或跨任务修改阻断。
 
 初配、追加和工序报废补料仍按工单 → 任务 → 所需事实顺序锁定，工单锁服务父状态和计划并发，不表示工单统一锁版。初配在 Product 公共能力内复核 BOM 与启用版本；后续命令校验本任务基础。供应商提示不限制实际采购或领料供应商，采购逐来源展示并独立选择实际供应商。
 
@@ -69,65 +67,96 @@
 
 职责：维护生产工单，记录某个产品的整体生产计划。
 
-| 字段                    | 类型              | 说明                                                             |
-| ----------------------- | ----------------- | ---------------------------------------------------------------- |
-| `id`                    | `BIGINT UNSIGNED` | 主键，自增                                                       |
-| `work_order_no`         | `VARCHAR(100)`    | 工单编号                                                         |
-| `order_type` | `VARCHAR(30)` | 必填：`mass_production` 批量生产、`research` 研发任务 |
-| `previous_research_order_id` | `BIGINT UNSIGNED` | 前序研发工单，可空；仅新建时关联，之后不可改 |
-| `product_id`            | `BIGINT UNSIGNED` | 计划生产对象 ID                                                  |
-| `product_code_snapshot` | `VARCHAR(100)`    | 下达时产品编码快照                                               |
-| `product_name_snapshot` | `VARCHAR(200)`    | 下达时产品名称快照                                               |
-| `unit_snapshot`         | `VARCHAR(20)`     | 下达时单位快照                                                   |
-| `planned_quantity`      | `INT`   | 工单计划生产数量                                                 |
-| `customer_name`         | `VARCHAR(255)`    | 客户名称，可为空                                                 |
-| `quality_level`         | `VARCHAR(50)`     | 客户自定义质量等级代码，可为空                                   |
-| `work_order_owner_id`   | `BIGINT UNSIGNED` | 工单负责人；草稿可为空，下达必须符合工单负责人场景资格                 |
-| `plan_start_date`       | `DATE`            | 计划开始日期，可为空                                             |
-| `plan_end_date`         | `DATE`            | 计划完工日期，可为空                                             |
-| `status`                | `VARCHAR(30)`     | `draft`、`released`、`doing`、`completed`、`cancelled`、`closed` |
-| `released_at`           | `DATETIME`        | 下达时间                                                         |
-| `cancel_reason`         | `TEXT`            | 草稿工单取消原因；历史未记录数据可为空                           |
-| `cancelled_by`          | `BIGINT UNSIGNED` | 草稿工单取消人；历史未记录数据可为空                             |
-| `cancelled_at`          | `DATETIME`        | 草稿工单取消时间；历史未记录数据可为空                           |
-| `close_type`            | `VARCHAR(30)`     | `unproduced`、`underproduced`、`completed_archive`、`production_terminated`               |
-| `close_reason`          | `TEXT`            | 提前关闭原因；正常完工归档及历史未记录数据可为空                 |
-| `closed_by`             | `BIGINT UNSIGNED` | 关闭人；历史未记录数据可为空                                     |
-| `closed_at`             | `DATETIME`        | 关闭时间；历史未记录数据可为空                                   |
-| `external_order_no`     | `VARCHAR(100)`    | 外部订单号，可为空                                               |
-| `remark`                | `TEXT`            | 备注                                                             |
-| `version`               | `INT`             | 乐观锁版本号，默认 `0`                                           |
-| 业务审计字段            | 见统一规则        | 可变业务单据审计字段                                             |
+历史取消和关闭的原因、人员、时间允许缺失；正常完工归档也不要求关闭原因，不补造历史。
 
-约束：
-
-- 主键：`id`
-- 唯一约束：`UNIQUE (work_order_no)`
-- 组合引用索引：`UNIQUE (id, product_id)`
-- 外键：`FOREIGN KEY (product_id) REFERENCES products(id)`
-- 外键：`work_order_owner_id -> users.id`
-- 外键：`cancelled_by -> users.id`、`closed_by -> users.id`，删除用户引用时置空
-- 检查约束：`CHECK (planned_quantity > 0)`
-- 检查约束：`CHECK (status IN ('draft', 'released', 'doing', 'completed', 'cancelled', 'closed'))`
-- 检查约束：`CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)`
-- 索引：`INDEX (external_order_no)`
-- 索引：`INDEX (work_order_owner_id, status, created_at)`
-- 索引：`INDEX (plan_start_date)`
-- 组合索引：`INDEX (status, created_at)`，用于工单状态分页
+取消人、关闭人的历史用户引用在用户被物理删除时置空。
 
 说明：
 
-- 工单表示整体生产计划。
-- 一个工单可以拆分为多个生产批次。
 - 工单处于 `released` 或 `doing` 且仍有未分配计划量时均可继续创建生产批次；首批次开工不冻结工单剩余任务拆分能力。
 - 当前生产领料与批准成品入库关联 `production_batches`；其他自产半成品入库不属于当前范围。
-- 产品快照在工单下达时冻结，后续修改产品主数据不得回写历史工单。
+- 产品编码、名称和单位在工单下达时冻结，后续主数据变化不回写历史工单。
 - 工单负责人选择与下达使用下节的固定场景资格；草稿仍允许暂缺负责人。
 - 负责人仅可随草稿编辑，下达后不提供负责人转交接口。结案送审固定当时的负责人及来源工单证据，后续节点不重新解析或自动替换人员。
 - `quality_level` 是客户自定义等级，不建立固定状态字典或 `CHECK`；如后续需要客户级等级主数据，必须另行建模，不能把自由文本解释为质量结论。
 - 工单实际开工时间不单独持久化，由所属批次的最早 `started_at` 推导；工单实际完工时间由已完工批次的 `completed_at` 汇总，避免形成第二执行事实来源。
 
-当前采用单一 BOM 模型，不建设 BOM 版本头、版本行或当前版本指针。BOM 最终审批通过时，由 Product 与审批同事务写入 `products.bom_locked_at/bom_locked_by`；批量任务创建通过 Product 公开能力验证已批准及当前物料资格，研发任务不依赖 BOM；此后 `product_materials` 永久只读。任务取消、需求完成、库存归零和路线状态变化都不能解锁。原则性用料变化必须创建新产品和新编码，再显式复制、复核 BOM 与路线。产品名称等展示字段修改不改变稳定产品身份，也不破坏既有 ID 引用。
+BOM 批准与永久锁定由 [Product](../../../product/docs/product-rules.md)维护；任务取消、履约或路线变化不撤销这项批准事实。
+
+**`work_orders` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
+| `work_order_no` | `VARCHAR(100) NOT NULL` | 工单编号 |
+| `order_type` | `VARCHAR(30) NOT NULL` | 必填：`mass_production` 批量生产、`research` 研发任务 |
+| `previous_research_order_id` | `BIGINT UNSIGNED NULL` | 前序研发工单，可空；仅新建时关联，之后不可改 |
+| `product_id` | `BIGINT UNSIGNED NOT NULL` | 计划生产对象 ID |
+| `product_code_snapshot` | `VARCHAR(100) NOT NULL` | 下达时产品编码快照 |
+| `product_name_snapshot` | `VARCHAR(200) NOT NULL` | 下达时产品名称快照 |
+| `unit_snapshot` | `VARCHAR(20) NOT NULL` | 下达时单位快照 |
+| `planned_quantity` | `INT NOT NULL` | 工单计划生产数量 |
+| `customer_name` | `VARCHAR(255) NULL` | 客户名称，可为空 |
+| `quality_level` | `VARCHAR(50) NULL` | 客户自定义质量等级代码，可为空 |
+| `work_order_owner_id` | `BIGINT UNSIGNED NULL` | 工单负责人；草稿可为空，下达必须符合工单负责人场景资格 |
+| `plan_start_date` | `DATE NULL` | 计划开始日期，可为空 |
+| `plan_end_date` | `DATE NULL` | 计划完工日期，可为空 |
+| `status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft`、`released`、`doing`、`completed`、`cancelled`、`closed` |
+| `released_at` | `DATETIME NULL` | 下达时间 |
+| `cancel_reason` | `TEXT NULL` | 草稿工单取消原因；历史未记录数据可为空 |
+| `cancelled_by` | `BIGINT UNSIGNED NULL` | 草稿工单取消人；历史未记录数据可为空 |
+| `cancelled_at` | `DATETIME NULL` | 草稿工单取消时间；历史未记录数据可为空 |
+| `close_type` | `VARCHAR(30) NULL` | `unproduced`、`underproduced`、`completed_archive`、`production_terminated` |
+| `close_reason` | `TEXT NULL` | 提前关闭原因；正常完工归档及历史未记录数据可为空 |
+| `closed_by` | `BIGINT UNSIGNED NULL` | 关闭人；历史未记录数据可为空 |
+| `closed_at` | `DATETIME NULL` | 关闭时间；历史未记录数据可为空 |
+| `external_order_no` | `VARCHAR(100) NULL` | 外部订单号，可为空 |
+| `remark` | `TEXT NULL` | 备注 |
+| `version` | `INT NOT NULL DEFAULT 0` | 乐观锁版本号，默认 `0` |
+| `created_by` | `BIGINT UNSIGNED NULL` | 创建人 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
+| `updated_by` | `BIGINT UNSIGNED NULL` | 最近修改人 |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
+
+**`work_orders` 键、索引与检查约束**
+
+| 类别 | 定义 |
+| --- | --- |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_work_orders_product FOREIGN KEY (product_id) REFERENCES products(id)` |
+| 外键 | `CONSTRAINT fk_work_orders_owner FOREIGN KEY (work_order_owner_id) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_work_orders_created_by FOREIGN KEY (created_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_work_orders_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_work_orders_cancelled_by FOREIGN KEY (cancelled_by) REFERENCES users(id) ON DELETE SET NULL` |
+| 外键 | `CONSTRAINT fk_work_orders_closed_by FOREIGN KEY (closed_by) REFERENCES users(id) ON DELETE SET NULL` |
+| 外键 | `CONSTRAINT fk_work_orders_previous_research FOREIGN KEY (previous_research_order_id) REFERENCES work_orders(id)` |
+| 唯一键 | `UNIQUE KEY uk_work_orders_no (work_order_no)` |
+| 唯一键 | `UNIQUE KEY uk_work_orders_product_reference (id, product_id)` |
+| 索引 | `KEY idx_work_orders_status_created_at (status, created_at)` |
+| 索引 | `KEY idx_work_orders_owner_status_created_at (work_order_owner_id, status, created_at)` |
+| 索引 | `KEY idx_work_orders_plan_start_date (plan_start_date)` |
+| 索引 | `KEY idx_work_orders_external_order_no (external_order_no)` |
+| 索引 | `KEY idx_work_orders_cancelled_by (cancelled_by)` |
+| 索引 | `KEY idx_work_orders_closed_by (closed_by)` |
+| 索引 | `KEY idx_work_orders_previous_research (previous_research_order_id,id)` |
+| CHECK | `CONSTRAINT chk_work_orders_quantity CHECK (planned_quantity > 0)` |
+| CHECK | `CONSTRAINT chk_work_orders_plan_dates CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)` |
+| CHECK | `CONSTRAINT chk_work_orders_status CHECK (status IN ('draft', 'released', 'doing', 'completed', 'cancelled', 'closed'))` |
+| CHECK | `CONSTRAINT chk_work_orders_version CHECK (version >= 0)` |
+| CHECK | `CONSTRAINT chk_work_orders_quantity_integer CHECK (planned_quantity = TRUNCATE(planned_quantity, 0))` |
+| CHECK | `CONSTRAINT chk_work_orders_type CHECK (order_type IN ('mass_production', 'research'))` |
+| CHECK | `CONSTRAINT chk_work_orders_close_type CHECK (close_type IS NULL OR close_type IN ('unproduced','underproduced','completed_archive','production_terminated'))` |
+| CHECK | `CONSTRAINT chk_work_orders_research_lineage_type CHECK (previous_research_order_id IS NULL OR order_type='research')` |
+| CHECK | `CONSTRAINT chk_integer_storage_work_orders CHECK ( planned_quantity BETWEEN 0 AND 99999999 )` |
+
+**`work_orders` 数据库触发器**
+
+| 触发器 | 时机 | 保护或维护范围 |
+| --- | --- | --- |
+| [trg_work_orders_reject_released_type_update](../../../../../../../packages/database/migrations/202609070002-work-order-material-version-policy.up.sql) | `BEFORE UPDATE` | 非草稿工单不得更改批量／研发类型 |
+| [trg_work_orders_reject_number_update](../../../../../../../packages/database/migrations/202609170003-work-order-auto-number.up.sql) | `BEFORE UPDATE` | 工单编号创建后不可改 |
+| [trg_work_orders_reject_self_research](../../../../../../../packages/database/migrations/202609170005-research-work-order-lineage.up.sql) | `AFTER INSERT` | 拒绝研发前序自指 |
+| [trg_work_orders_reject_research_lineage_update](../../../../../../../packages/database/migrations/202609170005-research-work-order-lineage.up.sql) | `BEFORE UPDATE` | 前序研发关联创建后不可改 |
 
 #### 工单负责人候选与历史展示
 
@@ -143,15 +172,15 @@
 
 以下为 [ADR-0006](../../../../../../../docs/adr/0006-approval-workflow-boundaries.md) 的技术细化草案，不覆盖当前直接下达实现；审批表和事务协作见[审批设计稿](../../../../../../../docs/approval-design.md)。
 
-| `work_orders` 字段 | 目标类型 | 目标语义 |
-| --- | --- | --- |
-| 新增 `release_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或已完成下达所依据的申请 FK `approval_instances.id` |
-| 既有 `version` | 保持原类型 | 工单编辑、送审、退回及下达使用同一聚合乐观锁 |
-| 既有 `status` | 保持原值域 | 审批中仍为 `draft`，最终批准才进入 `released` |
+| `work_orders` 字段 | 目标语义 |
+| --- | --- |
+| 新增 `release_approval_instance_id` | 可空，关联当前送审或已完成下达所依据的审批申请 |
+| 既有 `version` | 工单编辑、送审、退回及下达使用同一聚合版本 |
+| 既有 `status` | 审批中仍为 `draft`，最终批准才进入 `released` |
 
 `draft` 且申请关联非空时展示“草稿 · 审批中”，禁止普通编辑、取消和直接下达；要编辑或取消先由申请人撤回。`draft` 且关联为空才是可编辑草稿。最终批准后保留申请引用，后续生产、关闭不清空；驳回或撤回清空当前关联、保持 `draft` 并递增版本。旧申请按场景和对象引用查询，不以当前字段保留全部历史。
 
-目标状态组合：`cancelled` 必须无申请关联，`released/doing/completed/closed` 必须有批准依据；`draft` 允许有或无关联。数据库 CHECK 保证字段组合，普通 FK 和索引保证引用存在及查询；审批场景、对象类型/ID、申请结果和当前关联匹配由两个所有者的应用事务校验，不由 FK 猜测多态归属。
+目标状态组合：`cancelled` 必须无申请关联，`released/doing/completed/closed` 必须有批准依据；`draft` 允许有或无关联。数据库保证字段组合及引用存在；审批场景、对象类型/ID、申请结果和当前关联匹配由两个所有者的应用事务校验，不由 FK 猜测多态归属。
 
 提交时冻结全部工单可编辑资料，包括成品 ID/编码/名称/单位、类型、数量、客户、外部订单号、质量要求、交期、负责人和备注；保存审批证据并在递增工单版本后记录该冻结版本。下达写入本次已审查的成品快照，重新核对当前成品身份和使用资格，不能最后一步悄悄换成别的产品或未审查资料。来源成品名称后来变化不回写受审证据。
 
@@ -161,7 +190,7 @@
 
 #### 生产工单状态与管理动作
 
-未来审批设计见 [ADR-0006](../../../../../../../docs/adr/0006-approval-workflow-boundaries.md)：沿用现有工单承接只有成品编码及必要资料、尚无完整 BOM 的任务，工单审批必须核对成品身份与外部订单要求。工单最终批准后下达，批量任务创建另行要求 BOM 已经独立审批通过并永久锁定；研发不要求 BOM。工单审批尚未实施，以下状态表仍描述当前直接下达机制；新增审批门禁与状态机细化见 [roadmap](../../../../../../../docs/roadmap.md)。
+以下状态描述当前直接下达机制；尚未实施的审批目标见[上节](#工单审批接入目标结构尚未实施)。
 
 生产工单的成功完工不由生产批次自动回写。管理员必须通过显式“确认工单完工”命令复核工单计划量、非取消批次、当前批准清单的计划内产出及未结案批次后，再把工单转为 `completed`。管理端确认不替代后端事务校验。
 
@@ -188,51 +217,73 @@
 
 职责：维护生产批次，表示某个工单被拆分后的实际生产批次。
 
-| 字段                     | 类型              | 说明                            |
-| ------------------------ | ----------------- | ------------------------------- |
-| `id`                     | `BIGINT UNSIGNED` | 主键，生产批次 ID               |
-| `work_order_id`          | `BIGINT UNSIGNED` | 工单 ID                         |
-| `product_id`             | `BIGINT UNSIGNED` | 冗余产品 ID，与工单组合外键约束 |
-| `batch_no`               | `VARCHAR(100)`    | 生产批号                        |
-| `route_id`               | `BIGINT UNSIGNED` | 工艺路线 ID，可为空             |
-| `route_code_snapshot`    | `VARCHAR(64)`     | 路线编码快照                    |
-| `route_version_snapshot` | `VARCHAR(64)`     | 路线版本快照                    |
-| `planned_quantity`       | `INT`   | 本批次计划生产数量              |
-| `plan_start_date`        | `DATE`            | 本批次计划开始日期，可为空        |
-| `plan_end_date`          | `DATE`            | 本批次计划完工日期，可为空        |
-| `started_at` | `DATETIME` | 首次管理员任务开工时间；撤回结束时保留 |
-| `started_by` | `BIGINT UNSIGNED` | 首次任务开工人，FK 用户 |
-| `start_reason` | `TEXT` | 开工说明；存在活动需求领料缺口时必填 |
-| `start_material_snapshot` | `JSON` | 首次开工锁内读取的需求与领料缺口快照，仅提示和追溯，不形成产能额度 |
-| `completed_at`           | `DATETIME`        | 正常结案末级批准时间，可为空            |
-| `execution_completed_at / execution_completed_by` | `DATETIME / BIGINT UNSIGNED` | 正常执行确认时间／人员，成对填写，人员 FK 用户 |
-| `completed_by`           | `BIGINT UNSIGNED` | 完工确认人，可为空              |
-| `cancel_reason`          | `TEXT`            | 取消原因；历史未记录数据可为空  |
-| `cancelled_by`           | `BIGINT UNSIGNED` | 取消人；历史未记录数据可为空    |
-| `cancelled_at`           | `DATETIME`        | 取消时间；历史未记录数据可为空  |
-| `status`                 | `VARCHAR(40)`     | 生产批次状态                    |
-| `batch_owner_id`         | `BIGINT UNSIGNED` | 任务负责人；新建及编辑必须符合任务负责人场景资格，历史记录可为空 |
-| `remark`                 | `TEXT`            | 备注                            |
-| `version`                | `INT`             | 乐观锁版本号，默认 `0`          |
-| 业务审计字段             | 见统一规则        | 可变业务单据审计字段            |
+历史任务的取消原因、人员和时间允许缺失，不补造历史。
 
-约束：
+任务产品必须与工单一致；正常完成必须同时保存完工时间和确认人。取消人的历史用户引用在用户被物理删除时置空。批次号由服务端分配，不接受手填。
 
-- 主键：`id`
-- 外键：`FOREIGN KEY (work_order_id, product_id) REFERENCES work_orders(id, product_id)`
-- 外键：`FOREIGN KEY (route_id) REFERENCES process_routes(id)`
-- 外键：`FOREIGN KEY (batch_owner_id) REFERENCES users(id)`
-- 外键：`FOREIGN KEY (completed_by) REFERENCES users(id)`
-- 外键：`cancelled_by -> users.id`，删除用户引用时置空
-- 检查约束：`CHECK (planned_quantity > 0)`
-- 检查约束：`CHECK (planned_quantity = TRUNCATE(planned_quantity, 0))`
-- 检查约束：`CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)`
-- 检查约束：`CHECK (status <> 'completed' OR (completed_at IS NOT NULL AND completed_by IS NOT NULL))`
-- 唯一约束：`UNIQUE (batch_no)`；批次号在全系统范围内唯一，仅服务端自动分配，不接受手填
-- 组合引用索引：`UNIQUE (id, work_order_id)`、`UNIQUE (id, product_id)`
-- 检查约束：`CHECK (status IN ('pending', 'material_pending', 'material_assigned', 'material_partially_outbound', 'material_outbound', 'doing', 'completed', 'cancelled', 'terminated', 'closing'))`
-- 组合索引：`INDEX (work_order_id, status)`，用于按工单查询有效生产批次
-- 索引：`INDEX (plan_start_date)`，用于生产排程与按计划开工日筛选
+**`production_batches` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
+| `work_order_id` | `BIGINT UNSIGNED NOT NULL` | 工单 ID |
+| `product_id` | `BIGINT UNSIGNED NOT NULL` | 冗余产品 ID，与工单组合外键约束 |
+| `batch_no` | `VARCHAR(100) NOT NULL` | 生产批号 |
+| `route_id` | `BIGINT UNSIGNED NULL` | 工艺路线 ID，可为空 |
+| `route_code_snapshot` | `VARCHAR(64) NULL` | 路线编码快照 |
+| `route_version_snapshot` | `VARCHAR(64) NULL` | 路线版本快照 |
+| `planned_quantity` | `INT NOT NULL` | 本批次计划生产数量 |
+| `plan_start_date` | `DATE NULL` | 本批次计划开始日期，可为空 |
+| `plan_end_date` | `DATE NULL` | 本批次计划完工日期，可为空 |
+| `started_at` | `DATETIME NULL` | 首次管理员任务开工时间；撤回结束时保留 |
+| `started_by` | `BIGINT UNSIGNED NULL` | 首次任务开工人，FK 用户 |
+| `start_reason` | `TEXT NULL` | 开工说明；存在活动需求领料缺口时必填 |
+| `start_material_snapshot` | `JSON NULL` | 首次开工锁内读取的需求与领料缺口快照，仅提示和追溯，不形成产能额度 |
+| `completed_at` | `DATETIME NULL` | 正常结案末级批准时间，可为空 |
+| `execution_completed_at` | `DATETIME NULL` | 正常执行确认时间；与确认人同时填写 |
+| `execution_completed_by` | `BIGINT UNSIGNED NULL` | 正常执行确认人；与确认时间同时填写，关联用户 |
+| `completed_by` | `BIGINT UNSIGNED NULL` | 完工确认人，可为空 |
+| `cancel_reason` | `TEXT NULL` | 取消原因；历史未记录数据可为空 |
+| `cancelled_by` | `BIGINT UNSIGNED NULL` | 取消人；历史未记录数据可为空 |
+| `cancelled_at` | `DATETIME NULL` | 取消时间；历史未记录数据可为空 |
+| `status` | `VARCHAR(40) NOT NULL DEFAULT 'pending'` | 生产批次状态 |
+| `batch_owner_id` | `BIGINT UNSIGNED NULL` | 任务负责人；新建及编辑必须符合任务负责人场景资格，历史记录可为空 |
+| `remark` | `TEXT NULL` | 备注 |
+| `version` | `INT NOT NULL DEFAULT 0` | 乐观锁版本号，默认 `0` |
+| `created_by` | `BIGINT UNSIGNED NULL` | 创建人 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
+| `updated_by` | `BIGINT UNSIGNED NULL` | 最近修改人 |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
+
+**`production_batches` 键、索引与检查约束**
+
+| 类别 | 定义 |
+| --- | --- |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_production_batches_work_order_product FOREIGN KEY (work_order_id, product_id) REFERENCES work_orders(id, product_id)` |
+| 外键 | `CONSTRAINT fk_production_batches_route FOREIGN KEY (route_id) REFERENCES process_routes(id)` |
+| 外键 | `CONSTRAINT fk_production_batches_owner FOREIGN KEY (batch_owner_id) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_production_batches_completed_by FOREIGN KEY (completed_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_production_batches_created_by FOREIGN KEY (created_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_production_batches_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_production_batches_cancelled_by FOREIGN KEY (cancelled_by) REFERENCES users(id) ON DELETE SET NULL` |
+| 外键 | `CONSTRAINT fk_production_batch_execution_completed_by FOREIGN KEY (execution_completed_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_production_batch_started_by FOREIGN KEY (started_by) REFERENCES users(id)` |
+| 唯一键 | `UNIQUE KEY uk_production_batches_no (batch_no)` |
+| 唯一键 | `UNIQUE KEY uk_production_batches_work_order_reference (id, work_order_id)` |
+| 唯一键 | `UNIQUE KEY uk_production_batches_product_reference (id, product_id)` |
+| 索引 | `KEY idx_production_batches_work_order_status (work_order_id, status)` |
+| 索引 | `KEY idx_production_batches_plan_start_date (plan_start_date)` |
+| 索引 | `KEY idx_production_batches_cancelled_by (cancelled_by)` |
+| CHECK | `CONSTRAINT chk_production_batches_completed CHECK (status <> 'completed' OR (completed_at IS NOT NULL AND completed_by IS NOT NULL))` |
+| CHECK | `CONSTRAINT chk_production_batches_version CHECK (version >= 0)` |
+| CHECK | `CONSTRAINT chk_production_batches_plan_dates CHECK (plan_start_date IS NULL OR plan_end_date IS NULL OR plan_end_date >= plan_start_date)` |
+| CHECK | `CONSTRAINT chk_production_batches_status CHECK (status IN ('pending','material_pending','material_assigned','material_partially_outbound','material_outbound','doing','completed','cancelled','terminated','closing'))` |
+| CHECK | `CONSTRAINT chk_production_batch_execution_completed CHECK ( (execution_completed_at IS NULL AND execution_completed_by IS NULL) OR (execution_completed_at IS NOT NULL AND execution_completed_by IS NOT NULL) )` |
+| CHECK | `CONSTRAINT chk_production_batches_quantity CHECK (planned_quantity > 0)` |
+| CHECK | `CONSTRAINT chk_production_batches_quantities_integer CHECK (planned_quantity = TRUNCATE(planned_quantity, 0))` |
+| CHECK | `CONSTRAINT chk_integer_storage_production_batches CHECK ( planned_quantity BETWEEN 0 AND 99999999 )` |
+| CHECK | `CONSTRAINT chk_production_batch_start_facts CHECK ( (started_at IS NULL AND started_by IS NULL AND start_reason IS NULL AND start_material_snapshot IS NULL) OR (started_at IS NOT NULL AND started_by IS NOT NULL AND start_material_snapshot IS NOT NULL AND (start_reason IS NULL OR CHAR_LENGTH(TRIM(start_reason))>0)) )` |
 
 #### 任务负责人资格与公开边界
 
@@ -275,8 +326,7 @@
 任务生成与取消规则：
 
 - 创建生产批次只接受 `released`、`doing` 工单，并在工单锁内重新汇总排除 `cancelled/terminated` 后的任务计划量；有效分配量加本次新增量不得超过工单计划量。创建批次本身不推动工单进入 `doing`。
-- `pending` 只允许在创建批次时由数据库默认值产生，已有批次不得迁回 `pending`。释放尚未出库的有效分配后，如果批次不再齐套，允许 `material_assigned → material_pending`；这不是重新开放正常需求生成。
-- 所有 `production_batches.status` 和 `work_orders.status` 写入都必须先通过 `production-status.policy.ts` 的统一转换校验；SQL 中的旧状态条件和乐观锁只用于防并发覆盖，不能替代领域校验。
+- `pending` 只允许在创建任务时进入，已有批次不得迁回 `pending`。释放尚未出库的有效分配后，如果批次不再齐套，允许 `material_assigned → material_pending`；这不是重新开放正常需求生成。
 - 生产批次的“取消任务”与“结束本轮”分开：已领料或执行中任务不再取消，正常结束通过 `normal` 结案成为 `completed`，提前放弃通过 `early` 结案成为 `terminated`，规则见[批次结束与产出处置](production-termination.md)。只允许 `pending`、`material_pending`、`material_assigned` 取消，即任务尚未开工且物料尚未实际出库；`material_partially_outbound` 已形成库存事实，不能取消。
 - 取消前管理端必须读取服务端实时影响摘要，展示将取消的待确认出库单、有效预留和活动需求数量，并要求填写取消原因；提交事务仍须重新锁定批次及相关单据校验，不能信任前端摘要。
 - 取消事务把 `pending_picking` 待出库单转为 `cancelled`、把活动分配转为 `cancelled` 以释放库存预留、把活动需求转为 `cancelled`，最后把生产批次状态、取消原因、取消人和取消时间同一条更新写入；这些写入和成功审计同事务提交，不生成 `inventory_transaction`。
@@ -288,7 +338,7 @@
 
 开工不要求领料、分配齐套或短批授权。预览显示当前正式需求及已确认领料、未领余量；缺料时提交说明。事务重新读取当前事实并保存 `started_at/started_by/start_reason/start_material_snapshot`，首次开工后不覆盖。未开工时开工人、说明与快照均为空；有开工时间时必须同时存在开工人和快照。
 
-任务概览 `ProductionBatchDetail.startedByName` 根据 `startedById` 返回首次实际开工人的当前显示姓名，与任务负责人 `ownerName` 分别表达。姓名与概览其他人员引用一起，经 Identity 公开的 `listUserReferencesByIds` 去重批量解析，保留停用及软删除账号的历史展示；未开工或引用无法解析时返回 `null`，只用于展示，不参与命令资格。该字段随概览及返回概览的创建、编辑、取消命令提供；任务列表和工单下属任务只解析任务负责人。取消人姓名使用概览的 `cancelledByName`。
+首次实际开工人与任务负责人分别展示；人员姓名经 Identity 历史引用解析，停用或删除不抹去历史身份，无法解析时为空。
 
 工序开始仅检查任务处于执行中、当前派工与工序自身状态，不推进任务或工单。需求变更由统一 Writer 推进任务 `version`。正常物流推进按[物料办理资格](demand-allocation-and-outbound.md#物料办理资格)处理；任务执行中不因领料回到物料阶段。
 
@@ -301,13 +351,13 @@
 - 正常执行确认尚未最终结案；提前停止使用 early closing 逐项收尾。两种模式均登记最终产出和质检事实，交工单负责人同一结案流程批准，管理员产出处置不改报工事实。正常工序已完但最终可用不足计划可以按实际批准，不强制补产。
 - 批次表不保存执行数量或最终合格数量。质检留存独立记录，审定产出只来自当前批准清单。工序记录用 `normalQuantity` 表示有效正常报工量，不能解释为质检合格量或回写为批次数量。
 
-批次只保存计划与生命周期，不缓存执行／最终合格量；详情、追溯及幂等结果使用派生字段，不提供旧计数字段的兼容双写。数量结构回退只可从真实执行事实恢复，不能推造质检合格量；运行守卫见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
+批次只保存计划与生命周期，不缓存执行／最终合格量。历史数量结构回退不能推造质检合格量，见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
 
 任务列表、概览及工单下属任务通过 `finalOutput` 返回当前批准清单的 `revisionNo/availableQuantity/extraQuantity/scrapQuantity`；未有批准清单时返回 `null`，已批准零产出则明确返回零。只关联 `production_batch_closeout.current_revision_id`，不累加历史版本，不读取更正草稿，也不双写批次数量。`scrapQuantity` 为该版历史工序报废与结案新增报废合计；追溯与工单操作核对使用相同批准产出口径。工序报工仅按每道工序表达，任务、工单、追溯、执行结束和结案不提供特定工序的特殊数量汇总。
 
 ### 任务查询与命令响应
 
-任务读取按用途独立查询，以下四个端点均独立要求 `production:tasks:view`，路径参数通过 `IdParamDto` 校验。任务不存在返回 `NOT_FOUND`，不以空子资源掩盖不存在。
+任务读取按用途独立查询，以下四个端点均要求 `production:tasks:view`。任务不存在返回 `NOT_FOUND`，不以空子资源掩盖不存在。
 
 | API | 响应及读取边界 |
 | --- | --- |
@@ -318,7 +368,7 @@
 
 工单任务集合由 `GET /production/work-orders/:workOrderId` 的详情 `batches` 返回，要求 `production:orders:view`；任务页通过带 `workOrderId` 的任务分页查询读取，要求 `production:tasks:view`。详情任务集合和执行记录页的任务摘要使用相同的 `ProductionBatchItem` 基础投影，不读取开工物料快照。工序及当前资格在同一只读一致性快照内生成，姓名通过 Identity 公开历史引用批量解析，展示资格不替代锁内命令复核。
 
-任务创建、编辑及取消返回轻量 `ProductionBatchDetail`。实际 SOP 调整只返回 `ProductionStepCommandResult`，保存任务／工序身份、状态及新工序版本；调用方重新读取工序子资源核对当前快照。正常执行结束与研发结束返回生命周期确认结果，不携带工序报工数量；幂等 scope 分别为 `production.execution.complete.v2`、`production.research.complete.v3`。
+任务创建、编辑及取消返回轻量 `ProductionBatchDetail`。实际 SOP 调整返回任务／工序身份、状态及新工序版本，调用方重新读取工序子资源核对当前快照。正常执行结束与研发结束只返回生命周期确认结果，不携带工序报工数量。
 
 工单汇总、完工／关闭确认与各任务使用相同批准口径。可用产出合计为计划内加计划外，不含报废；既有 `finalOutput.totalQuantity` 表达含报废的总处置量，不得标成合格或可入库数量。计划缺口为负数时，页面展示“超出 N”，不修改计划额度规则。
 
@@ -327,7 +377,6 @@
 说明：
 
 - `production_batches` 是生产执行批次，不是库存批次。
-- 生产批次负责表达“这一批怎么生产”。
 - `product_id` 是受组合外键保护的查询冗余，不允许与工单产品不一致。
 - 路线快照在批次创建时冻结；批次执行期间不能跟随路线主数据变化。
 - `plan_start_date`、`plan_end_date` 是批次排程，不是实际执行事实；实际开工、执行完成分别以 `started_at`、`execution_completed_at` 为准；`completed_at` 表示正常结案批准。
@@ -341,7 +390,7 @@
 
 首份提前结束清单批准成为 `terminated` 才释放原计划额度，原任务计划量不改零。此规则只控制任务分配，不扣除终止任务已经批准的产出，也不保证累计产出小于工单计划；已终止产出继续按当前批准清单汇总。产出更正不会回写分配额度，取消和提前结束不抹除已发生事实。
 
-任务表单的 `GET /production/work-orders/options` 由 `production:tasks:view` 授权，只返回 `released/doing` 且按上述口径仍有可分配余量的工单。它是全量候选，业务预期不超过 20 条不等于 SQL 上限；不分页、不按关键词截断，也不得设置 `LIMIT 20/50`，前端本地筛选。候选只辅助选择，创建任务仍在工单锁内重新核验状态和额度。
+任务表单的 `GET /production/work-orders/options` 由 `production:tasks:view` 授权，完整返回 `released/doing` 且仍有可分配余量的工单；创建时在工单锁内重核状态和额度。候选完备性遵守[公共规范](../../../../../../../docs/api-conventions.md#51-候选完备性与增长迁移)。
 
 ## 工单产出查询口径
 

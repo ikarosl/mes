@@ -1,22 +1,29 @@
 # Approval 数据库设计
 
-> [返回模块](../README.md)。本章对应 `202609100001-approval-bom-pilot` 、`202609120001-approval-node-assignees` 及 `202609160001-approval-business-assignees`，定义六张审批表，不包含通知与工单字段。`approval_instance_steps` 是唯一节点待办事实。
+> [返回模块](../README.md)。本章维护六张审批表的结构、关系和约束；节点执行记录是唯一待办事实。
 
 ## 2. 公共字段和约束
 
-遵守[数据库公共规则](../../../../../../docs/database-conventions.md)：ID/FK 为 `BIGINT UNSIGNED`，API 中用字符串传输；时间为 `DATETIME` 北京时间，接口带 `+08:00`；状态使用 `VARCHAR + CHECK`，稳定编码集中在 constants，contracts 使用字符串联合类型。
+结构与[版本化 migration](../../../../../../packages/database/migrations/)同步维护，审计分类遵守[数据库公共规则](../../../../../../docs/database-conventions.md)。表使用 InnoDB、`utf8mb4_0900_ai_ci`。所有 `id` 均为自增主键；未写 `DEFAULT` 的非空列无数据库默认值，可空列默认 `NULL`。
 
-以下缩写展开为实际列，不是额外表：
+下列列组在表中展开，不是额外表：
 
-| 字段组 | 列与规则 |
-| --- | --- |
-| 配置审计 C | `created_by/created_at/updated_by/updated_at/is_deleted/deleted_by/deleted_at`；另加 `version INT NOT NULL DEFAULT 0 CHECK(version >= 0)` 用于配置聚合并发 |
-| 单据审计 D | `created_by/created_at/updated_by/updated_at/version`，`version INT NOT NULL DEFAULT 0 CHECK(version >= 0)`；无软删除列，终止用状态表达 |
-| 事实审计 F | `created_by/created_at`，不可覆盖、删除 |
+| 列 | 物理定义 | 适用列组 |
+| --- | --- | --- |
+| `created_by` | `BIGINT UNSIGNED`，外键 `users.id`；C 可空，D/F 非空 | C、D、F |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | C、D、F |
+| `updated_by` | `BIGINT UNSIGNED NULL`，外键 `users.id` | C、D |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | C、D |
+| `version` | `INT NOT NULL DEFAULT 0`，CHECK `version >= 0` | C、D |
+| `is_deleted` | `TINYINT NOT NULL DEFAULT 0` | C |
+| `deleted_by` | `BIGINT UNSIGNED NULL`，外键 `users.id` | C |
+| `deleted_at` | `DATETIME NULL` | C |
+
+C 为配置审计：定义、版本和配置节点使用；各表删除 CHECK 要求未删除时删除人／时间均空，删除时标志为 `1` 且二者均非空。D 为运行单据审计：申请和执行节点使用，无软删除列。F 为不可变动作创建审计，无修改、版本或软删除列。MySQL 为外键维护所需支撑索引，以下另列显式查询索引。
+
+活动槽是只读的 `STORED` 生成列：活动时取 `1`，其余取 `NULL`，配合唯一键保留多条历史；不能直接写槽值替代状态。
 
 审批申请的 `created_by` 必填并表示申请人；`created_at` 表示提交时间。实际人工作业的操作者必填，事务内派生任务沿用触发人；日后系统作业是否使用空操作者须另行定义。新外键默认限制删除，不级联删除审批、通知或人员历史。所有者校验负责引用对象的状态和业务归属，外键不能替代它。
-
-生成列使用 `CASE WHEN ... THEN 1 ELSE NULL END` 构造活动槽，再用组合唯一键约束“最多一条活动记录”；多条历史记录允许槽为空。迁移在 MySQL 上建立生成列唯一约束及 CHECK。该槽是约束辅助值，不是第二份可写状态。
 
 ## 3. 场景目录与流程配置
 
@@ -30,154 +37,165 @@
 
 ### 3.2 `approval_flow_definitions`
 
-一行对应一个场景的流程配置入口，所有者 Approval。
+每个场景的配置根，持有供新申请采用的发布指针；具体内容保存在版本表，旧申请继续引用原版本。
 
-| 字段 | 类型及空值 | 含义 |
+| 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `scene_code` | `VARCHAR(100) NOT NULL` | Registry 中存在的场景 |
-| `name` | `VARCHAR(100) NOT NULL` | 管理员定义的流程显示名 |
-| `published_version_id` | `BIGINT UNSIGNED NULL` | 当前供新申请采用的版本 |
-| 配置审计 C | 见 §2 | 流程入口审计与并发 |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `scene_code` | `VARCHAR(100) NOT NULL` | Registry 场景编码 |
+| `name` | `VARCHAR(100) NOT NULL` | 流程显示名 |
+| `published_version_id` | `BIGINT UNSIGNED NULL` | 当前发布版本 |
+| 配置审计 C | 见公共列组 | 配置根并发与审计 |
 
-约束：`UNIQUE(scene_code)` 永久不复用；发布指针通过组合 FK `(published_version_id,id) -> approval_flow_versions(id,definition_id)` 保证属于本定义，子表建好后再追加该外键。没有发布指针即不能开始申请。首期不提供流程删除或“禁用后自动免审”入口，配置归档不用于绕过必需审批。
+唯一键 `uk_approval_flow_definitions_scene(scene_code)`；索引 `idx_approval_flow_definitions_published(published_version_id)`。组合外键 `(published_version_id,id) → approval_flow_versions(id,definition_id)` 保证发布指针属于本定义；配置审计外键和 CHECK 见列组 C。
+
+每个场景只有一个配置入口，编码永久不复用；当前发布版本必须属于该定义。没有发布指针即不能开始申请。首期不提供流程删除或“禁用后自动免审”入口，配置归档不用于绕过必需审批。
 
 ### 3.3 `approval_flow_versions`
 
-保存配置草稿及不可改写的已发布流程内容，所有者 Approval。
+保存可编辑草稿及不可改写的已发布配置，同一流程的新旧申请可以采用不同发布版本。
 
-| 字段 | 类型及空值 | 含义 |
+| 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `definition_id` | `BIGINT UNSIGNED NOT NULL` | 所属流程定义 FK |
-| `version_no` | `INT NOT NULL` | 从 1 递增的配置版本号，不是乐观锁字段 |
-| `status` | `VARCHAR(20) NOT NULL` | `draft/published/discarded` |
-| `published_by` | `BIGINT UNSIGNED NULL` | 发布人 FK users |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `definition_id` | `BIGINT UNSIGNED NOT NULL` | 流程定义 |
+| `version_no` | `INT NOT NULL` | 从 `1` 递增的配置版本号 |
+| `status` | `VARCHAR(20) NOT NULL DEFAULT 'draft'` | 草稿／已发布／废弃 |
+| `published_by` | `BIGINT UNSIGNED NULL` | 发布人 |
 | `published_at` | `DATETIME NULL` | 发布时间 |
-| `draft_slot` | 生成列，可空 | 仅 `draft` 时为 1 |
-| 配置审计 C | 见 §2 | `version` 表示草稿编辑次数 |
+| `draft_slot` | `TINYINT`，`STORED` 生成列，可空 | `status='draft'` 时为 `1`，其余为空 |
+| 配置审计 C | 见公共列组 | 草稿编辑并发与审计 |
 
-约束：`UNIQUE(definition_id,version_no)`、`UNIQUE(id,definition_id)`、`UNIQUE(definition_id,draft_slot)`；`version_no > 0`；`published` 必须同时有发布人和时间，其他状态必须都为空。旧版即使不再被当前指针选中仍保持 `published`，不改其内容。
+唯一键：`(definition_id,version_no)`、`(id,definition_id)`、`(definition_id,draft_slot)`；查询索引 `idx_approval_flow_versions_status(definition_id,status)`。外键 `definition_id → approval_flow_definitions.id`、`published_by → users.id`，另有 C 组操作者外键。CHECK 保证 `version_no > 0`、状态仅 `draft/published/discarded`，且仅 `published` 同时保存非空发布人／时间；其余两态均为空，另适用 C 组 CHECK。
+
+`version_no` 是发布配置版本，`version` 是草稿编辑并发版本，两者不可混用。
+
+一个定义最多一个草稿，配置版本号不能重复。只有已发布版本记录发布人和时间。旧版即使不再被当前指针选中仍保持 `published`，不改其内容。
 
 编辑节点须先锁定义、再锁此版本并核对草稿 ID 和乐观锁，保存完整顺序后递增 `version`；发布按定义、版本的固定顺序锁定，检查至少一级、连续顺序、角色或指定用户有效及当前合格人员；业务来源节点只检查场景支持及末级来源约束，不预解析具体工单，再原子写发布状态与定义指针。新版本号在定义锁内分配。`discarded` 为保留状态，当前未开放废弃草稿接口，不物理删除或覆盖已发布版本。
 
 ### 3.4 `approval_flow_steps`
 
-流程版本中的有序节点，所有者 Approval。
+保存某一版本的有序分派规则；稳定节点身份与排序位置分开，发布后供执行节点引用。
 
-| 字段 | 类型及空值 | 含义 |
+| 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `flow_version_id` | `BIGINT UNSIGNED NOT NULL` | 版本 FK |
-| `node_code` | `VARCHAR(64) NOT NULL` | 服务端生成的稳定节点编码，不随排序改变 |
-| `step_no` | `INT NOT NULL` | 正整数顺序 |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `flow_version_id` | `BIGINT UNSIGNED NOT NULL` | 所属流程版本 |
+| `node_code` | `VARCHAR(64) NOT NULL` | 版本内稳定节点编码 |
+| `step_no` | `INT NOT NULL` | 顺序，从 `1` 开始 |
 | `name` | `VARCHAR(100) NOT NULL` | 节点名称 |
-| `assignee_type` | `VARCHAR(20) NOT NULL` | `role/user/business`，每级选择一种 |
-| `role_id` | `BIGINT UNSIGNED NULL` | 角色节点的审批角色 FK roles |
-| `assignee_user_id` | `BIGINT UNSIGNED NULL` | 用户节点的指定用户 FK users |
-| `assignee_source_code` | `VARCHAR(100) NULL` | 业务节点的来源代码，首个来源为 `production.work_order_owner` |
-| `active_step_no` | 生成列，可空 | 未软删除时等于 `step_no`，否则为空，仅约束当前排序位置 |
-| 配置审计 C | 见 §2 | 写入仍以版本头为聚合并发边界 |
+| `assignee_type` | `VARCHAR(20) NOT NULL` | `role/user/business`；无默认值 |
+| `role_id` | `BIGINT UNSIGNED NULL` | 角色节点的角色 |
+| `assignee_user_id` | `BIGINT UNSIGNED NULL` | 指定用户节点的人员 |
+| `assignee_source_code` | `VARCHAR(100) NULL` | 业务节点的人员来源代码 |
+| `active_step_no` | `INT`，`STORED` 生成列，可空 | `is_deleted=0` 时取 `step_no`，否则为空 |
+| 配置审计 C | 见公共列组 | 配置节点审计；写入以版本根为并发边界 |
 
-约束：`UNIQUE(flow_version_id,node_code)` 永久不复用、不含软删除标志；`UNIQUE(flow_version_id,active_step_no)` 约束有效排序位置，位置不是稳定节点身份；`UNIQUE(id,flow_version_id)`、`CHECK(step_no > 0)`。节点配置仅能在所属版本为草稿时修改；发布后的节点禁止任何编辑或删除。草稿移除节点使用软删除，恢复同一节点复用原 ID 和编码；发布和实例化只采用有效节点。排序由完整草稿更新统一实现，避免逐行换位撞唯一键。
+唯一键：`(flow_version_id,node_code)`、`(flow_version_id,active_step_no)`、`(id,flow_version_id)`；索引 `idx_approval_flow_steps_user(assignee_user_id,flow_version_id)`。外键 `flow_version_id → approval_flow_versions.id`、`role_id → roles.id`、`assignee_user_id → users.id`，另有 C 组操作者外键。
 
-CHECK 保证角色节点只填写 `role_id`，用户节点只填写 `assignee_user_id`，业务节点只填写非空白 `assignee_source_code`；三种身份字段互斥。`(assignee_user_id,flow_version_id)` 支持用户引用；角色沿用其外键支撑索引。不使用多态身份字段。每级任意一名合格人员明确决定；用户节点只有该指定人，没有多角色、多名指定用户、会签、认领或转交。
+CHECK 保证 `step_no > 0`，并按 `assignee_type` 三选一：`role` 仅角色非空，`user` 仅指定用户非空，`business` 仅来源代码非空且去空白后非空；其他两类身份列须为空。另适用 C 组 CHECK。
 
-已发布版本固定分配类型、角色／用户 ID 或业务来源代码。业务模板不保存某张工单的人员；同一版本可为不同申请解析不同工单负责人。结案场景的最后有效节点必须为业务来源 `production.work_order_owner`，保存、发布和新申请提交均验证，历史已发布配置不回写。角色成员、账号和权限使用 Identity 公开能力实时解析；指定用户仍需账号有效并拥有审批权限，配置不会自动赋权。运行中人员恢复资格后可直接处理当前节点，不能修改在途申请的规则或将指定用户自动换成他人。
+节点编码在版本内永久唯一；删除不释放编码，排序位置不是节点身份。有效节点不能占同一位置。节点配置仅能在所属版本为草稿时修改；发布后的节点禁止任何编辑或删除。草稿移除节点使用软删除，恢复同一节点复用原 ID 和编码；发布和实例化只采用有效节点。排序整体保存，不能留下半次换位。
+
+每级只能选择一个角色、一个指定用户或一个受支持的业务来源。每级任意一名合格人员明确决定；用户节点只有该指定人，没有多角色、多名指定用户、会签、认领或转交。
+
+已发布配置不保存某张工单的人员。结案末级来源及本次人员解析见[场景接入](subject-integration.md#业务关联人员)，动态资格、无人可审及历史访问范围见[运行契约](../README.md#配置与操作)。
 
 ## 4. 审批申请、节点、人员和证据
 
 ### 4.1 `approval_instances`
 
-一行是一次真实送审，所有者 Approval。
+一次真实送审的运行根，固定受审对象、发布流程、证据和人员规则；重新送审建立新申请，不覆盖旧证据。
 
-| 字段 | 类型及空值 | 含义 |
+| 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `instance_no` | `VARCHAR(100) NOT NULL` | 服务端在送审事务内按[统一编号规则](../../../../docs/business-numbering.md)分配审批申请编号，唯一 |
-| `scene_code` | `VARCHAR(100) NOT NULL` | 稳定场景编码 |
-| `subject_type` | `VARCHAR(50) NOT NULL` | 场景确定的对象类型：`product / production_demand_correction / production_batch_closeout` |
-| `subject_id` | `BIGINT UNSIGNED NOT NULL` | 业务对象 ID |
-| `flow_version_id` | `BIGINT UNSIGNED NOT NULL` | 本次采用的已发布版本 FK |
-| `title` | `VARCHAR(255) NOT NULL` | 服务端生成的申请标题 |
-| `subject_version` | `INT NOT NULL` | 提交并冻结业务对象后的并发版本 |
-| `snapshot_schema_version` | `INT NOT NULL` | 受审证据结构版本 |
-| `subject_snapshot` | `JSON NOT NULL` | 提交时受审内容，不可改写 |
-| `policy_snapshot` | `JSON NOT NULL` | 本次人员规则：首期允许自审、跨级同人，节点任一人决定 |
-| `status` | `VARCHAR(20) NOT NULL` | `pending/approved/rejected/withdrawn` |
-| `ended_at` | `DATETIME NULL` | 终态时间 |
-| `active_slot` | 生成列，可空 | `pending` 时为 1，包括节点无人可审的申请 |
-| 单据审计 D | 见 §2 | 创建人即申请人 |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `instance_no` | `VARCHAR(100) NOT NULL` | 审批申请编号 |
+| `scene_code` | `VARCHAR(100) NOT NULL` | 稳定场景 |
+| `subject_type` | `VARCHAR(50) NOT NULL` | 场景确定的业务对象类型，可扩展 |
+| `subject_id` | `BIGINT UNSIGNED NOT NULL` | 业务对象 ID，不建多态外键 |
+| `flow_version_id` | `BIGINT UNSIGNED NOT NULL` | 本次采用的发布版本 |
+| `title` | `VARCHAR(255) NOT NULL` | 申请标题 |
+| `subject_version` | `INT NOT NULL` | 绑定并冻结后的业务版本 |
+| `snapshot_schema_version` | `INT NOT NULL` | 所属业务 handler 声明的证据结构版本 |
+| `subject_snapshot` | `JSON NOT NULL` | 提交时受审内容 |
+| `policy_snapshot` | `JSON NOT NULL` | 本次人员规则 |
+| `status` | `VARCHAR(20) NOT NULL DEFAULT 'pending'` | 申请状态 |
+| `ended_at` | `DATETIME NULL` | 申请结束时间 |
+| `active_slot` | `TINYINT`，`STORED` 生成列，可空 | 待审为 `1`，其余为空 |
+| 单据审计 D | 见公共列组 | 创建人即申请人，创建时间即提交时间 |
 
-约束：`UNIQUE(instance_no)`；`UNIQUE(scene_code,subject_type,subject_id,active_slot)` 防止并发重复送审；索引 `(created_by,status,created_at,id)` 和 `(scene_code,subject_type,subject_id,created_at,id)`。`subject_version >= 0`，`snapshot_schema_version > 0`；`pending` 时结束时间为空，终态非空。
+唯一键：`(instance_no)`、`(scene_code,subject_type,subject_id,active_slot)`；索引 `idx_approval_instances_applicant_status(created_by,status,created_at,id)`、`idx_approval_instances_subject(scene_code,subject_type,subject_id,created_at,id)`。外键 `flow_version_id → approval_flow_versions.id`，另有 D 组操作者外键。
 
-通用提交引擎在创建申请的同一事务内调用业务 handler 绑定申请，再以绑定返回的版本确定 `subject_version`；不推算其他模块的版本递增方式。`snapshot_schema_version` 由业务 handler 随快照返回，历史详情的证据结构校验也由对应 handler 承担。提交完成后不改写快照或冻结版本；新 BOM 证据采用结构版本 2，不含关键物料和记录批次标志。Product 只接受当前结构版本 2，版本 1 与未知结构均拒绝读取；开发环境通过重置切换，不保留旧证据兼容分支。
+CHECK 保证 `subject_version >= 0`、`snapshot_schema_version > 0`、状态仅 `pending/approved/rejected/withdrawn`，待审结束时间为空、终态非空；另适用 D 组版本 CHECK。证据 JSON 的具体结构与版本由所属业务校验，不在本表设置统一结构 CHECK。
+
+申请在送审事务内按[统一编号规则](../../../../docs/business-numbering.md)取号。
+
+同一场景、对象类型和业务对象最多有一份待审申请；无人可审也仍占此资格。申请结束后保留历史，重新送审必须建立新申请。
+
+证据生成、业务绑定和读取校验遵守[场景接入](subject-integration.md#模块与事务边界)；BOM 证据内容和解析版本见[Product 契约](../../product/docs/product-rules.md#bom-命令与审批)。
 
 多态 `subject_id` 不建立指向多张业务表的伪外键。提交和每次最终业务操作经所属模块验证对象存在性、场景与对象类型、当前申请关联；`scene_code` 与所选版本所属定义相符由事务校验。申请的场景、对象、流程版本、证据、人员规则及申请人一经提交不可更换。未来收紧自审规则默认只影响新申请，不能静默改写旧申请的规则或历史决定；账号、角色及当前权限仍实时校验。
 
-Production 需求更正证据结构版本为 1；结案产出证据为版本 6，包含模式、检验记录、计划内外产出与报废、更正前版及原因、工单 ID／单号／版本／负责人及来源代码，分别由其 handler 校验。本阶段不维护旧版收尾证据读取，开发数据可按统一流程重置；其申请来源、冻结和生效字段详见 [Production 需求设计](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) 与[批次收尾设计](../../production/docs/database/production-termination.md)。Approval 表不复制业务执行数量或工序状态。上述证据版本与 Production 所有者文档及当前解析常量存在差异，双方证据与待决问题见[冲突 CO-08](../../../../../../docs/documentation-conflicts.md#co-08)；未确认前不据此调整读写语义。
+Production 的证据内容、来源冻结和生效条件分别见[需求更正](../../production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)与[批次收尾](../../production/docs/database/production-termination.md)，Approval 不复制业务数量、工序状态或证据版本。不自行兼容旧证据或改写历史快照。
 
 ### 4.2 `approval_instance_steps`
 
-本次申请的节点执行情况，所有者 Approval。
+每行是一次申请的一个执行节点，保存进度与本次业务来源人员；角色候选多人共用这一条执行事实，不再建逐人任务表。
 
-| 字段 | 类型及空值 | 含义 |
+| 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `instance_id` | `BIGINT UNSIGNED NOT NULL` | 申请 FK |
-| `flow_step_id` | `BIGINT UNSIGNED NOT NULL` | 不可变已发布配置节点 FK |
-| `resolved_assignee_user_id` | `BIGINT UNSIGNED NULL` | 本次业务节点送审时解析的用户 FK users；角色／指定用户节点为空 |
-| `step_no` | `INT NOT NULL` | 本次节点顺序，须与配置一致 |
-| `status` | `VARCHAR(20) NOT NULL` | `waiting/pending/approved/rejected/cancelled` |
-| `activated_at` | `DATETIME NULL` | 首次轮到本级的时间 |
-| `ended_at` | `DATETIME NULL` | 本级结束时间 |
-| `active_slot` | 生成列，可空 | `pending` 时为 1 |
-| 单据审计 D | 见 §2 | 节点状态并发 |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `instance_id` | `BIGINT UNSIGNED NOT NULL` | 所属申请 |
+| `flow_step_id` | `BIGINT UNSIGNED NOT NULL` | 不可变的配置节点 |
+| `resolved_assignee_user_id` | `BIGINT UNSIGNED NULL` | 送审解析的业务人员；其他分派类型为空 |
+| `step_no` | `INT NOT NULL` | 本次节点顺序 |
+| `status` | `VARCHAR(20) NOT NULL DEFAULT 'waiting'` | 执行状态 |
+| `activated_at` | `DATETIME NULL` | 首次激活时间 |
+| `ended_at` | `DATETIME NULL` | 节点结束时间 |
+| `active_slot` | `TINYINT`，`STORED` 生成列，可空 | `pending` 时为 `1`，其余为空 |
+| 单据审计 D | 见公共列组 | 执行节点并发与审计 |
 
-约束：`UNIQUE(instance_id,step_no)`、`UNIQUE(instance_id,flow_step_id)`、`UNIQUE(id,instance_id)`、`UNIQUE(instance_id,active_slot)`；`step_no > 0`。通过 FK 确保申请、配置节点存在，通过提交事务确保配置节点属于申请的流程版本且节点集合完整。分配类型、角色/用户和节点名称从不可变配置读取，不复制一份可改的规则。
+唯一键：`(instance_id,step_no)`、`(instance_id,flow_step_id)`、`(id,instance_id)`、`(instance_id,active_slot)`；索引 `idx_approval_instance_steps_resolved_user(resolved_assignee_user_id,status,instance_id)`。外键 `instance_id → approval_instances.id`、`flow_step_id → approval_flow_steps.id`、`resolved_assignee_user_id → users.id`，另有 D 组操作者外键。
 
-业务节点的 `resolved_assignee_user_id` 在送审时必填、此后不可改；来源规则仍由不可变配置节点提供。`(resolved_assignee_user_id,status,instance_id)` 支持人员待办过滤，外键限制删除被引用用户。分派类型与解析字段的组合跨越两表，应用在实例化、读取及决定时验证，不以单表 CHECK 冒充跨表约束。业务 handler 锁定业务根后返回 `businessAssigneeResolutions` 与同源受审证据；Approval 检查来源完整、唯一、白名单和人员实时资格，与申请、绑定、节点、审计及通知同事务保存。不得从 HTTP 传入本次审批人。
+CHECK 保证 `step_no > 0`、状态仅 `waiting/pending/approved/rejected/cancelled`，等待／活动时结束时间为空、其余状态非空；另适用 D 组版本 CHECK。分派类型与解析人跨表一致性、流程版本归属和至少一个活动节点由应用事务校验，不能视为单表 CHECK 已保证。
+
+一次申请的每个流程节点只实例化一次，顺序不能重复；提交事务须保证采用版本正确且节点完整。分配类型、角色/用户和节点名称从不可变配置读取，不复制一份可改的规则。
+
+业务节点的 `resolved_assignee_user_id` 在送审时必填、此后不可改；来源规则仍由不可变配置节点提供。外键限制删除被引用用户。模板分派规则与本次解析人员须相符，不能只凭人员引用存在就授予处理资格；解析与资格边界见[业务关联人员](subject-integration.md#业务关联人员)。
 
 每个活动申请事务提交时恰好有一个 `pending` 节点；数据库唯一键保证最多一个，“至少一个”和完整顺序由应用事务保证。其余节点为前面已通过、后面等待。终态申请没有活动节点。终态节点有结束时间，非终态为空；未激活即取消的后续节点允许激活时间为空。
 
-### 4.3 动态待办与访问资格
-
-每个节点只有上述一条执行记录，待办按实时资格派生。查询先通过 Identity 公开能力取得当前用户合格角色及是否具备审批权限，再在 Approval SQL 的分页前过滤当前 pending 节点：角色匹配、模板指定用户匹配或实例业务用户匹配；列表与总数使用相同条件。前端不能指定授权角色或用户。
-
-当前节点无合格人员时仍保存 pending；响应将该节点投影为 `blocked`，`blockedReason=no_eligible_assignee`。成员新增、移除、账号或权限变化在下一次查询及决定时生效；恢复资格无需写节点或执行重新分派。GET 不改变业务状态。
-
-决定提交 `stepId + version`，按业务根、申请、节点顺序加锁，再检查当前节点及实时资格；同级并发只接受一次决定。申请人、实际作出批准/驳回的人员保留历史查询资格，当前活动节点的合格人员可访问当前申请。仅曾是候选人或收到通知不授予历史全文访问；流程配置权限可查看全部申请，`approval:view` 本身不授予全局访问。
-
 ### 4.4 `approval_actions`
 
-申请内不可变事件和审批意见，所有者 Approval。
+追加记录真实提交、决定和撤回，不用节点当前状态代替历史意见；动作与执行节点分开，保留同一申请的完整顺序。
 
-| 字段 | 类型及空值 | 含义 |
+| 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL` | 主键 |
-| `instance_id` | `BIGINT UNSIGNED NOT NULL` | 申请 FK |
-| `action_no` | `INT NOT NULL` | 申请内递增顺序，在申请锁内分配 |
-| `instance_step_id` | `BIGINT UNSIGNED NULL` | 相关执行节点 |
-| `decision_step_id` | `BIGINT UNSIGNED` 生成列，可空 | 仅批准/驳回时取 `instance_step_id`，约束每节点最多一个有效决定 |
-| `action_type` | `VARCHAR(30) NOT NULL` | `submitted/approved/rejected/withdrawn/assignment_blocked/reassigned` |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `instance_id` | `BIGINT UNSIGNED NOT NULL` | 所属申请 |
+| `action_no` | `INT NOT NULL` | 申请内递增顺序 |
+| `instance_step_id` | `BIGINT UNSIGNED NULL` | 关联执行节点 |
+| `decision_step_id` | `BIGINT UNSIGNED`，`STORED` 生成列，可空 | 批准／驳回时取 `instance_step_id`，否则为空 |
+| `action_type` | `VARCHAR(30) NOT NULL` | 动作类型 |
 | `comment` | `TEXT NULL` | 意见或操作原因 |
-| `details` | `JSON NULL` | 受控事件详情，如节点序号、分配类型及角色/用户身份；不保存动态候选人作为授权事实 |
-| 事实审计 F | 见 §2 | 实际操作者及时间 |
+| `details` | `JSON NULL` | 受控事件依据，不保存动态候选授权 |
+| 事实审计 F | 见公共列组 | 实际操作者与动作时间 |
 
-约束：`UNIQUE(instance_id,action_no)`、`UNIQUE(decision_step_id)`；组合 FK `(instance_step_id,instance_id) -> approval_instance_steps(id,instance_id)`。批准/驳回必须有节点；撤回、提交不关联节点。`action_no > 0`。驳回须有原因，批准意见可空，仍保存操作者与时间；撤回说明为可选。历史 `assignment_blocked/reassigned` 事件只保留读取，当前命令不再生成；已有实际决定及证据不改写。
+唯一键：`(instance_id,action_no)`、`(decision_step_id)`；索引 `idx_approval_actions_instance_time(instance_id,created_at,id)`。外键 `instance_id → approval_instances.id`、`created_by → users.id`；组合外键 `(instance_step_id,instance_id) → approval_instance_steps(id,instance_id)` 保证节点属于本申请。
+
+CHECK 保证 `action_no > 0`、类型仅 `submitted/approved/rejected/withdrawn/assignment_blocked/reassigned`，批准／驳回必须关联节点。提交／撤回不关联节点以及驳回原因必填属于应用规则；当前数据库 CHECK 未约束这两项。
+
+每个节点最多一次实际批准或驳回，决定必须属于同一申请；提交和撤回是申请级动作。驳回须有原因，批准意见可空，仍保存操作者与时间；撤回说明为可选。历史 `assignment_blocked/reassigned` 事件只保留读取，当前命令不再生成；已有实际决定及证据不改写。
 
 申请内的 `approved` 事件表示一次节点决定，是否最终通过由申请状态及完整节点历史判断。该表不替代 `operation_logs`；业务事件、状态写入及成功审计同事务。证据出错通过撤回或驳回后新申请修正，不更新旧意见。
 
-
 ## 配置与执行约束
 
-- 配置审计 C 的操作者列可空，应用写入时总是填写；运行申请、节点和不可变动作的 created_by 非空。节点的 updated_by 可空，后续命令更新时填写。
-- scene_code、subject_type 的语义由代码 Registry 校验；SQL 的 `subject_type` 为扩展标识，不建多态 FK。
-- 暂限每流程 1–20 个顺序节点，非固定两级。每级选择一个角色、一个指定用户或一个受支持的业务来源，无会签或条件路由。新草稿节点可从已发布内容复制，稳定 node_code 仅在所属版本内唯一；客户端未知节点编码需属于当前已发布版本，否则拒绝。
-- `policy_snapshot` 固定记录 any、允许自审及同人跨级，当前没有编辑策略入口；未来新增策略必须同时实现运行时解释，不只写配置。
-- 角色成员动态变化，用户节点固定指定人，业务节点固定本次解析人；无人可审时派生 blocked 提示，不在 GET 更新表，不保留重新分派端点或权限。
-- 草稿排序先软删除全部当前行，再按提交顺序恢复或新增，同事务避免唯一顺序冲突；已发布配置不更新。
-- 审批动作编号在申请锁内递增。approved/rejected 的动作必须关联节点；生成列唯一键限制同一节点的决定数量。
-- Approval 不拥有通知表，也不建 BOM 版本表、场景目录表或用户可编辑回调表。消息由 Notification 通过公开能力同事务写入。
+- 配置操作者列可空，应用写入时总是填写；申请、节点和动作的 created_by 必填。节点 updated_by 可空，后续命令更新时填写。
+- 每流程暂限 1–20 个顺序节点，无会签或条件路由。复制已发布节点形成新草稿时，稳定编码仍只在版本内唯一；客户端给出的既有编码必须属于当前发布版本。
+- `policy_snapshot` 固定记录任一人决定、允许自审及同人跨级；没有策略编辑入口。新增策略须同时实现运行时解释。
+- Approval 不建 BOM 版本表、场景目录表或用户可编辑回调表；通知由 Notification 公开能力同事务写入。
 
 审批历史升级、连续回滚和失败恢复只维护于[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。不能为回退删除受审证据、将业务来源降为固定用户，或启动处于迁移准备结构的应用。

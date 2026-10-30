@@ -1,23 +1,6 @@
 # Monorepo 应用镜像发布
 
-`main` 分支的 CI 全部通过后，CI 调用 `.github/workflows/cd-images.yml`。该工作流不会固定重建前后端，而是先执行：
-
-```bash
-node scripts/detect-release-changes.mjs '<push-before-sha>' '<verified-head-sha>'
-```
-
-脚本通过 `turbo ls --affected --output=json` 读取 Turborepo 包依赖图。共享 workspace package 发生变化时，Turbo 会把依赖它的 API 或 Web 应用标记为受影响。脚本还单独处理不属于 workspace package 的镜像输入，例如 Dockerfile、Nginx 配置、lockfile 和根构建配置。
-
-发布规则：
-
-| 影响结果       | API 镜像   | Web 镜像   |
-| -------------- | ---------- | ---------- |
-| 仅 API         | 构建并推送 | 跳过       |
-| 仅 Web         | 跳过       | 构建并推送 |
-| 两者           | 构建并推送 | 构建并推送 |
-| 两者都未受影响 | 跳过       | 跳过       |
-
-首次运行或 GitHub 无法提供有效的基线 SHA 时，脚本采用保守策略，同时发布两个镜像。
+`main` 的 CI 全部通过后调用[镜像工作流](../../.github/workflows/cd-images.yml)，只构建、推送并部署受影响的 API／Web。共享包变更按依赖关系传播，镜像和根配置也计入影响；基线 SHA 无效时保守发布两者。判断实现见[发布影响分析](../../scripts/detect-release-changes.mjs)。
 
 ## Docker Hub 产物
 

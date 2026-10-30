@@ -16,4 +16,4 @@ NestJS 组合根，负责启动、全局管道／过滤器／拦截器、模块�
 
 ## 验证
 
-`corepack pnpm --filter @company/api typecheck` 只检查可运行 API 代码，不含相邻测试；开发启动沿用此边界。测试独立由 `corepack pnpm --filter @company/api test` 执行，测试文件类型用 `corepack pnpm --filter @company/api typecheck:test` 检查，dev 和运行时构建不会代替它。执行阶段遵守根 [AGENTS.md](../../AGENTS.md)和[测试策略](../../docs/testing-strategy.md)。
+API 类型、构建、启动与正式测试的命令和阶段统一见[测试策略](../../docs/testing-strategy.md)。

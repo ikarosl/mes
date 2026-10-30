@@ -23,10 +23,12 @@ describe('demo seed', () => {
     const seeds = await readDemoSeeds();
     expect(seeds.map((seed) => seed.name)).toEqual([
       '001-system-demo.sql',
+      '002-user-candidate-demo.sql',
       '010-product-demo.sql',
       '011-other-stock-demo.sql',
       '012-inbound-grouping-demo.sql',
       '013-purchase-order-status-demo.sql',
+      '015-business-template-demo.sql',
       '020-production-demo.sql',
     ]);
     const sql = seeds.map((seed) => seed.sql).join('\n');

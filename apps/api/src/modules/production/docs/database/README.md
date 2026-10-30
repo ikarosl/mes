@@ -1,8 +1,8 @@
 # Production 数据库设计
 
-本目录是 Production 业务表、状态和跨表事务不变量的权威设计。公共出入库四表、库存与盘点表由 [Inventory](../../../inventory/docs/database.md) 所有，生产来源编排与约束仍在本目录维护。migration 统一登记在 `packages/database/migrations`。
+本目录逐表维护设计职责、字段类型与空值／默认、键、索引、约束及业务不变量，并与对应 [migration](../../../../../../../packages/database/migrations/) 同步。公共出入库、库存与盘点归 [Inventory](../../../inventory/docs/database.md)。公共字段、数量、历史身份及审计遵守[数据库约定](../../../../../../../docs/database-conventions.md)，HTTP 协议与幂等遵守[API 规范](../../../../../../../docs/api-conventions.md)及[平台契约](../../../../../docs/idempotency.md)。
 
-业务数量使用整数，单条非负数量范围为 `0..99999999`，要求正数的业务字段另行校验。API 返回整数字符串，乘法与汇总检查溢出；公共类型、审计及事实规则见[数据库公共约定](../../../../../../../docs/database-conventions.md)。
+字段表保留 SQL 定义；未标 `NOT NULL` 的列允许空值，未声明默认值的可空列默认 NULL，无默认且不自动生成的必填列由命令提供。键表列出迁移显式定义的约束和索引；未显式建索引的外键由 MySQL 建立必要的支撑索引。特殊触发器与跨表规则在所属表正文说明。
 
 ## 章节
 
@@ -17,10 +17,4 @@
 
 ## 使用规则
 
-- `inventory_transaction` 是库存数量唯一事实来源；余额和汇总只能由事实重建。
-- `production_item_demand` 是生产需求唯一事实来源。
-- 当前汇总由 Repository SQL 和两张库存余额投影表实现，不依赖数据库 VIEW；库存可分配量、需求进度和分配可制单量的计算规则在各自所属章节维护。
-- 表字段定义只在所属章节维护；跨表事务、锁序和跨模块引用集中在规则章节。
-- Identity、Product 与 Inventory 命令及锁定读取只能通过各自公开能力使用；展示只读按登记字段访问，本目录不得复制其他模块表定义。
-- 标记为边界预留的完整 Quality、状态转换等不得提前实现；公共六场景出入库按 Inventory 所有者文档办理，Production 只编排其生产来源。
-- 所有章节同时遵守[跨模块数据库约定](../../../../../../../docs/database-conventions.md)；物料名称展示、历史身份及快照例外统一见其中的[基础物料名称与历史身份](../../../../../../../docs/database-conventions.md#基础物料名称与历史身份)。
+各表只在所属专题维护；跨模块协议不复制其他模块的字段或办理资格。标记为未来设想的状态转换、完整质量等不属于当前能力，范围见[产品范围](../../../../../../../docs/product-scope.md)。

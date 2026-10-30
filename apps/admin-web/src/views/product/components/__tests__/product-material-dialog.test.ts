@@ -304,7 +304,7 @@ describe('ProductMaterialDialog', () => {
     expect(saveButton(wrapper)).toBeUndefined();
   });
 
-  it('on page activation only refreshes candidates, never retries a failed BOM detail', async () => {
+  it('on page activation preserves candidates and never retries a failed BOM detail', async () => {
     productMaterials.mockRejectedValue(new Error('500'));
     materialOptions.mockResolvedValue([materialOption('b1')]);
     const harness = mountDialogWithKeepAlive();
@@ -314,11 +314,11 @@ describe('ProductMaterialDialog', () => {
     expect(productMaterials).toHaveBeenCalledTimes(1);
     expect(harness.wrapper.find('.el-alert-stub').attributes('data-title')).toContain('加载失败');
 
-    // 页面重新激活：只刷新候选，不得重试明细、不得覆盖 localRows
+    // 页面重新激活：保留候选，不得重试明细、不得覆盖 localRows
     await harness.deactivate();
     await harness.activate();
     expect(productMaterials).toHaveBeenCalledTimes(1); // 明细未被再次请求
-    expect(materialOptions).toHaveBeenCalledTimes(2); // 打开时 + 激活时各刷新一次候选
+    expect(materialOptions).toHaveBeenCalledTimes(1); // 只在打开时读取候选
     expect(harness.wrapper.findAll('.row-material')).toHaveLength(0); // localRows 未被覆盖
     expect(harness.wrapper.find('.el-alert-stub').attributes('data-title')).toContain('加载失败');
   });

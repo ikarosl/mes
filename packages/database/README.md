@@ -43,6 +43,8 @@ docs/         # 迁移运行与安全说明
 
 ## 迁移登记表 `_schema_migrations`
 
+职责：保存已成功执行的迁移身份和内容校验和，防止重复执行并发现历史 SQL 被改写。它不保存实际业务表结构，也不代表 schema 已通过核验。
+
 本表由本包的[迁移运行器](src/migrate.ts)在执行版本化 migration 前通过 `CREATE TABLE IF NOT EXISTS` 创建，属于数据库基础设施，不归任何业务模块所有。使用 InnoDB、`utf8mb4`；建表语句未显式指定排序规则。
 
 | 字段 | 类型 | 允许 NULL | 默认值 | 说明 |
@@ -53,9 +55,9 @@ docs/         # 迁移运行与安全说明
 
 物理约束只有 `PRIMARY KEY (name)`；没有额外唯一键、二级索引、外键或 CHECK。`checksum` 的摘要算法及已执行文件内容不可变由运行器校验，不由数据库 CHECK 保证。本表不继承业务审计、乐观锁或软删除字段。
 
-执行与状态查询入口共用 `src/migration-utils.ts` 的 `assertAppliedMigrations`：遍历全部已登记记录，要求对应 `.up.sql` 文件仍在注册表中，且当前文件的 SHA-256 与登记值完全一致；缺失或不符立即报错并标明文件名。全部历史记录检查通过后，才执行待迁移 SQL 或输出状态，避免执行到中途才发现历史不一致。该检查不连接数据库、不修改登记，也不核对实际表结构或 `.down.sql` 内容。
+执行及状态查询先核对全部登记：文件缺失或校验和不符即失败。该检查不证明实际 schema 与登记一致，也不校验 down 内容；实现见 [migration-utils.ts](src/migration-utils.ts)。
 
-执行入口持有迁移建议锁后读取登记记录并完成上述检查：已登记迁移跳过，尚未登记的迁移按文件名升序执行，仅在 SQL 执行成功后插入记录。状态入口只读查询；有 pending 时退出码为 1。MySQL DDL 与登记写入不构成可整体回滚的事务；失败恢复边界见[迁移安全](docs/migration-safety.md)。
+迁移执行在建议锁内按文件名顺序运行未登记的 up，SQL 成功后才登记；状态查询只读，有 pending 时退出码为 1。DDL 与登记不能整体回滚，锁范围和失败恢复见[迁移安全](docs/migration-safety.md)。
 
 ## 业务数据库设计
 
@@ -83,4 +85,4 @@ corepack pnpm --filter @company/database typecheck
 corepack pnpm migration:check
 ```
 
-迁移逐项的暂停写入、非空守卫、回滚限制和恢复方式见[迁移安全](docs/migration-safety.md)；当前结构由上方业务所有者文档维护，不在包入口重复实施流水。migration 文件存在不表示目标数据库已执行，实际状态通过 `db:migrate:status` 查询。
+迁移逐项的暂停写入、非空守卫、回滚限制和恢复方式见[迁移安全](docs/migration-safety.md)；各表职责、结构、关系及设计理由由上方所有者文档与 migration 同步维护。migration 文件存在不表示目标数据库已执行，实际状态通过 `db:migrate:status` 查询。

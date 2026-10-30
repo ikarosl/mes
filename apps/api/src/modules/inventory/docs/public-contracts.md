@@ -1,16 +1,16 @@
 # Inventory 公开能力
 
-本章维护 Inventory 向 Production、Procurement 开放的事务能力，以及其他单据 HTTP 命令。完整锁序与反向预留协作例外见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，六场景字段及不可变守卫见[数据库边界](database.md)。公开端口只传业务身份、数量和明确结果，不暴露 SQL、连接或 SDK 类型。
+本章维护 Inventory 向 Production、Procurement 开放的事务能力，以及其他单据 HTTP 命令。完整锁序与反向预留协作例外见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，六场景字段及不可变守卫见[数据库边界](database.md)。端口类型以 [public.ts](../public.ts) 导出的契约为准。
 
 ## 生产领退料
 
-`InventoryProductionDocumentCommand` 是 Production 创建／确认／取消实际领退料的入口，生产资格、任务阶段、需求及补料履约由调用者先在来源锁内决定。端口 `getOutbound/getReturn` 返回父单 ID、编号、任务／工单、状态、版本及原分配／需求、精确身份、原库批、数量、单位和备注；公开值状态统一 pending/completed/cancelled，底层出库 pending_picking 映射 pending。带锁版本只锁 Inventory 自有公共主从，不反锁生产来源。
+`InventoryProductionDocumentCommand` 是 Production 创建／确认／取消实际领退料的入口，生产资格、任务阶段、需求及补料履约由调用者先在来源锁内决定。`getOutbound/getReturn` 的公开状态为 pending/completed/cancelled，底层出库 pending_picking 映射 pending。带锁版本只锁 Inventory 自有公共主从，不反锁生产来源。
 
 `createOutbound/createReturn` 接收服务端已核验的一任务／工单及每条来源分配的真实身份、数量和单位，创建待确认公共单据，不记库存。`completeOutbound/completeReturn` 整单生成匹配负／正流水并推进父单；取消经 `cancelOutbound/cancelReturn` 比较父版本，领料取消另传受控 manual/production_batch/production_termination。终态重放不递增版本。公共明细及库存写入归 Inventory，来源命令成功审计由 Production 一次写入，同事务包含需求余额、任务版本及补料履约。
 
 `facts({productionBatchId?,allocationIds?,demandIds?,lock?})` 至少限定一个范围，多范围取交集；只返回 production_material 和 return_inbound，其他单永不参与生产履约、退料／损耗额度或审批依据。lock=true 要求调用者已有活跃同池事务，对公共父单与实际明细使用当前读及 NOWAIT；普通查询不授予写入资格。它不关联或锁生产分配，也不以库存余额代替历史领退料。
 
-生产退料 HTTP 使用 returnNo/returnAt/returnQuantity 及 pending/returned/cancelled 状态，returned 对应公共 completed。回原批次 available 库存是固定业务规则，响应不另附固定状态或释放标记；退料引用为 inbound_detail，独立退料表不保留。
+生产退料的 HTTP 状态及来源资格由[退料专题](../../production/docs/database/return-scrap-and-stocktake.md#37-退料表)维护。
 
 `InventoryStockCommand` 提供物料批次历史引用、统一父身份及库存批次锁与物料数量。库存流水动作在公共单据 adapter 内执行，Production 不得自行写单据或调用裸流水来替代来源编排；单据与流水关联由登记展示查询读取。
 
@@ -28,15 +28,15 @@
 
 ## 其他入出库与幂等
 
-`/warehouse/other-inbounds`、`/warehouse/other-outbounds` 分别提供列表／详情，和创建草稿、保存草稿、整单确认、整单取消四类写命令。每方向独立页面 view/create/update/confirm/cancel 权限，后端每入口鉴权。创建 POST、保存 PATCH `/:orderId`，确认／取消 POST `/:orderId/actions/confirm|cancel`；保存、确认和取消携带父版本，取消另有原因。
+`/warehouse/other-inbounds`、`/warehouse/other-outbounds` 分别提供草稿、整单确认和取消，两方向独立授权。单据生命周期与草稿约束见[公共单据规则](database/inventory-ledger-and-inbound.md#公共单据状态与不可变规则)。
 
-八个方向／动作组合分别登记 inventory.other-inbound.*.v1 与 inventory.other-outbound.*.v1 scope（create/save/confirm/cancel）。所有写入口要求 Idempotency-Key，并由平台 executor 将幂等记录、单据、批次、流水、成功审计及完整响应同事务提交；同键同语义重放原结果，同键不同语义拒绝。未知结果和有限重试继续原键；锁等待、NOWAIT 或连接等已分类瞬态失败先整体回滚，有限重试用原语义，不能只重试半次扣库存。Ledger 唯一键不替代 HTTP 幂等。
+两方向的创建、保存、确认和取消均要求 `Idempotency-Key`，启用范围见[应用契约](../application/idempotency/other-inventory-idempotency-scopes.contract.ts)。这四类命令允许服务端有限重试：仅重试平台识别的 `retryable` 存储错误，须等 executor 整个事务结束后，以原键、原语义重新执行完整命令；未知提交结果也由同键记录仲裁，不能在失败事务内重试局部库存写入。次数耗尽或其他错误直接返回，不据此开放客户端自动重试。错误分类与结果重放见[平台幂等](../../../../docs/idempotency.md#8-错误与日志语义)，流水唯一键不替代 HTTP 幂等。
 
-其他草稿有效行 1–50 条，办理原因必填；保存按父版本变更行、移除行软删除，确认／取消冻结整单。不新增审批、质量定稿或来源履约。new 目标仅其他入库可选，保存不建 item_batch；确认才分组建批并回填 batchId，取消无空批次。客户端不能传人工内部批号或生产日期；其他出库只有已有批次。
+其他单据只修正库存，不新增审批、质量定稿或来源履约；新批次仅在入库确认时建立，规则见[入库目标与其他草稿](database/inventory-ledger-and-inbound.md#入库目标与其他草稿)。
 
 `ProductOtherStockQuery.listMaterials/listObjects` 分别提供基础物料和明确物料精确版本／成品的新批次候选及已选回显；物料先选基础身份，再按 `materialId` 服务端查询精确版本，成品直接选择独立成品身份。候选与回显资格、关键词、窗口和完整性由 [Product](../../product/docs/product-rules.md#候选历史展示与写入资格) 维护，不以列表候选授予写资格。resolveReferences 在同池事务锁内核验身份：requireEnabled=true 要求对象／分类及精确版本启用且未删除，new 使用该资格；existing 用 requireEnabled=false 保留停用或删除历史身份，再核对原批次单位及 available 状态。其他用途不授予采购或生产领料资格。
 
-`GET /warehouse/other-stock-materials` 接收 `keyword/includeIds`，返回 `OtherStockMaterials`；`GET /warehouse/other-stock-objects` 接收 `itemKind/keyword/includeIds` 及仅物料类型可用的可选 `materialId`，返回 `OtherStockObjects`。`includeIds` 分别解析基础物料 ID 与当前 `itemKind` 的精确版本／成品 ID，ID 必须是有效数据库身份，最多 100 项。两个端点沿库存用途提供当前启用候选，无需采购或主数据管理权限。`GET /warehouse/other-stock-candidates` 提供已有库批候选，沿历史身份显示物料／精确版本或成品。
+`GET /warehouse/other-stock-materials` 选择基础物料，`GET /warehouse/other-stock-objects` 选择精确版本或成品；两者的已选 ID 分别代表基础物料与实际库存对象，不可混用。`GET /warehouse/other-stock-candidates` 选择已有库批，保留历史身份。
 
 三个候选入口供其他入库／出库页面使用，统一按 `warehouse:other-inbounds:view` 与 `warehouse:other-outbounds:view` 的 any-of 并集授权。候选未预留量仅供展示，确认必须当前读重核，不能直接使用候选数量写流水。
 
@@ -44,7 +44,7 @@
 
 Inventory 定义 `InventoryReservationReadPort.currentAllocations(batchIds)`，API 组合根 adapter 只导入 Production public 的 `ProductionReservationQuery`，返回 id/batchId/assignedNumber/allocationStatus。该端口只读有效 active/frozen/abnormal 分配，不调用来源办理资格或修改分配；Production 只锁自己的分配并使用 FOR SHARE NOWAIT。
 
-Inventory 用该事实及自己当前已完成生产领料核对未预留量，不取得预留所有权。调用位置、批次保护、NOWAIT 冲突和有限重试统一见[公共锁序与预留例外](../../../../../../docs/inventory-extraction-design.md#其他出库保护生产预留的窄例外)，不扩展其他来源业务回调。
+Inventory 用该事实及自己当前已完成生产领料核对未预留量，不取得预留所有权。调用位置、批次保护和 NOWAIT 冲突见[公共锁序与预留例外](../../../../../../docs/inventory-extraction-design.md#其他出库保护生产预留的窄例外)，不扩展其他来源业务回调。
 
 ## 只读展示
 

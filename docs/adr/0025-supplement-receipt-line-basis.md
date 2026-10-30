@@ -1,6 +1,6 @@
 # ADR-0025：两类采购补单统一关联到货明细
 
-状态：Accepted。当前规则由 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)维护；实施、用户验收及正式测试状态见[路线图](../roadmap.md#采购补单到货明细级来源)。
+状态：Accepted。当前规则由 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)维护；实施、用户验收及正式测试状态见[路线图](../roadmap.md#采购补单来源与办理待验收)。
 
 ## 选择理由
 

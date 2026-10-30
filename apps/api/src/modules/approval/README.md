@@ -16,12 +16,12 @@
 
 ## HTTP 与权限
 
-接口前缀 `/api/approval`，body/query/param 使用 class DTO；写操作经共享事务和成功审计。
+接口前缀 `/api/approval`；通用协议见[API 规范](../../../../../docs/api-conventions.md)。
 
 | 方法与路径 | 权限与含义 |
 | --- | --- |
 | `GET /scenes`、`GET /role-options`、`GET /user-options`、`GET /scenes/:sceneCode/flow` | `approval:configure`；场景、启用角色及当前具备审批资格的用户候选 |
-| `PUT /scenes/:sceneCode/flow/draft` | `approval:configure`；完整有序节点，核对 `draftId + version`，无草稿时两者为 null；每级提供 `assigneeType`、`roleId`、`assigneeUserId`，另含 `assigneeSourceCode`，角色／用户／业务来源三选一，不适用字段显式为 null |
+| `PUT /scenes/:sceneCode/flow/draft` | `approval:configure`；完整有序节点；以草稿 ID 和版本防止覆盖，首次两者为空；人员分派规则见[数据库](docs/database.md#33-approval_flow_versions) |
 | `POST /scenes/:sceneCode/flow/publish` | `approval:configure`；核对草稿 ID 和版本，发布后内容不可改 |
 | `GET /instances`、`GET /instances/:id` | 审批查看、处理、配置、BOM 管理、生产需求更正或批次收尾任一权限；普通用户按下方范围过滤 |
 | `POST /bom/:productId/submit` | `product:products:manage-bom`；提交产品聚合版本 |
@@ -42,7 +42,7 @@
 
 相邻测试验证角色／指定用户／业务来源三选一、字符串 ID、节点与版本命令、拒绝客户端授权字段、接口权限和实时资格解析。真实 MySQL 套件验证节点共享待办、动态成员及指定用户资格、分页/历史范围、单节点并发决定、事务回滚和迁移约束。
 
-相邻后端测试通过 `corepack pnpm --filter @company/api test` 执行，测试类型使用 `corepack pnpm --filter @company/api typecheck:test` 检查。跨模块审批用例位于根 `tests/integration/approval`，BOM 字段移除迁移用例位于 `tests/integration/product`，均由现有 `corepack pnpm test:production:mysql` 入口执行；必须配置专用测试库，环境门禁见根[测试策略](../../../../../docs/testing-strategy.md)。
+跨模块用例位于 `tests/integration/approval`，BOM 迁移用例位于 `tests/integration/product`；执行命令、专用库门禁及正式测试阶段见[测试策略](../../../../../docs/testing-strategy.md)。
 
 ## 通知事件
 

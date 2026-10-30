@@ -6,7 +6,7 @@
 
 幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality 成品质检](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)、[Quality 工序专检](../src/modules/quality/application/idempotency/process-inspection-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。
 
-客户端只发送 Idempotency-Key，不传 scope。未启用端点含 Public 携带任意键（空值／超长值也包括）返回 `400 IDEMPOTENCY_NOT_SUPPORTED`；启用端点缺少键或 trim 后长度不在 1～150 返回 `400 VALIDATION_ERROR`。不能忽略 header 制造伪幂等信号，也不能仅按 HTTP 方法扩大启用范围。
+客户端头部、未启用端点拒绝规则和成功重放响应由[公共 HTTP 规范](../../../docs/api-conventions.md#7-请求上下文与幂等键)维护；不能仅按 HTTP 方法扩大启用范围。
 
 ## 2. 项目级决定
 
@@ -19,11 +19,13 @@
 
 ## 3. 登记前校验与审计关联
 
-鉴权、DTO 与请求头校验在登记前完成；Guard 将 trim 后的键写入请求局部私有属性，参数装饰器不重新解析原 header。首次登记以当前 requestId 写 initial_request_id，关联首次成功审计；重放保留首次值，只返回本次 requestId，不重复写业务成功审计，也不把原始键写入 operation_logs。
+鉴权、DTO 与请求头校验在登记前完成。首次登记以当前 requestId 写 initial_request_id，关联首次成功审计；重放保留首次值，只返回本次 requestId，不重复写业务成功审计，也不把原始键写入 operation_logs。
 
 ## 5. 数据库记录与保留期
 
 ### `http_idempotency_records` 结构
+
+职责：记录一个命令意图的仲裁身份和成功结果，支持并发防重及原结果重放；不替代业务单据或审计历史，不保存失败结果。
 
 表由 [202608050001-http-idempotency-records.up.sql](../../../packages/database/migrations/202608050001-http-idempotency-records.up.sql) 创建，属于 API 平台幂等基础设施。使用 InnoDB、`utf8mb4`，表默认排序规则为 `utf8mb4_0900_ai_ci`。
 
@@ -39,7 +41,7 @@
 | `result_json` | `JSON` | 是 | `NULL` | 经结果 codec 校验的完成结果快照 |
 | `created_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 首次登记时间 |
 | `completed_at` | `DATETIME` | 是 | `NULL` | 完成时间，由 executor 写入 |
-| `expires_at` | `DATETIME` | 是 | `NULL` | 允许清理时间，由 executor 按完成时间加 12 小时写入 |
+| `expires_at` | `DATETIME` | 是 | `NULL` | 允许清理时间，由 executor 按完成时间与下述保留期写入 |
 
 可空列未显式声明 `DEFAULT`，其隐式默认值为 SQL `NULL`。本表采用专用生命周期字段，不继承业务单据的 `updated_by`、`updated_at`、`version` 或软删除字段。
 
@@ -55,6 +57,8 @@
 
 CHECK 只约束完成字段的 SQL NULL 组合，不校验结果形状、时间先后或 12 小时间隔；这些由 codec／executor 保证。JSON 字面值 null 不等于 SQL NULL，是否接受该结果由对应 codec 决定。
 
+操作者参与请求指纹；同 scope/key 不按人另建记录，他人复用同键会冲突。
+
 完成记录保证至少 12 小时重放。expires_at 只代表允许清理，物理删除前同 scope/key 仍按原记录仲裁，过期也重放；物理删除后才可能变为首次执行。因此客户端超过窗口不能自动重试旧键或换新键，须先核对业务结果。
 
 ## 6. 规范化请求指纹
@@ -62,8 +66,6 @@ CHECK 只约束完成字段的 SQL NULL 组合，不校验结果形状、时间�
 服务端对 scope、已认证 actorId、语义 path params、query 和规范化 body 计算 SHA-256，包含 version、核对令牌等所有业务输入。排除键、requestId、IP、User-Agent、Cookie、Token 等传输／审计信息；客户端签名不是安全指纹。
 
 application 将 DTO 及嵌套 DTO 显式转成普通对象并完成 trim 后再传入。对象键递归排序，数组保序，undefined 对象属性忽略；仅接受 JSON-safe 值，不放宽到 Date、getter、自定义原型或循环引用。规范化算法及固定兼容向量见[指纹测试](../src/infrastructure/idempotency/__tests__/canonical-request-fingerprint.test.ts)；向量中的旧 scope 仅为算法兼容基准，不能当作当前命令版本。修改算法／向量须评审并提升受影响 scope。
-
-唯一键为区分大小写的 `(scope, idempotency_key)`，不按用户另分唯一键；actor 在指纹内，因此他人复用同键会冲突。
 
 ## 7. MySQL Executor 事务语义
 
@@ -81,15 +83,13 @@ application 将 DTO 及嵌套 DTO 显式转成普通对象并完成 trim 后再�
 | 业务／权限校验失败 | 保留原错误，失败结果不保存 |
 | 指纹、executor 或 handler 的未知代码异常 | `500 INTERNAL_SERVER_ERROR`，不能因处于幂等链路而改写分类 |
 
-其他出入库四类写操作由 application 在 executor 整个事务已经结束后有限重试，最多三次，保持原 scope、键、操作者及规范化请求；绝不在失败事务内重试单条库存 SQL。
+业务主动重试必须在 executor 的整个事务结束后保持原意图重试，不能在失败事务内只重试 SQL；其他出入库的重试范围由[Inventory](../src/modules/inventory/docs/public-contracts.md)维护。
 
 其他 SDK 网络错误不误判为 MySQL retryable。损坏记录保留供调查，同键重试不会自行修复，不自动另建意图。诊断仅记录 requestId、scope、分类及键 SHA-256 前 12 位；不输出原键、载荷、Token、Cookie、凭证。原异常链仅开发环境可记录，其他环境的脱敏边界见 [API 诊断](../README.md#http-错误诊断)。
 
 ## 9. 前端键生命周期
 
-局部 useIdempotentIntent 在首次正式提交时生成加密 UUID，firstAttemptAt 从此时起算 12 小时，保存键与输入签名；所属 editor 另行保存实际发送的参数／body／版本／令牌。成功或契约明确无副作用的业务 4xx 结束意图；网络中断及不确定结果保留原键原请求，修改内容不能静默换键。损坏结果或超窗口阻塞并要求核对，用户明确放弃后才可开始新意图。
-
-当前仅内存保存，KeepAlive 可恢复，硬刷新不可恢复；只保存键或 payload hash 不构成闭环。会话变化销毁旧意图，API wrapper 只透传键，不持有或生成。前端实现及关闭保护见[管理端架构](../../admin-web/docs/architecture.md#5-写意图与错误)。后端幂等能力支持原请求手动恢复，不使前端写请求自动重试；传输策略及认证恢复例外见[HTTP 规则](../../admin-web/docs/http-error-handling.md#4-基础请求与重试)。
+客户端必须能恢复原键和原请求；仅保存键或输入摘要不足以安全重试。生成、关闭保护、会话销毁及内存恢复由[管理端写意图](../../admin-web/docs/architecture.md#5-写意图与错误)维护，自动重试边界由[HTTP 错误处理](../../admin-web/docs/http-error-handling.md#4-基础请求与重试)维护。
 
 ## 10. 清理与运行维护
 
@@ -103,7 +103,7 @@ housekeeping 默认每小时运行，IDEMPOTENCY_SWEEP_INTERVAL_MS 非法、零�
 
 在[测试策略](../../../docs/testing-strategy.md)规定阶段验证启用／未启用／Public 矩阵、接线一致、同键重放／同键异内容冲突、handler 仅一次、首次与重放形状一致、业务／审计／codec／commit 失败回滚、MySQL 瞬态错误分类、前端未知／损坏／超时恢复及真实唯一键竞争／清理。真实 MySQL 测试的专用端点与 `_test` 库门禁见[测试策略](../../../docs/testing-strategy.md#业务-mysql-integration)。
 
-根 [AGENTS.md](../../../AGENTS.md#数据库与交付约定)规定设计确认后另行通知正式测试；仅完成接线的命令不能宣称上述验证已通过，状态留在[路线图](../../../docs/roadmap.md)。
+接线完成不代表已验收；剩余覆盖和验收状态见[路线图](../../../docs/roadmap.md)。
 
 ## 13. scope 版本与开发重置
 
@@ -111,11 +111,6 @@ scope 是服务端独占版本，客户端不能选择／协商。不兼容的�
 
 ## 14. 业务接入时的原子边界
 
-以下是平台容易遗漏的接线边界，业务资格与数量算法仍由模块所有者维护：
+一个业务命令涉及的取号、来源绑定、跨模块事实、通知及成功审计，必须都在 executor 的外层事务中完成。结果保存真实生成身份和必要版本，不能只保存成功布尔值；重放不重取号、不补写事实、不重新授予已失效的执行资格。
 
-- [生产需求](../src/modules/production/docs/database/demand-allocation-and-outbound.md)：需求事实、锁版基础、任务版本、审计和结果同事务，重放不再生成需求或推进版本。管理员任务开工、研发结束与撤回结束保存原状态转换结果，重放不追加开工或进入／撤回事实。
-- [审批与收尾](../src/modules/production/docs/database/production-termination.md)：送审的业务记录绑定、Approval 实例／节点、审计及通知均在外层事务，不先保存申请再异步补审批。通用批准／驳回／撤回仍依赖当前节点和版本，不据此宣称 HTTP 幂等重放。损坏登记与实核版本同事务，不能附加第二次库存扣减。
-- [成品质检](../src/modules/quality/docs/finished-inspections.md)：先规范化 G/F、派生 N、方式与明确结论，再对完整检查事实指纹；不接收成品整批 C，也不计算放行量。说明与凭据 trim，结果保存 batchId、实际 inspectionId 和新 version，不能只保存成功布尔值。登记 namespace 为 `quality.finished-inspection.record.v3`，旧 v2 结果不按新事实语义重放。
-- [成品入库](../src/modules/production/docs/database/finished-goods-inbound.md)：来源锁内复核、库存批次／流水、单据与审计同事务，结果严格保留 inboundId，重放不再建批或写库存；不能换键绕过当前来源锁。
-- [工单创建](../src/modules/production/docs/database/work-orders-and-batches.md#工单自动编号)：取号、业务、审计和完整结果同事务，重放首次草稿快照，不重读已变化工单或再取号。
-- [来料整批](../src/modules/procurement/docs/receipt-acceptance.md)：实际执行指纹含 allocation 及行／轮版本、实收修订、QC、数量；correct 指纹含核实总量与原因、不含 ownership，reject 的可选 ownership 含逐行 ID、数量和顺序。撤销拒收重放不再次换轮，旧成功快照不重新授予执行资格。
+具体边界由[审批接入](../src/modules/approval/docs/subject-integration.md)、[Production](../src/modules/production/README.md)、[Procurement](../src/modules/procurement/README.md)、[Quality](../src/modules/quality/README.md)及[Inventory](../src/modules/inventory/README.md)维护，不在平台再维护业务参数清单。

@@ -65,7 +65,7 @@ describe('ProductsPage create form', () => {
       },
       template: '<div />',
     };
-    // TableToolbar 用真实组件渲染，保证 #actions 插槽里的“新增成品”按钮可点击。
+    // TableToolbar 用真实组件渲染，保证 #actions 插槽里的“新增产品”按钮可点击。
     const wrapper = mount(ProductsPage, {
       global: {
         plugins: [ElementPlus, router, createPinia()],
@@ -79,7 +79,7 @@ describe('ProductsPage create form', () => {
     });
     await flushPromises();
 
-    const createButton = wrapper.findAll('button').find((b) => b.text().includes('新增成品'));
+    const createButton = wrapper.findAll('button').find((b) => b.text().includes('新增产品'));
     expect(createButton).toBeDefined();
 
     const callsBefore = categoryOptions.mock.calls.length;

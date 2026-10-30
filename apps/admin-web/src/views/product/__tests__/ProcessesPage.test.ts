@@ -135,7 +135,10 @@ describe('ProcessesPage SOP file actions', () => {
     await flushPromises();
 
     expect(technicalFileContent).toHaveBeenCalledTimes(1);
-    expect(technicalFileContent).toHaveBeenCalledWith('f1');
+    expect(technicalFileContent).toHaveBeenCalledWith('f1', {
+      signal: expect.any(AbortSignal),
+      skipErrorHandling: true,
+    });
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(windowOpen).toHaveBeenCalledWith('blob:sop-1', '_blank', 'noopener');
   });
@@ -151,7 +154,10 @@ describe('ProcessesPage SOP file actions', () => {
     await flushPromises();
 
     expect(technicalFileContent).toHaveBeenCalledTimes(1);
-    expect(technicalFileContent).toHaveBeenCalledWith('f1');
+    expect(technicalFileContent).toHaveBeenCalledWith('f1', {
+      signal: expect.any(AbortSignal),
+      skipErrorHandling: true,
+    });
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(windowOpen).not.toHaveBeenCalled();
   });

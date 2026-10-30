@@ -1,8 +1,20 @@
 # Product 数据库设计
 
-本文是 Product 所有业务表的权威设计。migration 统一存放于 `packages/database/migrations`，不改变表的业务所有权。
+本文维护 Product 九张业务表的职责、结构与关系，与[版本化 migration](../../../../../../packages/database/migrations/)同步；公共原则见[数据库规则](../../../../../../docs/database-conventions.md)。
 
-BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其不超过 `99999999`，原有正数和整数 CHECK 保留。API 快照与列表显式输出整数字符串。采购候选允许精确版本停用，物料与分类仍须启用且未删除；命令资格与锁定由 `ProductInventoryEligibility` 提供。
+各表使用 InnoDB、`utf8mb4_0900_ai_ci`，`id` 均为 `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` 主键。未写 `DEFAULT` 的非空列无数据库默认值，可空列默认 `NULL`。下表的审计列组 M 在九张表中逐列存在：
+
+| 字段 | 物理定义 | 含义 |
+| --- | --- | --- |
+| `created_by` / `updated_by` / `deleted_by` | `BIGINT UNSIGNED NULL` | 创建、修改、删除人，各自外键指向 `users.id` |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
+| `is_deleted` | `TINYINT NOT NULL DEFAULT 0` | 软删除标志，CHECK 限定 `0/1` |
+| `deleted_at` | `DATETIME NULL` | 删除时间 |
+
+外键未另注时限制物理删除；MySQL 为外键维护所需支撑索引，下文另列显式查询索引。各表均有删除标志值域 CHECK，但只有 `materials/material_variants` 另用 CHECK 约束删除人、时间成套；其余表的完整删除审计由应用保证。`version` 不属于 M 组，仅在 `products` 中单列。
+
+BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资格](product-rules.md#候选历史展示与写入资格)维护。
 
 ## 3.1 基础资料表
 
@@ -12,29 +24,26 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 职责：统一维护物料和成品分类，不创建第二套库存分类表。
 
-分类仍由 Product 模块所有。`products.category_id`、`materials.category_id` 及分类自身的 `parent_id` 均引用这张表；API 路径 `/product/categories`、权限和公开 `ProductCategory` 契约不随物理表名改变。
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `parent_id` | `BIGINT UNSIGNED NULL` | 父分类 |
+| `category_code` | `VARCHAR(64) NOT NULL` | 永久唯一分类编码 |
+| `category_name` | `VARCHAR(100) NOT NULL` | 分类名称 |
+| `item_kind` | `VARCHAR(30) NOT NULL` | `material/finished_product` |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `TEXT NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+
+唯一键 `uk_item_categories_code(category_code)`；索引 `idx_item_categories_parent(parent_id)`；自外键 `parent_id → item_categories.id`，另有 M 组操作者外键。CHECK 分别限定物品类型 `material/finished_product`、状态 `0/1` 和删除标志 `0/1`；父子同类型及防环由应用校验。
+
+成品和基础物料共用分类树，分类类型不可混用。
 
 `parent_id` 保留为后续半成品、多级物品扩展的分类关系基础；当前仅提供父分类维护、同类型校验及防环，不据此启用半成品或多级物品业务。目录筛选与用途资格针对直接关联分类，不沿父级递归或继承。成品的独立编码身份及逐条平铺规则见[成品列表与筛选](product-rules.md#成品列表与筛选)，分类关系不构成成品之间的父子身份。
 
-| 字段            | 类型              | 说明                                            |
-| --------------- | ----------------- | ----------------------------------------------- |
-| `id`            | `BIGINT UNSIGNED` | 主键，自增                                      |
-| `parent_id`     | `BIGINT UNSIGNED` | 父分类 ID，可为空                               |
-| `category_code` | `VARCHAR(64)`     | 分类编码                                        |
-| `category_name` | `VARCHAR(100)`    | 分类名称                                        |
-| `item_kind`     | `VARCHAR(30)`     | `material`、`finished_product`                 |
-| `status`        | `TINYINT`         | `1` 启用、`0` 停用                              |
-| `remark`        | `TEXT`            | 备注                                            |
-| 审计字段        | 见统一规则        | 主数据审计字段                                  |
+分类编码永久唯一，类别仅为物料或成品。
 
-约束：
-
-- 主键：`id`
-- 自关联：`parent_id -> item_categories.id`
-- 检查约束：`CHECK (item_kind IN ('material', 'finished_product'))`
-- 唯一约束：`UNIQUE (category_code)`
-
-分类自身的唯一键、父级索引、审计引用索引和 FK/CHECK 统一使用 `item_categories` 前缀。迁移 `202609170004-rename-item-categories` 直接重命名原表及这些约束，不复制分类或更改 ID；引用该表的产品、物料外键随表重命名自动改指新名。应用与迁移须同时切换，旧表名不提供兼容视图；回退先恢复原表及约束名称，再回退更早的 Product 迁移。
+分类重命名保留 ID 和父子引用，应用切换及回退顺序见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202609170004分类表重命名)。
 
 说明：
 
@@ -48,39 +57,37 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 职责：只维护成品。一条记录对应一个确定的成品编码；同名不同编码是不同成品，名称不形成父成品或成品类型，不另外建立成品大小版本表。
 
-| 字段               | 类型              | 说明                                    |
-| ------------------ | ----------------- | --------------------------------------- |
-| `id`               | `BIGINT UNSIGNED` | 主键，自增                              |
-| `item_code`        | `VARCHAR(100)`    | 成品编码（创建后不可修改）      |
-| `product_name`     | `VARCHAR(200)`    | 可重复的展示与搜索名称                  |
-| `category_id`      | `BIGINT UNSIGNED` | 分类 ID                                 |
-| `default_route_id` | `BIGINT UNSIGNED` | 未启用保留列，可为空；应用不读写         |
-| `bom_locked_at`    | `DATETIME`        | BOM 最终审批通过并永久锁定的时间   |
-| `bom_locked_by`    | `BIGINT UNSIGNED` | BOM 最后一级批准人；未批准时为空            |
-| `unit`             | `VARCHAR(20)`     | 唯一基础计量单位，例如 `g`、`kg`、`pcs` |
-| `acquire_method`   | `VARCHAR(32)`     | `self_made`、`outsourced`、`purchased`  |
-| `spec_values`      | `JSON NOT NULL`   | 完整规格参数表格，结构见[规格参数存储](#规格参数存储与迁移) |
-| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前成品唯一规格书，关联 `technical_files.id` |
-| `status`           | `TINYINT`         | `1` 启用、`0` 停用                      |
-| `remark`           | `TEXT`            | 备注                                    |
-| 审计字段            | 见统一规则        | 主数据审计字段                          |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `item_code` | `VARCHAR(100) NOT NULL` | 成品永久编码 |
+| `product_name` | `VARCHAR(200) NOT NULL` | 可重复的展示名称 |
+| `category_id` | `BIGINT UNSIGNED NOT NULL` | 成品分类 |
+| `default_route_id` | `BIGINT UNSIGNED NULL` | 未启用保留列，应用不读写 |
+| `bom_status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft/pending_approval/approved` |
+| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或最终批准的申请 |
+| `version` | `INT NOT NULL DEFAULT 0` | 成品聚合并发版本，不是 BOM 业务版本 |
+| `bom_locked_at` | `DATETIME NULL` | BOM 最终批准并永久锁定的时间 |
+| `bom_locked_by` | `BIGINT UNSIGNED NULL` | 最后一级实际批准人 |
+| `unit` | `VARCHAR(20) NOT NULL` | 固定基础计量单位 |
+| `acquire_method` | `VARCHAR(32) NOT NULL` | `self_made/outsourced/purchased` |
+| `spec_values` | `JSON NOT NULL` | 完整规格参数表格；无数据库默认值 |
+| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前规格书 |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `TEXT NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-约束：
+- 唯一键 `uk_products_item_code(item_code)`；索引 `idx_products_category(category_id)`、`idx_products_default_route(default_route_id)`、`idx_products_bom_locked_by(bom_locked_by)`、`idx_products_bom_approval_instance(bom_approval_instance_id)`、`idx_products_specification_file(specification_file_id)`。
+- 外键：`category_id → item_categories.id`；`default_route_id → process_routes.id ON DELETE SET NULL`；`bom_approval_instance_id → approval_instances.id`；`bom_locked_by → users.id`；`specification_file_id → technical_files.id ON DELETE RESTRICT`；另有 M 组操作者外键。
+- CHECK：获取方式为表列三值；状态、删除标志为 `0/1`；`version >= 0`；`bom_locked_at IS NOT NULL OR bom_locked_by IS NULL`。`chk_products_bom_status` 进一步要求草稿无申请和锁定依据、在审有申请而无锁定依据、批准后申请／锁定人／锁定时间均非空。规格参数结构 CHECK 见[下文](#规格参数存储与迁移)。
+- `trg_products_reject_item_code_update` 是 `BEFORE UPDATE` 触发器，拒绝修改 `item_code`；固定单位、BOM 冻结及永久锁定的命令约束由应用执行，不能视为此触发器已覆盖。
 
-- 主键：`id`
-- 唯一约束：`UNIQUE (item_code)`
-- 外键：`FOREIGN KEY (category_id) REFERENCES item_categories(id)`
-- 外键：`default_route_id -> process_routes.id ON DELETE SET NULL`，在工艺表创建后追加
-- 外键：`bom_locked_by -> users.id`
-- 外键：`specification_file_id -> technical_files.id ON DELETE RESTRICT`，配套索引 `idx_products_specification_file`；文件用途、启用和未删除资格由 Product 写事务校验。
-- 检查约束：`CHECK (bom_locked_at IS NOT NULL OR bom_locked_by IS NULL)`
-- 检查约束：`CHECK (acquire_method IN ('self_made', 'outsourced', 'purchased'))`
-- 检查约束：`CHECK (status IN (0, 1))`
+`item_code` 是永久身份；`product_name` 可重复。BOM 批准人、时间及当前申请关联保存于成品根；当前规格书引用 `technical_files`，文件引用限制删除，绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
 说明：
 
 - 成品只写 `products`，基础物料只写 `materials`；二者独立自增，数值相同的 ID 不表示同一对象。
-- `category_id` 必须属于 `finished_product` 分类；名称不唯一，唯一键只约束 `item_code`。
+- 成品只能使用成品分类；名称可重复。
 - 产品编码和基础单位创建后不可修改；编码永久不复用，软删除后继续使用时恢复原记录。
 - BOM 锁定事实只属于成品，物料表不保留这些字段。
 - 成品不配置默认路线；`default_route_id` 及其外键保留在当前物理结构中，应用不读取、写入或公开该字段，不以其存量值限制路线停用或归档。生产任务只消费创建请求显式选择的路线。
@@ -89,28 +96,34 @@ BOM 单位用量使用 `INT`；`chk_integer_storage_product_materials` 限制其
 
 职责：维护 BOM 引用的基础物料编码，例如 `m1.077.012`。名称（例如“微带”）仅用于展示和搜索，分类可表达“半成品 → 微带电路”；两者都不决定物料唯一身份。
 
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `material_code` | `VARCHAR(100) NOT NULL` | 永久唯一基础物料编码 |
+| `material_name` | `VARCHAR(200) NOT NULL` | 可重复的当前名称 |
+| `category_id` | `BIGINT UNSIGNED NOT NULL` | 物料分类 |
+| `unit` | `VARCHAR(20) NOT NULL` | 固定基础单位 |
+| `acquire_method` | `VARCHAR(32) NOT NULL` | `self_made/outsourced/purchased` |
+| `spec_values` | `JSON NOT NULL` | 全部精确版本共用的规格参数表格 |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `TEXT NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+
+唯一键 `uk_materials_code(material_code)`；索引 `idx_materials_category(category_id)`；外键 `category_id → item_categories.id`，另有 M 组操作者外键。CHECK 限定获取方式为表列三值、状态和删除标志为 `0/1`；`chk_materials_delete_facts` 保证未删除时删除人／时间均空，删除时二者均非空。规格参数 CHECK 见下文。`trg_materials_reject_identity_update` 在 `BEFORE UPDATE` 拒绝改变 `material_code` 或 `unit`。
+
 本表的参数由同一基础物料全部版本共用；不保存规格书字段。每个精确版本的规格书由 `material_variants` 自身引用，边界见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
-| 字段 | 类型 | 说明 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED` | 自增主键，独立于成品 ID |
-| `material_code` | `VARCHAR(100)` | 永久唯一、不可修改的基础物料编码 |
-| `material_name` | `VARCHAR(200)` | 可重复的名称 |
-| `category_id` | `BIGINT UNSIGNED` | `item_categories.id`，必须是 `material` 分类 |
-| `unit` | `VARCHAR(20)` | 固定基础单位，不允许修改或换算 |
-| `acquire_method` | `VARCHAR(32)` | `self_made`、`outsourced`、`purchased` |
-| `spec_values` | `JSON NOT NULL` | 基础物料全部版本共用的规格参数表格；当前暂停录入，保留规则见[规格参数 JSON](product-rules.md#规格参数-json) |
-| `status` | `TINYINT` | `0/1` |
-| `remark` | `TEXT` | 可空备注 |
-| 审计字段 | 见统一规则 | `created_by/at`、`updated_by/at`、`is_deleted`、`deleted_by/at` |
+物料编码与固定单位创建后不可变；编码按物料表永久唯一，不与成品共用注册表。分类必须为 `material`，获取方式独立于分类。
 
-约束：`UNIQUE (material_code)`；分类和操作者外键；状态与软删除标志只允许 `0/1`；删除必须同时保存删除人和时间。物料编码和单位由更新触发器保护。名称不唯一；物料与成品分别保证各自编码唯一，不建立跨表编码注册表。
+名称可重复；物料、成品 ID 独立，数值相同不代表同一身份。
 
 分类类型由 Product 写事务校验，分类对象类型创建后不可修改，无论是否存在引用。物料自身不拥有 BOM 或生产工单；`self_made` 只保留获取方式，不提前开放自产半成品入库能力。
 
 #### 规格参数存储与迁移
 
-`products.spec_values` 与 `materials.spec_values` 保存[完整规格参数 JSON](product-rules.md#规格参数-json)，不保存模板引用。数据库不设置 JSON 默认值；应用在省略参数时写入业务空表。两表分别通过 `chk_products_spec_values_table`、`chk_materials_spec_values_table` 限定根为对象、仅含 `columns` 和 `rows` 两个数组字段，列与单元格细节由共享规范化工具校验。
+`products.spec_values` 与 `materials.spec_values` 保存[完整规格参数 JSON](product-rules.md#规格参数-json)，不保存模板引用。数据库没有 JSON 默认值，应用在省略参数时写入业务空表。
+
+`chk_products_spec_values_table`、`chk_materials_spec_values_table` 要求根为对象且仅有 `columns/rows` 两项，二者都是数组；数据库不在这两项 CHECK 中约束容量或单元格内容，完整结构与容量由共享规范化校验。
 
 迁移 `202610280007-product-json-table-specifications` 期间暂停 Product 资料及 BOM 审批写入，升级后同步切换匹配应用。up 保留旧数组顺序和单元格原文，转换为“参数名称／参数值／单位”三列；缺失或 null 单元格补为空字符串，原 SQL／JSON null 统一为空表，主数据审计时间与版本保持。未知旧字段、非文本值、超过新表格容量的旧数据在转换前拒绝；不截断或猜测内容。
 
@@ -127,33 +140,26 @@ process_routes → process_route_steps
 
 职责：维护成品的统一 BOM 明细，是批量生产需求基础生成的唯一 BOM 数据源。
 
-| 字段                  | 类型              | 说明                           |
-| --------------------- | ----------------- | ------------------------------ |
-| `id`                  | `BIGINT UNSIGNED` | 主键，自增                     |
-| `product_id`          | `BIGINT UNSIGNED` | 被生产对象 ID                  |
-| `material_id` | `BIGINT UNSIGNED` | 消耗对象 ID                    |
-| `quantity_per_unit`   | `INT`   | 每生产一个目标对象的需求数量   |
-| `unit`                | `VARCHAR(20)`     | 用量单位，必须等于物料基础单位 |
-| `status`              | `TINYINT`         | `1` 启用、`0` 停用             |
-| `remark`              | `TEXT`            | 备注                           |
-| 审计字段              | 见统一规则        | 主数据审计字段                 |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `product_id` | `BIGINT UNSIGNED NOT NULL` | 被生产的成品 |
+| `material_id` | `BIGINT UNSIGNED NOT NULL` | 投入的基础物料 |
+| `quantity_per_unit` | `INT NOT NULL` | 每件成品所需物料数量 |
+| `unit` | `VARCHAR(20) NOT NULL` | 用量单位，须等于物料基础单位 |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `TEXT NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-约束：
+唯一键 `uk_product_materials_item(product_id,material_id)`、`uk_product_materials_reference(id,material_id)`；外键 `product_id → products.id`、`material_id → materials.id`，另有 M 组操作者外键。两种 ID 属于不同身份空间，允许数值相等。
 
-- 主键：`id`
-- 外键：`FOREIGN KEY (product_id) REFERENCES products(id)`
-- 外键：`FOREIGN KEY (material_id) REFERENCES materials(id)`
-- 检查约束：`CHECK (quantity_per_unit > 0)`
-- 检查约束：`CHECK (quantity_per_unit = FLOOR(quantity_per_unit))`
-- 检查约束：`status` 与 `is_deleted` 只允许 `0/1`
-- 唯一约束：`UNIQUE (product_id, material_id)`
-- 组合引用索引：`UNIQUE (id, material_id)`
+CHECK：`quantity_per_unit > 0`、`quantity_per_unit = TRUNCATE(quantity_per_unit,0)`、`quantity_per_unit BETWEEN 0 AND 99999999`，共同限定 `1–99999999` 的整数用量；`status/is_deleted` 均为 `0/1`。组合引用键供 Production 同时校验 BOM 行与物料身份；精确版本不固定在此表。
+
+每个成品与基础物料只有一条 BOM 行；单位用量为正整数，单位必须等于物料基础单位。精确版本由 Production 选择，不写入 BOM。
 
 说明：
 
-- `product_id` 指向成品表；成品 ID 与物料 ID 可以数值相同，不限制两者数值不等。
-- `material_id` 指向 `materials.id`；需要精确库存版本时由 Production 在需求或物流事实中选择 `material_variant_id`。
-- 批量 `production_item_demand` 必须保存 `product_material_id` 和 BOM 数量、单位快照；研发不依赖 BOM，四个 BOM 专属字段为空，仍保存真实物料、版本、单位和需求数量；批次追溯统一依靠精确版本及库存批次引用，不配置 BOM 追溯开关。
+- 批量需求保存 BOM 来源与用量快照，研发不依赖 BOM；需求形状由 [Production](../../production/docs/database/demand-allocation-and-outbound.md)维护。追溯依靠精确版本和库存批次，不设 BOM 追溯开关。
 - BOM 最后一级审批通过时，`products.bom_locked_at` 与审批终态同事务写入；此后本表所有新增、修改、删除、停用、恢复和批量替换操作均拒绝。
 - 任务取消、需求完成或库存归零不能解除锁定。[原则性用料变化](product-rules.md#稳定身份与工作流)必须新建产品和编码。
 - 锁定前修改 BOM 不得回写已经生成的生产需求。
@@ -163,40 +169,23 @@ process_routes → process_route_steps
 
 审批接入由[业务规则](product-rules.md#bom-命令与审批)维护，选择理由见 [ADR-0006](../../../../../../docs/adr/0006-approval-workflow-boundaries.md)。Product 只接入 BOM，工单审批仍未实施。
 
-这两个既有表在 BOM 锁定中的白话分工是：
-
-- `products`：记住“这个产品的 BOM 是否已最终批准，以及谁、什么时候批准并锁定”。
-- `product_materials`：保存“生产这个产品固定要用哪些物料和各用多少”；产品一旦锁定，这些行就只能查看，不能再改。
-
-正式规则：
-
-1. 系统不建立 BOM 版本头、版本行或当前版本指针；同一个 `products.id` 只有一份有效 BOM 定义。
-2. BOM 末级批准、申请结束及写入 `products.bom_locked_at/bom_locked_by` 必须处于同一事务。批量任务校验已有批准事实并冻结路线工序快照；研发只校验成品资格。
-3. 锁定事实只允许从“未锁定”写成“已锁定”，没有解锁命令。任务取消、需求完成、库存归零或所有路线停用均不能清空锁定事实。
-4. 批准后 `bom_locked_by` 与 `bom_locked_at` 必须同时非空，记录最后一级实际处理人。没有审批证据的旧锁定数据须按开发约定重置。
-5. 已锁定产品拒绝 BOM 行新增、修改、删除、停用、恢复和批量替换。产品确需发生原则性用料变化时，管理员新建产品和编码，再复制并重新复核 BOM 与路线。
-6. 名称等不改变稳定产品身份的展示字段仍可按产品主数据规则修改；产品编码和固定基础单位不可修改。
+同一成品只有一份 BOM，不建版本头、版本行或当前版本指针。最终批准把最后一级实际批准人和时间写入成品根；这项事实只能从未锁定变为锁定，不提供解锁。名称等展示字段仍可按主数据规则修改。
 
 #### BOM 审批接入结构
 
-成品审批状态、聚合版本及申请引用如下，和前述成品身份字段共同组成当前 `products` 结构。审批运行表见 [Approval 数据库设计](../../approval/docs/database.md)。
+成品根保存审批状态、聚合版本和当前申请引用。审批运行表见 [Approval 数据库设计](../../approval/docs/database.md)。
 
-| `products` 字段 | 类型 | 语义 |
-| --- | --- | --- |
-| `bom_status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft/pending_approval/approved`，独立于成品启停 |
-| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或最终批准的申请 FK `approval_instances.id` |
-| `version` | `INT NOT NULL DEFAULT 0` | 聚合乐观锁，不是 BOM 业务版本 |
-| `bom_locked_at/by` | 同成品字段表 | 由最终 BOM 批准写入永久锁定事实，操作人是最后一级实际批准人 |
+`bom_status` 为 `draft/pending_approval/approved`，独立于成品启停；`version` 是成品聚合并发版本，不是 BOM 业务版本。`bom_approval_instance_id` 指向当前送审或最终批准的申请。
 
-CHECK：`version >= 0`；`draft` 时申请关联和锁定字段均为空；`pending_approval` 时申请关联非空、锁定字段为空；`approved` 时申请关联、锁定时间和操作人均非空。索引 `bom_approval_instance_id`；外键仅保证申请存在，Product 与 Approval 同事务验证申请场景、对象类型、`subject_id`、状态及业务关联相符。完整各级人员从审批事实查询，不把最后一人误当全部审批人员。
+草稿尚无申请或锁定依据；在审须绑定申请但未锁定；批准后保留申请、锁定时间和最终批准人。Product 与 Approval 同事务核验申请确属当前成品及场景，不能只凭申请存在就生效。完整各级人员从审批事实查询，不把最后一人误当全部审批人员。
 
 送审期间冻结成品主表的普通编辑、启停及所有 BOM 明细修改，确保聚合版本和受审内容稳定；要修改先由申请人撤回。所有成品主表及 BOM 写入口均纳入聚合版本管理，BOM 批量修改也须锁成品根并递增同一 `version`。此冻结范围限于当前成品；基础物料自身的改名仍遵守当前名称展示规则，不冻结整个物料目录。
 
-BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁成品根后，先核对当前版本与命令版本一致，再进行任何明细写入。不一致则返回冲突，不能仅递增版本而允许旧页面覆盖新 BOM。
+BOM 完整替换的并发及送审前保存规则见[业务命令](product-rules.md#bom-命令与审批)。
 
 提交时校验客户端期望版本，写待审批及申请关联并递增 `version`；申请保存提交冻结后的版本。非末级审批不改 Product。最终批准核对当前申请和冻结版本，检查 BOM 资格后写 `approved` 与锁定事实并递增版本。驳回或撤回清空当前申请关联、恢复 `draft` 并递增版本；旧申请和证据保留在 Approval，不复用旧申请。
 
-已批准产品的名称等展示字段遵守主数据修改规则；BOM 原则性变更继续新建成品编码。创建批量任务只校验批准及当前业务资格，不写 BOM 锁定事实。单一 `product_materials` 结构保留，不增加版本头、版本行、`bom_revision` 或名称影子表。改表只能追加 migration；开发环境可重置，不把既有任务锁定回填成不存在的人工审批。
+已批准产品的名称等展示字段遵守主数据修改规则；BOM 原则性变更继续新建成品编码。创建批量任务只校验批准及当前业务资格，不写 BOM 锁定事实。没有审批证据的旧锁定数据须重置，不能补造人工批准。
 
 ---
 
@@ -206,84 +195,94 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 
 职责：保存 SOP 与规格书的元数据，文件内容通过 Product 的 S3-compatible 存储端口访问。其他附件用途尚未接入本能力。
 
-| 字段               | 类型              | 说明                            |
-| ------------------ | ----------------- | ------------------------------- |
-| `id`               | `BIGINT UNSIGNED` | 主键，自增                      |
-| `file_name`        | `VARCHAR(255)`    | 文件名，新上传直接使用原始文件名 |
-| `original_name`    | `VARCHAR(255)`    | 上传时原始文件名                |
-| `storage_provider` | `VARCHAR(32)`     | 当前仅使用 `s3`，含 S3-compatible 服务 |
-| `bucket`           | `VARCHAR(128)`    | 物理列可空，当前 S3 写入必须保存稳定 Bucket |
-| `object_key`       | `VARCHAR(500)`    | 存储对象键，不保存临时签名 URL  |
-| `mime_type`        | `VARCHAR(128)`    | MIME 类型                       |
-| `size_bytes`       | `BIGINT UNSIGNED` | 文件大小                        |
-| `checksum_sha256`  | `CHAR(64)`        | 内容摘要                        |
-| `file_type`        | `VARCHAR(64)`     | `sop`、`specification` |
-| `version_no`       | `VARCHAR(64) NULL` | SOP 版本非空；规格书固定为空 |
-| `status`           | `TINYINT`         | `1` 启用、`0` 停用              |
-| `remark`           | `VARCHAR(255)`    | 备注                            |
-| 审计字段           | 见统一规则        | 主数据审计字段                  |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `file_name` | `VARCHAR(255) NOT NULL` | 显示文件名，新上传使用原始文件名 |
+| `original_name` | `VARCHAR(255) NOT NULL` | 上传原始名称 |
+| `storage_provider` | `VARCHAR(32) NOT NULL` | 存储提供方，当前使用 `s3` |
+| `bucket` | `VARCHAR(128) NULL` | 稳定 Bucket，当前 S3 写入必填 |
+| `object_key` | `VARCHAR(500) NOT NULL` | 稳定对象键，不保存临时 URL |
+| `mime_type` | `VARCHAR(128) NOT NULL` | MIME 类型 |
+| `size_bytes` | `BIGINT UNSIGNED NOT NULL` | 文件字节数 |
+| `checksum_sha256` | `CHAR(64) NOT NULL` | 内容摘要 |
+| `file_type` | `VARCHAR(64) NOT NULL` | `sop/specification` |
+| `version_no` | `VARCHAR(64) NULL` | SOP 版本，规格书为空 |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `VARCHAR(255) NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-约束：`UNIQUE (storage_provider, bucket, object_key)`；`CHECK (size_bytes >= 0)`；`chk_technical_files_type` 限定 `file_type IN ('sop','specification')`；`chk_technical_files_version` 要求 SOP 的 `version_no IS NOT NULL`、规格书的 `version_no IS NULL`。新文件创建独立元数据与对象，不修改既有内容和 SOP 版本。
+唯一键 `uk_technical_files_object(storage_provider,bucket,object_key)`；外键为 M 组操作者引用。CHECK 保证 `size_bytes >= 0`、状态和删除标志为 `0/1`、用途仅 `sop/specification`；`chk_technical_files_version` 要求 SOP 版本非空、规格书版本为空。物理可空 Bucket 不提供当前 S3 写入省略入口；未填 Bucket 的行不受普通联合唯一键的完整去重保护。
+
+稳定对象定位由 provider、bucket、object key 组成并唯一；当前 S3 写入必须保存 bucket，不能保存临时 URL。SOP 必须有版本，规格书版本必须为空。每次上传创建新对象及元数据，不覆盖既有内容；完整生命周期见[技术文件](technical-files.md)。
 
 ## 2.2 `process_steps`
 
 职责：维护唯一的工序主数据。
 
-| 字段                  | 类型              | 说明                  |
-| --------------------- | ----------------- | --------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键，自增            |
-| `step_code`           | `VARCHAR(100)`    | 工序编码              |
-| `step_name`           | `VARCHAR(100)`    | 工序名称              |
-| `description`         | `VARCHAR(255)`    | 工序说明              |
-| `default_sop_file_id` | `BIGINT UNSIGNED` | 默认 SOP 文件，可为空 |
-| `status`              | `TINYINT`         | `1` 启用、`0` 停用    |
-| `remark`              | `TEXT`            | 备注                  |
-| 审计字段              | 见统一规则        | 主数据审计字段        |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `step_code` | `VARCHAR(100) NOT NULL` | 永久唯一工序编码 |
+| `step_name` | `VARCHAR(100) NOT NULL` | 工序名称 |
+| `description` | `VARCHAR(255) NULL` | 工序说明 |
+| `default_sop_file_id` | `BIGINT UNSIGNED NULL` | 默认 SOP |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `TEXT NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-约束：`UNIQUE (step_code)`；`default_sop_file_id -> technical_files.id ON DELETE SET NULL`。
+唯一键 `uk_process_steps_code(step_code)`；外键 `default_sop_file_id → technical_files.id ON DELETE SET NULL`，另有 M 组操作者外键；CHECK 限定状态和删除标志为 `0/1`。路线步骤引用工序身份并另存快照，工序主数据不承载具体路线中的位置。
+
+工序编码永久唯一，可配置默认 SOP；文件保留政策见[技术文件](technical-files.md#删除规则)。
 
 ## 2.3 `process_routes`
 
 职责：维护可复用、可版本化的工艺路线。
 
-| 字段         | 类型              | 说明                                       |
-| ------------ | ----------------- | ------------------------------------------ |
-| `id`         | `BIGINT UNSIGNED` | 主键，自增                                 |
-| `route_code` | `VARCHAR(64)`     | 路线编码                                   |
-| `route_name` | `VARCHAR(128)`    | 路线名称                                   |
-| `version_no` | `VARCHAR(64)`     | 路线版本                                   |
-| `status`     | `VARCHAR(20)`     | `draft`、`enabled`、`disabled`、`archived` |
-| `remark`     | `VARCHAR(255)`    | 备注                                       |
-| 审计字段     | 见统一规则        | 主数据审计字段                             |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `route_code` | `VARCHAR(64) NOT NULL` | 路线编码 |
+| `route_name` | `VARCHAR(128) NOT NULL` | 路线名称 |
+| `version_no` | `VARCHAR(64) NOT NULL` | 业务路线版本 |
+| `status` | `VARCHAR(20) NOT NULL DEFAULT 'draft'` | `draft/enabled/disabled/archived` |
+| `remark` | `VARCHAR(255) NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-约束：`UNIQUE (route_code, version_no)`；`CHECK (status IN ('draft', 'enabled', 'disabled', 'archived'))`；启用后的路线版本不得原地修改步骤，只能创建新版本。
+唯一键 `uk_process_routes_version(route_code,version_no)`；外键为 M 组操作者引用；CHECK 限定状态为表列四值、删除标志为 `0/1`。表不再包含 `product_id`，同一路线可被不同任务显式选择；发布内容不可改由应用保证。
 
-说明：路线独立维护，新增/编辑路线不包含“适用产品”，不建立产品—路线适用关系表。批量任务创建前必须手动选择任意启用且未删除的路线，在同一创建事务内重新校验并冻结路线、步骤和 SOP 快照，缺失路线时拒绝创建，不从成品读取默认值；研发任务无需路线，不生成工序。路线停用或归档不受成品引用限制，发布后不可原地修改的规则和历史任务快照继续保留。
+路线编码与版本联合唯一；状态为 `draft/enabled/disabled/archived`，发布和调整规则见[路线工作流](product-rules.md#稳定身份与工作流)。
+
+路线独立于成品，不建立产品—路线适用关系；任务显式选用与历史冻结见[路线工作流](product-rules.md#稳定身份与工作流)。
 
 ## 2.4 `process_route_steps`
 
 职责：维护路线中的工序顺序，并保存发布时必要快照。
 
-| 字段                      | 类型              | 说明                         |
-| ------------------------- | ----------------- | ---------------------------- |
-| `id`                      | `BIGINT UNSIGNED` | 主键，自增                   |
-| `route_id`                | `BIGINT UNSIGNED` | 工艺路线 ID                  |
-| `process_step_id`         | `BIGINT UNSIGNED` | 工序主数据 ID                |
-| `step_order`              | `INT`             | 工序顺序，从 `1` 开始        |
-| `step_code_snapshot`      | `VARCHAR(100)`    | 工序编码快照                 |
-| `step_name_snapshot`      | `VARCHAR(100)`    | 工序名称快照                 |
-| `description_snapshot`    | `VARCHAR(255)`    | 工序说明快照                 |
-| `default_owner_id`        | `BIGINT UNSIGNED` | 默认负责人，可为空           |
-| `sop_file_id`             | `BIGINT UNSIGNED` | 本路线步骤使用的 SOP，可为空 |
-| `sop_file_name_snapshot`  | `VARCHAR(255)`    | SOP 名称快照                 |
-| `sop_object_key_snapshot` | `VARCHAR(500)`    | SOP 对象键快照               |
-| `sop_version_no_snapshot` | `VARCHAR(64)`     | SOP 版本号快照               |
-| `need_inspection`         | `TINYINT`         | 是否要求检验，默认 `0`       |
-| `status`                  | `TINYINT`         | `1` 启用、`0` 停用           |
-| `remark`                  | `VARCHAR(255)`    | 备注                         |
-| 审计字段                  | 见统一规则        | 主数据审计字段               |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `route_id` | `BIGINT UNSIGNED NOT NULL` | 所属路线版本 |
+| `process_step_id` | `BIGINT UNSIGNED NOT NULL` | 工序主数据身份 |
+| `step_order` | `INT NOT NULL` | 顺序，从 `1` 开始 |
+| `step_code_snapshot` | `VARCHAR(100) NOT NULL` | 工序编码快照 |
+| `step_name_snapshot` | `VARCHAR(100) NOT NULL` | 工序名称快照 |
+| `description_snapshot` | `VARCHAR(255) NULL` | 工序说明快照 |
+| `default_owner_id` | `BIGINT UNSIGNED NULL` | 默认负责人 |
+| `sop_file_id` | `BIGINT UNSIGNED NULL` | 使用的 SOP 文件 |
+| `sop_file_name_snapshot` | `VARCHAR(255) NULL` | SOP 名称快照 |
+| `sop_object_key_snapshot` | `VARCHAR(500) NULL` | SOP 对象键快照 |
+| `sop_version_no_snapshot` | `VARCHAR(64) NULL` | SOP 版本快照 |
+| `need_inspection` | `TINYINT NOT NULL DEFAULT 0` | 是否要求检验 |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `VARCHAR(255) NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-约束：`UNIQUE (route_id, step_order)`；`UNIQUE (id, route_id)`；检查布尔字段和 `step_order > 0`。软删除后需要恢复同一路线顺序时恢复原步骤记录，不创建相同顺序的新记录。
+唯一键 `uk_process_route_steps_order(route_id,step_order)`、`uk_process_route_steps_reference(id,route_id)`；外键 `route_id → process_routes.id`、`process_step_id → process_steps.id`、`default_owner_id → users.id`、`sop_file_id → technical_files.id ON DELETE SET NULL`，另有 M 组操作者外键。
+
+CHECK 保证 `step_order > 0`，`need_inspection/status/is_deleted` 均为 `0/1`；`chk_process_route_steps_sop_version_snapshot` 要求 SOP 名称、对象键及版本三项快照同为空或同非空，不依赖当前文件关联仍存在。所有步骤均须报工，表无报工开关。
+
+每步保存工序编码、名称、说明及 SOP 名称、对象键、版本快照，以及负责人和检验规则。路线内顺序唯一；恢复已删的同一顺序须复用原记录。
 
 ## 2.5 路线与 BOM 的边界
 
@@ -296,49 +295,45 @@ BOM 替换命令必须包含客户端读取的 `version` 与完整 `items`；锁
 职责：维护同一基础物料下可供管理员选择的精确版本。`materials.id` 是 BOM 的稳定基础物料身份，
 `material_variants.id` 才是采购批次、生产需求和库存流水中不可替代的版本身份。
 
-| 字段                  | 类型              | 说明                              |
-| --------------------- | ----------------- | --------------------------------- |
-| `id`                  | `BIGINT UNSIGNED` | 主键                              |
-| `material_id` | `BIGINT UNSIGNED` | `materials.id`，必须是启用物料      |
-| `major_version`       | `VARCHAR(32)`     | 主版本                            |
-| `minor_version`       | `VARCHAR(32)`     | 次版本                            |
-| `variant_code`        | `VARCHAR(180)`    | 服务端生成且创建后不可修改的编码   |
-| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前精确版本唯一规格书 |
-| `status`              | `TINYINT`         | `1` 启用、`0` 停用                 |
-| `is_deleted`          | `TINYINT`         | 软删除标记                         |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
+| `material_id` | `BIGINT UNSIGNED NOT NULL` | 所属基础物料 |
+| `major_version` | `VARCHAR(32) NOT NULL` | 主版本 |
+| `minor_version` | `VARCHAR(32) NOT NULL` | 次版本 |
+| `variant_code` | `VARCHAR(180) NOT NULL` | 服务端生成的永久版本编码 |
+| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前精确版本规格书 |
+| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
+| `remark` | `TEXT NULL` | 备注 |
+| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
 
-生产新选版使用同一基础物料的启用、未删除版本；停用只阻止生产新选择，不改变需求、批次、分配、出入库、退料、
-报废、盘点及库存流水中已冻结的版本快照。跨模块只能通过 Product 的 `MaterialVariantQuery` 读取候选，
-不得直接查询本表。
+- 唯一键 `uk_material_variants_code(variant_code)`、`uk_material_variants_version(material_id,major_version,minor_version)`、`uk_material_variants_material_reference(id,material_id)`；索引 `idx_material_variants_material_status(material_id,status,is_deleted,id)`、`idx_material_variants_specification_file(specification_file_id)`。
+- 外键 `material_id → materials.id`、`specification_file_id → technical_files.id ON DELETE RESTRICT`，另有 M 组操作者外键。组合引用键支持外部同时校验精确版本及基础物料归属。
+- CHECK 要求大小版本和版本编码去空白后非空、状态及删除标志为 `0/1`；`chk_material_variants_delete_facts` 要求未删除时删除人／时间均空，删除时二者均非空。
+- `trg_material_variants_reject_identity_update` 在 `BEFORE UPDATE` 拒绝改变基础物料、大小版本或版本编码；更换规格书不改变这些身份字段。
 
-采购一期以 [ADR-0013](../../../../../../docs/adr/0013-procurement-source-and-stock-boundaries.md) 为准：物料精确版本停用不阻止新采购、补购、到货、检验和入库，但阻止该版本确认生产领料出库。Product 的 `ProductInventoryEligibility` 已提供用途明确的事务内公开资格：采购用途允许停用版本，生产出库用途要求启用版本；两者都检查基础物料／分类启用且未删除、版本未删除及身份匹配。调用方接入状态以其所有者文档为准，不能把公开方法存在当作全部流程已完成。`listEnabledByMaterials` 保留生产新选版语义，历史展示查询不能代替写入校验；库存批次 `frozen/disabled` 由 Inventory 自行校验。
+基础物料与大小版本联合唯一，版本编码也永久唯一；不同基础物料可使用相同大小版本。版本编码由服务端按物料编码及大小版本生成，身份创建后不可改。每个精确版本独立引用当前规格书。
 
-上述资格查询在同池活跃事务中按数值 ID 顺序取得 `materials → item_categories → material_variants` 共享锁，先于库存批次锁；事务外调用拒绝。历史父身份锁不要求当前启用，也不排除软删除，仅校验物料与版本归属，成品按 `products.id` 锁定。这样退料／盘点写库存流水与余额触发器取得外键父锁时，不与采购／出库的资格锁形成反向顺序。物料版本启停只锁本版本行，不借展示 JOIN 再锁基础物料。
+版本停用不改变历史需求、批次和库存事实。采购允许停用但未删除版本，生产新选版及领料要求启用版本；基础物料及分类资格、历史身份锁和固定锁序统一见[公开用途资格](product-rules.md#候选历史展示与写入资格)。库存批次的冻结／停用由 Inventory 判断。
 
-物料版本约束：`UNIQUE (material_id, major_version, minor_version)`、`UNIQUE (variant_code)`、`UNIQUE (id, material_id)`；版本编码由基础物料编码与大小版本生成。版本表同样保存完整主数据审计字段与备注，身份字段创建后不可修改。不同基础物料可以具有相同大小版本号。
+版本启停只锁本版本行，不借展示 JOIN 反向取得基础物料锁。
 
-`specification_file_id -> technical_files.id ON DELETE RESTRICT`，配套索引 `idx_material_variants_specification_file`。规格书替换只更新该关联及修改审计，不改精确版本身份、编码、大小版本或基础物料参数；文件用途和可绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
+规格书引用限制物理删除。规格书替换只更新该关联及修改审计，不改精确版本身份、编码、大小版本或基础物料参数；文件用途和可绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
 BOM 只选择基础物料，不能固定大小版本。版本候选不等于管理员已经认可替代：Production 按任务类型决定是否允许选择另一版本：批量同任务锁版，研发按每次需求选版，详见[工单物料版本规则](../../production/docs/database/work-orders-and-batches.md)。已停用版本继续用于历史查询，但不允许新增需求选择。
 
 ## 3. 数据库实施与应用适配边界
 
-本项目目前处于开发阶段，数据库结构可能随时调整，允许在任何时候完全重置数据库数据（清空或重建），无需保留兼容性数据。重置是正常开发流程，测试数据由统一 demo/fixture 再生成；开发者不得依赖旧数据验证功能。
-
-拆表迁移仅接受空业务表，遇到既有成品、物料版本、路线或工单时在任何结构改动前拒绝执行，应重置开发库后从第一条 migration 重建。回滚同样只接受空业务表。不得修改已执行 migration，不设置双写或影子表。
-
-迁移执行条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)；待验收和未完成事项见[路线图](../../../../../../docs/roadmap.md)。
+拆表迁移不推造历史身份或审批证据，空数据门禁与恢复顺序见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。待验收和未完成事项见[路线图](../../../../../../docs/roadmap.md)。
 
 ### 规格书关联迁移
 
-`202610280001-product-specification-files` 先为技术文件用途建立 CHECK，再给成品和精确物料版本追加可空外键，不推测或回填既有资料。物理空值明确表示尚未补充真实规格书；应用的新建与资料保存必须提交有效规格书，独立启停命令不强制补资料。此可空性不提供省略规格书的新建入口，也不建立影子表或兼容双写。
+`202610280001-product-specification-files` 不推测或回填既有资料的规格书。物理空值明确表示尚未补充真实规格书；应用的新建与资料保存必须提交有效规格书，独立启停命令不强制补资料。此可空性不提供省略规格书的新建入口，也不建立影子表或兼容双写。
 
-切换期间暂停 Product 资料及技术文件写入，迁移后切换匹配应用。现存非 SOP／规格书用途会使首个 DDL 失败，不删除或改写其数据。down 在任何永久 DDL 前拒绝成品或精确版本存在非空规格书引用，包含软删除主数据；允许回退时移除本次外键、支撑索引、列和用途 CHECK，技术文件元数据、对象及操作日志保持。MySQL DDL 不能整体回滚，中断后遵守通用迁移恢复约定。
+切换期间暂停 Product 资料及技术文件写入，迁移后切换匹配应用。现存非 SOP／规格书用途会使首个 DDL 失败，不删除或改写其数据。down 在任何永久 DDL 前拒绝成品或精确版本存在非空规格书引用，包含软删除主数据；允许回退时保留技术文件元数据、对象及操作日志。MySQL DDL 不能整体回滚，中断后遵守通用迁移恢复约定。
 
 `202610280003-product-specification-file-metadata` 将版本列改为可空，规格书名称归一为原始文件名并清空版本，SOP 数据和快照保持；回退限制及执行条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280003规格书文件元数据)。
 
 ### 物料名称的跨模块展示读取
 
 Product 向 Production、Procurement 与 Inventory 的 `infrastructure/queries/` 开放只读 `materials.id` 与 `materials.material_name`，登记于根 `scripts/api-data-ownership.mjs`。改动这些字段时须检查登记调用方。名称表示当前称呼，历史引用也按稳定 ID 解析，不过滤停用或软删除；禁止物理删除被引用物料。权限、状态、版本可用性及写入资格仍通过 Product 公共能力校验。改名审批尚未实现，见根 roadmap。
-
-所有路线步骤均须报工，不设置是否报工字段；工序检验规则仍独立保存。

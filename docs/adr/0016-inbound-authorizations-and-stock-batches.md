@@ -1,6 +1,6 @@
 # ADR-0016：入库授权与库存批次分离
 
-状态：Accepted。用户已确认并授权实施；其中成品 C/R/S 数量建议的旧表述由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。实施与验收状态见[路线图](../roadmap.md#成品物料入库统一整改代码核对清单)；本决策不将设计批准等同于功能验收或正式测试通过。
+状态：Accepted。用户已确认并授权实施；其中成品 C/R/S 数量建议的旧表述由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。实施与验收状态见[路线图](../roadmap.md#分次入库与共用批次待验收)；本决策不将设计批准等同于功能验收或正式测试通过。
 
 本文取代范围中保留的逐行供应商规则，由 [ADR-0026](0026-purchase-order-supplier-and-amounts.md) 的采购主单唯一供应商取代；来源授权与目标批次分离、后续跨供应商实际入库及历史事实边界保持。
 

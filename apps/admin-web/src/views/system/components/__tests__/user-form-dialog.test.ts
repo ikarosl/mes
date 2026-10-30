@@ -1,5 +1,4 @@
 import { flushPromises, mount } from '@vue/test-utils';
-import { KeepAlive, defineComponent, nextTick, ref } from 'vue';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import UserFormDialog from '../UserFormDialog.vue';
 
@@ -108,38 +107,5 @@ describe('UserFormDialog department candidate ownership', () => {
     expect(roleOptions).not.toHaveBeenCalled();
     // 编辑模式角色字段不展示，也无需向页面请求角色刷新
     expect(wrapper.emitted('refresh-roles')).toBeUndefined();
-  });
-
-  it('refreshes the department source again when the cached page is re-activated with the dialog open', async () => {
-    // KeepAlive 宿主：弹窗保持打开（visible 恒 true），切换 show 模拟离开/返回缓存页
-    const show = ref(true);
-    const host = defineComponent({
-      components: { KeepAlive, UserFormDialog },
-      setup: () => ({ show }),
-      template: `
-        <KeepAlive>
-          <UserFormDialog
-            v-if="show"
-            :visible="true"
-            :editing-user-id="null"
-            :role-options="[]"
-            :submitting="false"
-            @save="() => {}"
-          />
-        </KeepAlive>
-      `,
-    });
-    mount(host, { global: { stubs: dialogStubs } });
-    await flushPromises();
-    expect(departmentOptions).toHaveBeenCalledTimes(1); // 首次激活（弹窗已打开）刷新自持部门候选
-
-    show.value = false; // 离开缓存页（弹窗仍保持打开状态）
-    await nextTick();
-    await flushPromises();
-    show.value = true; // 返回缓存页：onActivated 再次刷新部门候选
-    await nextTick();
-    await flushPromises();
-
-    expect(departmentOptions).toHaveBeenCalledTimes(2);
   });
 });

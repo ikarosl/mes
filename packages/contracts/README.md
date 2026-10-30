@@ -5,7 +5,7 @@
 ## 契约边界
 
 - 当前只提供编译期 interface、type 和常量，不提供运行时 schema、OpenAPI 生成或兼容性检查。HTTP 校验由 API class DTO 与 ValidationPipe 承担；引入生成方案须先明确唯一维护位置并迁移现有 DTO。
-- 不暴露数据库行、连接、SDK 或内部领域对象。稳定代码来自 [constants](../constants/README.md)，ID、数量、时间、分页及空值遵守[HTTP 规范](../../docs/api-conventions.md)。可空身份保留真正的 `null`，不能序列化为字符串 `"null"`。
+- 类型边界遵守[架构规范](../../docs/architecture.md#4-模块公开边界与数据所有权)，稳定代码来自 [constants](../constants/README.md)，值的表示遵守[HTTP 规范](../../docs/api-conventions.md)。
 - JWT 载荷由 [Identity 的令牌适配器](../../apps/api/src/modules/identity/infrastructure/jwt-token.service.ts)维护；共享认证契约提供登录输入、会话资料、令牌响应及令牌种类。
 - 不另存业务规则副本；变更字段时同步所属模块的语义说明、API DTO 与实际消费方。展示投影、受审快照、业务事实分别建模，不因字段相似而互换。
 
@@ -20,14 +20,14 @@
 | 工单、任务与产出汇总 | [工单与任务](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md) |
 | 需求、替代与补料 | [需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md) |
 | 收尾投影与审批证据 | [结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md) |
-| 采购、到货与分配 | [Procurement](../../apps/api/src/modules/procurement/README.md)；到货主单及行级分页契约见[到货查询](../../apps/api/src/modules/procurement/docs/receipt-queries.md)，采购行的累计来源与独立单号／明细 ID 见[采购行到货记录](../../apps/api/src/modules/procurement/docs/receipt-queries.md#采购行到货记录)，两类补单候选共用的五项到货处理数量、按原到货明细分页及固定来源字段边界见[候选查询契约](../../apps/api/src/modules/procurement/docs/receipt-queries.md#入库候选及正式分配) |
+| 采购、到货与分配 | [Procurement](../../apps/api/src/modules/procurement/README.md)、[查询语义](../../apps/api/src/modules/procurement/docs/receipt-queries.md) |
 | 检验事实与数量建议 | [Quality](../../apps/api/src/modules/quality/README.md) |
 | 库存的物料／成品身份及入库来源 | [Inventory](../../apps/api/src/modules/inventory/docs/database.md)；外购历史来源投影见[公开能力](../../apps/api/src/modules/inventory/docs/public-contracts.md) |
 | 审批人员与证据 | [Approval](../../apps/api/src/modules/approval/README.md) |
 
 ## 验证
 
-构建和常规类型检查只包含应用源码；正式测试文件由 Vitest 运行，并通过 `corepack pnpm --filter @company/contracts typecheck:test` 单独检查类型。验证顺序见[测试策略](../../docs/testing-strategy.md)。
+测试类型入口为 `corepack pnpm --filter @company/contracts typecheck:test`，适用阶段见[测试策略](../../docs/testing-strategy.md)。
 
 ```text
 corepack pnpm --filter @company/contracts typecheck

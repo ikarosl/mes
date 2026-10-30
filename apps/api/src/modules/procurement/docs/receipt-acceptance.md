@@ -27,7 +27,7 @@ source_allocation_round_id 仅定位新轮需要核对的既有采购终止依�
 
 ## 正式清单及分配字段
 
-正式清单和分配的完整字段、类型、键、同源组合 FK 及不可变触发器见[到货链表设计](database/receipts.md#procurement_receipt_acceptance)。acceptance 保存本轮核实 C、实际引用 QC、核对前后实收版本及偏离依据；allocation 保存具体去向及正数授权。正常分配须引用同到货同轮 acceptance，只有真实 manual_rejection 轮的退回可以没有普通清单；采购身份始终沿原到货解析。不保存范围树、已入／已退累计或可写余额。
+正式清单和分配的身份与数据库约束见[到货链表设计](database/receipts.md#procurement_receipt_acceptance)。acceptance 保存本轮核实 C、实际引用 QC、核对前后实收版本及偏离依据；allocation 保存具体去向及正数授权。正常分配须引用同到货同轮 acceptance，只有真实 manual_rejection 轮的退回可以没有普通清单；采购身份始终沿原到货解析。不保存范围树、已入／已退累计或可写余额。
 
 ## 数量与建议
 

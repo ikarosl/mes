@@ -8,69 +8,35 @@ Quality 所有 `quality_inspection_record` 是每个任务当前成品轮次剩�
 
 本节描述当前请求、事实计算及放行。Quality 不核实整批数量，不计算可入量或产出数量差异；Production 负责最终清单及其有限的定稿提示。
 
-全检与抽检都只填写本次实际检查的合格数 G、不合格数 F，服务端自动形成实际检查总数 N=G+F。每项及合计均为 0..99999999 的安全整数，普通全检／抽检必须 N>0；不按产线原申报量推算 G，也不以抽检样本推断整批合格数或整批差异。零产出只使用专用 `zero_confirmation`，G=F=N=0，须明确选择 `released` 并完成核实。
+全检与抽检只记录实际合格数 G、不合格数 F，N=G+F；数量遵守公共整数上限，普通检查必须 N>0；不按产线原申报量推算 G，也不以抽检样本推断整批合格数或整批差异。零产出只使用专用 `zero_confirmation`，G=F=N=0，须明确选择 `released` 并完成核实。
 
 普通检查可明确选择 `released/pending_reinspection/not_released`；只有 `released` 取得放行资格，另两种结论继续阻断正常定稿和入库。Quality 不生成本轮建议量、累计建议量或抽检合格率；没有独立剔除数量输入，也不自动把不合格数登记为产品报废。
 
-`RecordFinishedInspectionPayload` 与事实响应分开。请求提交 `inspectionMethod/qualifiedQuantity/unqualifiedQuantity/releaseDecision`，不提交 `coveredQuantity` 或 `inspectedQuantity`；成品事实响应提供 G/F 和只读派生 N，不返回 `coveredQuantity/releasedQuantity/cumulativeSuggestionQuantity`。检验时间、结论和凭据仍必填；`inspectedAt` 须为带 `Z` 或显式时区偏移的 ISO 8601 时间，服务端保存所表示的同一时刻。`normalizeFinishedInspectionFacts` 校验 G/F、方式与结论；写入、读取和 Production 审批解析复用公开纯规则 `evaluateOutputInspection` 核验同一检查事实，不派生整批或放行数量。
+请求提交检查方式、G/F、明确结论、检验时间和凭据，N 由服务端派生；不提交整批量或放行数量。具体字段见[成品质检契约](../../../../../../packages/contracts/src/quality/finished-inspections.ts)，时间格式遵循[公共 API 规范](../../../../../../docs/api-conventions.md)。写入、读取和 Production 审批解析使用同一套检查事实规则。
 
 产线三项数量和版本保留为登记当时的来源快照，只供识别与核对；不限制实际检查总数，也不自动改变 G/F。例如产线原申报 10，全检填写合格 11、不合格 1，则 N=12；抽检填写样本合格 4、不合格 1，则 N=5。抽检 N=5 不说明整批只有 5 件或其余全部合格。产线管理员独立核对和修正计划内、计划外及实际报废，主动引用适用检验记录送审；质检页面不提示产出数量差异，不合格数不能自动作为已报废数量。
 
 ## 成品来源与统一事实
 
-| 字段 | 含义与约束 |
-| --- | --- |
-| `id` | BIGINT UNSIGNED 主键 |
-| `closeout_id / production_batch_id / finished_round_id` | 非空来源；轮次与结案根组合外键保证同一 Production 来源，一轮最多一份 Quality case |
-| `declared_version` | 登记时 Production 根版本，非负，不要求等于后来送审版本 |
-| `declared_available_quantity / declared_extra_quantity / declared_scrap_quantity` | 当时产线草稿三项参考快照，不由质检修改 |
-| `inspection_method` | full / sampling / zero_confirmation |
-| `covered_quantity` | 共用表保留的可空列；新成品结果始终为 NULL，不作为整批测量 |
-| `qualified_quantity` G | 本次实检合格数；N=G+F只读派生 |
-| `unqualified_quantity` F | 本次实检不合格数 |
-| `release_decision` | released / pending_reinspection / not_released，必须明确选择 |
-| `inspected_at` | 真实检验时间 DATETIME |
-| `result_note / evidence_reference` | 结论及凭据，各非空且最多 5000 字 |
-| `previous_record_id` | 当前根最新检验前驱；组合 FK 保证同根，不覆盖原记录 |
-| `created_by / created_at` | 不可变事实操作者 FK users 与创建时间 |
+统一结果只持久化 G/F，成品的 `covered_quantity` 为 NULL；N=G+F 只读派生。成品原申报版本和三项数量保存在 case。成品响应和批准证据不含整批 C、本次 R、累计 S 或抽检合格率，不建立重复物理计数。同源关系见[数据库](database.md)。
 
-统一结果只持久化 G/F，成品的 `covered_quantity` 为 NULL；N=G+F 只读派生。成品原申报版本和三项数量保存在 case。成品响应和批准证据不含整批 C、本次 R、累计 S 或抽检合格率，不建立重复物理计数。字段及组合 FK 见[数据库](database.md)。
-
-**当前定稿规则**：Production 管理员决定计划内累计目标 A、计划外累计目标 E 及新增报废。仅在定稿引用的检验为 `full + released` 时，Production 计算 `A+E−原引用检验轮固定计划内已入−原引用检验轮固定计划外已入−G`，显示非阻断核对提示；抽检和零量核实不作整批数量差异提示。差异不阻断保存、送审或批准，不新增强制说明或额外审批；原有产出说明、更正原因、物料安排及负责人审批保留。`A<=任务计划`、计划内外各自不低于历史已入量、整数与存储上限继续校验；不合格不自动转报废。
-
-本轮建立时 Production 固定计划内与计划外历史已入基准，供后续授权计算和上述全检定稿提示使用。提示采用**原引用检验轮**的基准；纯定稿更正沿用旧检验时，不改用新定稿轮的基准。该基准是来源历史已入事实快照，不由库存批次余额、当前目标批次或后续领用推算；首次轮两项均为零。Quality 不计算或展示累计建议。
+Quality 不生成累计可入建议；Production 定稿只消费明确引用的检查及其原轮固定已入基准。定稿差异提示、数量上下限和审批要求由[Production 数量规则](../../production/docs/database/production-termination.md#数量质检与更正)维护，不能套用来料超建议强制说明。
 
 ## 部分已入后的复检与固定范围
 
 开始、登记和复检遵守 Production 的[成品检验办理阶段](../../production/docs/database/production-termination.md#数量质检与更正)。已有批准版时先由生产侧显式开启清单更正；质检入口不代替该业务动作。列表、详情和锁内写命令均须反映来源资格，历史记录仍可查看。
 
-首次轮由 Production 保存产出草稿时建立，`POST /quality/finished-inspections/:batchId/actions/start` 将现有待检轮推进 `inspecting`。`POST /quality/finished-inspections/:batchId/actions/reinspect` 提交 `version/currentRevisionId/reason`，Production 来源在同一事务锁定结案根、核对批准版和真实已入，建立后续轮并直接推进 `inspecting`；不能重复执行首次开始。新轮固定当时计划内／计划外历史已入基准及申报剩余量，旧轮与剩余授权立即失效；旧批准版、旧检验和旧入库事实保留。新的检查覆盖该任务全部剩余送检实物，排除已入和已独立处置报废，不按库存批次拆检验范围。无剩余实物时不能发起复检；已批准清单进入更正后，如当前草稿新增了尚未入库的真实实物，按草稿累计目标减历史已入核对本次范围。连续复检无需先取消更正。
+Quality 开始与复检入口调用 Production 来源能力；开始时不生成检查事实，登记时才在同一事务创建 completed case 和不可变结果。同一轮只能登记一次，重检必须由来源建立新轮。
 
-Quality 只在 Production 准备的当前有效轮次执行 record 时一并创建一份 completed case/record，`finished_round_id` 明确关联来源轮次；同轮重复登记拒绝，必须由来源发起下一轮复检。全检／抽检均记录 G/F，普通检查要求 `0<G+F≤99999999`；零产出核实要求 G=F=0 且明确 `released`。Quality 不测整批量、推算抽检整批差异或决定类别分配、报废及入库目标。已入下限、任务上限及有效授权由 Production 和 Inventory 各自校验；Production 的全检定稿提示见上节。
-
-本轮待复检或不放行继续阻断正常定稿和入库；新检查完成本身不恢复旧授权。产线管理员核对清单并经负责人批准后，来源按新有效授权恢复剩余执行。纯分配更正可引用仍适用的旧检验依据，不新增一份同轮检查；后续执行不更新原检验轮基准。已入 10、剩余全检 G=2/F=0 时，Production 可对新累计目标与原检验轮固定基准 10 加 G=2 的差额作定稿提示；历史 10 件仍引用其原依据。
+检查针对当前轮固定的剩余送检实物。Quality 不决定轮次基准、类别分配、报废或目标批次；开始、更正、连续复检及旧授权冻结条件统一见[来源轮次规则](../../production/docs/database/production-termination.md#数量质检与更正)。已入与旧检验事实保留，新检查本身不恢复旧入库授权。
 
 ## 查询与当前阶段
 
-`GET /api/quality/finished-inspections` 按任务分页，接受 `keyword/stage/page/pageSize`。`keyword` 搜索任务号、工单号、成品编码及名称；可选 `stage` 只接受 `FinishedInspectionStage` 的九种代码，省略表示全部阶段。`status` 不属于允许字段，返回 `400 VALIDATION_ERROR`。按结案根更新时间、根 ID 倒序稳定排序。
+`GET /api/quality/finished-inspections` 按任务分页，接受 `keyword/stage/page/pageSize`。关键词搜索任务号、工单号、成品编码及名称；筛选使用当前阶段，按结案根更新时间及 ID 倒序。
 
-每项任务只有一个当前阶段，按下表从上到下先命中即停止；当前轮记录与最近历史记录分开读取，纯清单更正可沿用明确放行的最近记录。
+每项任务只有一个当前阶段：先检查任务是否允许办理及是否在清单审批中，再看草稿、当前轮次和结论。纯清单更正可沿用明确放行的旧记录，显示待核对清单；有历史记录不等于当前可检。具体阶段映射见[查询代码](../infrastructure/queries/)。
 
-| 条件 | `stage` | 显示名称 |
-| --- | --- | --- |
-| 任务不处于 closing/completed/terminated | blocked | 当前不可办理 |
-| 存在待处理的清单审批 | reviewing | 清单审批中 |
-| 尚未保存产出草稿 | awaiting_draft | 待保存产出草稿 |
-| 当前轮 inspecting | inspecting | 检验中 |
-| 当前轮 pending_inspection，且为 finalization_correction，最近检验明确 released | ready_for_finalization | 待核对产出清单 |
-| 其他当前轮 pending_inspection | awaiting_start | 待检验 |
-| 当前轮检验结论 pending_reinspection | needs_reinspection | 待复检 |
-| 当前轮检验结论 not_released | not_released | 质检不放行 |
-| 当前轮 pending_finalization | ready_for_finalization | 待核对产出清单 |
-| 当前轮 finalized | approved | 已定稿 |
-| 其他情况 | blocked | 当前不可办理 |
-
-筛选、分页总数及响应的 `stage` 使用同一 SQL 阶段表达式，先筛选再分页，不能对当前页再过滤或按历史记录存在性分组。阶段和下一步只供导航；开始、登记和复检仍由来源详情及写入时的锁内资格校验决定。最近历史结论不代替当前轮状态或产出清单实际引用的检验依据。
+筛选、总数与响应阶段使用同一口径。阶段和下一步只供导航；开始、登记和复检仍由来源详情及写入时的锁内资格校验决定。最近历史结论不代替当前轮状态或产出清单实际引用的检验依据。
 
 ## 不可变记录与事务
 
@@ -80,14 +46,16 @@ Quality 只在 Production 准备的当前有效轮次执行 record 时一并创�
 
 任务[撤回结束](../../production/docs/database/production-termination.md#撤回结束与再次收尾)后，保留检验记录、引用和轮次，执行期间暂停开始、登记及复检；列表当前阶段为“当前不可办理”，历史仍可查看。重新进入结案后，按当前阶段、审批、轮次及草稿资格办理，不因再次收尾自动作废原检验。既有明确复检、定稿更正的轮次切换规则保持。
 
-开始、复检及登记命令分别通过 Production 注册来源能力在同池事务锁定工单→任务→结案根，核对来源版本、当前轮次及草稿资格；首次轮于草稿保存时固定基准，复检新轮于确认时固定基准，登记只在该轮生成一次检查事实。Quality 读取当前前驱、追加记录、写审计，Production 自身能力推进根版本。开始、复检与登记分别使用 `quality.finished-inspection.start.v1`、`quality.finished-reinspection.begin.v1` 与 `quality.finished-inspection.record.v3` 幂等 namespace；复检指纹包含版本、批准版指针和去首尾空白的原因，登记指纹包含规范化后的 G/F 与派生 N、方式、决定、来源版本、时间和去首尾空白的说明／凭据，不含旧整批 C。开始与复检结果为 batchId、roundId、version；登记结果为 batchId、inspectionId、version。
+开始、复检及登记通过 Production 来源能力，在同池事务按工单→任务→结案根锁定并核对版本、当前轮次和草稿资格。首次轮保存草稿时固定基准，复检新轮确认时固定基准；每轮只生成一次检查事实。Quality 追加记录和审计，Production 推进根版本。
 
-Quality 不写 Production 表。Production 送审和最终批准通过 Quality public 当前共享读重新核对联合指纹、最新记录与快照；`readForCloseout` 的锁内读只锁 Quality case/record，Production 轮次基准关联仅供展示，不借该读路径锁定来源轮次。UPDATE／DELETE 触发器禁止改写事实；保留 `(id,closeout_id)` 引用唯一键及 case的 `(closeout_id,id)` 与结果的 `(production_batch_id,id)` 查询索引。
+三类命令均要求 `Idempotency-Key`，scope 与结果定义见[应用幂等契约](../application/idempotency/finished-inspection-idempotency.contract.ts)。开始与复检返回任务、轮次和新版本；登记返回任务、实际检验记录和新版本。
 
-`QualityFinishedInspectionQuery.hasForCloseout` 仅返回同一结案根与任务是否已有检验记录，供 Production 的复检只读预览使用；它不加载历史记录内容、不判断最新放行资格，也不代替 `readForCloseout` 的锁内依据核验。详情通过来源 `previewReinspection` 获取五项复检预览字段，Production 使用[专门读取与共享纯规则](../../production/docs/database/production-termination.md#api权限与事务)，不为预览构造完整产出详情。
+Quality 不写 Production 表。Production 送审和最终批准通过 Quality public 当前共享读重新核对联合指纹、最新记录与快照；`readForCloseout` 的锁内读只锁 Quality case/record，Production 轮次基准关联仅供展示，不借该读路径锁定来源轮次。数据库保护见[统一检验表](database.md)。
+
+复检预览由 Production 提供，Quality 只回答是否已有检查记录；预览不代替最新放行依据的锁内核验。
 
 ## 迁移保护
 
-`202610080001-finished-inspection-measurements` 成对迁移将新成品检验的 `covered_quantity` 约束改为 NULL、普通 G+F>0、零产出 G=F=0 且明确放行；保留共用列，来料同样写 NULL。上下行在首个永久 DDL 前拒绝已有成品检验、批准版、结案审批记录或根冻结快照，不改写旧事实。迁移及应用切换期间暂停 Quality、Production 结案和相关 Approval 写入，失败后先核对真实结构再恢复。执行细则由[迁移安全](../../../../../../packages/database/docs/migration-safety.md)维护。
+旧整批量和放行建议不能解释为新版检查事实；迁移不转换既有证据，空数据守卫、停写与恢复条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610080001成品检验只记录检查事实)。
 
-既有 `202609200007-quality-finished-inspection-quantities` 和 `202609210001` 迁移保留原文件，不反向修改；开发数据按统一初始化入口重建。审批快照版本由 [Production 结案设计](../../production/docs/database/production-termination.md)维护，成品 record 幂等 namespace 为 `quality.finished-inspection.record.v3`；旧快照和旧幂等结果不按新数量语义解释。
+审批快照由 [Production 结案设计](../../production/docs/database/production-termination.md)维护，幂等版本切换遵循[平台规则](../../../../docs/idempotency.md#13-scope-版本与开发重置)；旧快照和旧幂等结果不能按新的数量语义解释。

@@ -10,7 +10,7 @@
 
 独立模块应具备独立业务语言、规则与状态、明确数据所有权、少量公开能力及独立测试价值。共享业务语言、所有权和事务的功能留在同一模块，按变化原因拆 Controller、Service、Port 和 Adapter；一张表、一个页面或文件过长都不是建模块的充分理由。
 
-Product 的目录、技术文件、工序和路线仍属于同一模块。只有工艺能力形成独立生命周期、所有权或大量外部调用时才评估提取；Production 与 Inventory 的分工见[生产职责](../apps/api/src/modules/production/docs/module-boundaries.md)。
+Product 的目录、技术文件、工序和路线仍属于同一模块。只有工艺能力形成独立生命周期、所有权或大量外部调用时才评估提取；Production 与 Inventory 的分工见[生产职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)。
 
 `common` 只放跨模块且不含业务知识的抽象与工具，不拥有业务表。审计 Writer 是下节明确登记的例外；HTTP 幂等抽象放 `common/idempotency`，MySQL 实现与装配放 `infrastructure/idempotency`，不能把 `common` 变成绕过模块边界的入口。
 
@@ -33,10 +33,10 @@ Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL�
 ## 4. 模块公开边界与数据所有权
 
 - 跨模块代码只导入目标模块根级 `public.ts` 的稳定契约、Facade 或注入 token，不导入内部 Repository、domain 或其他深层实现。组合根 `AppModule` 同样通过公开装配对象接入模块和平台设施，不写业务逻辑。
-- 每张业务表由一个模块所有；跨模块命令与资格读取通过所属模块公开能力。业务表的当前结构由模块文档维护，所有权及允许的展示读登记在 [api-data-ownership.mjs](../scripts/api-data-ownership.mjs)。migration 集中存放不改变所有权，已删除表的历史登记不授权恢复该表。
+- 每张业务表由一个模块所有；跨模块命令与资格读取通过所属模块公开能力。所属数据库文档与 migration 同步维护各表职责、结构、关系和设计理由，要求见[数据库公共规则](database-conventions.md#数据库设计文档)；所有权及允许的展示读登记在 [api-data-ownership.mjs](../scripts/api-data-ownership.mjs)。migration 集中存放不改变所有权，已删除表的历史登记不授权恢复该表。
 - application port 和 `@company/contracts` 不暴露数据库行、连接、事务 executor、SQL 或 SDK 类型。
 - 公开查询按用途区分当前写入资格与历史展示。历史引用可包含停用／软删除资料，但不得用于新增或写入校验；名称和返回类型应体现用途，分别验证状态过滤。具体采购／生产资格由 [Product](../apps/api/src/modules/product/README.md) 所有。
-- 库存由 Inventory 唯一记账，生产需求由 Production 所有；仓库页面或 HTTP 路径不创建独立 Warehouse 账本。跨模块事务、来源与锁序见[库存协作协议](inventory-extraction-design.md)，采购链路见[采购技术设计](procurement-inbound-technical-design.md)。独立其他出库的预留当前读通过组合根装配 Inventory 窄读取端口与 Production 公开查询，不将业务来源资格回调或跨模块表写入开放给 Inventory。
+- 库存由 Inventory 唯一记账，生产需求由 Production 所有；仓库页面或 HTTP 路径不创建独立 Warehouse 账本。跨模块事务、来源与锁序见[库存协作协议](inventory-extraction-design.md)，采购链路见[采购协作设计](procurement-inbound-design.md)。独立其他出库的预留当前读通过组合根装配 Inventory 窄读取端口与 Production 公开查询，不将业务来源资格回调或跨模块表写入开放给 Inventory。
 
 平台表有以下独立边界：
 
@@ -77,7 +77,7 @@ Port 按调用者需要和变化原因保持窄而明确；一个 Adapter 可以
 
 ## 8. 前端结构
 
-前端数据所有权、局部候选、请求生命周期与缓存由[管理端架构](../apps/admin-web/docs/architecture.md)维护，页面展示由[视觉规范](../apps/admin-web/docs/visual-design.md)维护。页面权限覆盖菜单、路由和整页，不要求按钮级权限隐藏；业务状态仍可禁用操作，每个后端接口独立鉴权。
+前端状态、候选、请求生命周期、缓存与权限消费由[管理端架构](../apps/admin-web/docs/architecture.md)维护，页面展示由[视觉规范](../apps/admin-web/docs/visual-design.md)维护。
 
 ## 9. 自动约束
 

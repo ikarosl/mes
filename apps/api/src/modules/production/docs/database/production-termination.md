@@ -16,8 +16,6 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 进入 `closing` 即停止派工、实际开工、返工执行、新增需求、在产损耗登记及普通分配／出库；员工状态与报工只读。管理员当前无在审申请时可办理限定的普通正常报工历史纠错，不恢复执行或改派资格，不改原批准证据、批准产出或库存；初次结案和后续产出更正在审均冻结写入。状态历史只读，不开放历史状态更正或撤销误开工；保留工序状态及未完成工序逐项终止，完整边界见[执行与纠错权限](execution-traceability-quality.md#执行结案与纠错权限已确认)。实际退料仍在退料管理办理；不是要求把所有已领物料退回。管理员核实可退余料、已耗用与损坏情况并留存安排。审批驳回／撤回只解除本次送审冻结，不恢复已关闭需求、工序执行资格、员工写入或已办理退料。
 
-页面操作使用“提前结束”“继续收尾”“核对产出清单”“查看结案信息”。正常完成执行后直接核对产出，并可进入同一物料核对工作台；没有待处理事项时明确展示空态。
-
 提前结束清单首次批准为 `terminated` 后，原任务计划不再占工单分配额度；`closing` 期间仍占用。原计划、领料及批准产出保留，任务额度及版本边界见[工单设计](work-orders-and-batches.md)。
 
 ## 撤回结束与再次收尾
@@ -40,7 +38,7 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 详情额外返回当前 `demands`（含原需求量、已领、保留余量、来源与替代关系）、`pendingItems`（含来源需求及不可操作原因）、`materialReviews`（待核对／已核对／事实变化需重核、说明、人和时间）。这些是现有事实的只读投影，不新增影子表，也不改变原行动快照或已送审批证据。物料实核是否仍有效由后端比较最近行动快照和当前领退料／损耗事实，页面不自行猜测。打开本项说明时保留核对版本和令牌，刷新不能用新事实悄悄替换原确认依据。
 
-传输及审批证据中的数量统一为数量字符串（产出表单数值字段除外）。数据库驱动或原行动 JSON 返回数值时，由读取映射转换成字符串，不能仅依赖 TypeScript 类型断言，也不回写不可变行动记录。
+收尾读取与审批证据的数量使用字符串，产出表单数值字段除外；规范化展示不回写原行动快照。
 
 | 对象 | 处理结果与先后条件 | 保留内容 |
 | --- | --- | --- |
@@ -63,7 +61,7 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 正常执行完成和提前结束的初次 `closing` 均可登记已领物料损坏；仅送审前开放，当前批准版非空或正在审批时拒绝。已结案后不补登记，也不借成品清单更正修改损坏事实。管理员在物料实核中选择原分配、填写实际损坏数量和原因，明确确认后即写入 `item_scrap(loss_purpose=closeout_record,status=confirmed)`，关联当前 `closeout_id`；审批驳回不撤销这个已确认事实，当前不提供冲销或改量。
 
-独立 `ProductionCloseoutMaterialLossService`／Port／Adapter 承担完整写事务。先锁工单 → 批次 → 收尾根 → 分配，按公开当前读核验“已完成生产领料 − pending/completed 生产退料 − pending/confirmed 损耗”。原需求已关闭、分配已释放仍可作为真实领料来源，不能以活动状态替代来源校验。不会创建补料需求、补产授权或库存流水；仅增加损耗事实、收尾版本、成功审计和幂等结果。
+先锁工单 → 批次 → 收尾根 → 分配，按公开当前读核验“已完成生产领料 − pending/completed 生产退料 − pending/confirmed 损耗”。原需求已关闭、分配已释放仍可作为真实领料来源，不能以活动状态替代来源校验。不会创建补料需求、补产授权或库存流水；仅增加损耗事实、收尾版本、成功审计和幂等结果。
 
 `POST /production/batches/:batchId/closeout/material-losses` 独立要求 `production:tasks:manage-output`。请求为 `version/checkToken/allocationId/scrapQuantity/reason`，不接受用途、物料身份或单位。数量为正整数且不得超过当前可退上限；物料、版本、库存批次、单位均取来源分配。首次确认之后永久占用本来源可退上限，不因关闭补料需求释放。
 
@@ -71,13 +69,13 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 ## 数量、质检与更正
 
-产出草稿仍为任务唯一可编辑 `production_batch_closeout`：`available_quantity`、`extra_quantity` 是拟批准的累计计划内／外目标，`additional_scrap_quantity` 是本次新增成品报废。每字段为 `0..99999999` 整数，计划内不超过任务计划，计划内外累计目标各自不得低于同任务历史真实已入量。历史工序产品报废只读引用；原材料损耗不计入成品报废。工序正常报工数量按各工序独立事实追溯，结案核对、批准证据和产出更正不使用工序正常报工汇总或差额。计划缺口只比较任务计划与计划内目标，计划外和报废不抵扣。草稿、检验、批准均不直接产生库存流水。
+产出草稿仍为任务唯一可编辑 `production_batch_closeout`：`available_quantity`、`extra_quantity` 是拟批准的累计计划内／外目标，`additional_scrap_quantity` 是本次新增成品报废。计划内不超过任务计划，计划内外累计目标各自不得低于同任务历史真实已入量。历史工序产品报废只读引用；原材料损耗不计入成品报废，结案新增产品报废也不证明实物已销毁。工序正常报工数量按各工序独立事实追溯，结案核对、批准证据和产出更正不使用工序正常报工汇总或差额。计划缺口只比较任务计划与计划内目标，计划外和报废不抵扣。草稿、检验、批准均不直接产生库存流水。
 
 成品检验的可办理阶段由 Production 控制：首次结案送审前可按轮次资格复检，结案或清单更正送审后冻结开始、登记及复检；撤回或驳回恢复本次草稿办理。已有批准版时，必须先由产线管理员显式开启清单更正，质检才可重新办理；Quality 与 Production 的复检命令均不能隐式开启更正。取消更正后同样关闭检验写入，须重新显式开启更正。清单更正原因属于本次生产更正，后续复检只记录各轮原因，不覆盖根更正原因。
 
 每个 `production_output_round` 在建立时固定前一轮、前批准版、同任务计划内外历史已入基准及申报剩余实物量。首轮在首次保存产出草稿时建立，Quality 明确 `start` 后才能记录；复检由 Quality 入口或保留的 Production 命令共用同一来源写能力，发起时建新轮并直接进入 `inspecting`，无须再执行 `start`。清单更正在发起时建 `pending_inspection` 新轮，可沿用仍适用的旧放行检验，也可按前述资格重新检验。两类新轮都标旧轮 `superseded` 并立即冻结旧剩余授权；复检必须登记新轮检验，同轮检验一条完整范围记录。新检验只覆盖本任务全部尚未入库的送检实物，排除已入和已独立处置报废，不建立范围树。无剩余实物不发起复检；已批准清单更正中如草稿新增未入实物，以当前草稿累计目标减历史已入固定新轮申报剩余量。连续复检无需先取消更正，当前草稿及其原检验引用保留供核对，但旧引用在复检轮无送审资格；新轮明确放行后须由管理员主动改选当前适用记录。取消更正、审批驳回或撤回都不恢复旧授权；后续按当前办理资格经原负责人审批取得新授权。
 
-Quality 的全检／抽检仅记录 G/F，N=G+F 自动派生且普通检查 N>0；不核实整批 C、不生成本次放行量或累计建议。零产出专用 `zero_confirmation` 要求 G=F=N=0 且明确 `released`。普通检验可明确选择 `released/pending_reinspection/not_released`，后两种结论阻断送审与批准。仅在 Production 定稿引用 `full+released` 记录时，比较累计目标 `A+E` 与**原引用检验轮**固定计划内／外已入基准加 G，差额只提示，不阻断草稿保存、送审或审批；抽检不外推整批，也不作整批量差异。沿用旧检验时不使用新定稿轮基准。检验不自动产生报废。审批证据保留检验事实、原轮基准、草稿、物料安排和审批人。已入事实从 Inventory 公开能力读取，不从库存批次余额倒推。
+检查方式、G/F/N 和零产出事实规则由 [Quality](../../../quality/docs/finished-inspections.md#数量输入与放行)维护。Production 只消费明确 released 的适用记录；pending_reinspection、not_released 均阻断送审与批准。仅在定稿引用 `full+released` 记录时，比较累计目标 `A+E` 与**原引用检验轮**固定计划内／外已入基准加 G，差额只提示，不阻断草稿保存、送审或审批；抽检不外推整批，也不作整批量差异。沿用旧检验时不使用新定稿轮基准。审批证据保留检验事实、原轮基准、草稿、物料安排和审批人。已入事实从 Inventory 公开能力读取，不从库存批次余额倒推。
 
 负责人末级批准原子追加 `production_output_revision` 和每类正数剩余授权 `production_output_allocation`。某类授权量 = 草稿累计目标 − 本轮该类固定已入基准；为零时没有该类授权行。批准版 API 的累计数从基准＋授权派生，版表不保存第二套累计物理列。`current_revision_id` 只说明最新批准版；仓库可执行资格另要求对应当前轮已定稿。历史批准、授权和入库明细不回挂新版本。批准版工单汇总只取每任务当前版；执行结束、结案审批和实际入库分别展示。正常首次批准使任务 `completed`，提前结束首次批准使任务 `terminated`；后续清单更正不重开生产或工序。
 
@@ -85,104 +83,270 @@ Quality 的全检／抽检仅记录 G/F，N=G+F 自动派生且普通检查 N>0�
 
 ## 数据结构
 
+下表按当前 migration 列出物理类型；收尾及批准版部分单条数量使用 `BIGINT UNSIGNED`，与公共 `INT` 约定的差异待 [CO-12](../../../../../../../docs/documentation-conflicts.md#co-12)裁决。
+
 ### `production_batch_closeout`
 
-一任务一份可变收尾／产出草稿，使用单据审计字段及乐观锁 `version`，无软删除。沿用同一根记录，不新建平行草稿或第二账本。
+一任务一份可变收尾／产出草稿。沿用同一根记录，不新建平行草稿或第二账本。
 
-| 字段 | 约束／含义 |
-| --- | --- |
-| `id / production_batch_id` | 主键／唯一批次 FK；`UNIQUE(id,production_batch_id)` 校验下属事实归属 |
-| `closeout_mode` | `normal/early`，来源正常执行结束或提前停止 |
-| `reason` | 建立收尾的原因，与最终产出说明独立 |
-| `available_quantity / extra_quantity / additional_scrap_quantity` | 可空无符号整数，未填时同时空，保存后各自不超过字段上限 |
-| `output_reason / material_review_note` | 保存草稿时必填的产出原因与物料安排 |
-| `inspection_record_id` | 管理员选择的质检记录，与本根组合 FK |
-| `approval_instance_id / pending_approval_id` | 最近申请／当前在审指针，后者非空时等于前者 |
-| `review_snapshot` | 当前送审证据；历史以 Approval 和不可变批准版本为准 |
-| `current_revision_id / current_round_id` | 最新批准版本／当前办理轮次；两者共同判定剩余授权资格 |
-| `correction_reason` | 已批准后显式开启更正时填写；无更正草稿时为空 |
+产出三项数量未填写时同时为空，保存时必须说明产出原因和物料安排；建立收尾的原因与最终产出说明分别保存。无更正草稿时不填写更正原因。
+
+最近申请与当前在审申请分别记录，后者非空时必须指向最近申请。根只保留当前送审证据，历史证据以 Approval 和不可变批准版为准。
 
 展示状态由上述事实推导：在审为 `reviewing`，未有批准版为 `draft`，有批准版且开启更正为 `correcting`，其他为 `approved`。不另写冗余状态列。质检保存推进草稿版本以使旧提交失效，但不修改申报数量或替管理员选择记录。
 
+**`production_batch_closeout` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | 主键，自增 |
+| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 一任务一份收尾／产出根 |
+| `closeout_mode` | `VARCHAR(20) NOT NULL` | `normal/early`，来源正常执行结束或提前停止 |
+| `reason` | `TEXT NOT NULL` | 建立收尾的原因，与最终产出说明独立 |
+| `available_quantity` | `BIGINT UNSIGNED NULL` | 拟批准的累计计划内目标；未填写产出时为空 |
+| `extra_quantity` | `BIGINT UNSIGNED NULL` | 拟批准的累计计划外目标；未填写产出时为空 |
+| `additional_scrap_quantity` | `BIGINT UNSIGNED NULL` | 本次新增成品报废数量；未填写产出时为空 |
+| `output_reason` | `TEXT NULL` | 保存产出草稿时填写的产出原因 |
+| `material_review_note` | `TEXT NULL` | 保存产出草稿时填写的物料安排 |
+| `inspection_record_id` | `BIGINT UNSIGNED NULL` | 管理员选择的质检记录，与本根组合 FK |
+| `approval_instance_id` | `BIGINT UNSIGNED NULL` | 最近一次结案或清单更正申请 |
+| `pending_approval_id` | `BIGINT UNSIGNED NULL` | 当前在审申请；非空时等于最近申请 |
+| `review_snapshot` | `JSON NULL` | 当前送审证据；历史以 Approval 和不可变批准版本为准 |
+| `current_revision_id` | `BIGINT UNSIGNED NULL` | 最新不可变批准版 |
+| `current_round_id` | `BIGINT UNSIGNED NULL` | 当前办理轮次，与批准版共同判定剩余授权资格 |
+| `correction_reason` | `TEXT NULL` | 已批准后显式开启更正时填写；无更正草稿时为空 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 创建人 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
+| `updated_by` | `BIGINT UNSIGNED NULL` | 最近修改人 |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
+| `version` | `INT NOT NULL DEFAULT 0` | 乐观锁版本 |
+
+**`production_batch_closeout` 键、索引与检查约束**
+
+| 类别 | 定义 |
+| --- | --- |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_closeout_batch FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)` |
+| 外键 | `CONSTRAINT fk_closeout_approval FOREIGN KEY (approval_instance_id) REFERENCES approval_instances(id)` |
+| 外键 | `CONSTRAINT fk_closeout_pending FOREIGN KEY (pending_approval_id) REFERENCES approval_instances(id)` |
+| 外键 | `CONSTRAINT fk_closeout_creator FOREIGN KEY (created_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_closeout_updater FOREIGN KEY (updated_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_closeout_current_revision FOREIGN KEY (current_revision_id,id) REFERENCES production_output_revision(id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_closeout_inspection FOREIGN KEY(inspection_record_id,id) REFERENCES quality_inspection_record(id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_closeout_current_round FOREIGN KEY(current_round_id,id) REFERENCES production_output_round(id,closeout_id)` |
+| 唯一键 | `UNIQUE KEY uk_closeout_batch (production_batch_id)` |
+| 唯一键 | `UNIQUE KEY uk_closeout_reference (id,production_batch_id)` |
+| CHECK | `CONSTRAINT chk_closeout_reason CHECK (CHAR_LENGTH(TRIM(reason))>0)` |
+| CHECK | `CONSTRAINT chk_closeout_version CHECK (version>=0)` |
+| CHECK | `CONSTRAINT chk_closeout_mode CHECK (closeout_mode IN ('normal','early'))` |
+| CHECK | `CONSTRAINT chk_closeout_output CHECK ( (available_quantity IS NULL AND extra_quantity IS NULL AND additional_scrap_quantity IS NULL AND material_review_note IS NULL AND output_reason IS NULL AND inspection_record_id IS NULL) OR (available_quantity IS NOT NULL AND extra_quantity IS NOT NULL AND additional_scrap_quantity IS NOT NULL AND available_quantity<=99999999 AND extra_quantity<=99999999 AND additional_scrap_quantity<=99999999 AND material_review_note IS NOT NULL AND CHAR_LENGTH(TRIM(material_review_note))>0 AND output_reason IS NOT NULL AND CHAR_LENGTH(TRIM(output_reason))>0) )` |
+| CHECK | `CONSTRAINT chk_closeout_correction CHECK (correction_reason IS NULL OR (current_revision_id IS NOT NULL AND CHAR_LENGTH(TRIM(correction_reason))>0))` |
+| CHECK | `CONSTRAINT chk_closeout_pending CHECK (pending_approval_id IS NULL OR (approval_instance_id IS NOT NULL AND pending_approval_id=approval_instance_id AND review_snapshot IS NOT NULL AND available_quantity IS NOT NULL AND inspection_record_id IS NOT NULL AND (current_revision_id IS NULL OR correction_reason IS NOT NULL)))` |
+
 ### `production_batch_closeout_action`
 
-不可变任务生命周期与逐项处理事实，UPDATE/DELETE 触发器禁止改写，无 `version/updated_*/is_deleted`。
+不可变任务生命周期与逐项处理事实。
 
-| 字段 | 类型／约束 | 含义 |
-| --- | --- | --- |
-| `id / closeout_id` | 自增主键／非空 FK 收尾记录 | 索引 `(closeout_id,id)` |
-| `item_kind` | `VARCHAR(30)`，CHECK 封闭枚举 | task、step、abnormal、rework、supplement、outbound、demand、allocation、material |
-| `target_id` | `BIGINT UNSIGNED NOT NULL` | 本模块目标记录；类型与同批次归属锁内校验 |
-| `label` | `VARCHAR(200) NOT NULL` | 来源记录标识 |
-| `previous_status / resulting_status` | `VARCHAR(40) NOT NULL` | 实际处理前后状态 |
-| `reason` | `TEXT NOT NULL`，去空白非空 | 本项说明 |
-| `fact_snapshot` | `JSON NOT NULL` | 处理前事项 ID、状态、版本、数量／物料核对依据 |
-| `created_by / created_at` | 用户 FK／默认当前时间 | 实际处理人和时间 |
+行动关联同一任务的收尾根及处理目标，记录实际前后状态、本项说明和处理前的身份、版本、数量及物料核对依据；目标类型与归属须锁内校验。
 
 `batch_step_records` 增加 `terminated` 及 `closeout_id/terminated_by/terminated_at/termination_reason`。终止状态必须全部有值且 `completed_at IS NULL`；其他状态这些字段为空；`(closeout_id,production_batch_id)` 组合 FK 校验归属。
 
+**`production_batch_closeout_action` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | 主键，自增 |
+| `closeout_id` | `BIGINT UNSIGNED NOT NULL` | 所属收尾根 |
+| `item_kind` | `VARCHAR(30) NOT NULL` | task、step、abnormal、rework、supplement、outbound、demand、allocation、material |
+| `target_id` | `BIGINT UNSIGNED NOT NULL` | 本模块目标记录；类型与同批次归属锁内校验 |
+| `label` | `VARCHAR(200) NOT NULL` | 来源记录标识 |
+| `previous_status` | `VARCHAR(40) NOT NULL` | 实际处理前状态 |
+| `resulting_status` | `VARCHAR(40) NOT NULL` | 实际处理后状态 |
+| `reason` | `TEXT NOT NULL` | 本项说明 |
+| `fact_snapshot` | `JSON NOT NULL` | 处理前事项 ID、状态、版本、数量／物料核对依据 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 逐项处理或进入／撤回的实际操作者 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 行动发生的记录时间 |
+
+**`production_batch_closeout_action` 键、索引与检查约束**
+
+| 类别 | 定义 |
+| --- | --- |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_closeout_action_source FOREIGN KEY (closeout_id) REFERENCES production_batch_closeout(id)` |
+| 外键 | `CONSTRAINT fk_closeout_action_actor FOREIGN KEY (created_by) REFERENCES users(id)` |
+| 索引 | `KEY idx_closeout_action (closeout_id,id)` |
+| CHECK | `CONSTRAINT chk_closeout_action_reason CHECK (CHAR_LENGTH(TRIM(reason))>0)` |
+| CHECK | `CONSTRAINT chk_closeout_action_kind CHECK ( item_kind IN ('task','step','abnormal','rework','supplement','outbound','demand','allocation','material') )` |
+
+**`production_batch_closeout_action` 数据库触发器**
+
+| 触发器 | 时机 | 保护或维护范围 |
+| --- | --- | --- |
+| [trg_closeout_action_no_update](../../../../../../../packages/database/migrations/202609150001-production-demand-correction-and-closeout.up.sql) | `BEFORE UPDATE` | 收尾行动事实不可改写 |
+| [trg_closeout_action_no_delete](../../../../../../../packages/database/migrations/202609150001-production-demand-correction-and-closeout.up.sql) | `BEFORE DELETE` | 收尾行动事实不可删除 |
+
 ### 引用 Quality 的 `quality_inspection_record`
 
-检验表与写事务、DTO、领域放行规则、复检前驱及独立 HTTP 入口均属于 Quality，完整字段约束见[Quality 成品检验专题](../../../quality/docs/finished-inspections.md)。以下仅描述 Production 批准证据引用的契约。Production 通过 Quality public 当前共享读获取同任务记录，不能直接读取或改写其表。Quality 经注册来源回调由 Production 自己锁定并推进结案根，避免循环依赖。
+检验身份与字段由 [Quality 成品检验](../../../quality/docs/finished-inspections.md)维护。Production 只通过公开能力读取同任务的不可变记录；Quality 经来源能力在同事务核验并推进当前轮，不能替管理员选择最终依据。
 
-Production 消费 `ProductionOutputInspection` 公开契约：记录 ID、同任务／结案根身份、当时申报版本与三项数量、检验时间、说明／凭据、前驱、操作者，以及 `inspectedQuantity/qualifiedQuantity/unqualifiedQuantity/releaseDecision`。成品契约及审批证据不包含 `coveredQuantity/releasedQuantity/cumulativeSuggestionQuantity`；N=G+F 为只读派生，不重复落表。
-
-Quality case 以 `finished_round_id` 引用实际检查轮次，record 保存 G/F、明确结论和前驱；共用 `covered_quantity` 列对新成品记录为 NULL。Production 只通过 Quality public 读取不可变检验，不直接查询或改写检验表；Quality 经来源 registry 调用 Production 在同事务中校验并推进当前轮。原始申报快照和实际检查轮基准分别保留，检验保存推进结案根版本，不替管理员选择最终依据。说明和凭据去空白非空、各不超过 5000 字；零产出同样适用。
+Production 保存原始申报快照、检验身份和实际检查轮基准。检验保存使旧草稿版本失效，但不修改申报数量；原检验轮与当前定稿轮不能混用。G/F、放行及数量差异的消费规则见[数量、质检与更正](#数量质检与更正)。
 
 ### `production_output_round` 与 `production_output_allocation`
 
-两表均由 Production 所有，使用 InnoDB、`utf8mb4_0900_ai_ci`。ID 与引用为 `BIGINT UNSIGNED`，除显式 NULL 外均非空，`id` 为自增主键，时间为北京时间 DATETIME。完整数量和授权语义见上方[数量、质检与更正](#数量质检与更正)，不从表值域推断未开放的操作。
+轮次是可变单据，授权是不可变事实，公共字段遵守[数据库约定](../../../../../../../docs/database-conventions.md)。数量和授权语义见[数量、质检与更正](#数量质检与更正)。
 
-`production_output_round` 保存每轮起始依据与当前办理资格：
+`production_output_round` 的同根轮号唯一递增，前轮和前批准版均须属于同一收尾根。第 1 轮没有前轮或前批准版；后续轮必须有前轮，是否可引用前批准版由具体命令校验。
 
-| 字段 | 类型／约束 | 含义 |
+轮次来源、触发原因、建轮时草稿版本及三个起始数量创建后不可改写；只由命令推进办理状态。正常状态路径为 `pending_inspection → inspecting → pending_finalization → reviewing → finalized`，开始后续轮次可使旧轮进入 superseded。取消或驳回不恢复旧轮的已定稿资格，每轮至多一份批准版由 revision 的唯一约束保证。
+
+`production_output_allocation` 必须与批准版、办理轮及收尾根同源，每版每类最多一行。授权不可覆盖或删除；已执行进度沿 Inventory 事实派生，不存可变余额。
+
+**`production_output_round` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
 | --- | --- | --- |
-| closeout_id | ID，FK production_batch_closeout(id) | 所属收尾根 |
-| round_no | INT，CHECK >0 | 同根递增轮号 |
-| previous_round_id | ID NULL | 同根前轮，组合自 FK |
-| trigger_type | VARCHAR(30)，CHECK initial／reinspection／finalization_correction | 初轮、复检或清单更正 |
-| base_revision_id | ID NULL | 建轮时前批准版，与 closeout_id 组合 FK production_output_revision |
-| source_version | INT，CHECK >=0 | 建轮时产出草稿版本快照 |
-| baseline_planned_received / baseline_extra_received | INT，各自 CHECK 0..99999999 | 建轮时计划内／外真实已入基准 |
-| starting_declared_remaining | INT，CHECK 0..99999999 | 建轮时申报剩余实物量快照 |
-| status | VARCHAR(30)，CHECK 封闭值域 | pending_inspection／inspecting／pending_finalization／reviewing／finalized／superseded |
-| reason | TEXT NULL，非空时 CHECK trim 后非空 | 本轮原因，不覆盖根清单更正原因 |
-| created_by / updated_by | ID，分别 FK users(id) | 创建及最近修改人 |
-| created_at / updated_at | DATETIME DEFAULT CURRENT_TIMESTAMP，后者自动随更新推进 | 创建及修改时间 |
-| version | INT DEFAULT 0，CHECK >=0 | 本轮乐观锁 |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | 主键，自增 |
+| `closeout_id` | `BIGINT UNSIGNED NOT NULL` | 所属收尾根 |
+| `round_no` | `INT NOT NULL` | 同根递增轮号 |
+| `previous_round_id` | `BIGINT UNSIGNED NULL` | 同根前轮，组合自 FK |
+| `trigger_type` | `VARCHAR(30) NOT NULL` | 初轮、复检或清单更正 |
+| `base_revision_id` | `BIGINT UNSIGNED NULL` | 建轮时前批准版，与 closeout_id 组合 FK production_output_revision |
+| `source_version` | `INT NOT NULL` | 建轮时产出草稿版本快照 |
+| `baseline_planned_received` | `INT NOT NULL` | 建轮时同任务计划内真实已入基准 |
+| `baseline_extra_received` | `INT NOT NULL` | 建轮时同任务计划外真实已入基准 |
+| `starting_declared_remaining` | `INT NOT NULL` | 建轮时申报剩余实物量快照 |
+| `status` | `VARCHAR(30) NOT NULL` | pending_inspection／inspecting／pending_finalization／reviewing／finalized／superseded |
+| `reason` | `TEXT NULL` | 本轮原因，不覆盖根清单更正原因 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 建轮人 |
+| `updated_by` | `BIGINT UNSIGNED NOT NULL` | 最近修改人 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 建轮时间 |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
+| `version` | `INT NOT NULL DEFAULT 0` | 本轮乐观锁 |
 
-唯一键为 `(closeout_id,round_no)`、`(id,closeout_id)`，列表索引为 `(closeout_id,status,id)`；前轮 FK 为 `(previous_round_id,closeout_id)→本表(id,closeout_id)`，前版 FK 为 `(base_revision_id,closeout_id)→production_output_revision(id,closeout_id)`，各自及人员引用有支撑索引。谱系 CHECK 要求第 1 轮无前轮及前版，第 2 轮起必须有前轮；是否允许引用前版由具体命令校验。
+**`production_output_round` 键、索引与检查约束**
 
-UPDATE 触发器冻结 closeout_id、round_no、previous_round_id、trigger_type、base_revision_id、source_version、三个起始数量和创建审计；状态与可变审计按命令推进。正常状态路径为 `pending_inspection → inspecting → pending_finalization → reviewing → finalized`，开始后续轮次可使旧轮进入 superseded。取消或驳回不恢复旧轮的已定稿资格，每轮至多一份批准版由 revision 的唯一约束保证。
+| 类别 | 定义 |
+| --- | --- |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_output_round_closeout FOREIGN KEY(closeout_id) REFERENCES production_batch_closeout(id)` |
+| 外键 | `CONSTRAINT fk_output_round_previous FOREIGN KEY(previous_round_id,closeout_id) REFERENCES production_output_round(id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_output_round_base FOREIGN KEY(base_revision_id,closeout_id) REFERENCES production_output_revision(id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_output_round_creator FOREIGN KEY(created_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_output_round_updater FOREIGN KEY(updated_by) REFERENCES users(id)` |
+| 唯一键 | `UNIQUE KEY uk_output_round_no(closeout_id,round_no)` |
+| 唯一键 | `UNIQUE KEY uk_output_round_closeout(id,closeout_id)` |
+| 索引 | `KEY idx_output_round_status(closeout_id,status,id)` |
+| CHECK | `CONSTRAINT chk_output_round_no CHECK(round_no>0 AND source_version>=0 AND version>=0)` |
+| CHECK | `CONSTRAINT chk_output_round_trigger CHECK(trigger_type IN('initial','reinspection','finalization_correction'))` |
+| CHECK | `CONSTRAINT chk_output_round_status CHECK(status IN('pending_inspection','inspecting','pending_finalization','reviewing','finalized','superseded'))` |
+| CHECK | `CONSTRAINT chk_output_round_quantities CHECK(baseline_planned_received BETWEEN 0 AND 99999999 AND baseline_extra_received BETWEEN 0 AND 99999999 AND starting_declared_remaining BETWEEN 0 AND 99999999)` |
+| CHECK | `CONSTRAINT chk_output_round_lineage CHECK((round_no=1 AND previous_round_id IS NULL AND base_revision_id IS NULL) OR (round_no>1 AND previous_round_id IS NOT NULL))` |
+| CHECK | `CONSTRAINT chk_output_round_reason CHECK(reason IS NULL OR CHAR_LENGTH(TRIM(reason))>0)` |
 
-`production_output_allocation` 保存批准后每类正数剩余授权：
+**`production_output_round` 数据库触发器**
 
-| 字段 | 类型／约束 | 含义 |
+| 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| revision_id / round_id / closeout_id | ID | 组合 FK production_output_revision(id,round_id,closeout_id) |
-| category | VARCHAR(30)，CHECK self_made／production_extra | 计划内／计划外成品授权类别 |
-| quantity | INT，CHECK 1..99999999 | 批准时该类别剩余授权，零量不建行 |
-| remark | TEXT NULL，非空时 CHECK trim 后非空 | 批准授权说明 |
-| created_by / created_at | ID，FK users(id)／DATETIME DEFAULT CURRENT_TIMESTAMP | 最终批准人及创建时间 |
+| [trg_output_round_identity_update](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE UPDATE` | 冻结轮次来源、建轮草稿版本、起始数量与创建事实 |
 
-唯一键为 `(revision_id,category)`、`(id,revision_id,closeout_id,category)`；索引为 `(round_id,closeout_id,id)`，来源组合 FK 和人员 FK 有支撑索引。UPDATE／DELETE 触发器禁止覆盖授权，不含 version、可变审计或软删除。每版每类最多一行，已执行进度沿 Inventory 事实派生，不存可变余额。
+**`production_output_allocation` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | 主键，自增 |
+| `revision_id` | `BIGINT UNSIGNED NOT NULL` | 产生本授权的批准版 |
+| `round_id` | `BIGINT UNSIGNED NOT NULL` | 批准版所属办理轮 |
+| `closeout_id` | `BIGINT UNSIGNED NOT NULL` | 同任务收尾根 |
+| `category` | `VARCHAR(30) NOT NULL` | 计划内／计划外成品授权类别 |
+| `quantity` | `INT NOT NULL` | 批准时该类别剩余授权，零量不建行 |
+| `remark` | `TEXT NULL` | 批准授权说明 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 最终批准人 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 授权创建时间 |
+
+**`production_output_allocation` 键、索引与检查约束**
+
+| 类别 | 定义 |
+| --- | --- |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_output_allocation_revision FOREIGN KEY(revision_id,round_id,closeout_id) REFERENCES production_output_revision(id,round_id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_output_allocation_creator FOREIGN KEY(created_by) REFERENCES users(id)` |
+| 唯一键 | `UNIQUE KEY uk_output_allocation_category(revision_id,category)` |
+| 唯一键 | `UNIQUE KEY uk_output_allocation_source(id,revision_id,closeout_id,category)` |
+| 索引 | `KEY idx_output_allocation_round(round_id,closeout_id,id)` |
+| CHECK | `CONSTRAINT chk_output_allocation_category CHECK(category IN('self_made','production_extra'))` |
+| CHECK | `CONSTRAINT chk_output_allocation_quantity CHECK(quantity BETWEEN 1 AND 99999999)` |
+| CHECK | `CONSTRAINT chk_output_allocation_remark CHECK(remark IS NULL OR CHAR_LENGTH(TRIM(remark))>0)` |
+
+**`production_output_allocation` 数据库触发器**
+
+| 触发器 | 时机 | 保护或维护范围 |
+| --- | --- | --- |
+| [trg_output_allocation_no_update](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE UPDATE` | 批准授权不可改写 |
+| [trg_output_allocation_no_delete](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE DELETE` | 批准授权不可删除 |
 
 ### `production_output_revision`
 
-每次最终批准追加一条不可变清单，`UNIQUE(closeout_id,revision_no)`、`UNIQUE(approval_instance_id)` 防重复；一份初版及若干更正版组成链，不修改旧数量。
+每次最终批准追加一条不可变清单；同根版本号与批准申请分别防重。一份初版及若干更正版组成链，不修改旧数量。
 
-| 字段 | 约束／含义 |
+批准版、办理轮、收尾根、任务、工单与成品必须同源，引用实际采用的同根检验。初版编号为 1 且无前版，更正版关联同根前版。
+
+批准版冻结任务计划和完整受审证据，分别保存历史工序报废与本次新增报废。
+
+批准事实不可改写。当前版指针和当前已定稿轮次共同决定入库资格；库存入库按明细引用授权及原批准版。旧 `production_batch_termination` 被移除，不双写或迁移旧审批证据。
+
+**`production_output_revision` 字段定义**
+
+| 字段 | SQL 定义 | 业务含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | 主键，自增 |
+| `closeout_id` | `BIGINT UNSIGNED NOT NULL` | 所属收尾根 |
+| `round_id` | `BIGINT UNSIGNED NOT NULL` | 本次批准的办理轮 |
+| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 同源生产任务 |
+| `work_order_id` | `BIGINT UNSIGNED NOT NULL` | 所属工单，与任务一致 |
+| `product_id` | `BIGINT UNSIGNED NOT NULL` | 批准成品，与任务一致 |
+| `revision_no` | `INT NOT NULL` | 同根递增版本号，初版为 1 |
+| `previous_revision_id` | `BIGINT UNSIGNED NULL` | 同根前版，初版为空 |
+| `approval_instance_id` | `BIGINT UNSIGNED NOT NULL` | 产生本批准版的唯一审批申请 |
+| `inspection_record_id` | `BIGINT UNSIGNED NOT NULL` | 实际引用的同根不可变检验 |
+| `planned_quantity` | `BIGINT UNSIGNED NOT NULL` | 任务计划快照；累计计划内／外从轮次基准＋该版授权派生 |
+| `additional_scrap_quantity` | `BIGINT UNSIGNED NOT NULL` | 本次结案新增产品报废 |
+| `existing_scrap_quantity` | `BIGINT UNSIGNED NOT NULL` | 冻结的历史工序产品报废 |
+| `correction_reason` | `TEXT NULL` | 更正版的更正原因 |
+| `review_snapshot` | `JSON NOT NULL` | 完整冻结的受审证据 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 最终批准人 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 批准时间 |
+
+**`production_output_revision` 键、索引与检查约束**
+
+| 类别 | 定义 |
 | --- | --- |
-| `id / closeout_id / round_id / production_batch_id` | 清单主键、办理轮次与同任务收尾组合 FK |
-| `work_order_id / product_id` | 与任务组合 FK 核对来源 |
-| `revision_no / previous_revision_id` | 正整数版本；初版为 1 且无前版，更正版有前版并属于同根 |
-| `approval_instance_id / inspection_record_id` | 唯一批准申请、实际采用的同根质检事实 |
-| `planned_quantity` | 任务计划快照；累计计划内／外从轮次基准＋该版授权派生 |
-| `additional_scrap_quantity / existing_scrap_quantity` | 本次新增与历史工序报废分别保存 |
-| `correction_reason / review_snapshot` | 更正原因及完整冻结证据 |
-| `created_by / created_at` | 最终批准人和批准时间 |
+| 主键 | `PRIMARY KEY (id)` |
+| 外键 | `CONSTRAINT fk_output_revision_source FOREIGN KEY (closeout_id,production_batch_id) REFERENCES production_batch_closeout(id,production_batch_id)` |
+| 外键 | `CONSTRAINT fk_output_revision_order FOREIGN KEY (production_batch_id,work_order_id) REFERENCES production_batches(id,work_order_id)` |
+| 外键 | `CONSTRAINT fk_output_revision_product FOREIGN KEY (production_batch_id,product_id) REFERENCES production_batches(id,product_id)` |
+| 外键 | `CONSTRAINT fk_output_revision_previous FOREIGN KEY (previous_revision_id,closeout_id) REFERENCES production_output_revision(id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_output_revision_approval FOREIGN KEY (approval_instance_id) REFERENCES approval_instances(id)` |
+| 外键 | `CONSTRAINT fk_output_revision_actor FOREIGN KEY (created_by) REFERENCES users(id)` |
+| 外键 | `CONSTRAINT fk_output_revision_inspection FOREIGN KEY(inspection_record_id,closeout_id) REFERENCES quality_inspection_record(id,closeout_id)` |
+| 外键 | `CONSTRAINT fk_output_revision_round FOREIGN KEY(round_id,closeout_id) REFERENCES production_output_round(id,closeout_id)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_no (closeout_id,revision_no)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_approval (approval_instance_id)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_reference (id,closeout_id)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_batch (id,production_batch_id)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_finished_source (id,production_batch_id,work_order_id,product_id)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_round(round_id)` |
+| 唯一键 | `UNIQUE KEY uk_output_revision_round_closeout(id,round_id,closeout_id)` |
+| 索引 | `KEY idx_output_revision_order (work_order_id,created_at,id)` |
+| CHECK | `CONSTRAINT chk_output_revision_no CHECK (revision_no>0)` |
+| CHECK | `CONSTRAINT chk_output_revision_correction CHECK ( (previous_revision_id IS NULL AND revision_no=1 AND correction_reason IS NULL) OR (previous_revision_id IS NOT NULL AND revision_no>1 AND correction_reason IS NOT NULL AND CHAR_LENGTH(TRIM(correction_reason))>0) )` |
+| CHECK | `CONSTRAINT chk_output_revision_quantities CHECK(planned_quantity>0 AND planned_quantity<=99999999 AND additional_scrap_quantity<=99999999)` |
 
-事实无 version、更新审计或软删除，UPDATE/DELETE 触发器禁止改写。当前版指针和当前已定稿轮次共同决定入库资格；库存入库按明细引用授权及原批准版。旧 `production_batch_termination` 被移除，不双写或迁移旧审批证据。
+**`production_output_revision` 数据库触发器**
+
+| 触发器 | 时机 | 保护或维护范围 |
+| --- | --- | --- |
+| [trg_output_revision_no_update](../../../../../../../packages/database/migrations/202609170001-production-output-revisions.up.sql) | `BEFORE UPDATE` | 批准版不可改写 |
+| [trg_output_revision_no_delete](../../../../../../../packages/database/migrations/202609170001-production-output-revisions.up.sql) | `BEFORE DELETE` | 批准版不可删除 |
 
 ## API、权限与事务
 
@@ -204,13 +368,13 @@ UPDATE 触发器冻结 closeout_id、round_no、previous_round_id、trigger_type
 
 Quality 独立查询路径为 `GET /api/quality/finished-inspections/:batchId`，使用 `quality:finished-inspections:view`；主要复检入口 `POST /api/quality/finished-inspections/:batchId/actions/reinspect` 使用 `quality:finished-inspections:record`，经 Production 来源能力共享事务。Production 的复检命令与该入口同样直接启动新轮，均不要求对方模块的页面权限。
 
-详情的复检预览通过 `ProductionOutputRepository.previewReinspection` 在同一读取事务内加载草稿、当前轮状态、当前批准版累计目标、Quality 检验记录存在性及 Inventory 真实历史已入量，不加载完整收尾事项、历史批准快照或逐授权余额。累计目标仍按批准版自身轮次基准加本版授权派生；更正中优先采用草稿。预览、完整产出详情及复检命令共用 [复检纯规则](../../domain/production-output-reinspection.policy.ts)，阻断优先级和剩余量计算只维护一份；命令继续在来源锁内重新读取事实，不以页面预览作为写入资格。当前批准版引用和历史入库归属仍须有效。
+复检预览与完整产出详情使用同一[复检规则](../../domain/production-output-reinspection.policy.ts)：更正中优先采用草稿，否则使用当前批准版的累计目标；当前批准引用及历史入库归属必须有效。预览不授予办理资格，复检命令须在来源锁内重新读取事实并核验。
 
-旧 `/closeout/output`、`/closeout/submit` 和 Production 的 `/output/inspections` 写入口删除。写命令均有独立 RBAC、版本和幂等校验，契约见[幂等约定](../../../../../docs/idempotency.md)；质检权限不授予改写草稿的能力。
+质检权限不授予改写生产草稿的能力；写命令的幂等范围见[应用契约](../../application/idempotency/production-idempotency-scopes.contract.ts)。
 
 审批场景沿用 `production.batch.closeout`、对象 `production_batch_closeout`，名称为“生产任务结案”。末节点必须 `business + production.work_order_owner`；前序节点可配置角色或指定用户。事务在工单 → 批次 → 草稿锁序内读取工单负责人，和证据一并交给 Approval；负责人无有效审批资格时拒绝，不回退到提交人或管理员。审批冻结所解析用户，待办和决定实时核对其账号及权限。
 
-当前结案审批证据结构仅接受 `schemaVersion=10`，包含任务进入／撤回行动、结案模式、前版、更正原因、具体全检／抽检／零量核实 G/F/N 事实、放行结论、原检验轮固定已入基准、产出三项、原收尾处理与逐笔物料损耗证据，以及 `workOrderOwnerEvidence`。解析独立校验 G/F、派生 N、零量放行、计划内上限与来源资格；不含整批 C、本次放行建议、累计建议、抽检整批推算、范围说明或剔除量，不读旧版、不补造缺失快照。写流程另行要求最新适用记录明确 `released`。
+当前结案审批证据只接受[快照契约](../../application/production-approval-snapshot.schema.ts)声明的版本，包含任务进入／撤回行动、结案模式、前版、更正原因、具体全检／抽检／零量核实 G/F/N 事实、放行结论、原检验轮固定已入基准、产出三项、原收尾处理与逐笔物料损耗证据，以及 `workOrderOwnerEvidence`。解析独立校验 G/F、派生 N、零量放行、计划内上限与来源资格；不含整批 C、本次放行建议、累计建议、抽检整批推算、范围说明或剔除量，不读旧版、不补造缺失快照。写流程另行要求最新适用记录明确 `released`。
 
 审批详情与批准清单响应使用 `BatchCloseoutApprovalDisplaySnapshot`：在解析原快照后，由 Production 按 `closeoutId + previousRevisionId` 读取不可变批准记录的真实 `revision_no`，补充只读 `previousRevisionNo`。完整清单与按 ID 读取的历史清单采用同一映射；不按数组位置、当前版减一或记录 ID 推算版次。没有前版或同根引用无法读取时返回 `null`，调用方结合原 `previousRevisionId` 区分首次结案和引用缺失。登记人名称同样作为只读显示信息解析。展示字段不写回历史 JSON、不参与送审指纹或批准比较，不改变快照结构版本；Approval 通过所属 handler 获取展示信息，不直接读取 Production 表。
 
