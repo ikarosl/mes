@@ -1,31 +1,8 @@
 # 采购与外购物料入库设计
 
-本文维护采购到入库的跨模块业务导航，具体字段、状态与命令由 [Procurement](../apps/api/src/modules/procurement/docs/database.md)、[Quality](../apps/api/src/modules/quality/docs/database.md) 和 [Inventory](../apps/api/src/modules/inventory/docs/database.md) 所有者文档维护。实现、待验收与正式测试分别表达，未完成事项见[路线图](roadmap.md)。
+本文说明采购至入库的跨模块流程。单模块规则由下表所有者维护；历史选择与取代范围见[ADR 索引](README.md#adr)，未实施及待验收范围见[路线图](roadmap.md)。
 
-| 决策 | 负责的规则与部分取代关系 |
-| --- | --- |
-| [ADR-0013](adr/0013-procurement-source-and-stock-boundaries.md) | 采购来源、单工单、采购量和需求独立、实际物流及唯一库存账本；逐行供应商由 ADR-0026 取代。未被后续明确取代的边界继续有效。 |
-| [ADR-0014](adr/0014-task-material-policy-and-output-inspection.md) | 任务锁版、研发手工需求和任务执行、损耗与追加需求分离、产出及结案职责；成品质检归 Quality，Production 管理产出和批准清单。取代工单统一锁版等明确旧条款，采购来源仍须是具体正式需求。 |
-| [ADR-0015](adr/0015-unified-quality-quantity-semantics.md) | 统一检验事实、来料整批轮次与检后正式分配、来料数量建议及有依据超建议；其成品 C/R/S 旧数量裁决由 ADR-0019 取代。取代 ADR-0013 的独立剔除量、QC 直接可入、检前采购拆批、部分复检与 QC 硬上限；已入类别锁量及同到货固定库批由 ADR-0016 明确取代。 |
-| [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md) | 成品质检只记 G/F，普通 N>0，零产出明确放行；仅 Production 放行全检定稿按原检验轮固定已入基准加 G 作非阻断提示。来料库管 C 核实及 Procurement 建议不变。 |
-| [ADR-0022](adr/0022-procurement-state-and-receipt-void.md) | 采购行人工结束／恢复、主单按行汇总及通用操作审计；明确无实际执行且已处理补单依赖的到货整单作废边界。 |
-| [ADR-0026](adr/0026-purchase-order-supplier-and-amounts.md) | 采购主单唯一供应商及补单继承，同单物料精确版本唯一；两项采购单位单价保留手填，价款推算及两项单价／税率／手填总额更正不扩展为税务、结算或库存成本。 |
-
-补单历史来源和固定到货采购归属由 [ADR-0023](adr/0023-supplement-source-and-receipt-ownership.md) 确定，取代上述决策中的超量承接、定稿选择采购归属及旧依据必须持续有效的限制。[ADR-0025](adr/0025-supplement-receipt-line-basis.md) 统一两类补单的到货明细级来源，质量补单不引用仓库分配，原采购、原到货和物流事实保持固定。
-
-成品与来料的输入职责和依据要求仍以各自所有者文档为准，不能外推到尚未批准的检验类型；成品固定已入基准、剩余范围快照及开始冻结的取代关系见 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)，现行检查数量职责见 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md)，实施与验收见[路线图](roadmap.md)。基础物料名称、历史展示及稳定身份遵守[数据库公共规则](database-conventions.md#基础物料名称与历史身份)。
-
-## 1. 已确定的边界
-
-- 按需求采购只选择一个工单的正式需求，可同工单跨任务合单；继承具体需求的精确版本。备料采购不依赖工单/任务/BOM，从主数据选择精确物料。两类来源不混单，尚无正式需求时直接关联工单采购后置。
-- 每张采购主单确定唯一供应商，跨供应商分别建单；同单相同物料与精确版本只保留一行，来源按需求逐条关联。供应商仅名称和稳定 ID；名称不存在先维护，不自动造供应商或物料供应商关系。
-- 采购量独立填写，不以需求量封顶或分摊。来源保存下单当时关系，后续需求关闭/替代/任务结束不自动改变采购；下单不预留，到货与入库不减需求。生产通过分配和实际领料履约。
-- 普通采购草稿可改，下单后主单供应商、物料身份、版本、计划与需求来源冻结，两项单价、税率及手填总额通过主单批量审计命令补填或更正；补单主单继承原供应商，草稿可调整量、金额输入和备注，原采购、原到货及建单依据保持固定。具体门禁见[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)。无自身到货才可取消；已有事实按逐行结束和后续处置办理，不伪造撤销。
-- 物料版本停用仍可采购/检验/入库；Production 选料及领料独立核验用途。基础物料/分类无效与批次冻结/停用仍按已有资格拦截。名称实时展示，编码、单位、精确版本固化。
-- 所有外购均有采购来源，待检实物只在到货域记录，不写库存。只有正式清单允许且仓管实际确认后，Inventory写 available 正流水。
-- 明细无税单价和含税单价均按采购单位手填，支持逐行税率、含税总额推算和手填总额覆盖，完整语义见[金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)。此能力不提供税务申报、结算或库存成本，不参与需求、质检及库存资格。一期不增加财务、免检、抽样方案配置、破坏性取样或质检到入库的损耗流程。样本不合格不等于整批退货或实际报废。
-
-## 2. 单据关系与办理流程
+## 流程
 
 ```mermaid
 flowchart TD
@@ -43,45 +20,22 @@ flowchart TD
  N --> R
 ```
 
-采购行 id 精确对应主单、物料及版本，供应商取其所属主单；`material_variants.id` 本身就是精确版本身份，既有 item_id 通过组合 FK 验证一致。到货明细保留原采购行作为来源；正式分配的采购来源始终取该到货自身采购行，不拆给超量补单。同一次实物、同一批号只登记一次，不因需求映射或采购拆分重复计量。
+采购计划、生产需求、检验事实和实际库存分别成立：下单或到货不履约生产需求，检验放行也不直接增加库存。库管依据正式分配确认实际入库，生产随后通过分配和领料履约。
 
-到货单归属单一采购单及其唯一供应商，各明细固定来源采购行与版本，不同实际批次拆明细。外购物料入库按一次实际确认成单，可跨供应商、采购及到货；各条身份由服务端沿真实来源采购主单解析，不能用入库主单第一行或名称文本替代。选择理由见 [ADR-0018](adr/0018-purchase-inbound-multiple-suppliers.md)，执行规则见[实际入库](../apps/api/src/modules/procurement/docs/receipts.md#实际入库与退回)。
+超量补购追溯原到货；质量补发形成自己的新到货。补单关系不转移原实物或仓库授权，具体来源资格见采购订单。
 
-完整主从字段、范围与120件样例见[来料正式清单与采购分配](../apps/api/src/modules/procurement/docs/receipt-acceptance.md)。
+## 所有者
 
-## 3. 数量与补单
+| 内容 | 唯一维护位置 |
+| --- | --- |
+| 采购身份、供应商、金额、补单及采购状态 | [采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md) |
+| 到货、拒收、作废、实际入库与退回 | [到货命令](../apps/api/src/modules/procurement/docs/receipts.md) |
+| 来料核实数量、建议、正式授权及重新办理 | [正式清单](../apps/api/src/modules/procurement/docs/receipt-acceptance.md)；[数量示例](../apps/api/src/modules/procurement/docs/receipt-round-examples.md) |
+| 检查事实及来料／成品职责差异 | [统一检验模型](../apps/api/src/modules/quality/docs/unified-inspection-model.md) |
+| 库存单据、批次和唯一账本 | [Inventory](../apps/api/src/modules/inventory/docs/database.md) |
+| 列表、候选与历史查询 | [查询契约](../apps/api/src/modules/procurement/docs/receipt-queries.md) |
+| 前端特有交互 | [采购与入库](../apps/admin-web/docs/procurement-inbound.md)、[来料检验](../apps/admin-web/docs/incoming-inspection-adoption.md) |
 
-采购计划量独立于正式需求、到货实收和库存。Quality 保存实检 G/F 与结论，来料数量建议及例外依据由[正式清单](../apps/api/src/modules/procurement/docs/receipt-acceptance.md)完整定义；库管核实本轮未处置实物并承担正式授权责任，实际入退才消耗授权。不得把样本合格数、草稿或检验结果当作库存事实。
+来源模块核验业务资格，Quality 与 Inventory 分别写自己的事实；跨模块原子性、调用方向和锁序由[库存协作协议](inventory-extraction-design.md)维护。采购结束不终止已到实物的处置，正式授权与实际执行也不因补单改变归属。
 
-超量只有一次真实到货。existing_receipt 补单只记录该次实物的补购来源，不新增到货、不分走原物流数量；quality_replacement/new_arrival 接收新的补发实物，另走完整流程。两类补单均关联原到货明细并由采购填写数量和依据；质量新建须有当前有效质量退回处置或真实质量退回事实，允许先补后退，不要求先关闭原单。不按补单关系逐笔核销每次退回。当前身份、冻结和并发门禁见[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)，数值办理案例见[整批例子](../apps/api/src/modules/procurement/docs/receipt-round-examples.md)。
-
-## 4. 状态与职责
-
-到货域负责整批轮次、核对、定稿、独立更正和人工拒收；Quality 负责不可变检查与明确结论，Inventory 仅办理实际库存。复检或独立更正使旧轮未执行授权退出，补单仍关联稳定的原到货明细，不跟随分配换绑，也不自动改变采购状态。完整状态和更正门禁见[到货命令](../apps/api/src/modules/procurement/docs/receipts.md)及[正式清单](../apps/api/src/modules/procurement/docs/receipt-acceptance.md)。
-
-库管负责来料实物及处置，成品由产线管理员修正计划内／外和实际报废、工单负责人审批，库管按批准清单确认。成品数量为非阻断建议，但不套用来料的超建议依据输入要求；各自输入职责见[成品检验](../apps/api/src/modules/quality/docs/finished-inspections.md)。
-
-拒收是已登记来货剩余实物的业务决定，不等于实检不合格、实际已退或质量补发资格。拒收、撤销及改量规则由[到货命令](../apps/api/src/modules/procurement/docs/receipts.md)维护，已入库退货仍后置。
-
-整单作废针对误登记，在到货主单保存专门作废状态与原因、人员和时间，原登记字段冻结；全单无实际入库、实际退回且已处理关联补单依赖时，收回未执行授权并终止未完成检验。作废不自动改变采购状态，已作废记录不再提供办理或新增补单资格，原到货及检查历史仍可追溯。真实到货后不再需要仍按拒收和实际退回处理；字段及命令由[到货命令](../apps/api/src/modules/procurement/docs/receipts.md)维护。
-
-## 5. 采购关闭与实际物流
-
-采购结束和恢复跟进由人员填写原因决定，不选择结束类型，不按累计到货、QC 或实际入退数量校验结束资格。最后一个进行中行结束后主单汇总为已结束；恢复任一行后主单为已下单。整单结束一次处理所有剩余进行中行，已经结束的行不重复更新。
-
-普通采购和质量补单各展示自身到货及执行事实；超量补单不展示物流统计，不合计历史多版清单。结束不等待实际入库，也不自动把未定稿实物判退；库管仍完成原到货核对／入库／退回。新增到货要求采购行进行中，结束后须先人工恢复；动作原因进入通用操作日志，不另建采购切换历史，不改变既有物流事实。完整规则由[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)维护。
-
-每个待退范围一次完整实际交接；待退不是已退，退回不写库存。需要进一步拆分须先调整未处置范围。质量待退未退走不阻止已合法放行部分入库。
-
-## 6. 事务、权限与批次
-
-仍为一个API和数据库。来源资格通过public能力；仅登记目录可跨模块只读展示。写入、成功审计、幂等结果和跨模块协作同池同事务，当前轮次、行和范围乐观版本防旧页面提交。锁采购根时按数值顺序包含已关联补单，再到来源范围/Quality/Inventory；数据库锁不跨人工检验过程持有。
-
-每次真实入库由库管选择新建或已有合资格item_batch；同次到货的不同可入分配，以及不同到货的可入分配，可以进入相同或不同库存批次，不因归批改变来源和授权。inbound_detail引用实收修订、消费范围、QC及正式分配；inventory_transaction是唯一库存事实，余额可重建。旧无采购外购写入口关闭，历史只读保留。
-
-## 7. 所有者文档与后置范围
-
-- [到货命令与权限](../apps/api/src/modules/procurement/docs/receipts.md)、[查询与候选](../apps/api/src/modules/procurement/docs/receipt-queries.md)、[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)。
-- [统一检验模型](../apps/api/src/modules/quality/docs/unified-inspection-model.md)、[来料界面](../apps/admin-web/docs/incoming-inspection-adoption.md)、[成品入库](../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。
-
-工单提前采购、混合来源单、跨到货合并检验、打印样式、未登记实物的门口拒收、抽样配置及库存退货后置。已登记到货的人工拒收属于当前来料处置。开发库允许重建，结构只追加成对migration，统一db:init恢复，不兼容双写或影子表。
+范围和排除项见[产品范围](product-scope.md)，结构切换见[迁移安全](../packages/database/docs/migration-safety.md)。

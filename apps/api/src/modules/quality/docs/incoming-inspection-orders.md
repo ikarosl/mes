@@ -18,16 +18,16 @@ Quality 拥有来料质检主单及其当前到货关联。主单按整张到货
 
 新建、追加、解除、转移均处理完整到货；客户端提交明确动作，不能把当前可见物料行当作整单范围，也不能用全量 `receiptIds` 覆盖关系。跨组必须明确转移，不因保存勾选抢占已有关系。
 
-每条动作携带预期 `fromOrderId`，未分组为 `null`；同时携带全部受影响既存来源及目标主单的 `expectedVersion`。事务内同时核对当前归属和主单版本，任何一项变化返回冲突。关联表无独立版本；到货锁与 `UNIQUE(receipt_id)` 共同保护并发首次关联。新建主单连同初始关系以 version=0 返回；每个实际发生关系或备注变化的既存主单在一次命令中只推进一次版本，纯分组不推进到货、轮次或 case 版本。
+每条动作携带预期 `fromOrderId`，未分组为 `null`；同时携带全部受影响既存来源及目标主单的 `expectedVersion`。事务内同时核对当前归属和主单版本，任何一项变化返回冲突。关联没有独立版本，数据库与来源锁共同保证一张到货只有一个当前归属。新建主单连同初始关系以 version=0 返回；每个实际发生关系或备注变化的既存主单在一次命令中只推进一次版本，纯分组不推进到货、轮次或 case 版本。
 
 首次纳入分组只接受存在且未作废的未分组到货，已检查或已处理完不构成排除条件。新建主单也可显式把已有分组的到货转入，须提交真实原归属及原主单版本。已有关系的来源后来作废时保留关联和历史；仍允许解除或移组，但不能首次关联原本未分组的作废来源。检查资格由 Procurement 独立判断，分组管理不授予检查资格。
 
-主单创建、服务端取号、初始关联、成功审计和 HTTP 幂等结果同事务，失败不遗留空主单或额外取号。编号使用 `incoming_inspection_order` 类型，前缀只由共享 `BUSINESS_NUMBER_PREFIX` 定义，遵守[平台编号](../../../../docs/business-numbering.md)。备注可空，最长 500 字；修改备注只锁本主单。关联调整不强制业务原因，已有 `operation_logs` 保存到货 ID、原／新主单、前后版本及操作者，不新增关联审计表。
+主单创建、服务端取号、初始关联、成功审计和 HTTP 幂等结果同事务，失败不遗留空主单或额外取号。编号使用 `incoming_inspection_order` 类型，前缀只由共享 `BUSINESS_NUMBER_PREFIX` 定义，遵守[平台编号](../../../../docs/business-numbering.md)。修改备注只锁本主单。关联调整不强制业务原因，已有 `operation_logs` 保存到货 ID、原／新主单、前后版本及操作者，不新增关联审计表。
 
 ## 模块与权限边界
 
-Procurement 按 Quality 场景权限编排来源校验，再在同池活动事务调用 `QualityIncomingInspectionOrderCommand.create/changeAssociations/updateRemark`。Quality 只写自己的主单及关联，不反向依赖 Procurement，不自行查询或锁定采购表，不为分组建立来源 Registry。固定锁序由[来源编排](../../procurement/docs/receipts.md#质检分组的来源编排)维护。
+Procurement 按 Quality 场景权限核验来源，再在同池事务调用 Quality 公开命令。Quality 只写自己的主单及关联，不反向依赖 Procurement，不自行查询或锁定采购表，不为分组建立来源 Registry。固定锁序由[来源编排](../../procurement/docs/receipts.md#质检分组的来源编排)维护。
 
-`/quality/inbound-inspection-orders` 由 Procurement 场景 Controller 提供，不改变表所有权。读取要求 `quality:inbound-inspections:view`；新建、备注与关联变更要求 `quality:inbound-inspections:manage`。检查发起和结果提交保留原动作权限；不额外要求采购或仓储页面权限，也不存在按分组授予检查权限的模型。管理端仅按页面权限控制整页，后端各接口独立鉴权。
+`/quality/inbound-inspection-orders` 由 Procurement 场景 Controller 提供，不改变表所有权。读取要求 `quality:inbound-inspections:view`；新建、备注与关联变更要求 `quality:inbound-inspections:manage`。检查发起和结果提交保留原动作权限；不额外要求采购或仓储页面权限，也不存在按分组授予检查权限的模型。
 
-写入使用 class DTO、乐观版本、成功审计和幂等契约；版本或归属冲突不能静默换版本重试，未知结果只重放首次 body/key。组合展示只读放在 Procurement 登记的 `infrastructure/queries/`，只访问所有权登记批准字段，不以展示查询替代命令资格。
+版本或归属冲突须重新核对；未知结果按[平台幂等契约](../../../../docs/idempotency.md)保留原请求重试。展示读取范围见[查询契约](../../procurement/docs/receipt-queries.md#来料质检主单查询)。

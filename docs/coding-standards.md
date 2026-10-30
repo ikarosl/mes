@@ -10,7 +10,7 @@
 - 常量使用 UPPER_SNAKE_CASE；数据库表、字段和业务稳定代码使用 snake_case。
 - 布尔值优先使用 `is`、`has`、`can`、`should` 前缀；ID 使用 `xxxId`，集合使用复数名词。
 - 框架对象使用明确后缀：Dto、Service、Controller、Repository、Guard、Interceptor。
-- 单元和组件测试放在相邻 `__tests__/*.test.ts`；跨模块测试放在根 `tests` 对应目录。
+- 测试文件位置遵守[测试目录约定](testing-strategy.md#目录所有权)。
 
 ### 工程脚本与临时文件
 
@@ -66,11 +66,9 @@
 ## 6. SQL 与 migration
 
 - 使用参数化查询；动态排序只使用服务端白名单；显式列出查询字段，避免 `SELECT *`。
-- 分页查询必须稳定排序；多表写入必须有明确事务边界。
-- migration 只能追加，命名为时间戳加 kebab-case 目的，同时提供 up/down。
-- 已执行 migration 不可修改；每个 migration 只承担一个明确目标。
-- 新增封闭状态值时同步更新数据库 CHECK、constants、contracts 和测试。
-- 时间遵守 [`database-conventions.md`](database-conventions.md) 的 `+08:00` 规则。
+- 分页遵守[HTTP 规范](api-conventions.md#4-筛选与排序)，事务边界遵守[架构规范](architecture.md#6-事务与审计)。
+- migration 的命名、配对、追加与依赖遵守[迁移规则](../packages/database/docs/90-migration-order.md)；每次迁移只承担一个明确目标。
+- 类型、时间及封闭状态值遵守[数据库公共规则](database-conventions.md#统一类型与状态规则)。
 
 ## 7. 注释、错误、日志与安全
 
@@ -78,8 +76,7 @@
 - TODO 使用 `TODO(scope): 原因；解除条件`。
 - 用户错误信息使用中文，机器错误码使用稳定英文；不直接返回底层异常。
 - 日志包含必要 requestId 和业务上下文，但不得记录密码、Token、Cookie、签名或凭证。
-- 未预期 HTTP 异常仅在 `NODE_ENV=development` 的本地日志保留原始异常链；生产、测试及未声明环境保留错误
-  类型、稳定驱动错误码和脱敏堆栈。任何环境都不得采集请求体、认证头、Cookie 或 URL 查询串作为诊断信息。
+- HTTP 异常的记录范围与环境差异遵守 [API 错误诊断](../apps/api/README.md#http-错误诊断)。
 - API 正式日志使用框架 Logger，不使用 `console.log`。
 
 ## 8. 依赖、测试与提交

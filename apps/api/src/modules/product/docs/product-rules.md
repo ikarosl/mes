@@ -13,12 +13,10 @@
 7. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
 8. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照。
 9. 成品不配置默认路线。批量任务创建前必须手动选择路线，并在创建事务内重新核验路线为 `enabled` 且未删除，冻结路线、步骤和 SOP 快照；缺失路线时拒绝创建。研发任务无需路线，不生成工序。路线停用或归档不受成品引用限制，也不改写历史任务快照。
-10. 所有产品资料写操作和 `operation_logs` 在同一数据库事务中提交；审计信息不记录文件内容、Token、Cookie 或其他密钥。
-
 
 已批准的 BOM 继续永久锁定；上述身份边界不开放既有 BOM 修改或新增 BOM 版本，工艺路线版本仍遵守自身发布规则。
 
-分类 `itemKind` 创建后不可修改；修改请求须与原类型一致，更新 SQL 不写该字段。
+分类类型创建后不可修改。
 
 所有路线的所有工序均须报工，不提供报工开关；路线步骤契约和表结构不保存是否报工字段。
 
@@ -38,39 +36,27 @@
 
 每个成品有独立的 `products.id` 和永久唯一编码；成品名称是可重复的展示与搜索字段，不形成父成品、成品类型或名称组。同名成品分别维护自身的分类、基础单位、BOM 和启停状态。
 
-`GET /api/product/products` 返回 `PageResult<ProductListItem>`，一行对应一条独立成品记录，`total`、`page` 和 `pageSize` 均按记录计算。列表只包含未删除成品及其未删除的成品分类；`keyword` trim 后匹配名称或成品编码，`categoryId`、`acquireMethod` 和 `status` 精确筛选当前记录，筛选先于计数和分页。返回结果不额外包含同名且未命中筛选的成品。
+成品列表按独立记录分页。列表只包含未删除成品及其未删除的成品分类；关键词匹配名称或编码，分类、获取方式和状态筛选当前记录。返回结果不额外包含同名且未命中筛选的成品。
 
 列表按 `product_name, category_id, item_code, id` 稳定排序，名称比较与排序遵循数据库字段的排序规则；同名记录连续排列，每条记录独立占用分页名额。成品目录仅提供逐记录列表，不提供名称分组查询或可选分组视图。
 
 ## 基础物料目录与版本明细
 
-`GET /api/product/materials` 返回 `PageResult<MaterialListItem>`，一行对应一个 `materials.id`，默认每页 10 条基础物料；编码永久唯一，不按名称或版本分组分页。列表只包含未删除物料及其未删除的物料分类，物料或分类停用仍可查看。`keyword` trim 后匹配基础物料编码、名称或任一未删除版本的编码；`categoryId`、`acquireMethod` 和 `status` 精确筛选基础物料，筛选先于计数和分页，结果按 `material_code, id` 稳定排序。
+基础物料目录按物料身份分页，不按名称或版本分组。列表只包含未删除物料及其未删除的物料分类，物料或分类停用仍可查看。`keyword` trim 后匹配基础物料编码、名称或任一未删除版本的编码；`categoryId`、`acquireMethod` 和 `status` 精确筛选基础物料，筛选先于计数和分页，结果按 `material_code, id` 稳定排序。
 
-列表行不包含版本明细，只返回 `variantCount`，统计该基础物料全部未软删除版本，包含停用版本，不受命中的版本关键词限制。数据库只对当前页物料 ID 聚合版本数量，不读取版本明细；没有版本时为 `0`。
+列表行不包含版本明细，只返回 `variantCount`，统计该基础物料全部未软删除版本，包含停用版本，不受命中的版本关键词限制。没有版本时数量为 0。
 
-`GET /api/product/materials/:id/variants` 是单个基础物料的目录管理读取，返回完整 `MaterialVariantItem[]`，不分页、不截断，包含停用版本并排除软删除版本，按 `major_version, minor_version, id` 稳定排序。基础物料不存在、已软删除，或所属分类已软删除、不是物料分类时返回 `404 NOT_FOUND`；基础物料或分类停用仍允许查看，存在且没有版本时返回空数组。
+单个基础物料的版本明细完整返回、不截断，包含停用版本并排除软删除版本，按 `major_version, minor_version, id` 稳定排序。基础物料不存在、已软删除，或所属分类已软删除、不是物料分类时返回 `404 NOT_FOUND`；基础物料或分类停用仍允许查看，存在且没有版本时返回空数组。
 
 这两个目录接口分别校验 `product:products:view`、`product:materials:view` 任一视图权限。版本明细用于目录展开及管理展示，不授予新选版或业务写入资格；`/material-variants/by-material/:materialId` 仍按下文的启用候选语义读取。
-
-## 目录与 BOM 内部职责
-
-`MysqlProductCatalogRepository` 是 application port 的装配入口，委托四个内部职责：
-
-- `MysqlProductCatalogQuery` 负责逐记录成品分页、候选、BOM 展示和历史物料名称；展示结果不授予编辑或审批资格。
-- `MysqlProductCommands` 负责成品主数据和启停，写入与成功审计在同一事务内提交。
-- `MysqlProductBomEditor` 负责完整替换 BOM，在同一事务锁成品根、核对版本及编辑资格、校验单位、恢复或写入明细、递增聚合版本并记录成功审计。
-- `MysqlProductBomApproval` 负责送审准备、绑定申请、审批前关联核对、最终批准和恢复草稿；事务可复用 Approval 的同池外层事务。
-
-`domain/product-bom.policy.ts` 维护替换请求的版本、数量、行数及重复物料校验、BOM 编辑与送审状态、冻结申请关联，以及送审和末级批准共用的物料／分类状态及基础单位资格。应用服务在原命令边界调用请求校验；锁定读取、SQL 条件更新和审计仍由 infrastructure 执行，不因领域规则拆分提前或延后数据库操作。共享持久化函数只承载成品根读取、分类校验、规格解析和当前事务审计，不提供另一套业务写入口。
 
 ## BOM 命令与审批
 
 `ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
 
-BOM 审批证据仅接受当前结构版本 3，规格参数按送审时的完整 JSON 表格冻结；不保留旧版本兼容读取或补造缺失字段。升级时已有旧 BOM 审批证据由迁移守卫拒绝，不能改写历史申请，边界见[数据库设计](database.md#规格参数存储与迁移)。
+BOM 审批证据仅接受 [handler](../application/product-bom-approval.handler.ts) 声明的当前结构，规格参数按送审时的完整 JSON 表格冻结；不保留旧版本兼容读取或补造缺失字段。升级时已有旧 BOM 审批证据由迁移守卫拒绝，不能改写历史申请，边界见[数据库设计](database.md#规格参数存储与迁移)。
 
-`PUT /products/:id/materials` 的请求体为 `{ version, items }`，不是裸数组。`version` 必填，使用成品列表返回的聚合版本；DTO 校验非负整数，Product 在同一事务锁成品根后核对版本，再替换明细、递增版本并写成功审计。旧版本返回 `409 CONFLICT`，缺失或非法版本返回 `400 VALIDATION_ERROR`。保存成功后重新读取成品版本，再用新版本提交 BOM 审批；未保存的本地修改不能直接送审。
-
+BOM 保存完整替换明细，须携带读取时的成品聚合版本；锁成品根核对版本后才写入。保存成功后重新读取版本再送审，未保存的本地修改不能直接送审。
 
 `ProductSnapshotQuery.getApprovedBomSnapshot` 在活动事务内锁定成品并复核批准依据，为 Production 批量任务初始需求提供不依赖路线的 BOM 快照；它不写审批或锁定事实，也不改变基础物料与精确版本身份。
 
@@ -110,7 +96,6 @@ BOM 审批证据仅接受当前结构版本 3，规格参数按送审时的完�
 写入资格；当前锁定读返回的身份与资格才保护后续批次和流水写入。取得库存批次锁后不得再增加
 新的 Product 父身份锁；窗口候选不替代这项命令校验。
 
-
 采购候选通过 `listPurchasableMaterials/listPurchasableByMaterials` 读取：基础物料、分类须启用且未删除，精确版本未删除，允许版本停用。物料关键词窗口为 50 项，最多 100 个 `includeIds` 用于已选回显；候选不持有业务资格锁，写命令须重新调用用途门禁。
 
 生产用途 `listProductionMaterials` 使用相同的 50 项窗口和最多 100 个 `includeIds`，要求存在启用版本；研发手工提需由 Production 候选入口消费。窗口未包含某个 ID 不代表该 ID 已失效，不能以当前列表代替显式解析或命令校验。
@@ -135,7 +120,7 @@ Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生�
 
 ## 规格参数 JSON
 
-成品与基础物料分别将 `specValues` 保存为完整的 `JsonTableData`：`{ columns: [{ key, label }], rows: [{ [key]: string }] }`。列定义和行顺序均属于本条主数据；没有参数时保存 `{ columns: [], rows: [] }`，省略该字段也按空表处理，旧数组格式拒绝写入。表格的结构、文本和大小边界由[共享规范化工具](../../../../../../packages/utils/README.md#json-表格)统一维护，参数单元格保留原文，不参与数量计算。
+成品与基础物料分别将 `specValues` 保存为完整的 `JsonTableData`。列定义和行顺序均属于本条主数据；没有参数时保存 `{ columns: [], rows: [] }`，省略该字段也按空表处理，旧数组格式拒绝写入。表格的结构、文本和大小边界由[共享规范化工具](../../../../../../packages/utils/README.md#json-表格)统一维护，参数单元格保留原文，不参与数量计算。
 
 基础物料当前暂停规格参数录入；管理端新建提交空表，编辑原样回传已有 `specValues`。接口字段及校验保持，已有参数继续保留。
 

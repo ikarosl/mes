@@ -26,9 +26,7 @@
 
 仓库内 `.worktrees/` 与 `.claude/worktrees/` 是独立 checkout 的临时副本；`temp/`、`ai_output/` 是 Git 忽略的本地草稿和输出，不属于交付源码。格式、Lint、Vitest 发现与 Docker 构建上下文均排除这些目录，避免本地检查混入 CI checkout 中不存在的临时文件。当前 `apps/`、`packages/`、`scripts/` 和 `tests/` 中的有效测试仍按原入口执行。
 
-根单元／组件 Vitest 配置每个进程最多使用 2 个 worker，避免 Turbo 同时运行多个 workspace 时重复按整机 CPU 数量扩张进程池；MySQL 套件仍按其专用配置逐文件执行。
-
-MySQL 单例与 hook 超时为 180 秒，为完整 migration 链及清理保留执行余量；断言、专用测试库保护和失败退出保持生效。
+单元／组件并发须考虑 Turbo 同时运行多个 workspace，避免每个进程重复按整机 CPU 扩张。MySQL 套件逐文件执行，并为完整迁移链与清理保留超时余量；具体参数由 Vitest 配置维护。
 
 API、管理端以及 contracts／constants／utils 的应用构建、应用类型检查不编译相邻测试文件；测试通过 Vitest 独立运行。测试类型检查分别使用
 `corepack pnpm --filter @company/api typecheck:test`、`corepack pnpm --filter @company/admin-web typecheck:test`、`corepack pnpm --filter @company/contracts typecheck:test`、`corepack pnpm --filter @company/constants typecheck:test` 和 `corepack pnpm --filter @company/utils typecheck:test`，在集中修复或验证测试时单独执行，不阻塞应用构建。用户暂缓正式测试期间，重要覆盖缺口按能力集中在[路线图](roadmap.md#存量测试恢复待正式测试授权)，收录边界遵守 [AGENTS.md](../AGENTS.md#文档读取与维护)；不能以应用检查通过代替测试检查。

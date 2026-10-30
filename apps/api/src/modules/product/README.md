@@ -13,11 +13,11 @@
 ## 所有者文档
 
 - [业务规则与公开资格](docs/product-rules.md)：稳定身份、目录与版本明细、BOM 命令及审批、路线发布、候选窗口、历史引用、采购与生产用途锁。
-- [数据库设计](docs/database.md)：字段、状态、约束、分类关系及表所有权。
+- [数据库设计](docs/database.md)：逐表职责、字段、索引、约束、触发器及关联关系。
 - [技术文件与对象存储](docs/technical-files.md)：上传、补偿、私有下载与历史对象保留。
 - [通用表格模板](../template/README.md)：项目级模板管理；Product 只复制表格内容到自身规格参数，规则见[规格参数 JSON](docs/product-rules.md#规格参数-json)。
 - [基础物料名称与历史身份](../../../../../docs/database-conventions.md#基础物料名称与历史身份)：跨模块当前名称展示规则。
 
 ## 验证
 
-执行受影响的 API 类型检查、构建和启动验证；正式测试阶段遵守根 [AGENTS.md](../../../../../AGENTS.md#数据库与交付约定)及[测试策略](../../../../../docs/testing-strategy.md)。具体待验收事项见[路线图](../../../../../docs/roadmap.md)。
+验证阶段见[测试策略](../../../../../docs/testing-strategy.md)。具体待验收事项见[路线图](../../../../../docs/roadmap.md)。

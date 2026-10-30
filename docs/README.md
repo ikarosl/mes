@@ -13,9 +13,8 @@
 - [产品范围](product-scope.md)
 - [路线图](roadmap.md)
 - [未解决冲突索引](documentation-conflicts.md)：当前状态、双方证据、影响和待处理问题；不新增业务规则
-- [采购与外购物料入库质检业务设计](procurement-inbound-design.md)（主单唯一供应商、单工单需求采购）
-- [采购到入库技术设计](procurement-inbound-technical-design.md)：当前表结构、状态及公开契约
-- [成品分次入库伪结构与数据示例](finished-inbound-redesign-proposal.md)：已确认模型的职责对照、实际批号与分次入库示例；实施验证及验收由路线图维护
+- [采购与外购物料入库](procurement-inbound-design.md)：跨模块流程、事实边界与所有者入口
+- [成品分次入库数据示例](finished-inbound-redesign-proposal.md)：复检后的新授权、分次归批及历史追溯计算
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)：采购单位单价、逐行税率、含税总额推算及下单后更正；不提供税务或结算
@@ -35,7 +34,7 @@
 - [Identity](../apps/api/src/modules/identity/README.md)：[数据库设计](../apps/api/src/modules/identity/docs/database.md)
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
 - [Template](../apps/api/src/modules/template/README.md)：独立系统模板、通用 JSON 表格内容与[数据库设计](../apps/api/src/modules/template/docs/database.md)
-- [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[内部职责](../apps/api/src/modules/production/docs/module-boundaries.md)
+- [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[跨模块职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)
 - [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货、实收修订和仓库处置编排
 - [Quality](../apps/api/src/modules/quality/README.md)：来料与成品检验、复检、明确放行，以及工序专检与不可变检查事实；[来料分组主单](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)组织完整到货并保持逐来源检查边界
 - [Inventory](../apps/api/src/modules/inventory/README.md)：唯一库存账本、批次、入库和盘点

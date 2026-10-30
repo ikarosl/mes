@@ -14,23 +14,19 @@
 | Approval | BOM、需求更正、任务结案与清单更正；顺序节点支持角色、指定用户及场景业务人员，工单下达审批未接入 |
 | Notification | 审批事件的站内消息、本人收件及点击已读、角标轮询；未接外部渠道 |
 
-批量以已批准 BOM 为任务依据，按任务初配锁定物料版本；研发不要求 BOM 或工序，手工提需并按任务开始／结束。领料损坏只留事实，额外物料独立提需；完整语义见[任务与需求](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。
+批量与研发使用不同的物料和执行方式，见[任务与需求](../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。两者共用产出核对、独立检验、负责人审批及分次入库；研发可关联下一轮新工单，旧轮事实不转移。
 
-工序专检以任务下的具体工序为汇总与持续办理入口，逐次记录现场范围与全检／抽检 G/F，不绑定某笔报工、不自动修正报工或限制下工序。生产管理员通过现有异常处置单承接已核实的不合格数量；每次检查的累计已承接量由同事务维护，成为该次检查的冲销更正下限。专检及其返工结果不增加普通报工汇总，检查累计不解释为唯一实物覆盖量；范围与来源边界见 [ADR-0021](adr/0021-process-inspection-and-abnormal-disposition.md)。
+工序专检独立于具体报工，通过既有异常处置承接已核实的不合格量；不扩展为在线工序质量门禁或自动修正报工，边界见 [ADR-0021](adr/0021-process-inspection-and-abnormal-disposition.md)。
 
-采购至入库期间，实物由 Procurement 管理，检查由 Quality 记录，库管实际确认后才写 Inventory；来料允许按有效正式分配分次入库，并由库管选择新建或合资格已有库存批次；一次外购物料确认可跨供应商、采购及到货，物流归属固定取到货自身采购行，超量补购仅保留历史来源，质量补发有自己的新到货，见 [ADR-0018](adr/0018-purchase-inbound-multiple-suppliers.md)。生产需求、订购数量和库存分别保有事实。当前不接采购在线审批。
+采购、检验、正式授权与实际库存分工见[采购入库流程](procurement-inbound-design.md)。来料质检主单只组织完整到货，不合并逐来源检查；实际入库的合单范围也不改变来源身份。
 
-采购金额能力限本行采购价款记录、含税总额推算，以及两项单价、税率和手填总额的后续补填／更正，具体边界见[采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)；不提供税务申报、结算、付款、财务或库存成本模型，金额不参与需求、质检或库存资格。
-
-来料[质检主单](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)只组织完整到货及稳定编号，可跨采购、跨供应商且随时调整关联；逐到货明细的检查、放行和仓库授权保持独立，不扩大为跨到货合并检查或报告签发。
+采购金额限本行价款记录、总额推算及后续更正；不提供税务申报、结算、付款、财务或库存成本，完整输入语义见[采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)。
 
 ## 研发结束及后续成品流转
 
-研发与批量共用产出草稿、独立检验、管理员核对、工单负责人审批及仓管入库。成品按计划内／计划外形成正式授权；授权可分次消费，每条实际入库可选择新建或合资格已有库存批次。两类是授权归属，不是库存批次身份。已入事实不改写，累计更正不得低于对应类别的历史已入量，零量不建授权。研发可关联新成品和新工单继续下一轮，旧轮需求、物料、产出及待入库事实不转移。
+成品检验只记录检查事实与结论，产出由产线核对、负责人批准。剩余实物复检和清单更正已纳入范围，数量及授权规则见[成品质检](../apps/api/src/modules/quality/docs/finished-inspections.md)与[结案设计](../apps/api/src/modules/production/docs/database/production-termination.md)。
 
-成品质检只记录检查事实与明确结论，产出数量由产线核对、负责人批准；仅引用放行全检记录定稿时，由 Production 按原检验轮已入基准加合格数提示累计目标差额，见 [ADR-0019](adr/0019-finished-inspection-measurement-simplification.md)。重新办理时固定历史已入基准，并暂停旧轮剩余授权；本轮检验仅覆盖剩余实物。批准依据、检查事实及实际入库明细分别保留，详细规则见[成品检验](../apps/api/src/modules/quality/docs/finished-inspections.md)及 [ADR-0016](adr/0016-inbound-authorizations-and-stock-batches.md)。验证、用户验收和正式测试状态以[路线图](roadmap.md)为准。
-
-公共出入库复用主从表，在明细内保存有类型来源外键；生产退料归并公共入库，其他单可独立办理物料和成品，不回写生产／采购履约。其他入出库提供草稿、整单确认与取消，不新增质检定稿或审批。完整规则见 [Inventory](../apps/api/src/modules/inventory/docs/database.md)，用户验收及正式测试仍见[路线图](roadmap.md#通用出入库后续阶段)。
+生产退料使用公共入库；其他入出库可独立办理物料和成品，支持草稿、整单确认及取消，不附带生产／采购履约、质检定稿或审批。具体规则见 [Inventory](../apps/api/src/modules/inventory/docs/database.md)。
 
 ## 明确排除与后置范围
 

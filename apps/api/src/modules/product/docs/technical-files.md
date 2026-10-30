@@ -1,7 +1,6 @@
 # Product 技术文件与对象存储
 
-技术文件能力当前完整归属 Product：application 定义 `TechnicalFileStorage` 端口，infrastructure 的
-`S3TechnicalFileStorage` 使用 AWS SDK v3 连接 S3-compatible 服务。只有出现第二个独立业务消费者，且端口语义能够脱离 Product 技术文件生命周期时，才评审提取共享存储包。
+技术文件由 Product 管理，通过独立存储端口使用 S3-compatible 服务。只有出现第二个独立业务消费者，且端口语义能够脱离 Product 技术文件生命周期时，才评审提取共享存储包。
 
 ## 配置
 
@@ -27,7 +26,7 @@ S3_FORCE_PATH_STYLE=true     # 有自定义 endpoint 时默认为 true
 
 ## 用途与上传契约
 
-`POST /api/product/technical-files` 使用 multipart：`file` 是实际文件，`fileType` 省略时保持既有 `sop` 行为，可显式指定 `specification`。文件名直接使用上传原始文件名，最多 255 字符，不接受另填业务名称或版本号。SOP 继续由服务端生成时间版本并参与既有快照；规格书不管理文件版本，元数据 `versionNo` 固定返回 `null`。每次上传都创建新的对象与元数据，返回 `{ id }`，不通过名称或内容摘要覆盖旧对象。
+`POST /api/product/technical-files` 使用 multipart：`file` 是实际文件，`fileType` 省略时保持既有 `sop` 行为，可显式指定 `specification`。文件名直接使用上传原始文件名，不接受另填业务名称或版本号。SOP 继续由服务端生成时间版本并参与既有快照；规格书不管理文件版本，元数据 `versionNo` 固定返回 `null`。每次上传都创建新的对象与元数据，返回 `{ id }`，不通过名称或内容摘要覆盖旧对象。
 
 `GET /api/product/technical-files` 按 `fileType` 精确筛选，省略时仍只读取 SOP，避免把规格书混入既有 SOP 选择器，目录列表独立校验 `product:files:view`。下载使用 `/:id/content`，独立校验 `product:files:download` 并从已登记 locator 读取；上传独立校验 `product:files:upload`。规格书元数据随成品或精确物料版本读取返回，主数据归属、绑定授权和并发条件由[规格书规则](product-rules.md#成品与精确物料版本规格书)维护。
 
@@ -41,7 +40,7 @@ S3_FORCE_PATH_STYLE=true     # 有自定义 endpoint 时默认为 true
 
 ## 安全与运维
 
-- 上传限制、允许 MIME 和最大文件大小由 Product DTO/application 校验；技术文件最大 20 MiB，包含恰好 20 MiB。Multer 的 `limits.fileSize` 直接使用业务上限；Multer 2.3 内部负责转换 Busboy 截断阈值，调用方不再叠加 1 字节。超过业务上限的上传返回 413。
+- 技术文件最大 20 MiB，恰好上限允许，超限返回 413；上传配置使用业务上限，不额外加减字节。
 - 生产 Nginx 将 API 请求体上限设为 21 MiB，仅用于容纳 20 MiB 文件与 multipart 封装开销；精确的文件上限仍由 Product 的共享常量与 Multer 校验。
 - 日志不得输出访问密钥、session token、签名 URL 或文件内容。
 - Bucket 备份、版本控制、保留策略和凭证轮换由部署环境负责；恢复时必须保持数据库 locator 与对象键一致。

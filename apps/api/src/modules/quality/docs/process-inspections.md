@@ -33,11 +33,11 @@
 
 新增检查和产线处理要求任务处于 `doing`、工序处于 `doing` 或 `completed`，且结案／产出更正不在审批冻结中。任务进入结案或已经结案时，已有专检仍可历史更正及合法冲销；保留原任务工序身份、版本和处理下限校验，不恢复任务执行资格，不改批准产出或库存。未开工或已取消任务不接受专检命令。
 
-Quality 的 `QualityProcessInspectionSourceRegistry` 只接受 Production 注册来源实现。新增、更正和冲销由 Quality 在同池事务调用来源 `prepare(batchId,stepId,intent)`，Production 先锁工单→任务→结案根→按顺序锁任务工序，再由 Quality 锁专检单。更正／冲销只读不可变来源身份以确定生产根，禁止先锁 Quality 再反向获取生产锁。
+专检来源只由 Production 提供。新增、更正和冲销在同池事务先通过来源能力核验，Production 先锁工单→任务→结案根→按顺序锁任务工序，再由 Quality 锁专检单。更正／冲销只读不可变来源身份以确定生产根，禁止先锁 Quality 再反向获取生产锁。
 
-Production 处理先锁同一来源链，再调用 `QualityProcessInspectionCommand.accept`。Quality 核对专检任务工序身份、专检版本、当前结果 ID 及剩余额度，更新累计和版本；Production 插入异常处置单。两模块业务写入、成功审计和 HTTP 幂等结果同事务提交，失败整体回滚。`getSource` 只提供定位身份，不能替代来源或额度校验。公开能力不暴露连接或数据库行类型。
+Production 处理先锁同一来源链，再调用 Quality 的公开承接命令。Quality 核对专检任务工序身份、专检版本、当前结果 ID 及剩余额度，更新累计和版本；Production 插入异常处置单。两模块业务写入、成功审计和 HTTP 幂等结果同事务提交，失败整体回滚。来源定位不能替代执行或额度校验。
 
-`QualityProcessInspectionQuery` 为 Production 提供按任务工序精确限定的只读检查依据。`listPendingForStep` 在分页前筛选当前有效且 P>0 的检查，`getForStep` 按任务、工序和专检单 ID 精确读取，允许核对已经处理完或冲销的检查；来源不符返回空值。调用方先核验生产任务工序身份，再按生产页面权限提供 HTTP 读取。该能力复用相同检查投影、人员名称和独立只读一致快照，不加锁、不代替处理命令校验。
+[公开查询](../public.ts)为 Production 提供指定任务工序的检查依据：待处理页只含当前有效且 P>0 的检查，精确读取还允许已处理完或冲销的历史；来源不符返回空值。调用方先核验生产任务工序身份，再按生产页面权限提供 HTTP 读取。读取不加业务锁，也不代替处理命令校验。
 
 ## HTTP 与权限
 
@@ -52,7 +52,7 @@ Production 处理先锁同一来源链，再调用 `QualityProcessInspectionComm
 | `POST /quality/process-inspections/:inspectionId/actions/correct` | 冲销加完整替代；同上 |
 | `POST /quality/process-inspections/:inspectionId/actions/reverse` | 无处理时整单冲销；同上 |
 
-所有 body/query/param 使用 class DTO。创建、更正和冲销要求 `Idempotency-Key`，scope 与严格结果 codec 由[应用契约](../application/idempotency/process-inspection-idempotency.contract.ts)维护。指纹包含所有来源、事实、版本和原因；时间规范化为同一 ISO 时间、文本 trim 后进入指纹。返回 `inspectionId/recordId/version`，重放不重复追加结果或推进版本。更正冲突与处理冲突都要求刷新，不能通过更换幂等键绕过旧版本。
+创建、更正和冲销要求 `Idempotency-Key`，scope 与严格结果 codec 由[应用契约](../application/idempotency/process-inspection-idempotency.contract.ts)维护。返回 `inspectionId/recordId/version`，重放不重复追加结果或推进版本。更正冲突与处理冲突都要求刷新，不能通过更换幂等键绕过旧版本。
 
 主列表包含已有检查历史的工序和当前允许登记检查的工序；同一 `batch_step_record_id` 始终只有一行。已冲销全部检查的工序和已结案历史工序仍保留，无历史且当前不可登记的工序不进入办理集合。列表支持 `keyword/batchId/stepId/pendingOnly=true`；关键词搜索任务号、工单号、成品编码／名称和工序编码／名称，所有筛选及累计在分页前完成。按任务 ID 倒序、工序顺序正序、工序 ID 倒序稳定分页。`steps/:stepId` 不在该集合时返回不存在，不通过列表返回范围授权写入。
 
@@ -64,30 +64,42 @@ Production 处理先锁同一来源链，再调用 `QualityProcessInspectionComm
 
 ## 数据库结构
 
-`quality_process_inspection` 与 `quality_process_inspection_record` 均由 Quality 所有，采用公共[数据库约定](../../../../../../docs/database-conventions.md)中的类型、审计与北京时间规则。
+`quality_process_inspection` 保存固定任务工序来源、当前结果指针及累计已处理量；`quality_process_inspection_record` 追加检查、冲销和替代事实。两表分开是为了保留检查历史，同时让 Production 承接当前剩余额度；不保存第二份可写 G/F 或待处理汇总。
 
-| `quality_process_inspection` 字段 | 约束与用途 |
-| --- | --- |
-| `id` | 稳定专检单主键 |
-| `production_batch_id / batch_step_record_id` | 非空组合 FK 到同一任务工序；创建后不更换 |
-| `current_record_id` | 同专检单组合 FK；指向唯一当前有效正向结果，整单冲销后为空 |
-| `accepted_quantity` | 默认 0，范围 0..99999999；仅由公开处理命令在锁内累加 |
-| `created_by/at / updated_by/at / version` | 完整可变审计，人员 FK，version 非负；处理及更正递增 |
+两表使用 InnoDB、utf8mb4_0900_ai_ci。ID 为 BIGINT UNSIGNED，除显式 NULL 外均为 NOT NULL，未写 DEFAULT 的字段无显式默认值；人员 FK 指向 users，外键使用 RESTRICT 并有支撑索引。创建／可变审计列组见[Quality 数据库](database.md)。物理定义与[专检 migration](../../../../../../packages/database/migrations/202610150002-process-inspection.up.sql)同步维护。
 
-专检单按任务及工序分别建立创建时间／ID 索引；不保存可写的合格、不合格或待处理汇总，当前结果从不可变事实读取。当前指针、累计与明细的一致性由共享事务及固定锁序维护。
+### quality_process_inspection
 
-| `quality_process_inspection_record` 字段 | 约束与用途 |
-| --- | --- |
-| `id / inspection_id` | 主键及专检单 FK，具有 `(id,inspection_id)` 唯一键 |
-| `record_type` | `normal/reversal` |
-| `inspection_method` | `full/sampling` |
-| `qualified_quantity / unqualified_quantity` | G/F 非负、合计为 1..99999999；N 不存储 |
-| `scope_note / inspected_at / result_note / evidence_reference` | 现场范围、实际检查时间、检查说明与凭据；文本 trim 后 1..5000 字 |
-| `reversal_of_record_id` | 仅冲销行非空，唯一；同单组合 FK，原结果只能被冲销一次 |
-| `replaces_record_id` | 替代正向行引用原结果，唯一；同单组合 FK |
-| `reason` | 初始正向结果为空，更正、替代及冲销必须为非空原因 |
-| `created_by / created_at` | 创建审计，人员 FK；不含可变审计或 version |
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| id | ID，自增主键 | 稳定专检单身份 |
+| production_batch_id / batch_step_record_id | ID | 同一任务工序，创建后不更换 |
+| current_record_id | ID NULL | 当前有效正向结果；整单冲销后为空 |
+| accepted_quantity | INT DEFAULT 0，CHECK 0..99999999 | 锁内累计已处理量，只由公开承接命令推进 |
+| 创建／可变审计 | 见数据库公共列组 | version 为 INT DEFAULT 0，CHECK >=0；处理及更正递增 |
 
-结果表 UPDATE/DELETE 触发器禁止改写；数据库 CHECK 约束类型、数量、引用组合及文本长度。历史按 `inspection_id/created_at/id` 索引分页。Production 来源组合外键、处置数量和返工计数范围由其[数据库专题](../../production/docs/database/execution-traceability-quality.md)维护。
+主键 id；组合唯一键 `(id,production_batch_id,batch_step_record_id)` 供 Production 处置引用。索引为 `(batch_step_record_id,created_at,id)`、`(production_batch_id,created_at,id)`。来源 FK 为 `(batch_step_record_id,production_batch_id) → batch_step_records(id,production_batch_id)`；当前结果 FK 为 `(current_record_id,id) → quality_process_inspection_record(id,inspection_id)`。当前指针、累计和结果的一致性由共享事务与固定锁序维护，不以外键替代累计下限校验。
 
-`202610150002-process-inspection` 成对 migration 建立两表、不可变触发器与工序专检权限，并扩展 Production 来源字段。迁移只追加，已执行文件不得修改；停写、回滚数据门禁和初始化要求见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。
+### quality_process_inspection_record
+
+| 字段 | 类型、空值与默认值 | 含义 |
+| --- | --- | --- |
+| id / inspection_id | ID，自增主键／ID，FK 专检单 | 结果及所属检查身份 |
+| record_type | VARCHAR(20) | normal／reversal |
+| inspection_method | VARCHAR(20) | full／sampling |
+| qualified_quantity / unqualified_quantity | INT | G/F 非负，合计为 1..99999999；N 不存储 |
+| scope_note | TEXT | 现场检查范围 |
+| inspected_at | DATETIME | 实际检查时间 |
+| result_note / evidence_reference | TEXT | 检查说明及凭据 |
+| reversal_of_record_id | ID NULL | 仅冲销行引用原结果，同单且唯一 |
+| replaces_record_id | ID NULL | 替代正向行引用原结果，同单且唯一 |
+| reason | TEXT NULL | 初始正向为空；更正、替代及冲销保留原因 |
+| 创建审计 | 见数据库公共列组 | 不含可变审计或 version |
+
+主键 id；唯一键为 `(id,inspection_id)`、reversal_of_record_id、replaces_record_id，保证同一原结果最多冲销一次、最多被一个替代结果取代。历史索引为 `(inspection_id,created_at,id)`。inspection_id 引用专检单；两个历史指针均与 inspection_id 组合自引用，不能跨单。
+
+CHECK 限定类型、方式及 G/F 范围；normal 的 reversal_of_record_id 为空，reversal 必须引用原结果且 replaces_record_id 为空。初始正向行允许 reason 为空，其他情形要求 trim 后 1..5000 字；scope_note、result_note、evidence_reference 同样要求 trim 后 1..5000 字。初始记录不填更正原因是[命令规则](#累计处理与更正)，数据库 CHECK 未禁止它携带非空原因。
+
+`trg_process_inspection_record_no_update/no_delete` 禁止结果改写和删除。当前指针、累计下限及历史引用按[更正规则](#累计处理与更正)保护；Production 的处置数量、来源组合外键及返工计数范围由其[执行专题](../../production/docs/database/execution-traceability-quality.md)维护。
+
+停写、回滚数据门禁和初始化要求见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。

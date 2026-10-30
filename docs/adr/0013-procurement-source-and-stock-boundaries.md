@@ -4,7 +4,7 @@
 
 本文仅被部分取代：[ADR-0014](0014-task-material-policy-and-output-inspection.md)确定成品质检归 Quality；[ADR-0015](0015-unified-quality-quantity-semantics.md)取代独立剔除量、检验直接生成可入范围、检前按采购拆批、来料部分复检和 QC 数量硬上限，并统一正式分配及补发依据；[ADR-0022](0022-procurement-state-and-receipt-void.md)取代采购物流数量关闭资格及结束后不能人工恢复的限制，明确到货原登记字段冻结与主表一次性作废转换的边界；[ADR-0026](0026-purchase-order-supplier-and-amounts.md)取代第 2、4、8 项中的逐行供应商存储、同版本按供应商拆行及补单从原行继承供应商的规则，改由采购主单保存并继承唯一供应商。单工单采购、需求独立、实收纠错、实际物流不可改写及唯一库存账本继续有效。
 
-状态：Accepted。当前完整规则从 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)、[到货处置](../../apps/api/src/modules/procurement/docs/receipts.md)、[正式清单与分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)读取；跨模块协作见[采购技术设计](../procurement-inbound-technical-design.md)。本文保留业务选择和不可越过的事实边界，验收与正式测试见[路线图](../roadmap.md)。
+状态：Accepted。当前完整规则从 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)、[到货处置](../../apps/api/src/modules/procurement/docs/receipts.md)、[正式清单与分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)读取；跨模块协作见[采购协作设计](../procurement-inbound-design.md)。本文保留业务选择和不可越过的事实边界，验收与正式测试见[路线图](../roadmap.md)。
 
 ## 背景
 
@@ -32,7 +32,7 @@
 
 Procurement 所有供应商、采购、到货、数量修订、处理轮次、正式分配与实际退回；Quality 所有来料及成品检查；Production 所有生产需求、结案和批准清单；Inventory 所有批次、实际入库及唯一库存账本。成品分次执行与两来源自主归批由 ADR-0016 决定，采购和生产的定稿职责继续独立。
 
-当前模块文档完整维护各自状态、字段、命令和资格；[采购跨模块设计](../procurement-inbound-technical-design.md)维护协作关系。[管理端采购文档](../../apps/admin-web/docs/procurement-inbound.md)维护候选分页、切换工单保护、来源编辑及展示，不在 ADR 重复页面操作。
+当前模块文档完整维护各自状态、字段、命令和资格；[采购跨模块设计](../procurement-inbound-design.md)维护协作关系。[管理端采购文档](../../apps/admin-web/docs/procurement-inbound.md)维护候选分页、切换工单保护、来源编辑及展示，不在 ADR 重复页面操作。
 
 采购表按 Procurement 命名，Quality／Inventory 表不因被采购调用改变归属。当前表结构见[采购数据库](../../apps/api/src/modules/procurement/docs/database.md)，不以新旧文件顺序改变所有权或恢复被取代流程。
 

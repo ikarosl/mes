@@ -16,18 +16,32 @@
 
 `business_number_daily_sequence` 属于 platform-numbering。当前唯一运行时 SQL 写入口为 [mysql-business-number.ts](../src/infrastructure/numbering/mysql-business-number.ts)，业务 infrastructure 在当前事务内调用；application port 不接收数据库连接，也没有对外预领号接口。
 
-| 字段 | 类型与约束 | 语义 |
-| --- | --- | --- |
-| number_kind | VARCHAR(64)，非空，CHECK 限定已登记类型 | 稳定语义类型 |
-| number_date | DATE，非空 | 北京自然日 |
-| last_sequence | BIGINT UNSIGNED，非空且大于零 | 最后分配值 |
-| created_at / updated_at | DATETIME(3)，默认当前时间；更新自动推进 updated_at | 技术记录时间 |
+职责：按编号类型和北京自然日保存最后已分配序号，为不同业务共用的原子取号提供锁定点。它只负责编号分配，不保存业务单据或决定业务状态。
 
-复合主键为 `(number_kind,number_date)`。技术计数不是业务事实，不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。旧 `work_order_daily_sequence` 仅保留历史 migration 所有权登记，运行时不再使用。
+| 字段 | 类型 | 可空／默认 | 含义 |
+| --- | --- | --- | --- |
+| `number_kind` | `VARCHAR(64)` | 非空，无默认 | 稳定编号类型 |
+| `number_date` | `DATE` | 非空，无默认 | 分配编号时的北京自然日 |
+| `last_sequence` | `BIGINT UNSIGNED` | 非空，无默认 | 最后已分配序号 |
+| `created_at` | `DATETIME(3)` | 非空，默认 `CURRENT_TIMESTAMP(3)` | 当日类型计数首次创建时间 |
+| `updated_at` | `DATETIME(3)` | 非空，默认及更新时 `CURRENT_TIMESTAMP(3)` | 最近一次计数更新时间 |
+
+使用 InnoDB、`utf8mb4_0900_ai_ci`；复合主键为 `(number_kind,number_date)`，没有额外索引或外键。`chk_business_number_sequence_positive` 限制 `last_sequence > 0`；`chk_business_number_kind` 的当前值域为：
+
+```text
+work_order, production_batch, purchase_order, purchase_receipt,
+incoming_inspection_order, supplier_return, purchase_inbound, finished_inbound,
+other_inbound, other_outbound, inventory_batch, stock_check,
+production_material_outbound, production_material_return, material_loss,
+manual_material_demand, rework, step_report, abnormal_disposition,
+scrap_supplement_plan, material_supplement, approval_instance
+```
+
+核验来源：[初始编号表](../../../packages/database/migrations/202609280001-business-number-daily-sequence.up.sql)、[其他出入库类型](../../../packages/database/migrations/202610140002-other-draft-history-deletion.up.sql)、[来料质检主单类型](../../../packages/database/migrations/202610280001-incoming-inspection-orders.up.sql)。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。旧 `work_order_daily_sequence` 仅保留历史 migration 所有权登记，运行时不再使用。
 
 ## 事务与日期
 
-分配器通过同池、已设置 `time_zone='+08:00'` 的连接读取一次数据库 CURRENT_DATE，原子 upsert 递增对应计数，在同一连接内读取字符串序号。排他行锁保持到业务事务结束；不扫描业务表取 MAX，不使用应用内计数或随机尾段，不把 BIGINT 转成 JavaScript number。
+取号以当前事务连接的北京自然日为准，日序列锁保持到事务结束；不能用应用时钟、扫描业务最大编号或随机尾段代替。
 
 计数、业务写入、成功审计和已启用的 HTTP 幂等结果原子提交。失败整体回滚；成功重放不再次取号。提交后编号不可因取消、关闭或更正回收。锁超时／死锁沿现有命令和[幂等错误协议](idempotency.md#8-错误与日志语义)处理，不在已失败事务内只重试计数语句。涉及多个类型时保持业务既有稳定锁序和取号顺序。
 
@@ -35,12 +49,8 @@
 
 ## 库存批次与单据
 
-全局唯一约束位于 `item_batch.batch_code`。它只防止不同批次重号，不限制多张入库单、多条入库明细引用同一 `item_batch.id`。
-
-入库目标仍区分 `{mode:'new',clientKey}` 与 `{mode:'existing',batchId}`。新目标在实际确认事务创建批次时按 `inventory_batch` 取号；同请求相同 clientKey 只创建／取号一次。已有目标复用原批次和批号，不重新取号。采购／成品入库确认分别按 `purchase_inbound`／`finished_inbound` 取单号；其他入库／出库首次保存草稿分别按 `other_inbound`／`other_outbound` 取单号，后续确认不重新取单号。其他新批次草稿在确认时才取库存批号，取消不建空批次。重复请求按现有幂等重放。具体身份、单位、状态和来源授权校验见 [Inventory 公开能力](../src/modules/inventory/docs/public-contracts.md)。
+新库存批次在实际确认创建时取号，已有目标保留原批号；同请求复用同一新目标时只取号一次。批号全局唯一不限制多张入库单引用同一批次。各类单据的取号时点、目标身份和来源授权见[Inventory 公开能力](../src/modules/inventory/docs/public-contracts.md)。
 
 ## 迁移与验证边界
 
-追加 `202609280001-business-number-daily-sequence` 成对 migration；升级和回滚前均暂停全部受影响写入，并要求相关编号业务表及旧 HTTP 幂等记录为空。开发数据通过统一初始化流程重建，不转换旧编号、不推导旧日计数、不保留兼容双写。迁移还为库存批号增加全局唯一键，保留归批和必要的组合外键。
-
-迁移运行限制见[迁移安全](../../../packages/database/docs/migration-safety.md)，剩余验证见[路线图](../../../docs/roadmap.md)。
+旧编号和日计数不能推导转换；切换、空数据门禁及回退规则见[迁移安全](../../../packages/database/docs/migration-safety.md#202609280001业务日序号与库存批号唯一)，剩余验证见[路线图](../../../docs/roadmap.md)。

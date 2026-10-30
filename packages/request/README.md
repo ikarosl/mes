@@ -6,8 +6,7 @@
 
 调用方通过 AbortSignal 主动取消的请求不进入自动重试：Axios 取消错误或请求 signal 已 aborted 均被排除。
 该规则适用于全部共享客户端调用方；非取消请求的无响应／网络失败及 5xx 自动重试也只适用于上述安全方法。
-取消仍返回 rejected Promise，不等同于网络故障或请求成功。读取所有者负责丢弃取消后的迟到响应、恢复局部
-loading 并决定提示策略；业务写命令不得因页面失活而自动取消。
+取消仍返回 rejected Promise，不等同于网络故障或请求成功；应用的读取生命周期和提示由[管理端架构](../../apps/admin-web/docs/architecture.md#3-读取竞态与取消)维护。
 
 `createRequestClient` 可通过正整数 `maxConcurrentReads` 限制单个客户端同时在途的 GET／HEAD，未设置时不限制。
 超出上限的读取按发起顺序排队；排队计入 loading，但不计入网络超时，AbortSignal 或 CancelToken 取消会立即退出队列并保持失败，不触发重试。

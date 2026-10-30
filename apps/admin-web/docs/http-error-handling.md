@@ -1,71 +1,43 @@
 # 前端 HTTP 错误处理
 
-本文维护管理端共享 HTTP 客户端的认证、重试及错误展示约束。协议见[公共 API 规范](../../../docs/api-conventions.md)，业务意图见[管理端架构](architecture.md#5-写意图与错误)与 [API 幂等契约](../../api/docs/idempotency.md)。
+本文维护管理端认证恢复与最终提示；协议见[公共 API 规范](../../../docs/api-conventions.md)，写意图见[管理端架构](architecture.md#5-写意图与错误)。
 
 ## 1. 初始化边界
 
-API wrapper 统一使用 [httpClient](../src/api/http.ts)。启动时先配置认证，再注册最终错误处理器；响应链依次经过基础重试、认证恢复、最终提示。否则可恢复的 401 会被提前当作登出，或 Refresh 子请求重复弹错。共享实现分别由 [request](../../../packages/request/README.md) 和 [auth-client](../../../packages/auth-client/README.md) 所有。
+API wrapper 共用 [httpClient](../src/api/http.ts)。启动先配置认证，再注册最终错误处理器，响应依次经过基础重试、认证恢复和最终提示；否则可恢复的 401 会被提前当成登出，Refresh 子请求也可能重复弹错。
 
 ## 4. 基础请求与重试
 
-管理端共享客户端通过 `maxConcurrentReads: 4` 限制 GET／HEAD 的实际并发，超出部分排队。写请求及登录、续期不占只读名额，不按时间窗口丢弃请求或共用不同资源结果。排队取消、超时起算及重试释放规则由 [request 包](../../../packages/request/README.md)维护；业务页面仍负责目标身份与请求代际校验。
+传输重试、取消和读取排队统一由 [request](../../../packages/request/README.md)维护。管理端配置最多 4 个并行只读请求；各资源仍独立持有读取资格，不靠节流丢弃请求。
 
-| 请求 | 可自动重试的失败 |
-| --- | --- |
-| GET／HEAD／OPTIONS | 无响应或 HTTP >500 |
-| POST／PUT／PATCH／DELETE 等其他方法，包括幂等命令与文件上传 | 不自动重试 |
-
-`skipRetry`、请求取消或 signal 已中止均禁止传输重试。`retryTimes` 只控制安全方法首次之后的次数，默认 1；延迟为 300ms × 当前重试次数。HTTP 500 和 `IDEMPOTENCY_RESULT_CORRUPT` 对所有方法均不自动重试，避免重复服务端错误。
-
-写请求的无响应、超时、网络失败与 5xx 均直接交由调用方处理，减少人工业务操作中的隐藏请求与故障放大。幂等键不授予传输层自动重试资格；结果未知时保留原请求、原键与待核对状态，已启用幂等的命令由用户手动恢复，未启用的命令先核对业务结果。不得因关闭自动重试而清空意图、自动换键或解冻未确认的输入；完整生命周期见[管理端架构](architecture.md#5-写意图与错误)。
+结果未知后的人工恢复遵守[写意图规则](architecture.md#5-写意图与错误)，不能把传输重试关闭理解为放弃原操作。未提供幂等能力的命令先核对结果。
 
 ## 5. 认证恢复
 
-Access Token 仅在内存，Refresh Token 仅用 HttpOnly Cookie。普通请求需要内存会话；过期时间无效或距到期不超过 30 秒时先刷新，再注入 Token。401 可触发一次刷新并重放原请求，重放设置 `skipRefresh` 防循环；不得为此改动原幂等键。这是写请求禁止传输自动重试之外的认证恢复例外，依据是 API 在业务执行前拒绝无效凭证；`skipRetry` 不关闭该路径。
+会话及实例内刷新合并由 [auth-client](../../../packages/auth-client/README.md)维护。401 可刷新后重放一次原请求，保留原幂等键；这是禁止传输写重试之外的认证例外，依据是 API 在业务执行前拒绝无效凭证，`skipRetry` 不关闭此路径。
 
-页面初始化尝试恢复会话，失败转登录并保留目标路由。`refreshPromise` 只合并单个 AuthClient 实例内的并发刷新，不是多标签页锁；BroadcastChannel 的退出同步也不提供跨标签刷新互斥。
+页面初始化尝试恢复会话，失败转登录并保留目标路由。BroadcastChannel 的退出同步不提供跨标签刷新互斥。
 
 ## 6. 请求配置
 
-| 配置 | 精确含义 |
-| --- | --- |
-| `skipAuth` | 不要求内存会话、不注入 Access Token |
-| `skipRefresh` | 401 后不刷新／重放 |
-| `skipRetry` | 不进入基础网络／5xx 重试 |
-| `skipErrorHandling` | 跳过本次最终提示、401／403 状态处理及跳转，仍规范化错误并保持失败 |
-| `preserveErrorMessage` | 仅对 401 保留后端消息，不清理会话或执行通用登录失效跳转 |
+常规配置见 [httpClient](../src/api/http.ts)，应用层的两项例外须区分：`skipErrorHandling` 跳过最终提示、401／403 状态处理和跳转，但仍规范化并保持失败；`preserveErrorMessage` 只对 401 保留后端消息，不清会话或执行通用失效跳转。
 
-认证接口的例外必须保留：Login 使用 skipAuth/skipRefresh/skipRetry、preserveErrorMessage 和 credentials；Refresh 使用四个 skip 及 credentials，避免子请求递归、重复提示；Logout 先清本地会话，使用 skipAuth/skipRefresh/skipRetry 和 credentials；Me 使用默认认证配置。Refresh 子请求静默不代表外层原请求也静默；认证恢复最终失败仍可能进入全局处理。
+Refresh 子请求不触发递归恢复或重复提示；它静默不代表外层原请求静默，认证恢复最终失败仍交给外层处理。
 
 ## 7. 错误对象与页面责任
 
-API wrapper 用 `toRequestError` 规范化错误。已有 RequestError 保留引用，普通 Error 保留原对象，未知值才生成 Error；字段和转换实现见 [request](../../../packages/request/src/index.ts)。最终处理器与 [EMessage](../src/utils/message.ts) 通过同一错误对象去重；不要重新包装、复制或先转字符串，否则会丢失关联并重复提示。
+最终处理器与 [EMessage](../src/utils/message.ts) 按同一错误对象去重。页面需要提示时传原对象，不能重新包装、复制或先转字符串；提示后仍保持失败，不能进入保存成功、关窗或清草稿分支。页面 catch 负责业务恢复；接管局部提示的读取只忽略已失效或取消请求。
 
-处理提示后必须继续 reject，不能让失败流进入保存成功、关窗或清空草稿分支。页面 catch 仍负责业务状态与恢复；需要提示时传原错误对象。使用 `skipErrorHandling` 的候选和可取消详情由所有者提供局部失败提示，并只忽略已失效或取消的请求。
-
-用户提示先说明当前结果和下一步，使用单据、记录及实际操作名称；技术机制和调用诊断留在日志，不向普通用户解释请求头、幂等键或数据库事务。未知提交可重试、结果异常已暂停和超过可重试时限分别提示；只有当前仍可安全重试时才引导“重试本次提交”。关闭未知操作前保留结果核对、无法继续本次重试及重复办理的风险，失败不得覆盖草稿。错误码、请求编号、HTTP 状态及业务限制独立保留。
+用户提示先说明结果和下一步，使用实际单据及操作名称；请求头、幂等键和事务诊断留在日志。未知提交、结果异常已暂停、超过恢复时限须分别说明，只有仍可安全恢复时才引导“重试本次提交”。关闭未知操作前说明核对结果和丢失本地重试标识的影响；错误码、请求编号和业务限制保留。
 
 ## 8. 最终全局错误处理
 
-[error-handler](../src/api/error-handler.ts) 先按对象去重，再处理以下情况；`skipErrorHandling` 的请求不进入此流程。
+全局 [error-handler](../src/api/error-handler.ts) 对未被接管的 401 清会话并转登录，对 403 转无权限页；候选与可取消详情应按架构要求局部处理，避免后台读取带走当前工作页。
 
-| 错误 | 展示与状态行为 |
-| --- | --- |
-| 401，未 preserveErrorMessage | 清会话、跳登录、提示登录失效 |
-| 403 | 提示无权并跳无权限页 |
-| 无响应 `status=0`／超时代码 | 网络失败／超时；当前判定顺序限制见下文 |
-| `409 IDEMPOTENCY_CONFLICT` | 提交标识已用于不同内容，要求重新核对 |
-| `503 IDEMPOTENCY_STORAGE_RETRYABLE` | 提交服务暂不可用，可稍后原命令重试 |
-| `500 IDEMPOTENCY_RESULT_CORRUPT` | 保存结果异常，联系管理员核对，不自动另发 |
-| 普通 500／`INTERNAL_SERVER_ERROR` | 通用服务器错误并附 requestId，不改称幂等故障 |
-| 其他／不能规范化 | 后端或标准化消息／通用失败提示 |
-
-错误来源与防重复恢复状态分开：网络中断或普通 500 后保留原提交标识，只说明结果需核对，不证明发生幂等存储故障。只有明确业务错误码才显示对应幂等提示。未知代码异常仍按普通 500，服务端原异常链仅开发环境可记录，详细脱敏边界见 [API 诊断](../../api/README.md#http-错误诊断)。
+网络中断或普通 500 只说明结果需核对，不证明幂等存储故障。只有明确业务错误码才采用对应恢复提示；普通服务器错误保留 requestId。服务端诊断与脱敏见 [API 文档](../../api/README.md#http-错误诊断)。
 
 ## 12. 已知边界与待修正问题
 
 ### 12.1 超时当前会优先被识别为网络错误
 
-当前先判断 `status === 0` 再判断 `ECONNABORTED`，无响应超时会显示网络失败。此处记录现状，不能据文档宣称超时文案已修复；整改状态见[路线图](../../../docs/roadmap.md)。
-
-其他易误用边界：去重仅按对象引用；Refresh 并发锁不跨标签；`preserveErrorMessage` 只改变 401；硬刷新不恢复本地写意图。维护时按[测试策略](../../../docs/testing-strategy.md)验证拦截器顺序、取消不重试、写请求不自动重试与原请求手动恢复、认证子请求失败及同一错误只提示一次，不能用应用构建代替这些行为验证。
+当前先判断 `status === 0` 再判断 `ECONNABORTED`，无响应超时显示网络失败。此问题尚待修正，状态见[路线图](../../../docs/roadmap.md)。
