@@ -2,7 +2,8 @@
   <el-dialog
     v-model="visible"
     :title="title"
-    :width="DialogWidth.lg"
+    :width="hasConfirmationTable ? DialogWidth.workbench : DialogWidth.lg"
+    :workbench="hasConfirmationTable"
     :before-close="beforeClose"
     :close-on-click-modal="false"
     :show-close="!command.busy.value"
@@ -73,9 +74,10 @@
           >
         </el-descriptions>
         <el-table
-          v-if="mode === 'place' || mode === 'close-order'"
+          v-if="hasConfirmationTable"
           :data="confirmationLines"
           max-height="300"
+          scrollbar-always-on
         >
           <el-table-column
             prop="id"
@@ -129,7 +131,7 @@
               <template v-if="mode === 'place'">
                 <div class="placement-total">
                   <span>本次下单：</span>
-                  <span v-if="placementAmount(row)?.totalAmount === null">待填写无税单价</span>
+                  <span v-if="placementAmount(row)?.totalAmount === null">待填写单价</span>
                   <PurchaseLineTotalAmount
                     v-else
                     :total-amount="placementAmount(row)?.totalAmount ?? null"
@@ -277,6 +279,7 @@ const emit = defineEmits<{ changed: [string, PurchaseOrderDetail | null] }>();
 const initializing = ref(false);
 const mode = ref<PurchaseOrderAction>('place'),
   lineId = ref<string>();
+const hasConfirmationTable = computed(() => mode.value === 'place' || mode.value === 'close-order');
 const {
   visible,
   detail,

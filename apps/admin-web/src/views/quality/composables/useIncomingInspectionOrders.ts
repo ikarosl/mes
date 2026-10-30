@@ -1,6 +1,7 @@
 import { computed, onActivated, onDeactivated, onScopeDispose, ref } from 'vue';
 import type {
   ProcurementInboundInspectionLineItem,
+  QualityIncomingInspectionLocation,
   QualityIncomingInspectionOrderItem,
   QualityIncomingInspectionReceiptItem,
   QualityIncomingInspectionReceiptLines,
@@ -24,7 +25,7 @@ interface IncomingInspectionOrderGroup {
   receipts: QualityIncomingInspectionReceiptItem[];
   lines: Record<string, IncomingInspectionReceiptState>;
   expandedReceipts: Set<string>;
-  hasCollapsed: boolean;
+  initializeExpansion: boolean;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -33,9 +34,13 @@ interface ChildRequest {
   controller: AbortController;
   current: () => boolean;
 }
+interface IncomingInspectionOrdersOptions {
+  hasExplicitEntry?: () => boolean;
+  isNavigating?: () => boolean;
+}
 
 /** The two directory pages own their bounded caches; inspection editors own their drafts. */
-export function useIncomingInspectionOrders() {
+export function useIncomingInspectionOrders(options: IncomingInspectionOrdersOptions = {}) {
   const keyword = ref('');
   const groups = ref<IncomingInspectionOrderGroup[]>([]);
   const expandedOrders = ref(new Set<string>());
@@ -51,7 +56,13 @@ export function useIncomingInspectionOrders() {
   const locationError = ref('');
   const childRequests = new Map<string, ChildRequest>();
   let active = true;
-  let resetNextLoad = true;
+  let pendingExpansionMode: 'initial' | 'query' | 'preserve' = 'initial';
+  const initialEntryIsExplicit = options.hasExplicitEntry?.() ?? false;
+  let locationLineId = '';
+  let locationNeedsExpansion = false;
+  let locationExpansionRevision = 0;
+  let locationTarget: QualityIncomingInspectionLocation | null = null;
+  const locationCollapsedScopes = new Set<string>();
   const listRead = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -67,7 +78,7 @@ export function useIncomingInspectionOrders() {
       receipts: [],
       lines: {},
       expandedReceipts: new Set(),
-      hasCollapsed: false,
+      initializeExpansion: true,
       loading: false,
       loaded: false,
       error: '',
@@ -153,10 +164,10 @@ export function useIncomingInspectionOrders() {
       group.receipts = [];
       group.lines = {};
       group.expandedReceipts = new Set();
+      group.initializeExpansion = !options.hasExplicitEntry?.() && !locationLineId;
       group.loaded = false;
     }
     const requestedPage = group.page;
-    const firstLoad = !group.loaded;
     const request = beginChild(
       `order:${group.order.id}`,
       () => isCurrentGroup(group) && group.page === requestedPage,
@@ -181,8 +192,14 @@ export function useIncomingInspectionOrders() {
       const ids = new Set(result.items.map((receipt) => receipt.receiptId));
       group.lines = Object.fromEntries(Object.entries(group.lines).filter(([id]) => ids.has(id)));
       group.expandedReceipts = new Set([...group.expandedReceipts].filter((id) => ids.has(id)));
-      if (firstLoad && !group.hasCollapsed && result.items[0])
-        group.expandedReceipts.add(result.items[0].receiptId);
+      if (
+        group.initializeExpansion &&
+        !locationNeedsExpansion &&
+        !options.hasExplicitEntry?.() &&
+        !locationLineId
+      )
+        group.expandedReceipts = new Set(result.items[0] ? [result.items[0].receiptId] : []);
+      group.initializeExpansion = false;
       group.loaded = true;
       await Promise.all(
         result.items
@@ -201,7 +218,9 @@ export function useIncomingInspectionOrders() {
   async function load(): Promise<void> {
     if (!listRead.isActive()) return;
     const current = listRead.begin();
-    const reset = resetNextLoad;
+    const expansionMode = pendingExpansionMode;
+    const locationRevision = locationExpansionRevision;
+    const reset = expansionMode !== 'preserve';
     cancelChildren();
     loading.value = true;
     error.value = '';
@@ -223,16 +242,32 @@ export function useIncomingInspectionOrders() {
         return group;
       });
       total.value = result.total;
-      resetNextLoad = false;
+      const initializeExpansion = reset && pendingExpansionMode !== 'preserve';
+      pendingExpansionMode = 'preserve';
       const ids = new Set(result.items.map((order) => order.id));
       expandedOrders.value = new Set([...expandedOrders.value].filter((id) => ids.has(id)));
-      if (reset && result.items[0]) expandedOrders.value = new Set([result.items[0].id]);
+      if (
+        initializeExpansion &&
+        !options.hasExplicitEntry?.() &&
+        !locationLineId &&
+        !(expansionMode === 'initial' && initialEntryIsExplicit)
+      )
+        expandedOrders.value = new Set(result.items[0] ? [result.items[0].id] : []);
       await Promise.all(
         groups.value
           .filter((group) => expandedOrders.value.has(group.order.id))
           .map((group) => loadReceipts(group)),
       );
-      if (current.isCurrent() && focusedLineId.value) await revealLine(focusedLineId.value);
+      if (
+        current.isCurrent() &&
+        locationLineId &&
+        !locationLoading.value &&
+        !options.isNavigating?.()
+      )
+        await revealLine(
+          locationLineId,
+          initializeExpansion && locationRevision === locationExpansionRevision,
+        );
     } catch (cause) {
       if (!current.isCurrent()) return;
       error.value = '质检主单加载失败，请重试；已显示内容为上次读取结果。';
@@ -242,9 +277,26 @@ export function useIncomingInspectionOrders() {
     }
   }
 
+  function cancelLocationExpansion(): void {
+    locationExpansionRevision += 1;
+    pendingExpansionMode = 'preserve';
+    locationNeedsExpansion = false;
+    locationRead.invalidate();
+    locationCollapsedScopes.clear();
+  }
+  function collapseLocationScope(orderId: string, receiptId?: string): void {
+    const key = receiptId ? `receipt:${receiptId}` : `order:${orderId}`;
+    if (locationLoading.value) locationCollapsedScopes.add(key);
+    if (!locationTarget) return;
+    const matches = receiptId
+      ? locationTarget.receiptId === receiptId
+      : locationTarget.order?.id === orderId;
+    if (matches) cancelLocationExpansion();
+  }
   function collapseReceipts(group: IncomingInspectionOrderGroup): void {
+    collapseLocationScope(group.order.id);
     group.expandedReceipts.clear();
-    group.hasCollapsed = true;
+    group.initializeExpansion = false;
   }
   async function toggleOrder(group: IncomingInspectionOrderGroup): Promise<void> {
     const next = new Set(expandedOrders.value);
@@ -260,7 +312,9 @@ export function useIncomingInspectionOrders() {
     group: IncomingInspectionOrderGroup,
     receipt: QualityIncomingInspectionReceiptItem,
   ): Promise<void> {
+    group.initializeExpansion = false;
     if (group.expandedReceipts.has(receipt.receiptId)) {
+      collapseLocationScope(group.order.id, receipt.receiptId);
       group.expandedReceipts.delete(receipt.receiptId);
       cancelChild(`receipt:${receipt.receiptId}`);
       const state = group.lines[receipt.receiptId];
@@ -299,13 +353,14 @@ export function useIncomingInspectionOrders() {
     );
   }
   function collapsePage(): void {
+    cancelLocationExpansion();
     expandedOrders.value = new Set();
     for (const group of groups.value) collapseReceipts(group);
     cancelChildren();
   }
   async function changePage(value: number): Promise<void> {
     page.value = value;
-    resetNextLoad = true;
+    pendingExpansionMode = 'query';
     cancelChildren();
     groups.value = [];
     expandedOrders.value = new Set();
@@ -323,8 +378,13 @@ export function useIncomingInspectionOrders() {
     await search();
   }
 
-  async function revealLine(receiptLineId: string): Promise<void> {
+  async function revealLine(receiptLineId: string, expand = true): Promise<void> {
     if (!receiptLineId || !locationRead.isActive()) return;
+    locationLineId = receiptLineId;
+    if (expand) locationNeedsExpansion = true;
+    const expandTarget = locationNeedsExpansion;
+    locationTarget = null;
+    locationCollapsedScopes.clear();
     const request = locationRead.begin();
     locationLoading.value = true;
     locationError.value = '';
@@ -332,20 +392,42 @@ export function useIncomingInspectionOrders() {
       const location = await incomingInspectionOrdersApi.locate(receiptLineId, request.signal);
       if (!request.isCurrent()) return;
       if (location.receiptLineId !== receiptLineId) throw new Error('到货明细定位不匹配');
+      locationTarget = location;
+      if (
+        locationCollapsedScopes.has(`order:${location.order?.id}`) ||
+        locationCollapsedScopes.has(`receipt:${location.receiptId}`)
+      ) {
+        cancelLocationExpansion();
+        return;
+      }
       const group = groups.value.find((entry) => entry.order.id === location.order?.id);
       if (group) {
-        expandedOrders.value = new Set([...expandedOrders.value, group.order.id]);
-        if (!group.loaded) await loadReceipts(group);
+        if (expandTarget) {
+          expandedOrders.value = new Set([...expandedOrders.value, group.order.id]);
+          group.initializeExpansion = false;
+        }
+        if ((!group.loaded || group.error) && isCurrentGroup(group)) await loadReceipts(group);
         if (!request.isCurrent()) return;
         const receipt = group.receipts.find((entry) => entry.receiptId === location.receiptId);
-        if (receipt && isCurrentGroup(group)) {
-          group.expandedReceipts.add(receipt.receiptId);
-          await loadLines(group, receipt);
+        if (receipt && groups.value.includes(group)) {
+          if (expandTarget) group.expandedReceipts.add(receipt.receiptId);
+          const state = group.lines[receipt.receiptId];
+          if (
+            isCurrentGroup(group) &&
+            group.expandedReceipts.has(receipt.receiptId) &&
+            (expandTarget || !state?.loaded || state.error)
+          )
+            await loadLines(group, receipt);
           if (!request.isCurrent()) return;
-          if (group.lines[receipt.receiptId]?.loaded && !group.lines[receipt.receiptId]?.error) {
+          if (
+            groups.value.includes(group) &&
+            (!expandTarget ||
+              (group.lines[receipt.receiptId]?.loaded && !group.lines[receipt.receiptId]?.error))
+          ) {
             focusedReceipt.value = null;
             focusedOrder.value = null;
             focusedLineId.value = receiptLineId;
+            locationNeedsExpansion = false;
             return;
           }
         }
@@ -373,8 +455,10 @@ export function useIncomingInspectionOrders() {
       };
       focusedOrder.value = order;
       focusedLineId.value = receiptLineId;
+      locationNeedsExpansion = false;
     } catch (cause) {
       if (!request.isCurrent()) return;
+      locationNeedsExpansion = false;
       locationError.value = '列表归属定位失败，原到货明细及检验历史仍可在工作台核对。';
       EMessage.error(cause, locationError.value);
     } finally {
@@ -383,6 +467,10 @@ export function useIncomingInspectionOrders() {
   }
   function clearLocation(): void {
     locationRead.invalidate();
+    locationLineId = '';
+    locationNeedsExpansion = false;
+    locationTarget = null;
+    locationCollapsedScopes.clear();
     focusedReceipt.value = null;
     focusedOrder.value = null;
     focusedLineId.value = '';

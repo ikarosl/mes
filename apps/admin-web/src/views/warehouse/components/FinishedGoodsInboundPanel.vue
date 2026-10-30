@@ -197,13 +197,14 @@
           <FinishedGoodsInboundHistoryGroups
             v-if="detachedOrder"
             :rows="[detachedOrder]"
+            :expanded-ids="historyExpansion.expandedIds.value"
             :loading="false"
             empty-text=""
             :details="list.details"
             :detail-loading="list.detailLoading"
             :detail-errors="list.detailErrors"
             :located-inbound-id="locatedInboundId"
-            @expand="loadHistoryDetail"
+            @toggle="toggleHistory"
             @retry="retryHistoryDetail"
             @batch="goBatch"
             @approval="goApproval"
@@ -212,15 +213,15 @@
           />
         </section>
         <FinishedGoodsInboundHistoryGroups
-          ref="historyGroups"
           :rows="rows"
+          :expanded-ids="historyExpansion.expandedIds.value"
           :loading="loading"
           :empty-text="historyEmptyText"
           :details="list.details"
           :detail-loading="list.detailLoading"
           :detail-errors="list.detailErrors"
           :located-inbound-id="locatedInboundId"
-          @expand="loadHistoryDetail"
+          @toggle="toggleHistory"
           @retry="retryHistoryDetail"
           @batch="goBatch"
           @approval="goApproval"
@@ -276,6 +277,7 @@ import TableToolbar from '../../../components/TableToolbar.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useFinishedGoodsInbounds } from '../composables/useFinishedGoodsInbounds';
+import { useInboundHistoryExpansion } from '../composables/use-inbound-history-expansion';
 import type { FinishedInboundSelection } from '../finished-inbound-selection';
 import FinishedGoodsInboundDialog from './FinishedGoodsInboundDialog.vue';
 import FinishedGoodsInboundCandidateGroups from './FinishedGoodsInboundCandidateGroups.vue';
@@ -297,6 +299,7 @@ const candidateRead = useLatestReadRequest(() => {
 const selected = ref<FinishedInboundSelection[]>([]);
 const selectedTaskId = computed(() => selected.value[0]?.source.productionBatchId ?? null);
 const list = useFinishedGoodsInbounds();
+const historyExpansion = useInboundHistoryExpansion();
 const { query, rows, total, loading, error } = list;
 const candidateEmptyText = computed(() => {
   if (candidateError.value) return '读取失败，请刷新重试';
@@ -313,7 +316,6 @@ const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
 const auth = useAuthStore();
 const editorDialog = ref<InstanceType<typeof FinishedGoodsInboundDialog> | null>(null);
-const historyGroups = ref<InstanceType<typeof FinishedGoodsInboundHistoryGroups> | null>(null);
 const visible = ref(false);
 const locatedInboundId = ref<string | null>(null);
 const locationOrigin = ref<'route' | 'confirmed' | null>(null);
@@ -464,14 +466,17 @@ async function restoreCurrentNavigation(rejectedId: string): Promise<void> {
     query: { ...route.query, inboundId: locatedInboundId.value ?? undefined },
   });
 }
-function retainVisibleDetails(): void {
-  list.retainDetails([
-    ...rows.value.map((row) => row.inboundId),
-    ...(locatedInboundId.value ? [locatedInboundId.value] : []),
-  ]);
+function retainHistoryState(): void {
+  const pageIds = rows.value.map((row) => row.inboundId);
+  historyExpansion.retain(pageIds, locatedInboundId.value);
+  list.retainDetails([...pageIds, ...(locatedInboundId.value ? [locatedInboundId.value] : [])]);
 }
 function loadHistoryDetail(id: string): void {
   if (pageActive && props.active && view.value === 'history') void list.loadDetail(id);
+}
+function toggleHistory(id: string): void {
+  historyExpansion.toggle(id);
+  if (historyExpansion.expandedIds.value.includes(id)) loadHistoryDetail(id);
 }
 function retryHistoryDetail(id: string): void {
   if (pageActive && props.active && view.value === 'history') void list.loadDetail(id, true);
@@ -489,15 +494,18 @@ async function loadHistory(refreshExpanded = false): Promise<void> {
     view.value !== 'history'
   )
     return;
-  retainVisibleDetails();
+  historyExpansion.sync(
+    rows.value.map((row) => row.inboundId),
+    locatedInboundId.value,
+  );
+  retainHistoryState();
   if (locatedInboundId.value && !locatedOnPage.value)
     void list.loadDetail(locatedInboundId.value, refreshExpanded);
-  await nextTick();
-  for (const id of historyGroups.value?.expandedIds() ?? [])
-    void list.loadDetail(id, refreshExpanded);
+  for (const id of historyExpansion.expandedIds.value) void list.loadDetail(id, refreshExpanded);
 }
 function searchHistory(): void {
   query.page = 1;
+  historyExpansion.initializeNextLoad();
   void loadHistory();
 }
 function resetHistory(): void {
@@ -507,6 +515,7 @@ function resetHistory(): void {
 }
 function changeHistoryPage(page: number): void {
   query.page = page;
+  historyExpansion.initializeNextLoad();
   void loadHistory();
 }
 function changeHistoryPageSize(size: number): void {
@@ -520,7 +529,7 @@ function clearHistoryLocation(): void {
   const oldId = locatedInboundId.value;
   locatedInboundId.value = null;
   locationOrigin.value = null;
-  retainVisibleDetails();
+  retainHistoryState();
   if (oldId && route.name === 'warehouse-inbound-finished' && route.query.inboundId === oldId)
     void router.replace({ query: { ...route.query, inboundId: undefined } });
 }
@@ -529,6 +538,8 @@ function onChanged(id: string): void {
   visible.value = false;
   view.value = 'history';
   locatedInboundId.value = id;
+  retainHistoryState();
+  historyExpansion.expand(id);
   locationOrigin.value = 'confirmed';
   if (route.name === 'warehouse-inbound-finished' && route.query.inboundId)
     void router.replace({ query: { ...route.query, inboundId: undefined } });
@@ -575,8 +586,9 @@ async function locate(id: string | null | undefined): Promise<void> {
     if (id !== props.requestedInboundId || route.name !== 'warehouse-inbound-finished') return;
     view.value = 'history';
     locatedInboundId.value = id;
+    historyExpansion.expand(id);
     locationOrigin.value = 'route';
-    retainVisibleDetails();
+    retainHistoryState();
     void loadHistory();
   } finally {
     navigating = false;

@@ -17,7 +17,7 @@
       :class="{ 'is-located': order.inboundId === locatedInboundId }"
     >
       <InboundGroupHeader
-        :expanded="!collapsedInboundIds.has(order.inboundId)"
+        :expanded="expandedIds.includes(order.inboundId)"
         title-label="入库单"
         :title="order.inboundNo"
         :count-label="`本单 ${order.details.length} 条实际入库明细`"
@@ -47,7 +47,7 @@
         </el-button>
       </InboundGroupHeader>
       <div
-        v-if="!collapsedInboundIds.has(order.inboundId)"
+        v-if="expandedIds.includes(order.inboundId)"
         v-loading="detailLoading[order.inboundId]"
         class="expanded-body"
       >
@@ -231,6 +231,7 @@ import InboundGroupHeader from './InboundGroupHeader.vue';
 defineOptions({ name: 'FinishedGoodsInboundHistoryGroups' });
 const props = defineProps<{
   rows: FinishedGoodsInboundOrderItem[];
+  expandedIds: string[];
   loading: boolean;
   emptyText: string;
   details: Record<string, FinishedGoodsInboundOrderDetail>;
@@ -239,7 +240,7 @@ const props = defineProps<{
   locatedInboundId?: string | null;
 }>();
 const emit = defineEmits<{
-  expand: [id: string];
+  toggle: [id: string];
   retry: [id: string];
   batch: [itemBatchId: string];
   approval: [instanceId: string];
@@ -254,33 +255,7 @@ const canViewFinishedInspections = computed(() =>
 );
 const canViewApproval = computed(() => canAccessRoute({ name: 'approval-inbox' }));
 const container = ref<HTMLElement | null>(null);
-const collapsedInboundIds = ref(new Set<string>());
 const orderedInboundIds = computed(() => props.rows.map((row) => row.inboundId));
-watch(
-  orderedInboundIds,
-  (ids, previousIds) => {
-    if (
-      previousIds &&
-      ids.length === previousIds.length &&
-      ids.every((id, index) => id === previousIds[index])
-    )
-      return;
-    const collapsed = new Set(ids.slice(1).filter((id) => id !== props.locatedInboundId));
-    collapsedInboundIds.value = collapsed;
-    for (const id of ids) if (!collapsed.has(id)) emit('expand', id);
-  },
-  { immediate: true },
-);
-watch(
-  () => props.locatedInboundId,
-  (id) => {
-    if (!id || !orderedInboundIds.value.includes(id)) return;
-    const next = new Set(collapsedInboundIds.value);
-    next.delete(id);
-    collapsedInboundIds.value = next;
-    emit('expand', id);
-  },
-);
 watch(
   () => [props.locatedInboundId, orderedInboundIds.value.join('\u0000')] as const,
   async ([id]) => {
@@ -294,20 +269,11 @@ watch(
   { immediate: true, flush: 'post' },
 );
 function toggleInbound(id: string): void {
-  const next = new Set(collapsedInboundIds.value);
-  if (next.has(id)) {
-    next.delete(id);
-    emit('expand', id);
-  } else next.add(id);
-  collapsedInboundIds.value = next;
-}
-function expandedIds(): string[] {
-  return orderedInboundIds.value.filter((id) => !collapsedInboundIds.value.has(id));
+  emit('toggle', id);
 }
 function displayPerson(name: string | null | undefined, id: string): string {
   return name && name !== id ? name : '姓名未提供';
 }
-defineExpose({ expandedIds });
 </script>
 
 <style scoped>

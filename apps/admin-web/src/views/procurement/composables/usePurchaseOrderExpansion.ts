@@ -76,13 +76,26 @@ export function usePurchaseOrderExpansion() {
     pendingFocusId = '';
     prune();
   };
-  const sync = (rows: PurchaseOrderItem[], refreshExpanded: boolean) => {
+  const sync = (
+    rows: PurchaseOrderItem[],
+    {
+      refreshExpanded,
+      initializeExpansion,
+    }: { refreshExpanded: boolean; initializeExpansion: boolean },
+  ) => {
     pageIds = new Set(rows.map((row) => row.id));
     prune();
+    if (initializeExpansion) {
+      const firstId = rows[0]?.id;
+      for (const id of expanded.value) {
+        if (id !== firstId) invalidate(id);
+      }
+      expanded.value = firstId ? [firstId] : [];
+    }
     for (const row of rows) {
       const entry = entries[row.id];
       const changed = entry?.detail && entry.detail.version !== row.version;
-      if (expanded.value.includes(row.id) && (refreshExpanded || changed))
+      if (expanded.value.includes(row.id) && (refreshExpanded || initializeExpansion || changed))
         void read(row.id, Boolean(changed));
       else if (changed) {
         invalidate(row.id);

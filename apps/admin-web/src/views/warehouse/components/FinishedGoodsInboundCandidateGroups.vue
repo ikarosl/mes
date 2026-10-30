@@ -210,7 +210,10 @@ watch(orderedRowKeys, (keys, previousKeys) => {
     keys.every((key, index) => key === previousKeys[index])
   )
     return;
-  collapsedWorkOrderIds.value = new Set();
+  const workOrderIds = new Set(props.rows.map((row) => row.workOrderId));
+  collapsedWorkOrderIds.value = new Set(
+    [...collapsedWorkOrderIds.value].filter((id) => workOrderIds.has(id)),
+  );
 });
 function toggleWorkOrder(id: string): void {
   const next = new Set(collapsedWorkOrderIds.value);

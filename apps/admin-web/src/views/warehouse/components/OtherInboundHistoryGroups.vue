@@ -15,7 +15,7 @@
       class="inbound-block"
     >
       <InboundGroupHeader
-        :expanded="!collapsedInboundIds.has(order.id)"
+        :expanded="expandedIds.includes(order.id)"
         title-label="入库单"
         :title="order.orderNo"
         :count-label="`本单 ${activeOtherInventoryLines(order).length} 条有效明细`"
@@ -75,7 +75,7 @@
         </div>
       </InboundGroupHeader>
       <div
-        v-if="!collapsedInboundIds.has(order.id)"
+        v-if="expandedIds.includes(order.id)"
         class="expanded-body"
       >
         <div class="order-notes">
@@ -172,7 +172,6 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue';
 import {
   INVENTORY_ITEM_KIND_LABELS,
   INVENTORY_TARGET_MODE_LABELS,
@@ -196,8 +195,9 @@ import {
 import InboundGroupHeader from './InboundGroupHeader.vue';
 
 defineOptions({ name: 'OtherInboundHistoryGroups' });
-const props = defineProps<{ rows: OtherInventoryOrder[]; loading: boolean }>();
+defineProps<{ rows: OtherInventoryOrder[]; expandedIds: string[]; loading: boolean }>();
 const emit = defineEmits<{
+  toggle: [id: string];
   detail: [id: string];
   edit: [id: string];
   confirm: [id: string];
@@ -206,19 +206,8 @@ const emit = defineEmits<{
 }>();
 const { canAccessRoute } = useRouteAccess();
 const pendingStatus = otherInventoryPendingStatus('inbound');
-const collapsedInboundIds = ref(new Set<string>());
-watch(
-  () => props.rows.map((order) => order.id).join('\u0000'),
-  () => {
-    collapsedInboundIds.value = new Set(props.rows.slice(1).map((order) => order.id));
-  },
-  { immediate: true },
-);
 function toggleInbound(id: string): void {
-  const next = new Set(collapsedInboundIds.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  collapsedInboundIds.value = next;
+  emit('toggle', id);
 }
 function batchLabel(order: OtherInventoryOrder, line: OtherInventoryLine): string {
   if (line.batchCode) return line.batchCode;

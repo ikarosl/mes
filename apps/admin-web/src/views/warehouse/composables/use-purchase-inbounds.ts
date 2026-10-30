@@ -18,17 +18,19 @@ export const usePurchaseInbounds = () => {
   const detailRequest = useLatestReadRequest(() => {
     detailLoading.value = false;
   });
-  const load = async (query: PurchaseInboundOrderQuery): Promise<void> => {
-    if (!listRequest.isActive()) return;
+  const load = async (query: PurchaseInboundOrderQuery): Promise<boolean> => {
+    if (!listRequest.isActive()) return false;
     const current = listRequest.begin();
     loading.value = true;
     try {
       const result = await productionInboundsApi.listPurchaseInbounds(query, current.signal);
-      if (!current.isCurrent()) return;
+      if (!current.isCurrent()) return false;
       rows.value = result.items;
       total.value = result.total;
+      return true;
     } catch (error) {
       if (current.isCurrent()) EMessage.error(error, '入库历史加载失败');
+      return false;
     } finally {
       if (current.isCurrent()) loading.value = false;
     }

@@ -116,6 +116,10 @@
                 <strong>{{
                   formatQuantity(approvedUsableQuantity(selectedWorkOrder.finalOutput))
                 }}</strong>
+                <span
+                  >（计划内 {{ formatQuantity(selectedWorkOrder.finalOutput.availableQuantity) }} /
+                  计划外 {{ formatQuantity(selectedWorkOrder.finalOutput.extraQuantity) }}）</span
+                >
               </span>
               <span v-else>暂无已批准产出</span>
               <span v-if="selectedWorkOrder.finalOutput.closingBatchCount > 0">

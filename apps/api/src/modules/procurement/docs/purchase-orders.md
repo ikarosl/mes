@@ -29,7 +29,9 @@
 
 GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，合法查看权限任一：`procurement:orders:view`、`production:tasks:view`、`production:material-demands:view`、`production:materials:view`。响应为分页关联采购行与逐需求 distinct 采购单数；行计划量明确是不分摊的整行数量。当前需求已关闭、被更正、已履约或基础物料停用都不抹去关联历史。查询按集合处理，禁止逐需求 N+1。
 
-订单写命令均要求 Idempotency-Key，采购主单和补单在实际创建事务内由服务端按[统一编号规则](../../../../docs/business-numbering.md)分配采购订单号；create 为 `procurement.purchase-order.create.v5`，update 为 `.update.v7`，place 为 `.place.v7`，cancel 为 `.cancel.v3`，整单结束为 `.close.v1`，supplement 为 `.supplement.v9`，金额更正为 `.correct-amounts.v3`；行结束为 `procurement.purchase-order-line.close.v2`，行恢复为 `.reopen.v1`。PATCH 同样使用幂等以保证整体替换草稿行的响应不确定时安全重放。application 规范化请求并收窄审计上下文传给 port，平台 executor 与业务、审计复用同一事务。所有写结果为 `{purchaseOrderId,version}`，首次和重放返回同一 codec 快照，再 GET 当前详情。
+订单写命令（含整体替换草稿行的 PATCH）均要求 `Idempotency-Key`；响应不确定时，使用原键和原请求重试。所有写结果为 `{purchaseOrderId,version}`，重放返回首次成功结果快照，当前详情另行 GET 获取。采购主单和补单在实际创建事务内由服务端按[统一编号规则](../../../../docs/business-numbering.md)分配采购订单号。
+
+请求规范化、事务与重放机制遵循[平台幂等契约](../../../../docs/idempotency.md)，命令上下文的分层传递遵循[命令上下文](../../../../docs/command-context.md)；各命令的 scope 及版本见[采购幂等契约代码](../application/idempotency/procurement-idempotency-scopes.contract.ts)。
 
 ## 当前状态、来源与事务
 
@@ -122,7 +124,7 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 
 ## 明细采购单位单价
 
-每条采购明细的 `taxExclusiveAmount`（无税单价）和 `taxInclusiveAmount`（含税单价）均按本行采购单位填写，两者都保留人工输入，不相互反算或覆盖。含税单价仅作报价记录，不参与自动总额推算，仍须校验、持久化并支持后续更正及审计。以下金额和税率在 HTTP、共享函数及持久化边界均使用字符串，不能转成 JavaScript Number 后运算。
+每条采购明细的 `taxExclusiveAmount`（无税单价）和 `taxInclusiveAmount`（含税单价）均按本行采购单位填写，可任选一项或同时填写；两者都保留人工输入，不相互反算或覆盖，均须校验、持久化并支持后续更正及审计。以下金额和税率在 HTTP、共享函数及持久化边界均使用字符串，不能转成 JavaScript Number 后运算。
 
 | 字段 | 输入及规范化 |
 | --- | --- |
@@ -135,8 +137,9 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 最终本行含税总额按以下优先级确定：
 
 1. 有手填总额时采用 `manualTotalAmount`，来源为 `manual`，手填 0 同样有效。
-2. 否则有无税单价时，按 `taxExclusiveAmount × plannedQuantity × (1 + taxRatePercent / 100)` 推算，来源为 `calculated`。
-3. 手填总额与无税单价均为空时，总额和来源均为 null；单独填写含税单价不产生自动总额，不将缺失价格当作零。
+2. 否则有含税单价时，按 `taxInclusiveAmount × plannedQuantity` 推算，来源为 `calculated`；两项单价同时填写时使用含税单价，税率不重复参与。
+3. 否则有无税单价时，按 `taxExclusiveAmount × plannedQuantity × (1 + taxRatePercent / 100)` 推算，来源为 `calculated`。
+4. 手填总额与两项单价均为空时，总额和来源均为 null，不将缺失价格当作零；单价为 0 时仍是有效计算依据。
 
 前后端共同调用 [@company/utils](../../../../../../packages/utils/README.md) 的 `calculatePurchaseLineAmount`，使用 decimal.js 进行十进制运算，中间乘法保持精度，最终总额一次按 `ROUND_HALF_UP` 舍入并规范为 2 位小数，结果不得超过 128 字符。`totalAmount` 与 `totalAmountSource` 由服务端重新计算并成对保存，响应来源仅为 `manual`、`calculated` 或 null。写请求不接受这两个结果字段；不另存手填总额，编辑时仅在来源为 `manual` 时将响应总额投影回 `manualTotalAmount`，防止两份可变总额不一致。
 
@@ -148,9 +151,9 @@ GET `/procurement/related-purchases` 接受批量 demandIds 和公共分页，�
 
 正式下单后通过 `POST /procurement/purchase-orders/:id/actions/correct-amounts` 一次补填或更正本单一至多行的两项单价、税率及手填总额；权限为 `procurement:orders:update`。请求必须包含主单 `version`、1～100 条不重复的变更行 `items`，以及 trim 后非空、最多 2000 字的 `reason`。每行须明确包含真实 `id`、行 `version`、`taxExclusiveAmount: string | null`、`taxInclusiveAmount: string | null`、`taxRatePercent: string` 和 `manualTotalAmount: string | null`；缺少字段拒绝，不能将未提供的报价解释为保持或清空。草稿的两项单价仍允许省略。主单为 `ordered` 或 `completed` 且目标行为 `open`／`closed` 时可办，草稿通过草稿编辑办理，已取消采购拒绝；目标行必须全部属于路径中的主单。
 
-四项金额输入分别保留人工约定，不相互反算。单价按本节规则 trim，空文本与 null 表示清空，其余保留原十进制字符串的前导零和尾零；即使最终总额未变，报价字符串发生变化也须保存。修改报价或税率时，有手填总额则保留覆盖；清空手填总额后只按本次无税单价、税率及固定采购量重新推算，未填写无税单价时没有自动总额。采购量、供应商、物料身份及需求／补单来源继续冻结。
+四项金额输入分别保留人工约定，不相互反算。单价按本节规则 trim，空文本与 null 表示清空，其余保留原十进制字符串的前导零和尾零；即使最终总额未变，报价字符串发生变化也须保存。修改报价或税率时，有手填总额则保留覆盖；清空手填总额后，按上述优先级与固定采购量重新推算。采购量、供应商、物料身份及需求／补单来源继续冻结。
 
-命令在采购根和行锁内核对全部目标行的归属、状态、版本及金额输入；任一项失败，全批不写入。重复行拒绝；任一行的两项规范化报价字符串、规范化税率及最终总额／来源全部相同时，整批返回 `400 INVALID_PURCHASE_ORDER`，不能借无变化提交推进版本。成功每个变更行 version 递增一次，主单 version 仅递增一次。指纹包括主单 ID／version、按请求顺序保留的各行 ID／version、四项规范化金额输入及原因；首次与重放返回相同根版本，重放不再次推进版本或追加审计。当前 scope 为 `procurement.purchase-order.correct-amounts.v3`，与旧金额计算契约的 scope 不兼容；版本切换及待确认旧请求按[幂等契约](../../../../docs/idempotency.md#13-scope-版本与开发重置)办理，不增加旧结果解码或旧请求兼容分支。
+命令在采购根和行锁内核对全部目标行的归属、状态、版本及金额输入；任一项失败，全批不写入。重复行拒绝；任一行的两项规范化报价字符串、规范化税率及最终总额／来源全部相同时，整批返回 `400 INVALID_PURCHASE_ORDER`，不能借无变化提交推进版本。成功每个变更行 version 递增一次，主单 version 仅递增一次。指纹包括主单 ID／version、按请求顺序保留的各行 ID／version、四项规范化金额输入及原因；首次与重放返回相同根版本，重放不再次推进版本或追加审计。金额计算契约的不兼容变更、版本切换及待确认旧请求按[scope 版本与开发重置](../../../../docs/idempotency.md#13-scope-版本与开发重置)办理。
 
 每次批量成功只写一条 `operation_logs`：`module=procurement`、`action=purchase-order.correct-amounts`、`target_type=purchase_order`、`target_id` 为采购主单 ID，操作者为当前命令用户。`after_data.reason` 保存本次原因；`before_data` 与 `after_data` 各保存根 `version` 和变更行 `items`，每行含 `id/version/taxExclusiveAmount/taxInclusiveAmount/taxRatePercent/totalAmount/totalAmountSource` 前后值。业务更新、成功审计和幂等结果在同一事务提交，不新增金额历史表、不改物流事实；通用审计结构与写入边界见[平台审计](../../../../docs/audit.md)。
 

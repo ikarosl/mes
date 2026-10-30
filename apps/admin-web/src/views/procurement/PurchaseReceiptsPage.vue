@@ -230,7 +230,11 @@ const hasExplicitLocation = (): boolean =>
   [route.query.receiptId, route.query.receiptLineId, route.query.purchaseOrderId].some(
     (value) => typeof value === 'string' && value.length > 0,
   );
-const list = usePurchaseReceiptOrders(hasExplicitLocation);
+const navigating = ref(false);
+const backgroundTarget = ref<{ receiptId: string; lineId?: string } | null>(null);
+const list = usePurchaseReceiptOrders(
+  () => hasExplicitLocation() || navigating.value || Boolean(backgroundTarget.value),
+);
 const {
   awaitingAcceptance,
   keyword,
@@ -266,9 +270,7 @@ const {
 const editor = ref<InstanceType<typeof ReceiptCreateDialog>>(),
   detail = ref<InstanceType<typeof ReceiptDetailDialog>>();
 const locator = useLatestReadRequest(() => {});
-const navigating = ref(false);
 const pageRoot = ref<HTMLElement>();
-const backgroundTarget = ref<{ receiptId: string; lineId?: string } | null>(null);
 const blocked = computed(
   () => navigating.value || Boolean(editor.value?.locked || detail.value?.locked),
 );
@@ -301,6 +303,7 @@ const navigate = async (
   const revision = routeRevision;
   const isCurrent = (): boolean => matches() && revision === routeRevision;
   navigating.value = true;
+  list.prioritizeLocation();
   try {
     if (!(await release()) || !isCurrent()) return false;
     const opened = (await detail.value?.open(id, lineId, intent)) ?? false;
@@ -348,6 +351,7 @@ const create = async (
 ): Promise<boolean> => {
   if (navigating.value) return false;
   navigating.value = true;
+  list.prioritizeLocation();
   try {
     if (!(await release()) || !matches()) return false;
     await editor.value?.open(orderId);
@@ -357,10 +361,11 @@ const create = async (
   }
 };
 const saved = async (id: string): Promise<void> => {
+  list.prioritizeLocation();
+  backgroundTarget.value = { receiptId: id };
   await load();
   if (route.name !== 'procurement-receipts') return;
   await detail.value?.open(id);
-  backgroundTarget.value = { receiptId: id };
   await list.revealReceipt(id);
   if (route.name === 'procurement-receipts') {
     await recordLocation(id);
@@ -494,6 +499,7 @@ const locate = async (): Promise<void> => {
 watch(
   () => [route.name, route.query.receiptId, route.query.receiptLineId, route.query.purchaseOrderId],
   () => {
+    if (hasExplicitLocation()) list.prioritizeLocation();
     routeRevision += 1;
     void locate();
   },
@@ -592,7 +598,7 @@ onActivated(() => {
 .receipt-directory {
   min-width: 0;
   min-height: 56px;
-  padding: 16px 16px 0 24px;
+  padding: 16px 16px 16px 24px;
 }
 .receipt-tree {
   min-width: 0;

@@ -143,12 +143,10 @@
         >
           <template #default="{ row }">
             <div class="purchase-order-identity">
-              <el-button
+              <strong
                 :id="`purchase-order-${row.id}`"
                 class="purchase-order-number"
-                link
-                @click="expansion.setExpanded(row.id, !expansion.expanded.value.includes(row.id))"
-                >{{ row.purchaseNo }}</el-button
+                >{{ row.purchaseNo }}</strong
               >
               <el-tag
                 v-if="row.id === expansion.focusedId.value"
@@ -374,13 +372,17 @@ const {
   reset,
   changePage,
   changePageSize,
-} = usePurchaseOrdersList((listRows, refreshExpanded) => {
-  expansion.sync(listRows, refreshExpanded);
-  if (initialListExpansionHandled) return;
+} = usePurchaseOrdersList((listRows, options) => {
+  // 定位读取成功后才写入路由，进行中的办理也优先于默认首条。
+  const explicitEntry =
+    navigating.value ||
+    hasExplicitEntry() ||
+    (options.expansionMode === 'initial' && initialEntryIsExplicit);
   initialListExpansionHandled = true;
-  if (initialEntryIsExplicit) return;
-  const first = listRows[0];
-  if (first) expansion.setExpanded(first.id, true);
+  expansion.sync(listRows, {
+    refreshExpanded: options.refreshExpanded,
+    initializeExpansion: options.expansionMode !== 'preserve' && !explicitEntry,
+  });
 });
 const focusedOutsidePage = computed(
   () =>
@@ -788,7 +790,7 @@ watch(
   ],
   () => {
     // 显式入口即使已消费或回滚，首次列表也不另选默认单据。
-    initialEntryIsExplicit ||= hasExplicitEntry();
+    if (!initialListExpansionHandled) initialEntryIsExplicit ||= hasExplicitEntry();
     if (
       route.name === 'procurement-orders' &&
       routeWrite?.revision === routeRevision &&
@@ -861,8 +863,8 @@ onScopeDispose(deactivate);
   gap: 4px 8px;
 }
 .purchase-order-number {
-  --el-button-text-color: var(--el-text-color-primary);
-  --el-button-font-weight: 600;
+  color: var(--el-text-color-primary);
+  font-weight: 600;
 }
 .purchase-order-actions {
   display: inline-flex;

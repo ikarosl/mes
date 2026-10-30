@@ -10,20 +10,19 @@
       :key="processingGroupKey(group)"
       class="processing-group"
     >
-      <button
-        type="button"
-        class="group-header"
-        :aria-expanded="isExpanded(group)"
-        @click="toggle(group)"
-      >
-        <span class="fold-control">{{ isExpanded(group) ? '▾ 收起' : '▸ 展开' }}</span>
+      <header class="group-header">
+        <DisclosureToggle
+          :expanded="isExpanded(group)"
+          :label="`异常处理 ${processingGroupSourceLabel(group)}`"
+          @toggle="toggle(group)"
+        />
         <span class="group-summary">{{ processingGroupSummary(group) }}</span>
         <el-tag
           :type="processingGroupMeta(group).type"
           size="small"
           >{{ processingGroupMeta(group).label }}</el-tag
         >
-      </button>
+      </header>
       <div
         v-if="isExpanded(group)"
         class="group-body"
@@ -213,6 +212,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../../composables/useRouteAccess';
+import DisclosureToggle from '../../../../components/DisclosureToggle.vue';
 import {
   BATCH_STEP_ABNORMAL_ORIGIN_LABELS,
   BATCH_STEP_REWORK_RESULT_LABELS,
@@ -299,18 +299,10 @@ const toggle = (group: AbnormalProcessingGroup): void =>
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
   padding: 10px 12px;
-  border: 0;
   border-radius: 6px;
   color: var(--el-text-color-primary);
   background: var(--el-fill-color-light);
-  text-align: left;
-  cursor: pointer;
-}
-.group-header:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
 }
 .group-header > .el-tag {
   flex: 0 0 auto;
@@ -321,11 +313,6 @@ const toggle = (group: AbnormalProcessingGroup): void =>
   font-size: 13px;
   line-height: 1.5;
   overflow-wrap: anywhere;
-}
-.fold-control {
-  flex: 0 0 auto;
-  font-size: 12px;
-  color: var(--el-text-color-regular);
 }
 .group-body {
   padding: 4px 12px;

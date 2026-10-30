@@ -16,23 +16,14 @@
       :show-lines="expanded && Boolean(state?.loaded) && !state?.error"
     >
       <template #receipt-title>
-        <button
-          class="receipt-disclosure"
-          type="button"
-          :aria-expanded="expanded"
-          @click="emit('toggle')"
+        <DisclosureToggle
+          :expanded="expanded"
+          :label="`到货单 ${header.receiptNo}`"
+          @toggle="emit('toggle')"
+        />
+        <span class="receipt-title"
+          >到货单 <strong class="receipt-number">{{ header.receiptNo }}</strong></span
         >
-          <el-icon
-            class="receipt-fold-icon"
-            :class="{ 'is-expanded': expanded }"
-            aria-hidden="true"
-            ><ArrowRight
-          /></el-icon>
-          <span class="receipt-title"
-            >到货单 <strong class="receipt-number">{{ header.receiptNo }}</strong></span
-          >
-          <span class="fold-action">{{ expanded ? '收起物料' : '展开物料' }}</span>
-        </button>
       </template>
       <template #receipt-meta>
         <el-tag
@@ -244,7 +235,7 @@
 </template>
 <script setup lang="ts">
 import { computed } from 'vue';
-import { ArrowRight } from '@element-plus/icons-vue';
+import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import ReceiptWorklistReceiptGroup from './ReceiptWorklistReceiptGroup.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import type { PurchaseReceiptState } from '../composables/usePurchaseReceiptOrders';
@@ -332,29 +323,6 @@ const hasQualityPrimary = (row: ProcurementReceiptLineListItem): boolean =>
 .purchase-receipt :deep(.receipt-table-scroll) {
   border-top: 1px solid var(--el-border-color-lighter);
 }
-.receipt-disclosure {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  min-height: 28px;
-  margin-left: -4px;
-  padding: 3px 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.receipt-disclosure:hover {
-  background: var(--el-fill-color-light);
-}
-.receipt-disclosure:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
 .receipt-title {
   font-size: 14px;
   font-weight: 400;
@@ -362,19 +330,6 @@ const hasQualityPrimary = (row: ProcurementReceiptLineListItem): boolean =>
 }
 .receipt-number {
   font-weight: 600;
-}
-.receipt-fold-icon {
-  flex-shrink: 0;
-  color: var(--el-text-color-regular);
-  font-size: 14px;
-}
-.receipt-fold-icon.is-expanded {
-  transform: rotate(90deg);
-}
-.fold-action {
-  flex-shrink: 0;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 .receipt-actions {
   display: flex;

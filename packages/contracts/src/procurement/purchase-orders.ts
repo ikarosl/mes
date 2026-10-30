@@ -111,11 +111,11 @@ export interface PurchaseOrderLine {
   fulfillmentMode: PurchaseFulfillmentMode;
   /** 按采购单位手填的非负无税单价。 */
   taxExclusiveAmount: string | null;
-  /** 按采购单位独立手填的非负含税报价，不参与总额推算。 */
+  /** 按采购单位手填的非负含税单价；两项单价均有值时优先参与总额推算。 */
   taxInclusiveAmount: string | null;
   /** 百分比税率，默认 13；最多四位小数。 */
   taxRatePercent: string;
-  /** 本行已保存的有效总金额，两位小数；新推算无手填总额及无税单价时为 null。 */
+  /** 本行已保存的有效含税总金额，两位小数；新推算无手填总额及两项单价时为 null。 */
   totalAmount: string | null;
   totalAmountSource: PurchaseOrderTotalAmountSource | null;
   id: string;
@@ -145,11 +145,11 @@ export interface PurchaseOrderDetail extends PurchaseOrderItem {
 export interface PurchaseOrderDraftLine {
   /** 按采购单位手填的非负无税单价，最多 100 字符。 */
   taxExclusiveAmount?: string | null;
-  /** 独立手填的非负含税报价，最多 100 字符，不参与总额推算。 */
+  /** 手填的非负含税单价，最多 100 字符；有值时优先于无税单价推算总额。 */
   taxInclusiveAmount?: string | null;
   /** 百分比税率，未填写时取 13。 */
   taxRatePercent?: string | null;
-  /** 手填总额优先；null 或空文本按无税单价、数量及税率推算，0 为有效手填值。 */
+  /** 手填含税总额优先，0 同样有效；为空时优先按含税单价×数量，否则按无税单价、数量及税率推算。 */
   manualTotalAmount?: string | null;
   itemId: string;
   materialVariantId: string;
@@ -178,7 +178,7 @@ export interface CorrectPurchaseOrderAmountsPayload extends ReasonedVersionedCom
     taxExclusiveAmount: string | null;
     taxInclusiveAmount: string | null;
     taxRatePercent: string;
-    /** null 按冻结采购量及本次无税单价／税率推算；有效手填值优先。 */
+    /** 手填含税总额优先；null 优先按含税单价×冻结采购量，否则按无税单价、数量及税率推算。 */
     manualTotalAmount: string | null;
   }>;
 }

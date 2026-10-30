@@ -58,7 +58,7 @@ PROCUREMENT_AMOUNT_DEMO_TAG=acceptance_01 node tools/demo/prepare-procurement-am
 | `NODE_ENV` | 为 `production` 时禁止执行，比较前会 trim 并转为小写 |
 | `PROCUREMENT_AMOUNT_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api` |
 | `PROCUREMENT_AMOUNT_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1` |
-| `PROCUREMENT_AMOUNT_DEMO_TAG` | 未设置时使用 `[demo-procurement-amount-v4]` |
+| `PROCUREMENT_AMOUNT_DEMO_TAG` | 未设置时使用 `[demo-procurement-amount-v5]` |
 | `INCOMING_INSPECTION_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api` |
 | `INCOMING_INSPECTION_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1` |
 | `INCOMING_INSPECTION_DEMO_TAG` | 未设置时使用 `[demo-incoming-group-v1]` |

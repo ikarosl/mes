@@ -17,23 +17,16 @@
       :show-lines="expanded && Boolean(state?.loaded) && !state?.error"
     >
       <template #receipt-title>
-        <button
-          class="receipt-disclosure"
-          type="button"
-          :aria-expanded="expanded"
-          @click="emit('toggle')"
-        >
-          <el-icon
-            class="receipt-fold-icon"
-            :class="{ 'is-expanded': expanded }"
-            aria-hidden="true"
-            ><ArrowRight
-          /></el-icon>
+        <span class="receipt-title-group">
+          <DisclosureToggle
+            :expanded="expanded"
+            :label="`到货单 ${receipt.receiptNo}的物料`"
+            @toggle="emit('toggle')"
+          />
           <span class="receipt-title"
             >到货单 <strong class="receipt-number">{{ receipt.receiptNo }}</strong></span
           >
-          <span class="fold-action">{{ expanded ? '收起物料' : '展开物料' }}</span>
-        </button>
+        </span>
       </template>
       <template #receipt-meta>
         <div class="receipt-source-meta">
@@ -134,12 +127,12 @@
   </div>
 </template>
 <script setup lang="ts">
-import { ArrowRight } from '@element-plus/icons-vue';
 import type {
   ProcurementInboundInspectionLineItem,
   QualityIncomingInspectionReceiptItem,
 } from '@company/contracts';
 import { QUALITY_RELEASE_DECISION_LABELS } from '@company/constants';
+import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import ReceiptWorklistReceiptGroup from '../../procurement/components/ReceiptWorklistReceiptGroup.vue';
 import {
@@ -207,22 +200,13 @@ function lineAction(item: ProcurementInboundInspectionLineItem): string {
   border-bottom-right-radius: 0;
   border-bottom-left-radius: 0;
 }
-.receipt-disclosure {
+.receipt-title-group {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   max-width: 100%;
-  min-height: 28px;
-  margin-left: -4px;
-  padding: 3px 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
   color: var(--el-text-color-primary);
-  font: inherit;
   font-size: 14px;
-  text-align: left;
-  cursor: pointer;
 }
 .receipt-title {
   font-weight: 400;
@@ -230,26 +214,6 @@ function lineAction(item: ProcurementInboundInspectionLineItem): string {
 }
 .receipt-number {
   font-weight: 600;
-}
-.receipt-disclosure:hover {
-  background: var(--el-fill-color-light);
-}
-.receipt-disclosure:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
-.receipt-fold-icon {
-  flex-shrink: 0;
-  color: var(--el-text-color-regular);
-  font-size: 14px;
-}
-.receipt-fold-icon.is-expanded {
-  transform: rotate(90deg);
-}
-.fold-action {
-  flex-shrink: 0;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
 }
 .receipt-source-meta {
   display: flex;

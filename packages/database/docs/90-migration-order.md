@@ -4,7 +4,7 @@
 
 ## 事实来源
 
-`packages/database/migrations/*.up.sql` 按文件名升序组成唯一 migration 注册表；同名
+`packages/database/migrations/*.up.sql` 按完整文件名升序组成唯一 migration 注册表；同名
 `.down.sql` 提供配对回滚 SQL。`src/migration-utils.ts` 负责读取、计算校验和及共用的已执行记录检查，`src/migrate.ts` 按注册顺序执行尚未登记的迁移，
 `src/migrate-status.ts` 报告 `pending` 或 `applied`；检查行为及登记规则见[迁移登记表](../README.md#迁移登记表-_schema_migrations)。当前运行器只执行 up，没有统一的 down／rollback 命令。
 
@@ -16,15 +16,12 @@ corepack pnpm db:migrate:status
 
 ## 追加规则
 
-1. 文件名使用可排序且全局唯一的时间序号与稳定名称，并同时添加 `.up.sql`、`.down.sql`。
+1. 文件名使用 12 位数字时间序号加 kebab-case 目的名；完整迁移基名（时间序号与目的名）全局唯一，并同时添加 `.up.sql`、`.down.sql`。数字前缀可因多分支开发重复，不单独作为迁移身份；运行器以完整 `.up.sql` 文件名登记已执行记录。
 2. 已进入注册表或已在任一环境执行的 migration 不得修改、重命名或重排；修正只能追加新文件。
-3. 被引用表、唯一键和必要索引必须先创建；循环外键在两侧对象存在后通过后续 migration 追加。
+3. 有先后依赖的 migration 必须确保完整文件名排序满足依赖。被引用表、唯一键和必要索引必须先创建；循环外键在两侧对象存在后通过后续 migration 追加。
 4. 数据回填先于非空、唯一键、外键或收紧后的 `CHECK`；无法无损推导时应失败并要求人工处置，禁止猜测业务事实。
 5. 破坏性 down migration 必须设置数据守卫。回滚会覆盖后续业务进度时，应明确拒绝回滚。
 6. migration 的物理集中不改变表所有权；字段、约束和状态语义必须同步到所属模块的数据库文档。
-
-历史注册表中 `202610190001-production-execution-records-view-permission` 与
-`202610190001-purchase-order-state-simplification` 共用时间序号。两者的完整文件名是独立迁移身份，按完整文件名排序执行，原名和 SQL 保持不可变；静态门禁仅登记这两个精确名称的例外，其他重复序号仍拒绝。该例外不免除 up/down 配对、历史变更或运行器校验和检查，不允许后续迁移复用该序号。
 
 ## 所有者与验证
 

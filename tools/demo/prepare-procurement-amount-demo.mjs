@@ -7,7 +7,7 @@ loadWorkspaceEnv({ quiet: true });
 // Versioned API-created examples for manual acceptance; this is not a formal test suite.
 const scenarios = [
   {
-    name: 'inclusive-only-stays-null',
+    name: 'inclusive-only-calculates',
     input: { plannedQuantity: 3, taxInclusiveAmount: '3.00' },
     state: 'ordered',
     correction: {
@@ -16,11 +16,11 @@ const scenarios = [
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
-    total: null,
-    source: null,
+    total: '12.00',
+    source: 'calculated',
   },
   {
-    name: 'both-quotes-exclusive-basis',
+    name: 'both-quotes-inclusive-basis',
     input: { plannedQuantity: 3, taxExclusiveAmount: '2', taxInclusiveAmount: '3' },
     state: 'ordered',
     correction: {
@@ -29,11 +29,11 @@ const scenarios = [
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
-    total: '6.78',
+    total: '297.00',
     source: 'calculated',
   },
   {
-    name: 'inclusive-clear-total-unchanged',
+    name: 'inclusive-clear-uses-exclusive',
     input: { plannedQuantity: 3, taxExclusiveAmount: '2', taxInclusiveAmount: '3' },
     state: 'ordered',
     correction: {
@@ -55,7 +55,7 @@ const scenarios = [
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
-    total: '8.48',
+    total: '9.00',
     source: 'calculated',
   },
   {
@@ -68,8 +68,8 @@ const scenarios = [
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
-    total: null,
-    source: null,
+    total: '9.00',
+    source: 'calculated',
   },
   {
     name: 'manual-zero-before-calculation',
@@ -99,21 +99,20 @@ const scenarios = [
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
-    total: null,
-    source: null,
+    total: '9.00',
+    source: 'calculated',
   },
   {
     name: 'clear-manual-uses-exclusive',
     input: {
       plannedQuantity: 3,
       taxExclusiveAmount: '2',
-      taxInclusiveAmount: '3',
       manualTotalAmount: '7',
     },
     state: 'ordered',
     correction: {
       taxExclusiveAmount: '2',
-      taxInclusiveAmount: '3',
+      taxInclusiveAmount: null,
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
@@ -122,11 +121,11 @@ const scenarios = [
   },
   {
     name: 'round-exclusive-half-up',
-    input: { plannedQuantity: 3, taxExclusiveAmount: '2.5', taxInclusiveAmount: '500' },
+    input: { plannedQuantity: 3, taxExclusiveAmount: '2' },
     state: 'completed',
     correction: {
-      taxExclusiveAmount: '2.5',
-      taxInclusiveAmount: '600',
+      taxExclusiveAmount: '2.5000',
+      taxInclusiveAmount: null,
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
@@ -143,21 +142,83 @@ const scenarios = [
       taxRatePercent: '0',
       manualTotalAmount: null,
     },
-    total: '6.00',
+    total: '9.00',
     source: 'calculated',
   },
   {
     name: 'exclusive-zero-keeps-calculated',
-    input: { plannedQuantity: 3, taxExclusiveAmount: '0', taxInclusiveAmount: '987' },
+    input: { plannedQuantity: 3, taxExclusiveAmount: '2' },
     state: 'ordered',
     correction: {
       taxExclusiveAmount: '0',
-      taxInclusiveAmount: '988',
+      taxInclusiveAmount: null,
       taxRatePercent: '13',
       manualTotalAmount: null,
     },
     total: '0.00',
     source: 'calculated',
+  },
+  {
+    name: 'inclusive-zero-before-exclusive',
+    input: { plannedQuantity: 3, taxExclusiveAmount: '2', taxInclusiveAmount: '3' },
+    state: 'ordered',
+    correction: {
+      taxExclusiveAmount: '2',
+      taxInclusiveAmount: '0',
+      taxRatePercent: '13',
+      manualTotalAmount: null,
+    },
+    total: '0.00',
+    source: 'calculated',
+  },
+  {
+    name: 'round-inclusive-half-up',
+    input: { plannedQuantity: 3, taxInclusiveAmount: '0.33' },
+    state: 'ordered',
+    correction: {
+      taxExclusiveAmount: null,
+      taxInclusiveAmount: '0.335',
+      taxRatePercent: '13',
+      manualTotalAmount: null,
+    },
+    total: '1.01',
+    source: 'calculated',
+  },
+  {
+    name: 'manual-precision-correction-persists',
+    input: {
+      plannedQuantity: 3,
+      taxExclusiveAmount: '2.5',
+      taxInclusiveAmount: '3',
+      manualTotalAmount: '9.01',
+    },
+    state: 'ordered',
+    correction: {
+      taxExclusiveAmount: '2.6000',
+      taxInclusiveAmount: '3.0001',
+      taxRatePercent: '6',
+      manualTotalAmount: '9.01',
+    },
+    total: '9.01',
+    source: 'manual',
+  },
+  {
+    name: 'exclusive-only-default-tax',
+    input: { plannedQuantity: 3, taxExclusiveAmount: '2' },
+    total: '6.78',
+    source: 'calculated',
+  },
+  {
+    name: 'both-prices-empty',
+    input: { plannedQuantity: 3 },
+    total: null,
+    source: null,
+  },
+  {
+    name: 'manual-total-without-prices',
+    input: { plannedQuantity: 3, manualTotalAmount: '9.01' },
+    total: '9.01',
+    source: 'manual',
   },
 ];
 
@@ -193,7 +254,7 @@ function configuration() {
   return {
     mode,
     base: endpoint.href.replace(/\/$/, ''),
-    marker: `[demo-procurement-amount-v4${tag ? `:${tag}` : ''}]`,
+    marker: `[demo-procurement-amount-v5${tag ? `:${tag}` : ''}]`,
   };
 }
 
@@ -334,7 +395,7 @@ async function prepareScenario(client, config, refs, scenario) {
           ...scenario.correction,
         },
       ],
-      reason: `${config.marker} [scenario:${scenario.name}] 根据供应商确认更正金额输入；含税报价独立保存，总额只采用手填覆盖或无税单价、数量及税率推算。`,
+      reason: `${config.marker} [scenario:${scenario.name}] 根据供应商确认更正金额输入；手填含税总额优先，其次按含税单价乘采购量，无含税单价时按无税单价、数量及税率推算。`,
     });
   }
   if (scenario.state === 'cancelled') {

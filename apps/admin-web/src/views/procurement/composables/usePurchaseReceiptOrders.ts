@@ -26,7 +26,7 @@ export interface ReceiptPurchaseOrderGroup {
   receipts: ProcurementReceiptItem[];
   lines: Record<string, PurchaseReceiptState>;
   expandedReceipts: Set<string>;
-  hasCollapsed: boolean;
+  initializeReceiptExpansion: boolean;
   loading: boolean;
   loaded: boolean;
   error: string;
@@ -38,7 +38,7 @@ interface ChildRead {
 }
 
 /** 当前采购页、各采购的当前到货页及一个精确定位对象独立持有读取，办理草稿由弹窗所有。 */
-export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
+export function usePurchaseReceiptOrders(hasLocationIntent: () => boolean) {
   const keyword = ref('');
   const awaitingAcceptance = ref(false);
   const groups = ref<ReceiptPurchaseOrderGroup[]>([]);
@@ -57,7 +57,8 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
   const childReads = new Map<string, ChildRead>();
   let active = true;
   let resetNextLoad = true;
-  let initialDefaultExpansion = true;
+  // 读取失败或取消时保留初始化意图；定位或人工收起可以显式取消它。
+  let initializeOrderExpansion = !hasLocationIntent();
   let locationRevision = 0;
   const listRead = useLatestReadRequest(() => {
     loading.value = false;
@@ -80,7 +81,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
       receipts: [],
       lines: {},
       expandedReceipts: new Set(),
-      hasCollapsed: false,
+      initializeReceiptExpansion: false,
       loading: false,
       loaded: false,
       error: '',
@@ -167,11 +168,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     }
   }
 
-  async function loadReceipts(
-    group: ReceiptPurchaseOrderGroup,
-    reset = false,
-    allowDefaultExpansion = false,
-  ): Promise<void> {
+  async function loadReceipts(group: ReceiptPurchaseOrderGroup, reset = false): Promise<void> {
     if (!active || !isCurrentGroup(group)) return;
     cancelGroup(group);
     if (reset) {
@@ -181,7 +178,6 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
       group.loaded = false;
     }
     const requestedPage = group.page;
-    const firstLoad = !group.loaded;
     const read = beginChild(
       `purchase:${group.purchaseOrder.id}`,
       () => isCurrentGroup(group) && group.page === requestedPage,
@@ -203,7 +199,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
       const lastPage = Math.max(1, Math.ceil(result.total / 10));
       if (requestedPage > lastPage) {
         group.page = lastPage;
-        await loadReceipts(group, true, allowDefaultExpansion);
+        await loadReceipts(group, true);
         return;
       }
       group.purchaseOrder = result.purchaseOrder;
@@ -212,8 +208,9 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
       const ids = new Set(result.items.map((receipt) => receipt.id));
       group.lines = Object.fromEntries(Object.entries(group.lines).filter(([id]) => ids.has(id)));
       group.expandedReceipts = new Set([...group.expandedReceipts].filter((id) => ids.has(id)));
-      if (allowDefaultExpansion && firstLoad && !group.hasCollapsed && result.items[0])
-        group.expandedReceipts.add(result.items[0].id);
+      if (group.initializeReceiptExpansion)
+        group.expandedReceipts = new Set(result.items[0] ? [result.items[0].id] : []);
+      group.initializeReceiptExpansion = false;
       group.loaded = true;
       await Promise.all(
         result.items
@@ -309,14 +306,16 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
       resetNextLoad = false;
       const ids = new Set(result.items.map((purchaseOrder) => purchaseOrder.id));
       expandedOrders.value = new Set([...expandedOrders.value].filter((id) => ids.has(id)));
-      const applyInitialExpansion = initialDefaultExpansion && !hasExplicitLocation();
-      initialDefaultExpansion = false;
-      if (applyInitialExpansion && result.items[0])
-        expandedOrders.value = new Set([result.items[0].id]);
+      if (initializeOrderExpansion && !hasLocationIntent()) {
+        const firstGroup = groups.value[0];
+        expandedOrders.value = new Set(firstGroup ? [firstGroup.purchaseOrder.id] : []);
+        if (firstGroup) firstGroup.initializeReceiptExpansion = true;
+      }
+      initializeOrderExpansion = false;
       await Promise.all(
         groups.value
           .filter((group) => expandedOrders.value.has(group.purchaseOrder.id))
-          .map((group) => loadReceipts(group, false, applyInitialExpansion)),
+          .map((group) => loadReceipts(group)),
       );
       if (current.isCurrent() && locationRevision === initialLocationRevision)
         await refreshLocation();
@@ -331,7 +330,11 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
 
   function collapseReceipts(group: ReceiptPurchaseOrderGroup): void {
     group.expandedReceipts = new Set();
-    group.hasCollapsed = true;
+    group.initializeReceiptExpansion = false;
+  }
+  function prioritizeLocation(): void {
+    initializeOrderExpansion = false;
+    for (const group of groups.value) group.initializeReceiptExpansion = false;
   }
   async function toggleOrder(group: ReceiptPurchaseOrderGroup): Promise<void> {
     if (!active || loading.value) return;
@@ -350,6 +353,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     receipt: ProcurementReceiptItem,
   ): Promise<void> {
     if (!active || !isCurrentGroup(group)) return;
+    group.initializeReceiptExpansion = false;
     if (group.expandedReceipts.has(receipt.id)) {
       invalidateLocation();
       group.expandedReceipts.delete(receipt.id);
@@ -365,6 +369,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     if (!active || !isCurrentGroup(group)) return;
     invalidateLocation();
     group.page = value;
+    group.initializeReceiptExpansion = !hasLocationIntent();
     await loadReceipts(group, true);
   }
   async function expandPage(): Promise<void> {
@@ -377,7 +382,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     );
   }
   function collapsePage(): void {
-    initialDefaultExpansion = false;
+    initializeOrderExpansion = false;
     invalidateLocation();
     expandedOrders.value = new Set();
     for (const group of groups.value) collapseReceipts(group);
@@ -388,6 +393,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     cancelChildren();
     page.value = value;
     resetNextLoad = true;
+    initializeOrderExpansion = !hasLocationIntent();
     groups.value = [];
     expandedOrders.value = new Set();
     await load();
@@ -411,6 +417,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     matches: () => boolean = () => true,
   ): Promise<boolean> {
     if (!receiptId || !locationRead.isActive()) return false;
+    prioritizeLocation();
     locationRevision += 1;
     const read = locationRead.begin(matches);
     locationLoading.value = true;
@@ -427,7 +434,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
       let purchaseOrder = group?.purchaseOrder;
       if (group) {
         expandedOrders.value = new Set([...expandedOrders.value, group.purchaseOrder.id]);
-        if (!group.loaded || group.error) await loadReceipts(group, false, false);
+        if (!group.loaded || group.error) await loadReceipts(group);
         if (!read.isCurrent()) return false;
         purchaseOrder = group.purchaseOrder;
         if (group.receipts.some((receipt) => receipt.id === receiptId) && isCurrentGroup(group)) {
@@ -518,6 +525,7 @@ export function usePurchaseReceiptOrders(hasExplicitLocation: () => boolean) {
     changeReceiptPage,
     expandPage,
     collapsePage,
+    prioritizeLocation,
     revealReceipt,
     refreshLocation,
     clearLocation,

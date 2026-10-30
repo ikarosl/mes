@@ -76,7 +76,9 @@
       <OtherInboundHistoryGroups
         v-if="direction === 'inbound'"
         :rows="orders.rows.value"
+        :expanded-ids="orders.historyExpansion.expandedIds.value"
         :loading="orders.loading.value"
+        @toggle="orders.historyExpansion.toggle"
         @detail="editor.open('detail', $event)"
         @edit="editor.open('edit', $event)"
         @confirm="editor.open('confirm', $event)"

@@ -214,7 +214,6 @@
                     v-model="draft.taxExclusiveAmount"
                     :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
                     inputmode="decimal"
-                    placeholder="按采购单位填写单价（选填）"
                   />
                 </el-form-item>
                 <el-form-item label="含税单价">
@@ -222,7 +221,6 @@
                     v-model="draft.taxInclusiveAmount"
                     :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
                     inputmode="decimal"
-                    placeholder="按采购单位填写单价（选填）"
                   />
                 </el-form-item>
                 <el-form-item label="税率（%）">
@@ -233,10 +231,7 @@
                     :aria-label="`${draft.line.itemName}税率百分比`"
                   />
                 </el-form-item>
-                <el-form-item
-                  label="含税总金额"
-                  class="total-amount-field"
-                >
+                <el-form-item label="含税总金额">
                   <PurchaseLineTotalAmountInput
                     v-model:manual-total-amount="draft.manualTotalAmount"
                     :planned-quantity="draft.quantity"
@@ -570,14 +565,12 @@ defineExpose({ open, close, visible, locked: editingLocked });
 }
 .line-form {
   display: grid;
-  grid-template-columns: 210px minmax(160px, 1fr) minmax(160px, 1fr);
+  grid-template-columns: 180px repeat(2, minmax(150px, 1fr)) 140px minmax(250px, 1.5fr);
   gap: 16px;
+  overflow-x: auto;
 }
 .evidence-field {
   grid-column: 1 / -1;
-}
-.total-amount-field {
-  grid-column: span 2;
 }
 .amount-help {
   margin: 0;
@@ -594,8 +587,14 @@ defineExpose({ open, close, visible, locked: editingLocked });
   display: flex;
   align-items: center;
   gap: 8px;
+  width: 100%;
 }
 .quantity-field .el-input-number {
-  width: 170px;
+  flex: 1;
+  min-width: 0;
+  width: 0;
+}
+.quantity-field > span {
+  flex-shrink: 0;
 }
 </style>

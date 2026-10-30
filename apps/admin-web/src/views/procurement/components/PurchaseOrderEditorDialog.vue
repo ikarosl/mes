@@ -108,179 +108,183 @@
         采购数量独立填写，不分摊需求。 同物料同精确版本仅保留一行，不同供应商另建单。
         <template v-if="supplement">补单来源固定，原采购行或原到货选错须取消草稿后重建。</template>
       </PurchaseOrderAmountHelp>
-      <el-table
-        :data="rows"
-        row-key="key"
-        empty-text="请选择需求或添加采购物料"
+      <TableStickyScrollbar
+        :table="lineTable"
+        aria-label="采购明细横向滚动"
       >
-        <el-table-column type="expand"
-          ><template #default="{ row }">
-            <PurchaseOrderSources :sources="row.sources" />
-            <el-descriptions
-              v-if="supplement && originalLine(row.key)"
-              :column="2"
-              border
-              size="small"
-              title="本行补单来源"
-            >
-              <el-descriptions-item label="原采购"
-                ><strong class="identity-value">{{
-                  originalLine(row.key)?.originPurchaseNo
-                }}</strong>
-                · 采购行 ID：
-                <strong class="identity-value">{{
-                  originalLine(row.key)?.originOrderLineId
-                }}</strong></el-descriptions-item
-              >
-              <el-descriptions-item label="原到货单号"
-                ><span :class="{ 'identity-value': originalLine(row.key)?.originReceiptNo }">{{
-                  originalLine(row.key)?.originReceiptNo ?? '未提供'
-                }}</span>
-                · 到货行 ID：<strong class="identity-value">{{
-                  originalLine(row.key)?.originReceiptLineId
-                }}</strong></el-descriptions-item
-              >
-              <el-descriptions-item label="补单依据">{{
-                originalLine(row.key)?.supplementEvidence
-              }}</el-descriptions-item>
-            </el-descriptions>
-          </template></el-table-column
+        <el-table
+          ref="lineTable"
+          :data="rows"
+          row-key="key"
+          empty-text="请选择需求或添加采购物料"
         >
-        <el-table-column
-          label="物料与精确版本"
-          min-width="360"
-        >
-          <template #default="{ row }">
-            <PurchaseMaterialSelect
-              v-if="sourceType === 'stock' && !supplement"
-              :item-id="row.itemId"
-              :variant-id="row.materialVariantId"
-              :item-label="row.itemCode"
-              :variant-label="row.materialVariantCode"
-              :disabled="command.locked.value"
-              @change="(item, variant) => changeMaterial(row, item, variant)"
-              @ready="row.ready = $event"
-            />
-            <div v-else>
-              <strong>{{ row.itemCode }} · {{ row.itemName }}</strong>
-              <p>{{ row.materialVariantCode }}</p>
-              <el-tag
-                v-if="!row.ready"
+          <el-table-column type="expand"
+            ><template #default="{ row }">
+              <PurchaseOrderSources :sources="row.sources" />
+              <el-descriptions
+                v-if="supplement && originalLine(row.key)"
+                :column="2"
+                border
+                size="small"
+                title="本行补单来源"
+              >
+                <el-descriptions-item label="原采购"
+                  ><strong class="identity-value">{{
+                    originalLine(row.key)?.originPurchaseNo
+                  }}</strong>
+                  · 采购行 ID：
+                  <strong class="identity-value">{{
+                    originalLine(row.key)?.originOrderLineId
+                  }}</strong></el-descriptions-item
+                >
+                <el-descriptions-item label="原到货单号"
+                  ><span :class="{ 'identity-value': originalLine(row.key)?.originReceiptNo }">{{
+                    originalLine(row.key)?.originReceiptNo ?? '未提供'
+                  }}</span>
+                  · 到货行 ID：<strong class="identity-value">{{
+                    originalLine(row.key)?.originReceiptLineId
+                  }}</strong></el-descriptions-item
+                >
+                <el-descriptions-item label="补单依据">{{
+                  originalLine(row.key)?.supplementEvidence
+                }}</el-descriptions-item>
+              </el-descriptions>
+            </template></el-table-column
+          >
+          <el-table-column
+            label="物料与精确版本"
+            min-width="360"
+          >
+            <template #default="{ row }">
+              <PurchaseMaterialSelect
+                v-if="sourceType === 'stock' && !supplement"
+                :item-id="row.itemId"
+                :variant-id="row.materialVariantId"
+                :item-label="row.itemCode"
+                :variant-label="row.materialVariantCode"
+                :disabled="command.locked.value"
+                @change="(item, variant) => changeMaterial(row, item, variant)"
+                @ready="row.ready = $event"
+              />
+              <div v-else>
+                <strong>{{ row.itemCode }} · {{ row.itemName }}</strong>
+                <p>{{ row.materialVariantCode }}</p>
+                <el-tag
+                  v-if="!row.ready"
+                  type="danger"
+                  >来源须重新核对</el-tag
+                >
+              </div>
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="采购数量"
+            width="180"
+            ><template #default="{ row }"
+              ><el-input-number
+                v-model="row.plannedQuantity"
+                :min="1"
+                :max="PURCHASE_ORDER_MAX_QUANTITY"
+                :precision="0"
+                :step="1"
+                controls-position="right"
+                placeholder="独立填写" /></template
+          ></el-table-column>
+          <el-table-column
+            prop="unit"
+            label="单位"
+            width="75"
+          />
+          <el-table-column
+            label="无税单价"
+            min-width="150"
+          >
+            <template #default="{ row }">
+              <el-input
+                v-model="row.taxExclusiveAmount"
+                :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+                inputmode="decimal"
+                :aria-label="`${row.itemName || '本行'}无税单价`"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="含税单价"
+            min-width="150"
+          >
+            <template #default="{ row }">
+              <el-input
+                v-model="row.taxInclusiveAmount"
+                :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
+                inputmode="decimal"
+                :aria-label="`${row.itemName || '本行'}含税单价`"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="税率（%）"
+            width="140"
+          >
+            <template #default="{ row }">
+              <el-input
+                v-model="row.taxRatePercent"
+                inputmode="decimal"
+                :placeholder="PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT"
+                :aria-label="`${row.itemName || '本行'}税率百分比`"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="含税总金额"
+            min-width="250"
+          >
+            <template #default="{ row }">
+              <PurchaseLineTotalAmountInput
+                v-model:manual-total-amount="row.manualTotalAmount"
+                :planned-quantity="row.plannedQuantity"
+                :tax-exclusive-amount="row.taxExclusiveAmount"
+                :tax-inclusive-amount="row.taxInclusiveAmount"
+                :tax-rate-percent="row.taxRatePercent"
+                :item-name="row.itemName"
+                :saved-total-amount="originalLine(row.key)?.totalAmount"
+                :saved-total-amount-source="originalLine(row.key)?.totalAmountSource"
+                :disabled="command.locked.value"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column
+            label="关联需求"
+            width="105"
+            ><template #default="{ row }">
+              <el-button
+                v-if="sourceType === 'demand' && !supplement"
+                link
+                type="primary"
+                :disabled="command.locked.value"
+                @click="selectSources(row)"
+                >{{ row.sources.length }} 条需求</el-button
+              >
+              <span v-else>{{
+                row.sources.length ? `${row.sources.length} 条需求` : '独立备料'
+              }}</span>
+            </template></el-table-column
+          >
+          <el-table-column
+            v-if="!supplement"
+            label="操作"
+            width="80"
+            fixed="right"
+            ><template #default="{ $index }"
+              ><el-button
+                link
                 type="danger"
-                >来源须重新核对</el-tag
+                @click="rows.splice($index, 1)"
+                >移除</el-button
               >
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="采购数量"
-          width="210"
-          ><template #default="{ row }"
-            ><el-input-number
-              v-model="row.plannedQuantity"
-              :min="1"
-              :max="PURCHASE_ORDER_MAX_QUANTITY"
-              :precision="0"
-              :step="1"
-              controls-position="right"
-              placeholder="独立填写" /></template
-        ></el-table-column>
-        <el-table-column
-          prop="unit"
-          label="单位"
-          width="75"
-        />
-        <el-table-column
-          label="无税单价"
-          min-width="180"
-        >
-          <template #default="{ row }">
-            <el-input
-              v-model="row.taxExclusiveAmount"
-              :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
-              inputmode="decimal"
-              placeholder="按采购单位填写单价（选填）"
-              :aria-label="`${row.itemName || '本行'}无税单价`"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="含税单价"
-          min-width="180"
-        >
-          <template #default="{ row }">
-            <el-input
-              v-model="row.taxInclusiveAmount"
-              :maxlength="PURCHASE_ORDER_AMOUNT_TEXT_MAX_LENGTH"
-              inputmode="decimal"
-              placeholder="按采购单位填写单价（选填）"
-              :aria-label="`${row.itemName || '本行'}含税单价`"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="税率（%）"
-          width="140"
-        >
-          <template #default="{ row }">
-            <el-input
-              v-model="row.taxRatePercent"
-              inputmode="decimal"
-              :placeholder="PURCHASE_ORDER_DEFAULT_TAX_RATE_PERCENT"
-              :aria-label="`${row.itemName || '本行'}税率百分比`"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="含税总金额"
-          min-width="250"
-        >
-          <template #default="{ row }">
-            <PurchaseLineTotalAmountInput
-              v-model:manual-total-amount="row.manualTotalAmount"
-              :planned-quantity="row.plannedQuantity"
-              :tax-exclusive-amount="row.taxExclusiveAmount"
-              :tax-inclusive-amount="row.taxInclusiveAmount"
-              :tax-rate-percent="row.taxRatePercent"
-              :item-name="row.itemName"
-              :saved-total-amount="originalLine(row.key)?.totalAmount"
-              :saved-total-amount-source="originalLine(row.key)?.totalAmountSource"
-              :disabled="command.locked.value"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="关联需求"
-          width="105"
-          ><template #default="{ row }">
-            <el-button
-              v-if="sourceType === 'demand' && !supplement"
-              link
-              type="primary"
-              :disabled="command.locked.value"
-              @click="selectSources(row)"
-              >{{ row.sources.length }} 条需求</el-button
-            >
-            <span v-else>{{
-              row.sources.length ? `${row.sources.length} 条需求` : '独立备料'
-            }}</span>
-          </template></el-table-column
-        >
-        <el-table-column
-          v-if="!supplement"
-          label="操作"
-          width="80"
-          fixed="right"
-          ><template #default="{ $index }"
-            ><el-button
-              link
-              type="danger"
-              @click="rows.splice($index, 1)"
-              >移除</el-button
-            >
-          </template></el-table-column
-        >
-      </el-table>
+            </template></el-table-column
+          >
+        </el-table>
+      </TableStickyScrollbar>
     </el-form>
     <template #footer>
       <el-button
@@ -323,7 +327,8 @@
 </template>
 
 <script setup lang="ts">
-import { onScopeDispose } from 'vue';
+import { onScopeDispose, ref } from 'vue';
+import type { TableInstance } from 'element-plus';
 import {
   PURCHASE_ORDER_SOURCE_TYPE_LABELS,
   PURCHASE_ORDER_MAX_QUANTITY,
@@ -340,7 +345,9 @@ import PurchaseSupplierSelect from './PurchaseSupplierSelect.vue';
 import ProcurementWorkOrderPickerDialog from './ProcurementWorkOrderPickerDialog.vue';
 import PurchaseLineTotalAmountInput from './PurchaseLineTotalAmountInput.vue';
 import PurchaseOrderAmountHelp from './PurchaseOrderAmountHelp.vue';
+import TableStickyScrollbar from '../../../components/TableStickyScrollbar.vue';
 const emit = defineEmits<{ saved: [string] }>();
+const lineTable = ref<TableInstance>();
 const {
   visible,
   loading,
@@ -406,7 +413,7 @@ defineExpose({ open, close, visible, locked: command.locked });
   line-height: 1.6;
 }
 .el-input-number {
-  width: 180px;
+  width: 150px;
 }
 .order-supplier {
   width: 360px;

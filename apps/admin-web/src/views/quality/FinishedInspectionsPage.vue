@@ -94,22 +94,16 @@
         class="document-block"
       >
         <div class="document-heading">
-          <button
-            class="fold-button business-disclosure"
-            type="button"
-            :aria-expanded="!collapsedOrders.has(group.workOrderId)"
-            @click="toggleOrder(group.workOrderId)"
-          >
+          <span class="document-identity">
+            <DisclosureToggle
+              :expanded="!collapsedOrders.has(group.workOrderId)"
+              :label="`工单 ${group.workOrderNo}的任务`"
+              @toggle="toggleOrder(group.workOrderId)"
+            />
             <span
-              class="fold-icon"
-              aria-hidden="true"
-              >{{ collapsedOrders.has(group.workOrderId) ? '▶' : '▼' }}</span
+              >工单 <strong>{{ group.workOrderNo }}</strong></span
             >
-            <strong>工单 {{ group.workOrderNo }}</strong>
-            <span class="fold-action">{{
-              collapsedOrders.has(group.workOrderId) ? '展开' : '收起'
-            }}</span>
-          </button>
+          </span>
           <span class="document-meta">成品 {{ group.productCode }} · {{ group.productName }}</span>
           <span class="document-meta">本页含本单 {{ group.tasks.length }} 项任务</span>
           <span class="document-counts"
@@ -215,6 +209,7 @@ import {
   PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS,
 } from '@company/constants';
 import type { FinishedInspectionTaskItem } from '@company/contracts';
+import DisclosureToggle from '../../components/DisclosureToggle.vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import InlineHint from '../../components/InlineHint.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -499,7 +494,10 @@ onActivated(() => {
   padding: 12px 16px;
   background: #f8fafc;
 }
-.fold-button {
+.document-identity {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 14px;
 }
 .document-counts {

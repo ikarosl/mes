@@ -243,17 +243,14 @@
               class="step-card"
             >
               <header class="step-header">
-                <button
-                  type="button"
-                  class="step-toggle"
-                  :disabled="contextLoading"
-                  :aria-expanded="isStepExpanded(step.stepRecordId)"
-                  :aria-controls="`execution-step-${step.stepRecordId}`"
-                  @click="toggleStep(step.stepRecordId)"
-                >
-                  <span class="fold-control">{{
-                    isStepExpanded(step.stepRecordId) ? '▾ 收起' : '▸ 展开'
-                  }}</span>
+                <div class="step-identity">
+                  <DisclosureToggle
+                    :expanded="isStepExpanded(step.stepRecordId)"
+                    :label="`工序 ${step.stepOrder}. ${step.stepName}`"
+                    :disabled="contextLoading"
+                    :aria-controls="`execution-step-${step.stepRecordId}`"
+                    @toggle="toggleStep(step.stepRecordId)"
+                  />
                   <span class="step-title"
                     ><strong>{{ step.stepOrder }}. {{ step.stepName }}</strong
                     ><span>办理人 {{ step.responsibleUserName || '未派工' }}</span></span
@@ -263,7 +260,7 @@
                     :type="stepStatusMeta(step.status).type"
                     >{{ BATCH_STEP_STATUS_LABELS[step.status] }}</el-tag
                   >
-                </button>
+                </div>
                 <ProductionStepQuotaDistribution
                   :step="step"
                   :planned-quantity="record.plannedQuantity"
@@ -554,6 +551,7 @@ import { usePageInitialLoad } from '../../../composables/requests/usePageInitial
 import { useTabsStore } from '../../../stores/tabs';
 import { EMessage } from '../../../utils/message';
 import TableToolbar from '../../../components/TableToolbar.vue';
+import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import { formatQuantity } from '../../../utils/quantity';
 import {
   batchStatusMeta,
@@ -1167,31 +1165,17 @@ usePageInitialLoad(async () => {
   flex-wrap: wrap;
   gap: 8px 12px;
 }
-.step-toggle {
+.step-identity {
   display: flex;
   flex: 1;
   align-items: center;
   gap: 10px;
   min-width: 250px;
   padding: 2px 0;
-  border: 0;
   color: var(--el-text-color-primary);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
 }
-.step-toggle:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 4px;
-  border-radius: 4px;
-}
-.step-toggle > .el-tag,
-.fold-control {
+.step-identity > .el-tag {
   flex: 0 0 auto;
-}
-.fold-control {
-  color: var(--el-text-color-regular);
-  font-size: 12px;
 }
 .step-title {
   display: flex;

@@ -5,23 +5,15 @@
   >
     <div class="document-heading">
       <div class="order-identity">
-        <button
-          class="order-disclosure"
-          type="button"
-          :aria-expanded="expanded"
+        <DisclosureToggle
+          :expanded="expanded"
+          :label="`采购单 ${group.purchaseOrder.purchaseNo}`"
           :disabled="loading"
-          @click="emit('toggle')"
+          @toggle="emit('toggle')"
+        />
+        <span class="order-title"
+          >采购单 <strong class="order-number">{{ group.purchaseOrder.purchaseNo }}</strong></span
         >
-          <span class="order-fold-icon"
-            ><el-icon
-              :class="{ 'is-expanded': expanded }"
-              aria-hidden="true"
-              ><ArrowRight /></el-icon
-          ></span>
-          <span class="order-title"
-            >采购单 <span class="order-number">{{ group.purchaseOrder.purchaseNo }}</span></span
-          >
-        </button>
         <el-tag
           v-if="focused"
           size="small"
@@ -98,6 +90,7 @@
         </div>
       </template>
       <PaginationFooter
+        v-if="group.total >= 10"
         class="receipt-pagination"
         :total="group.total"
         :current-page="group.page"
@@ -111,8 +104,8 @@
   </section>
 </template>
 <script setup lang="ts">
-import { ArrowRight } from '@element-plus/icons-vue';
 import type { ProcurementReceiptItem } from '@company/contracts';
+import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import type { ReceiptPurchaseOrderGroup } from '../composables/usePurchaseReceiptOrders';
@@ -168,8 +161,8 @@ const emit = defineEmits<{
 .order-identity {
   display: flex;
   flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 20px;
+  align-items: center;
+  gap: 6px 12px;
   min-width: 0;
 }
 .order-title {
@@ -180,44 +173,6 @@ const emit = defineEmits<{
 .order-number {
   color: var(--el-text-color-primary);
   font-weight: 600;
-}
-.order-disclosure {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  max-width: 100%;
-  min-height: 32px;
-  margin-left: -4px;
-  padding: 3px 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.order-disclosure:hover {
-  background: var(--el-fill-color);
-}
-.order-disclosure:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
-.order-fold-icon {
-  display: inline-flex;
-  align-items: center;
-  align-self: center;
-  justify-content: center;
-  flex: 0 0 14px;
-  height: 14px;
-  color: var(--el-text-color-regular);
-}
-.order-fold-icon .el-icon {
-  font-size: 14px;
-}
-.order-fold-icon .is-expanded {
-  transform: rotate(90deg);
 }
 .supplier-name {
   overflow-wrap: anywhere;
@@ -240,7 +195,7 @@ const emit = defineEmits<{
 .receipt-directory {
   min-width: 0;
   min-height: 56px;
-  padding: 16px 16px 0 24px;
+  padding: 16px 16px 16px 24px;
 }
 .receipt-tree {
   min-width: 0;

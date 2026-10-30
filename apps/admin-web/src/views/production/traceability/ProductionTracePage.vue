@@ -67,32 +67,18 @@
             :key="item.workOrderId"
             class="trace-order-group"
           >
-            <header>
-              <button
-                type="button"
-                class="trace-order-toggle"
-                :aria-expanded="!collapsedWorkOrderIds.has(item.workOrderId)"
+            <header class="trace-order-header">
+              <DisclosureToggle
+                :expanded="!collapsedWorkOrderIds.has(item.workOrderId)"
                 :aria-controls="`trace-order-batches-${item.workOrderId}`"
-                :aria-label="`${collapsedWorkOrderIds.has(item.workOrderId) ? '展开' : '收起'}工单 ${item.workOrderNo} 的生产批次`"
-                @click="toggleWorkOrder(item.workOrderId)"
-              >
-                <span class="trace-order-identity">
-                  <el-icon
-                    class="trace-order-arrow"
-                    :class="{ collapsed: collapsedWorkOrderIds.has(item.workOrderId) }"
-                    aria-hidden="true"
-                    ><ArrowDown
-                  /></el-icon>
-                  <strong>{{ item.workOrderNo }}</strong>
-                </span>
+                :label="`工单 ${item.workOrderNo} 的生产批次`"
+                @toggle="toggleWorkOrder(item.workOrderId)"
+              />
+              <div class="trace-order-identity">
+                <strong>{{ item.workOrderNo }}</strong>
                 <small>{{ item.productCode }} / {{ item.productName }}</small>
-                <span class="trace-order-meta">
-                  <span>{{ item.batches.length }} 个生产批次</span>
-                  <span class="trace-order-action">{{
-                    collapsedWorkOrderIds.has(item.workOrderId) ? '展开' : '收起'
-                  }}</span>
-                </span>
-              </button>
+                <span class="trace-order-meta">{{ item.batches.length }} 个生产批次</span>
+              </div>
             </header>
             <div
               v-show="!collapsedWorkOrderIds.has(item.workOrderId)"
@@ -546,7 +532,7 @@ import ProductionStepExecutionHistoryDialog from './ProductionStepExecutionHisto
 import ProductionBatchTerminationDialog from '../closeout/ProductionBatchTerminationDialog.vue';
 import type { InventoryTransactionType } from '@company/contracts';
 
-import { ArrowDown, Refresh } from '@element-plus/icons-vue';
+import { Refresh } from '@element-plus/icons-vue';
 import {
   BATCH_STEP_REWORK_RESULT_LABELS,
   BATCH_STEP_STATUS_LABELS,
@@ -554,6 +540,7 @@ import {
 } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
+import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
@@ -741,62 +728,27 @@ usePageInitialLoad(refresh);
   border-radius: 8px;
   background: var(--el-bg-color);
 }
-.trace-order-toggle {
-  display: grid;
-  gap: 3px;
-  width: 100%;
-  padding: 2px 2px 6px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.trace-order-toggle:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
-.trace-order-identity {
+.trace-order-header {
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  padding: 2px 2px 6px;
+  color: var(--el-text-color-primary);
+}
+.trace-order-identity {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 .trace-order-identity strong,
-.trace-order-toggle small {
+.trace-order-identity small {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.trace-order-arrow {
-  flex: none;
-  margin-top: 3px;
-  font-size: 12px;
-}
-.trace-order-arrow.collapsed {
-  transform: rotate(-90deg);
-}
-.trace-order-toggle small,
+.trace-order-identity small,
 .trace-order-meta {
   color: var(--el-text-color-secondary);
   font-size: 12px;
-}
-.trace-order-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-}
-.trace-order-action {
-  flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--el-border-color);
-  border-radius: var(--el-border-radius-small);
-  color: var(--el-text-color-regular);
-  line-height: 20px;
-}
-.trace-order-toggle:hover .trace-order-action {
-  background: var(--el-fill-color);
 }
 .trace-order-batches {
   display: grid;

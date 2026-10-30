@@ -1,6 +1,6 @@
 -- Procurement state samples only. No receipt, quality, allocation or inventory facts are fabricated.
 -- Only missing remark markers are inserted; reruns preserve samples that retain their leading marker.
--- Unit-price inputs keep long digits and trailing zeros; totals use the exclusive quotation and 13% tax.
+-- Unit-price inputs keep long digits and trailing zeros; totals use the inclusive quotation times quantity.
 SET @purchase_status_demo_actor = (
   SELECT id FROM users WHERE username='admin' AND deleted_at IS NULL LIMIT 1
 );
@@ -17,7 +17,7 @@ FROM (
     _utf8mb4'demo-stock-multi-v1-A' COLLATE utf8mb4_0900_ai_ci variant_code,10 quantity,
     _utf8mb4'123456789012345678901234567890.00' COLLATE utf8mb4_0900_ai_ci tax_exclusive_amount,
     _utf8mb4'140000000000000000000000000000.0000' COLLATE utf8mb4_0900_ai_ci tax_inclusive_amount,
-    _utf8mb4'1395061715839506171583950617157.00' COLLATE utf8mb4_0900_ai_ci total_amount UNION ALL
+    _utf8mb4'1400000000000000000000000000000.00' COLLATE utf8mb4_0900_ai_ci total_amount UNION ALL
   SELECT 2,'demo-stock-multi-v1-B',15,NULL,NULL,NULL UNION ALL
   SELECT 3,'demo-stock-meter-v1-A',5,NULL,NULL,NULL
 ) sample JOIN material_variants v ON v.variant_code=sample.variant_code AND v.is_deleted=0 AND v.status=1

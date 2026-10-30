@@ -9,8 +9,13 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { EMessage } from '../../../utils/message';
 
+interface PurchaseOrdersLoadedOptions {
+  refreshExpanded: boolean;
+  expansionMode: 'initial' | 'query' | 'preserve';
+}
+
 export function usePurchaseOrdersList(
-  onLoaded?: (rows: PurchaseOrderItem[], refreshExpanded: boolean) => void,
+  onLoaded?: (rows: PurchaseOrderItem[], options: PurchaseOrdersLoadedOptions) => void,
 ) {
   const query = reactive({
     keyword: '',
@@ -25,9 +30,12 @@ export function usePurchaseOrdersList(
   const request = useLatestReadRequest(() => {
     loading.value = false;
   });
+  // 失败或取消不消费初始化意图，手动刷新仍可重试同一查询。
+  let pendingExpansionMode: PurchaseOrdersLoadedOptions['expansionMode'] = 'initial';
   const load = async (options?: { refreshExpanded?: boolean }): Promise<void> => {
     if (!request.isActive()) return;
     const current = request.begin();
+    const expansionMode = pendingExpansionMode;
     loading.value = true;
     try {
       const result = await procurementApi.listOrders(
@@ -43,7 +51,11 @@ export function usePurchaseOrdersList(
       if (!current.isCurrent()) return;
       rows.value = result.items;
       total.value = result.total;
-      onLoaded?.(result.items, options?.refreshExpanded !== false);
+      pendingExpansionMode = 'preserve';
+      onLoaded?.(result.items, {
+        refreshExpanded: options?.refreshExpanded !== false,
+        expansionMode,
+      });
     } catch (error) {
       if (current.isCurrent()) EMessage.error(error, '采购列表加载失败');
     } finally {
@@ -52,6 +64,7 @@ export function usePurchaseOrdersList(
   };
   const search = async (): Promise<void> => {
     page.value = 1;
+    pendingExpansionMode = 'query';
     await load();
   };
   const reset = async (): Promise<void> => {
@@ -62,6 +75,7 @@ export function usePurchaseOrdersList(
   };
   const changePage = async (value: number): Promise<void> => {
     page.value = value;
+    pendingExpansionMode = 'query';
     await load();
   };
   const changePageSize = async (value: number): Promise<void> => {

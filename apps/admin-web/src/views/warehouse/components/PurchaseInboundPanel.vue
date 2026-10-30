@@ -165,18 +165,22 @@
             <PurchaseInboundHistoryGroups
               v-if="detachedOrder"
               :rows="[detachedOrder]"
+              :expanded-ids="historyExpansion.expandedIds.value"
               :loading="false"
               :located-inbound-id="currentInboundId"
               :go-source="goSource"
+              @toggle="historyExpansion.toggle"
               @clear-location="clearHistoryLocation"
             />
           </div>
         </section>
         <PurchaseInboundHistoryGroups
           :rows="history.rows.value"
+          :expanded-ids="historyExpansion.expandedIds.value"
           :loading="history.loading.value"
           :located-inbound-id="currentInboundId"
           :go-source="goSource"
+          @toggle="historyExpansion.toggle"
           @clear-location="clearHistoryLocation"
         />
         <PaginationFooter
@@ -429,6 +433,7 @@ import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
 import { usePurchaseInbounds } from '../composables/use-purchase-inbounds';
+import { useInboundHistoryExpansion } from '../composables/use-inbound-history-expansion';
 import { usePurchaseInboundReleases } from '../composables/usePurchaseInboundReleases';
 import PurchaseInboundHistoryGroups from './PurchaseInboundHistoryGroups.vue';
 import PurchaseInboundReleaseGroups from './PurchaseInboundReleaseGroups.vue';
@@ -460,6 +465,7 @@ const view = ref('releases'),
 const historyKeyword = ref(''),
   historyPage = ref(1),
   historySize = ref(10);
+const historyExpansion = useInboundHistoryExpansion();
 const currentInboundId = ref<string | null>(null);
 const locationOrigin = ref<'route' | 'confirmed' | null>(null);
 const pageActive = ref(true);
@@ -539,22 +545,29 @@ const syncHistoryLocation = async (refreshDetached = false): Promise<void> => {
 const loadHistory = async (refreshDetached = false): Promise<void> => {
   if (!pageActive.value || !props.active || view.value !== 'history') return;
   const sequence = ++historyLoadSequence;
-  await history.load({
+  const loaded = await history.load({
     page: historyPage.value,
     pageSize: historySize.value,
     keyword: historyKeyword.value.trim() || undefined,
     status: 'completed',
   });
   if (
+    loaded &&
     sequence === historyLoadSequence &&
     pageActive.value &&
     props.active &&
     view.value === 'history'
-  )
+  ) {
+    historyExpansion.sync(
+      history.rows.value.map((row) => row.inboundId),
+      currentInboundId.value,
+    );
     await syncHistoryLocation(refreshDetached);
+  }
 };
 const searchHistory = () => {
   historyPage.value = 1;
+  historyExpansion.initializeNextLoad();
   return loadHistory();
 };
 const resetHistory = () => {
@@ -563,6 +576,7 @@ const resetHistory = () => {
 };
 const changeHistoryPage = (page: number) => {
   historyPage.value = page;
+  historyExpansion.initializeNextLoad();
   return loadHistory();
 };
 const changeHistorySize = (size: number) => {
@@ -591,6 +605,11 @@ const closeConfirmation = () => {
 async function showInbound(id: string, origin: 'route' | 'confirmed'): Promise<void> {
   view.value = 'history';
   currentInboundId.value = id;
+  historyExpansion.retain(
+    history.rows.value.map((row) => row.inboundId),
+    id,
+  );
+  historyExpansion.expand(id);
   locationOrigin.value = origin;
   history.closeDetail();
   await loadHistory();
@@ -599,6 +618,7 @@ function clearHistoryLocation(): void {
   const oldId = currentInboundId.value;
   currentInboundId.value = null;
   locationOrigin.value = null;
+  historyExpansion.retain(history.rows.value.map((row) => row.inboundId));
   history.closeDetail();
   if (oldId && route.name === 'warehouse-inbound' && route.query.inboundId === oldId)
     void router.replace({ query: { ...route.query, inboundId: undefined } });
@@ -629,6 +649,7 @@ async function locate(
       history.closeDetail();
       currentInboundId.value = null;
       locationOrigin.value = null;
+      historyExpansion.retain(history.rows.value.map((row) => row.inboundId));
     }
     return;
   }

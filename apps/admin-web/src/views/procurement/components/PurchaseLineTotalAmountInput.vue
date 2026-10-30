@@ -23,7 +23,7 @@
           {{
             preview.amount.totalAmountSource
               ? PURCHASE_ORDER_TOTAL_AMOUNT_SOURCE_LABELS[preview.amount.totalAmountSource]
-              : '待填写无税单价'
+              : '待填写单价'
           }}
           <strong v-if="preview.amount.totalAmount !== null">
             {{ preview.amount.totalAmount }}</strong
@@ -33,7 +33,7 @@
           v-if="preview.amount.totalAmountSource === 'manual'"
           class="calculated-reference"
         >
-          自动参考：{{ preview.amount.calculatedTotalAmount ?? '待填写无税单价' }}
+          自动参考：{{ preview.amount.calculatedTotalAmount ?? '待填写单价' }}
         </span>
       </template>
     </div>

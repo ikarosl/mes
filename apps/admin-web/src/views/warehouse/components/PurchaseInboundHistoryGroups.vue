@@ -17,7 +17,7 @@
       :class="{ 'is-located': order.inboundId === locatedInboundId }"
     >
       <InboundGroupHeader
-        :expanded="!collapsedInboundIds.has(order.inboundId)"
+        :expanded="expandedIds.includes(order.inboundId)"
         title-label="入库单"
         :title="order.inboundNo"
         :count-label="`本单 ${order.detailCount} 条实际入库明细`"
@@ -47,7 +47,7 @@
         >
       </InboundGroupHeader>
       <div
-        v-if="!collapsedInboundIds.has(order.inboundId)"
+        v-if="expandedIds.includes(order.inboundId)"
         class="details-scroll"
       >
         <div
@@ -246,36 +246,15 @@ import InboundGroupHeader from './InboundGroupHeader.vue';
 defineOptions({ name: 'PurchaseInboundHistoryGroups' });
 const props = defineProps<{
   rows: PurchaseInboundOrderItem[];
+  expandedIds: string[];
   loading: boolean;
   locatedInboundId?: string | null;
   goSource: (name: string, query: Record<string, string>) => Promise<void>;
 }>();
-defineEmits<{ 'clear-location': [] }>();
+const emit = defineEmits<{ toggle: [id: string]; 'clear-location': [] }>();
 const auth = useAuthStore();
 const { canAccessRoute } = useRouteAccess();
 const container = ref<HTMLElement | null>(null);
-const collapsedInboundIds = ref(new Set<string>());
-watch(
-  () => props.rows.map((row) => row.inboundId).join('\u0000'),
-  () => {
-    collapsedInboundIds.value = new Set(
-      props.rows
-        .slice(1)
-        .map((row) => row.inboundId)
-        .filter((id) => id !== props.locatedInboundId),
-    );
-  },
-  { immediate: true },
-);
-watch(
-  () => props.locatedInboundId,
-  (id) => {
-    if (!id) return;
-    const next = new Set(collapsedInboundIds.value);
-    next.delete(id);
-    collapsedInboundIds.value = next;
-  },
-);
 watch(
   () => [props.locatedInboundId, props.rows.map((row) => row.inboundId).join('\u0000')] as const,
   async ([id]) => {
@@ -289,10 +268,7 @@ watch(
   { immediate: true, flush: 'post' },
 );
 const toggleInbound = (id: string): void => {
-  const next = new Set(collapsedInboundIds.value);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
-  collapsedInboundIds.value = next;
+  emit('toggle', id);
 };
 const quantitySummary = (order: PurchaseInboundOrderItem): string =>
   order.quantitySummary.length

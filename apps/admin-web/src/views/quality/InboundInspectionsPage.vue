@@ -150,23 +150,16 @@
         >
           <div class="document-heading">
             <div class="order-identity">
-              <button
-                class="order-disclosure"
-                type="button"
-                :aria-expanded="expandedOrders.has(group.order.id)"
-                @click="toggleOrder(group)"
-              >
-                <span class="order-fold-icon">
-                  <el-icon
-                    :class="{ 'is-expanded': expandedOrders.has(group.order.id) }"
-                    aria-hidden="true"
-                    ><ArrowRight
-                  /></el-icon>
-                </span>
+              <span class="order-title-group">
+                <DisclosureToggle
+                  :expanded="expandedOrders.has(group.order.id)"
+                  :label="`质检单 ${group.order.inspectionNo}的到货`"
+                  @toggle="toggleOrder(group)"
+                />
                 <span class="order-title"
                   >质检单 <span class="order-number">{{ group.order.inspectionNo }}</span></span
                 >
-              </button>
+              </span>
               <p
                 v-if="group.order.remark"
                 class="order-remark"
@@ -238,6 +231,7 @@
               </div>
             </template>
             <PaginationFooter
+              v-if="group.total >= 10"
               class="receipt-pagination"
               :total="group.total"
               :current-page="group.page"
@@ -276,7 +270,8 @@
 <script setup lang="ts">
 import { nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowRight, Refresh } from '@element-plus/icons-vue';
+import { Refresh } from '@element-plus/icons-vue';
+import DisclosureToggle from '../../components/DisclosureToggle.vue';
 import type {
   QualityIncomingInspectionOrderItem,
   QualityIncomingInspectionReceiptItem,
@@ -295,7 +290,14 @@ import InboundInspectionDetailDialog from '../procurement/components/InboundInsp
 defineOptions({ name: 'InboundInspectionsPage' });
 const route = useRoute(),
   router = useRouter();
-const list = useIncomingInspectionOrders();
+let navigating = false;
+const hasExplicitEntry = (): boolean =>
+  navigating ||
+  (route.name === 'quality-inbound-inspections' &&
+    [route.query.receiptLineId, route.query.caseId].some(
+      (value) => typeof value === 'string' && value.length > 0,
+    ));
+const list = useIncomingInspectionOrders({ hasExplicitEntry, isNavigating: () => navigating });
 const {
   keyword,
   groups,
@@ -327,6 +329,13 @@ const {
 const detail = ref<InstanceType<typeof InboundInspectionDetailDialog>>();
 const association = ref<InstanceType<typeof IncomingInspectionOrderAssociationDialog>>();
 const focusedExpanded = ref(true);
+let revealedLineId = '';
+function revealOpenedLine(id: string): void {
+  if (id === revealedLineId) return;
+  revealedLineId = id;
+  focusedExpanded.value = true;
+  void list.revealLine(id);
+}
 async function createOrder(): Promise<void> {
   await association.value?.open('create');
 }
@@ -369,10 +378,7 @@ async function clearLocation(): Promise<void> {
 watch(
   () => detail.value?.openedLineId,
   (id) => {
-    if (id && route.name === 'quality-inbound-inspections') {
-      focusedExpanded.value = true;
-      void list.revealLine(id);
-    }
+    if (id && route.name === 'quality-inbound-inspections') revealOpenedLine(id);
   },
 );
 onScopeDispose(
@@ -381,7 +387,6 @@ onScopeDispose(
     async () => !detail.value?.visible || (await detail.value.close()),
   ),
 );
-let navigating = false;
 let pendingLocate = false;
 let consumed = '';
 let accepted: Record<string, string> = {};
@@ -396,7 +401,11 @@ async function navigate(id: string, caseId = '', matches = () => true): Promise<
   try {
     if (detail.value?.visible && !(await detail.value.close())) return false;
     if (!matches()) return false;
-    return (await detail.value?.open(id, caseId)) ?? false;
+    revealedLineId = '';
+    const succeeded = (await detail.value?.open(id, caseId)) ?? false;
+    const openedLineId = detail.value?.openedLineId;
+    if (succeeded && openedLineId && matches()) revealOpenedLine(openedLineId);
+    return succeeded;
   } finally {
     navigating = false;
     if (pendingLocate) {
@@ -539,43 +548,11 @@ onActivated(() => {
   color: var(--el-text-color-primary);
   font-weight: 600;
 }
-.order-disclosure {
-  display: inline-flex;
-  align-items: baseline;
-  gap: 8px;
-  max-width: 100%;
-  min-height: 32px;
-  margin-left: -4px;
-  padding: 3px 4px;
-  border: 0;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--el-text-color-primary);
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-}
-.order-disclosure:hover {
-  background: var(--el-fill-color);
-}
-.order-disclosure:focus-visible {
-  outline: 2px solid var(--el-color-primary);
-  outline-offset: 2px;
-}
-.order-fold-icon {
+.order-title-group {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  align-self: center;
-  flex: 0 0 14px;
-  height: 14px;
-  color: var(--el-text-color-regular);
-}
-.order-fold-icon .el-icon {
-  font-size: 14px;
-}
-.order-fold-icon .is-expanded {
-  transform: rotate(90deg);
+  gap: 6px;
+  max-width: 100%;
 }
 .order-actions {
   display: flex;
@@ -604,7 +581,7 @@ onActivated(() => {
 .receipt-directory {
   min-width: 0;
   min-height: 56px;
-  padding: 16px 16px 0 24px;
+  padding: 16px 16px 16px 24px;
 }
 .receipt-tree {
   min-width: 0;

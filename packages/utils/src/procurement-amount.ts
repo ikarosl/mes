@@ -12,7 +12,7 @@ import type { PurchaseOrderTotalAmountSource } from '@company/contracts';
 export interface PurchaseLineAmountInput {
   plannedQuantity: number | string;
   taxExclusiveAmount?: string | null;
-  /** Independently recorded quotation; validated and preserved, never used in total calculation. */
+  /** Tax-inclusive unit price takes precedence when both quotations are provided. */
   taxInclusiveAmount?: string | null;
   taxRatePercent?: string | null;
   manualTotalAmount?: string | null;
@@ -110,7 +110,9 @@ export function calculatePurchaseLineAmount(
   }
 
   let calculatedTotalAmount: string | null = null;
-  if (taxExclusiveAmount !== null) {
+  if (taxInclusiveAmount !== null) {
+    calculatedTotalAmount = totalText(new MoneyDecimal(taxInclusiveAmount).times(quantity));
+  } else if (taxExclusiveAmount !== null) {
     calculatedTotalAmount = totalText(
       new MoneyDecimal(taxExclusiveAmount).times(quantity).times(rate.div('100').plus('1')),
     );
