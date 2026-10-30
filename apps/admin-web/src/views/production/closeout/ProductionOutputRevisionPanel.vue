@@ -34,17 +34,30 @@
       v-else
       :data="detail.revisions"
       row-key="id"
-      class="notice"
+      :row-class-name="revisionRowClass"
+      class="notice revision-table"
     >
       <el-table-column
         label="版本"
         width="120"
-        ><template #default="{ row }"
-          >第 {{ row.revisionNo }} 版{{
-            row.id === detail.currentRevisionId ? '（最新批准）' : '（历史）'
-          }}</template
-        ></el-table-column
       >
+        <template #default="{ row }">
+          <div class="revision-label">
+            <span>
+              第 {{ row.revisionNo }} 版{{
+                row.id === detail.currentRevisionId ? '（最新批准）' : '（历史）'
+              }}
+            </span>
+            <el-tag
+              v-if="row.id === selectedRevision?.id"
+              size="small"
+              effect="plain"
+              disable-transitions
+              >正在查看</el-tag
+            >
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column
         label="计划内 / 计划外 / 新增报废"
         min-width="210"
@@ -120,7 +133,7 @@ import BatchCloseoutEvidence from './BatchCloseoutEvidence.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 const { canAccessRoute } = useRouteAccess();
-defineProps<{
+const props = defineProps<{
   detail: ProductionOutputDetail;
   selectedRevision: ProductionOutputRevision | null;
   busy: boolean;
@@ -132,8 +145,21 @@ defineEmits<{
   'open-approval': [string];
   print: [];
 }>();
+function revisionRowClass({ row }: { row: ProductionOutputRevision }): string {
+  return row.id === props.selectedRevision?.id ? 'selected-revision-row' : '';
+}
 </script>
 <style scoped>
+.revision-label {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+}
+.revision-table :deep(.selected-revision-row) {
+  --el-table-tr-bg-color: var(--el-color-primary-light-9);
+  --el-table-row-hover-bg-color: var(--el-color-primary-light-9);
+}
 .toolbar {
   display: flex;
   align-items: center;

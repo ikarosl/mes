@@ -5,7 +5,7 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 ## 相关文档
 
 - [管理端架构](docs/architecture.md)：状态所有权、候选、刷新、并发和业务编辑边界。
-- [视觉设计](docs/visual-design.md)与[路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)：显示规范及接入方式。
+- [视觉设计](docs/visual-design.md)：[界面调整原则](docs/visual-design.md#1-界面调整原则)、显示规范与场景密度；[路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)：接入方式。
 - [HTTP 错误处理](docs/http-error-handling.md)：认证、重试、消息去重和已知限制。
 - [采购与入库](docs/procurement-inbound.md)、[来料检验与定稿](docs/incoming-inspection-adoption.md)、[成品质检与产出](docs/finished-inspections.md)、[工序专检与生产处理](docs/process-inspections.md)：专题前端约束。
 - [其他入出库](docs/other-inventory-orders.md)：草稿、精确库存对象、新批次组、库存候选、整单确认和未知结果保护。

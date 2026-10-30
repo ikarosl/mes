@@ -34,7 +34,7 @@
   </el-descriptions>
   <InlineHint class="inspection-note">
     <template v-if="isSampling">抽检数量按样本记录，不换算整批数量。</template>
-    产出需另行审批，<strong>不合格不自动报废</strong>。
+    <strong>不合格不自动报废</strong>。
   </InlineHint>
 </template>
 <script setup lang="ts">

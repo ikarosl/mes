@@ -32,26 +32,30 @@ export function buildInboundNewBatchGroups<T extends { target: InventoryInboundT
   rows: readonly T[],
   identify: (row: T) => string,
 ): InboundNewBatchGroup[] {
-  const groups = new Map<string, InboundNewBatchGroup>();
+  const groups = new Map<string, Omit<InboundNewBatchGroup, 'label'> & { rowNumbers: number[] }>();
   rows.forEach((row, index) => {
     if (row.target.mode !== 'new' || !row.target.clientKey) return;
     const identityKey = identify(row);
     const existing = groups.get(row.target.clientKey);
     if (existing) {
       existing.rowCount += 1;
+      existing.rowNumbers.push(index + 1);
       existing.hasConflictingIdentity ||= existing.identityKey !== identityKey;
       return;
     }
     groups.set(row.target.clientKey, {
       value: row.target.clientKey,
-      label: `第 ${index + 1} 行的新批次`,
+      rowNumbers: [index + 1],
       rowCount: 1,
       identityKey,
       hasConflictingIdentity: false,
     });
   });
-  return [...groups.values()].map((group) => ({
+  return [...groups.values()].map(({ rowNumbers, ...group }) => ({
     ...group,
-    label: `${group.label}${group.rowCount > 1 ? `（${group.rowCount} 行共用）` : '（独立新建）'}`,
+    label:
+      group.rowCount > 1
+        ? `共用新批次（本次第 ${rowNumbers.join('、')} 行）`
+        : `与本次第 ${rowNumbers[0]} 行共用新批次`,
   }));
 }

@@ -17,40 +17,36 @@
       :closable="false"
     />
     <template v-else>
+      <div class="order-identity">
+        <div class="order-heading">
+          <strong>{{ order.workOrderNo }}</strong>
+          <el-tag
+            :type="taskTypeTagType(order.orderType)"
+            effect="light"
+            >{{ WORK_ORDER_TYPE_LABELS[order.orderType] }}</el-tag
+          >
+          <el-tag :type="orderStatusMeta(order.status).type">
+            {{ orderStatusMeta(order.status).label }}
+          </el-tag>
+        </div>
+        <div class="product-heading">
+          <strong>{{ order.productName }}</strong>
+          <span>{{ order.productCode }}</span>
+        </div>
+      </div>
       <el-descriptions
         class="order-descriptions"
-        :column="3"
+        :column="2"
         border
       >
-        <el-descriptions-item label="工单号"
-          ><strong>{{ order.workOrderNo }}</strong></el-descriptions-item
-        >
-        <el-descriptions-item label="工单类型">{{
-          WORK_ORDER_TYPE_LABELS[order.orderType]
-        }}</el-descriptions-item>
-        <el-descriptions-item label="产品"
-          ><strong>{{ order.productName }}</strong></el-descriptions-item
-        >
-        <el-descriptions-item label="产品编码">{{ order.productCode }}</el-descriptions-item>
-        <el-descriptions-item label="计划数量"
-          ><strong class="text-primary">{{
-            formatQuantity(order.plannedQuantity)
-          }}</strong></el-descriptions-item
-        >
-        <el-descriptions-item label="已分配">{{
-          formatQuantity(order.assignedQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="已终止计划（不占额度）">{{
-          formatQuantity(order.terminatedPlannedQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="外部订单号">{{
-          order.externalOrderNo || '-'
-        }}</el-descriptions-item>
         <el-descriptions-item label="负责人">{{
           order.ownerName || order.workOrderOwnerId || '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="客户名称">{{
           order.customerName || '-'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="外部订单号">{{
+          order.externalOrderNo || '-'
         }}</el-descriptions-item>
         <el-descriptions-item label="质量等级">{{
           order.qualityLevel || '-'
@@ -61,18 +57,91 @@
         <el-descriptions-item label="计划完成">{{
           formatDateForDisplay(order.planEndDate)
         }}</el-descriptions-item>
-        <el-descriptions-item label="状态"
-          ><strong
-            class="status-text"
-            :data-tone="orderStatusMeta(order.status).type"
-            >{{ orderStatusMeta(order.status).label }}</strong
-          ></el-descriptions-item
+        <el-descriptions-item
+          label="创建时间"
+          :span="2"
+          >{{ formatDateTimeForDisplay(order.createdAt) }}</el-descriptions-item
         >
-        <el-descriptions-item label="工单记录版本">{{ order.version }}</el-descriptions-item>
-        <el-descriptions-item label="创建时间">{{
-          formatDateTimeForDisplay(order.createdAt)
-        }}</el-descriptions-item>
-        <template v-if="order.status === 'cancelled'">
+        <el-descriptions-item
+          label="备注"
+          :span="2"
+          ><span class="multiline-text">{{ order.remark || '-' }}</span></el-descriptions-item
+        >
+      </el-descriptions>
+
+      <section
+        class="detail-section"
+        aria-label="计划与审定产出"
+      >
+        <h3 class="dialog-section-title">计划与审定产出</h3>
+        <el-descriptions
+          class="order-descriptions"
+          :column="3"
+          border
+        >
+          <el-descriptions-item label="计划数量"
+            ><strong>{{ formatQuantity(order.plannedQuantity) }}</strong></el-descriptions-item
+          >
+          <el-descriptions-item label="已分配"
+            ><strong>{{ formatQuantity(order.assignedQuantity) }}</strong></el-descriptions-item
+          >
+          <el-descriptions-item label="已终止计划">
+            {{ formatQuantity(order.terminatedPlannedQuantity) }}
+            <div class="field-note">不计入已分配</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="审定计划内产出">{{
+            formatQuantity(order.finalOutput?.availableQuantity)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="审定计划外产出">{{
+            formatQuantity(order.finalOutput?.extraQuantity)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="审定报废合计"
+            ><strong :class="{ 'text-danger': Number(order.finalOutput?.scrapQuantity) > 0 }">{{
+              formatQuantity(order.finalOutput?.scrapQuantity)
+            }}</strong></el-descriptions-item
+          >
+          <el-descriptions-item label="审定可用产出合计"
+            ><strong>{{
+              formatQuantity(approvedUsableQuantity(order.finalOutput))
+            }}</strong></el-descriptions-item
+          >
+          <el-descriptions-item label="计划内产出与计划比较">
+            <strong :class="{ 'text-warning': Number(plannedGap) !== 0 }">{{
+              plannedOutputGapText(plannedGap)
+            }}</strong>
+            <div class="field-note">未批准任务尚未计入</div>
+          </el-descriptions-item>
+          <el-descriptions-item label="待结案（未计入）">
+            <strong :class="{ 'text-warning': (order.finalOutput?.closingBatchCount ?? 0) > 0 }"
+              >{{ order.finalOutput?.closingBatchCount ?? 0 }} 批</strong
+            >
+            <div class="field-note">
+              草稿计划内 {{ formatQuantity(order.finalOutput?.pendingAvailableQuantity) }}
+            </div>
+          </el-descriptions-item>
+        </el-descriptions>
+        <InlineHint class="output-note">
+          <div>
+            已终止/取消的任务，不计入已分配。
+            <span v-if="Number(order.terminatedPlannedQuantity) > 0">
+              已终止任务曾分配 {{ formatQuantity(order.terminatedPlannedQuantity) }}。
+            </span>
+          </div>
+          <div class="text-danger">已终止任务可能存在产出，请结合已有产出核对任务分配数量。</div>
+        </InlineHint>
+      </section>
+
+      <section
+        v-if="order.status === 'cancelled'"
+        class="detail-section"
+        aria-label="取消记录"
+      >
+        <h3 class="dialog-section-title">取消记录</h3>
+        <el-descriptions
+          class="order-descriptions"
+          :column="2"
+          border
+        >
           <el-descriptions-item label="取消人">{{
             order.cancelledByName || order.cancelledBy || '-'
           }}</el-descriptions-item>
@@ -81,66 +150,45 @@
           }}</el-descriptions-item>
           <el-descriptions-item
             label="取消原因"
-            :span="3"
-            >{{ order.cancelReason || '历史数据未记录' }}</el-descriptions-item
+            :span="2"
+            ><span class="multiline-text">{{
+              order.cancelReason || '历史数据未记录'
+            }}</span></el-descriptions-item
           >
-        </template>
-        <template v-if="order.status === 'closed'">
+        </el-descriptions>
+      </section>
+      <section
+        v-if="order.status === 'closed'"
+        class="detail-section"
+        aria-label="关闭记录"
+      >
+        <h3 class="dialog-section-title">关闭记录</h3>
+        <el-descriptions
+          class="order-descriptions"
+          :column="2"
+          border
+        >
           <el-descriptions-item label="关闭类型">{{
             closeTypeLabels[order.closeType ?? ''] || '-'
           }}</el-descriptions-item>
           <el-descriptions-item label="关闭人">{{
             order.closedByName || order.closedBy || '-'
           }}</el-descriptions-item>
-          <el-descriptions-item label="关闭时间">{{
-            formatDateTimeForDisplay(order.closedAt)
-          }}</el-descriptions-item>
+          <el-descriptions-item
+            label="关闭时间"
+            :span="2"
+            >{{ formatDateTimeForDisplay(order.closedAt) }}</el-descriptions-item
+          >
           <el-descriptions-item
             v-if="order.closeType !== 'completed_archive'"
             label="关闭原因"
-            :span="3"
-            >{{ order.closeReason || '历史数据未记录' }}</el-descriptions-item
+            :span="2"
+            ><span class="multiline-text">{{
+              order.closeReason || '历史数据未记录'
+            }}</span></el-descriptions-item
           >
-        </template>
-        <el-descriptions-item
-          label="备注"
-          :span="3"
-          ><span class="remark">{{ order.remark || '-' }}</span></el-descriptions-item
-        >
-        <el-descriptions-item label="审定计划内产出">{{
-          formatQuantity(order.finalOutput?.availableQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="审定计划外产出">{{
-          formatQuantity(order.finalOutput?.extraQuantity)
-        }}</el-descriptions-item>
-        <el-descriptions-item label="审定报废合计"
-          ><strong :class="{ 'text-danger': Number(order.finalOutput?.scrapQuantity) > 0 }">{{
-            formatQuantity(order.finalOutput?.scrapQuantity)
-          }}</strong></el-descriptions-item
-        >
-        <el-descriptions-item label="审定可用产出合计"
-          ><strong :class="{ 'text-primary': approvedUsableQuantity(order.finalOutput) > 0 }">{{
-            formatQuantity(approvedUsableQuantity(order.finalOutput))
-          }}</strong></el-descriptions-item
-        >
-        <el-descriptions-item label="计划内产出与计划比较">
-          <strong :class="{ 'text-warning': Number(plannedGap) !== 0 }">{{
-            plannedOutputGapText(plannedGap)
-          }}</strong>
-          <div class="field-note">未批准任务尚未计入</div>
-        </el-descriptions-item>
-        <el-descriptions-item label="待结案（未计入）">
-          <strong :class="{ 'text-warning': (order.finalOutput?.closingBatchCount ?? 0) > 0 }"
-            >{{ order.finalOutput?.closingBatchCount ?? 0 }} 批</strong
-          >
-          <div class="field-note">
-            草稿计划内 {{ formatQuantity(order.finalOutput?.pendingAvailableQuantity) }}
-          </div>
-        </el-descriptions-item>
-      </el-descriptions>
-      <p class="output-note">
-        审定产出仅汇总每个任务的当前批准清单，可用合计不含报废，也不代表已入库。已终止任务的审定产出仍计入，累计量可能超过工单计划。
-      </p>
+        </el-descriptions>
+      </section>
 
       <section
         v-if="order.orderType === 'research'"
@@ -170,12 +218,9 @@
             查看工单
           </el-button>
           · {{ order.previousResearchOrder.productCode }} ·
-          <span
-            class="status-text"
-            :data-tone="orderStatusMeta(order.previousResearchOrder.status).type"
-          >
+          <el-tag :type="orderStatusMeta(order.previousResearchOrder.status).type">
             {{ orderStatusMeta(order.previousResearchOrder.status).label }}
-          </span>
+          </el-tag>
         </p>
         <el-table
           v-if="order.nextResearchOrders.length"
@@ -187,13 +232,15 @@
             min-width="190"
           >
             <template #default="{ row }">
-              <strong>{{ row.workOrderNo }}</strong>
-              <el-button
-                link
-                type="primary"
-                @click="$emit('view-research-order', row.id)"
-                >查看工单</el-button
-              >
+              <div class="research-order">
+                <strong>{{ row.workOrderNo }}</strong>
+                <el-button
+                  link
+                  type="primary"
+                  @click="$emit('view-research-order', row.id)"
+                  >查看工单</el-button
+                >
+              </div>
             </template>
           </el-table-column>
           <el-table-column
@@ -210,11 +257,9 @@
             label="状态"
             width="120"
             ><template #default="{ row }"
-              ><span
-                class="status-text"
-                :data-tone="orderStatusMeta(row.status).type"
-                >{{ orderStatusMeta(row.status).label }}</span
-              ></template
+              ><el-tag :type="orderStatusMeta(row.status).type">{{
+                orderStatusMeta(row.status).label
+              }}</el-tag></template
             ></el-table-column
           >
         </el-table>
@@ -248,7 +293,7 @@
           />
           <el-table-column
             label="计划数量"
-            width="120"
+            min-width="140"
             align="right"
           >
             <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
@@ -266,11 +311,9 @@
             width="160"
           >
             <template #default="{ row }"
-              ><span
-                class="status-text"
-                :data-tone="batchStatusMeta(row.status).type"
-                >{{ batchStatusMeta(row.status).label }}</span
-              ></template
+              ><el-tag :type="batchStatusMeta(row.status).type">{{
+                batchStatusMeta(row.status).label
+              }}</el-tag></template
             >
           </el-table-column>
           <el-table-column
@@ -304,12 +347,14 @@ import { computed } from 'vue';
 import { WORK_ORDER_TYPE_LABELS, WORK_ORDER_CLOSE_TYPE_LABELS } from '@company/constants';
 import type { WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
+import InlineHint from '../../../components/InlineHint.vue';
 import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
 import { approvedUsableQuantity, plannedOutputGapText } from '../shared/production-output-quantity';
 import { canStartNextResearchRound } from './research-work-order';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../../utils/quantity';
 import { batchStatusMeta, orderStatusMeta } from '../shared/production-status';
+import { taskTypeTagType } from '../shared/production-task-presentation';
 
 const props = defineProps<{
   visible: boolean;
@@ -334,11 +379,35 @@ const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
 </script>
 
 <style scoped>
+.order-identity {
+  margin-bottom: 16px;
+  color: var(--el-text-color-primary);
+  overflow-wrap: anywhere;
+}
+.order-heading,
+.product-heading,
+.research-order {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.order-heading > strong {
+  font-size: 16px;
+}
+.product-heading {
+  margin-top: 8px;
+  font-size: 14px;
+  line-height: 1.6;
+}
+.product-heading > span {
+  color: var(--el-text-color-regular);
+}
 .order-descriptions :deep(.el-descriptions__table) {
   table-layout: fixed;
 }
-.order-descriptions :deep(.el-descriptions__cell) {
-  padding: 10px 12px;
+.order-descriptions :deep(.el-descriptions__body .el-descriptions__table .el-descriptions__cell) {
+  padding: 8px 12px;
   font-size: 14px;
   line-height: 1.6;
   vertical-align: middle;
@@ -354,27 +423,19 @@ const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
   color: var(--el-text-color-primary);
   font-variant-numeric: tabular-nums;
 }
-.order-descriptions strong,
-.status-text {
+.order-descriptions strong {
   font-weight: 600;
 }
-.text-primary,
-.status-text[data-tone='primary'] {
-  color: var(--el-color-primary);
-}
-.text-warning,
-.status-text[data-tone='warning'] {
+.text-warning {
   color: var(--el-color-warning);
 }
-.text-danger,
-.status-text[data-tone='danger'] {
+.text-danger {
   color: var(--el-color-danger);
 }
-.remark {
+.multiline-text {
   white-space: pre-wrap;
 }
-.field-note,
-.output-note {
+.field-note {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
@@ -388,7 +449,7 @@ const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
 .dialog-section-title {
   margin: 0 0 12px;
   color: var(--el-text-color-primary);
-  font-size: 14px;
+  font-size: 16px;
   font-weight: 600;
   line-height: 1.6;
 }
@@ -437,6 +498,9 @@ const closeTypeLabels: Record<WorkOrderCloseType | '', string> = {
 }
 .detail-table :deep(.el-table__row) {
   height: 48px;
+}
+.detail-table :deep(.cell) {
+  overflow-wrap: anywhere;
 }
 .empty-hint {
   padding: 16px;

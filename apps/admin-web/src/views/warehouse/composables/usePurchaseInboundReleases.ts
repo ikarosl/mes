@@ -179,10 +179,6 @@ export function usePurchaseInboundReleases(
     sources.length > 0 && sources.every((source) => isSelected(source.allocationId));
   const isPageGroupPartSelected = (sources: ProcurementInboundReleaseItem[]): boolean =>
     sources.some((source) => isSelected(source.allocationId));
-  const hasSelectionOutsidePageGroup = (sources: ProcurementInboundReleaseItem[]): boolean => {
-    const ids = pageGroupIds(sources);
-    return selected.value.some((row) => !ids.has(row.source.allocationId));
-  };
   const addPageGroup = (sources: ProcurementInboundReleaseItem[]): boolean => {
     if (locked.value || !sources.length) return false;
     const missing = [
@@ -235,9 +231,6 @@ export function usePurchaseInboundReleases(
     }
     if (locked.value) return;
     selected.value = selected.value.filter((row) => !ids.has(row.source.allocationId));
-  };
-  const reviewPageGroup = (sources: ProcurementInboundReleaseItem[]): void => {
-    if (addPageGroup(sources)) open();
   };
   const toggle = async (source: ProcurementInboundReleaseItem): Promise<void> => {
     if (locked.value) return;
@@ -325,7 +318,7 @@ export function usePurchaseInboundReleases(
           row.error = '该范围当前不可入库，请移除后从最新放行清单重新选择';
           valid = false;
         } else if (!sameBasis(row.source, source) && !adopt) {
-          row.error = '放行依据或剩余量已变化，请点击“重新核对已选”';
+          row.error = '放行依据或剩余量已变化，请点击“刷新数据”';
           valid = false;
         } else if (adopt) refreshed.set(row.source.allocationId, source);
       }
@@ -414,9 +407,7 @@ export function usePurchaseInboundReleases(
     isSelected,
     isPageGroupSelected,
     isPageGroupPartSelected,
-    hasSelectionOutsidePageGroup,
     togglePageGroup,
-    reviewPageGroup,
     toggle,
     remove,
     split,

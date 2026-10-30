@@ -19,7 +19,7 @@
 8. Controller 不写 SQL、不处理 Token 密钥、不承担业务事务。
 9. RBAC 后端校验是安全边界；前端只按页面权限控制菜单、路由和整页可见性，不要求对页面内操作按钮做细粒度权限隐藏；每个后端接口仍须独立鉴权。匿名接口必须显式 `@Public()`。
 10. Access Token 只在内存；Refresh Token 只通过 HttpOnly Cookie，不得写入 Web Storage。
-11. 前端使用 Vue Router、Pinia 和多标签页缓存；页面必须有稳定路由名和组件名。
+11. 前端使用 Vue Router、Pinia 和多标签页缓存；页面必须有稳定路由名和组件名。管理端界面新增与调整遵守[界面调整原则](apps/admin-web/docs/visual-design.md#1-界面调整原则)。
 12. 状态、类型和结果代码集中在 `packages/constants`，在 `packages/contracts` 使用字符串联合类型；Vue 文件不得重复业务编码与中文映射。
 13. HTTP body、query、param 必须使用 class DTO；分页和错误结构遵守 `docs/api-conventions.md`。
 14. 核心写操作与成功审计同事务；通用请求、安全拒绝和失败日志为 best-effort。日志和错误不得记录密码、Token、Cookie、签名或凭证。

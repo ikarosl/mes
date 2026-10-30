@@ -62,7 +62,7 @@
     />
     <InlineHint class="output-note">
       清单累计可入库量：{{ snapshot.output.availableQuantity + snapshot.output.extraQuantity }}
-      {{ snapshot.check.unit }}；批准清单不代表已入库，请结合历史已入库事实核对。
+      {{ snapshot.check.unit }}；清单批准可入库不代表已入库，请结合历史已入库事实核对。
     </InlineHint>
     <h4>管理员收尾与任务行动</h4>
     <el-table

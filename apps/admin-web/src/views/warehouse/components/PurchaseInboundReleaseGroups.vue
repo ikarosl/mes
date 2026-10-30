@@ -39,17 +39,6 @@
           @change="releases.togglePageGroup(group.items)"
           >选择本组（本页）</el-checkbox
         >
-        <el-button
-          type="primary"
-          link
-          :disabled="releases.locked.value"
-          @click="releases.reviewPageGroup(group.items)"
-          >{{
-            releases.hasSelectionOutsidePageGroup(group.items)
-              ? '加入已选并核对'
-              : '核对本组（本页）'
-          }}</el-button
-        >
       </InboundGroupHeader>
       <div v-if="!collapsedReceiptIds.has(group.receiptId)">
         <el-table

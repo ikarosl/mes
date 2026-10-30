@@ -19,7 +19,7 @@
         :loading="checking"
         :disabled="command.locked.value || !selected.length"
         @click="recheck(true)"
-        >重新核对已选</el-button
+        >刷新数据</el-button
       >
     </div>
     <el-alert

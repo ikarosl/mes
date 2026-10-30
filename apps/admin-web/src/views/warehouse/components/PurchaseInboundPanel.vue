@@ -202,7 +202,7 @@
       @update:model-value="closeConfirmation"
     >
       <el-alert
-        title="核对每份授权的本次数量和目标批次；确认后将新增实际库存记录。"
+        title="请核对本次入库数量和入库批次，确认后将增加库存。"
         type="info"
         show-icon
         :closable="false"
@@ -212,7 +212,7 @@
           :loading="releases.checking.value"
           :disabled="releases.command.locked.value"
           @click="releases.recheck(true)"
-          >重新核对已选</el-button
+          >刷新数据</el-button
         >
       </div>
       <el-alert
@@ -413,7 +413,7 @@
           :loading="releases.command.busy.value"
           :disabled="releases.locked.value || !releases.canSubmit.value"
           @click="releases.submit"
-          >确认实际入库</el-button
+          >确认入库</el-button
         >
       </template>
     </el-dialog>
