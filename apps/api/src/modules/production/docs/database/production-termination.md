@@ -182,8 +182,8 @@ Production 所有结案、产出草稿和批准清单；质检记录由 Quality 
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_closeout_action_no_update](../../../../../../../packages/database/migrations/202609150001-production-demand-correction-and-closeout.up.sql) | `BEFORE UPDATE` | 收尾行动事实不可改写 |
-| [trg_closeout_action_no_delete](../../../../../../../packages/database/migrations/202609150001-production-demand-correction-and-closeout.up.sql) | `BEFORE DELETE` | 收尾行动事实不可删除 |
+| [trg_closeout_action_no_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 收尾行动事实不可改写 |
+| [trg_closeout_action_no_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 收尾行动事实不可删除 |
 
 ### 引用 Quality 的 `quality_inspection_record`
 
@@ -247,7 +247,7 @@ Production 保存原始申报快照、检验身份和实际检查轮基准。检
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_output_round_identity_update](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE UPDATE` | 冻结轮次来源、建轮草稿版本、起始数量与创建事实 |
+| [trg_output_round_identity_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 冻结轮次来源、建轮草稿版本、起始数量与创建事实 |
 
 **`production_output_allocation` 字段定义**
 
@@ -281,8 +281,8 @@ Production 保存原始申报快照、检验身份和实际检查轮基准。检
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_output_allocation_no_update](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE UPDATE` | 批准授权不可改写 |
-| [trg_output_allocation_no_delete](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE DELETE` | 批准授权不可删除 |
+| [trg_output_allocation_no_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 批准授权不可改写 |
+| [trg_output_allocation_no_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 批准授权不可删除 |
 
 ### `production_output_revision`
 
@@ -345,8 +345,8 @@ Production 保存原始申报快照、检验身份和实际检查轮基准。检
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_output_revision_no_update](../../../../../../../packages/database/migrations/202609170001-production-output-revisions.up.sql) | `BEFORE UPDATE` | 批准版不可改写 |
-| [trg_output_revision_no_delete](../../../../../../../packages/database/migrations/202609170001-production-output-revisions.up.sql) | `BEFORE DELETE` | 批准版不可删除 |
+| [trg_output_revision_no_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 批准版不可改写 |
+| [trg_output_revision_no_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 批准版不可删除 |
 
 ## API、权限与事务
 

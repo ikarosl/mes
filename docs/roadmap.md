@@ -6,13 +6,20 @@
 
 状态：用户授权执行本地 CI 门禁、清理废弃测试，暂不完善测试集。高重要性旧用例按[测试策略](testing-strategy.md#暂缓完善测试集期间的存量清理)原位仅保留测试说明注释和可见 TODO，不保留旧实现，不能将门禁通过解释为这些场景已验证或用户验收通过。用户明确进入正式测试阶段后，由指定子代理恢复并全量验证。
 
-- [ ] 最高优先级修复完整 down 链的重复外键缺陷，证据和回滚准备边界见 [CO-10](documentation-conflicts.md#co-10)。恢复 `tests/integration/production/migrations/production-scrap-supplement-migration.mysql.test.ts` 的整链 up/down/up 及索引一致性覆盖；不得改已执行 SQL 或通过关闭外键、截断迁移链、忽略错误规避缺陷。正向 `migration-fresh` 不证明回滚可用。
 - [ ] 最高优先级恢复库存流水不可修改／不可删除、真实来源约束、预留与负库存保护；入口在 `tests/integration/inventory/inventory-ledger.mysql.test.ts` 及 `tests/integration/production/materials/`，按现行公共入出库单据重建共享夹具。
 - [ ] 恢复生产执行、报工冲销唯一、异常与报废补料、事务审计回滚、并发分配及持久化集成；入口在 `tests/integration/production/execution/`、`persistence/`。以任务锁版、自动业务编号、执行进入收尾及批准产出清单为准，不恢复工单跨任务锁版或旧完成数量模型。
 - [ ] 恢复 API 相邻 TODO 中的任务创建／取消锁序、结案损耗、正式产出资格、路线上下文快照及 BOM 资格保护，核对幂等重放、权限与当前来源互斥规则。
-- [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，以及 `create-batch-closed-loop.mysql.test.ts` 的任务／幂等结果／成功审计原子提交、失败回滚与重放，使用任务负责人场景资格、显式路线及当前 BOM 结构重建夹具；恢复 `tests/integration/inventory/migrations/inventory-item-balance-migration.mysql.test.ts` 在当前完整迁移链上的历史投影回填及 down/up，以合法公共入库来源准备流水，不截断迁移链规避来源约束。
+- [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，以及 `create-batch-closed-loop.mysql.test.ts` 的任务／幂等结果／成功审计原子提交、失败回滚与重放，使用任务负责人场景资格、显式路线及当前 BOM 结构重建夹具。
 - [ ] 恢复管理端相邻 TODO 中的仓储子页办理、异常处理弹窗、批准产出完工资格、菜单路由上下文、任务创建数量／日期保护及审批提交／失败回读期间的切换保护与对象隔离；废弃的产品默认路线与自动选路行为不作为恢复目标。
 - [ ] 恢复[请求层 TODO](../packages/request/src/__tests__/request.test.ts)中的写请求禁止传输自动重试边界，覆盖携带幂等键、残留旧配置、网络／超时／5xx、401 认证恢复例外及原请求手动恢复；不恢复旧的自动写重试能力。
+
+## 数据库基线与发布恢复：待部署验收
+
+模块化初始化基线及旧链退役已批准；现行范围、不可变登记和失败保护见[迁移规则](../packages/database/docs/90-migration-order.md#初始化基线)。备份、恢复、手动维护和半月任务的操作边界由[MySQL 运维手册](../ops/runbooks/mysql-backup-restore.md)维护，代码与本地验证不代替目标服务器验收。
+
+- [ ] 在部署环境完成基线旧库拒绝与空库切换、发布前备份、迁移中断保持停写、独立库恢复及匹配应用恢复演练；核对所需业务数据和附件是否已完整保留，未明确重建的现有环境不自动清库。
+- [ ] 确认备份异地副本、对象存储附件备份与数据库配套恢复、保留周期、失败通知和可接受的数据损失／恢复时间；在服务器安装并验收半月备份任务。半月备份不等于具备任意时点恢复能力。
+- [ ] 凌晨自动部署尚未实施：保留手动入口，按[发布手册](../ops/runbooks/compose-server-deployment.md)的自动发布前置条件，确定批准记录、镜像预下载、UTC+8 维护窗口及关键业务检查后再接入；错过窗口跳过，不补发。
 
 ## 规格书与系统模板：待正式测试
 
@@ -152,14 +159,14 @@
 
 ### 采购主单供应商与明细金额：已实施、待验收
 
-状态：采购主单唯一供应商、明细采购单位单价记录及采购、到货、来料和库存来源投影已实施，整体待用户手工黑盒／UI 验收及正式测试；金额推算增量见下节。当前规则见[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)、[管理端约束](../apps/admin-web/docs/procurement-inbound.md)和 [ADR-0026](adr/0026-purchase-order-supplier-and-amounts.md)，迁移与开发数据重建边界见[迁移安全](../packages/database/docs/migration-safety.md#202610280002采购主单供应商与明细金额)。
+状态：采购主单唯一供应商、明细采购单位单价记录及采购、到货、来料和库存来源投影已实施，整体待用户手工黑盒／UI 验收及正式测试；金额推算增量见下节。当前规则见[采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md)、[管理端约束](../apps/admin-web/docs/procurement-inbound.md)和 [ADR-0026](adr/0026-purchase-order-supplier-and-amounts.md)，迁移与开发数据重建边界见[迁移安全](../packages/database/docs/90-migration-order.md#初始化基线)。
 
 - [ ] 整体验收普通草稿供应商修改、正式冻结、补单继承及同单物料精确版本唯一；核对两项采购单位单价的字符串精度、空值、采购量变化保持原单价、补单报价默认空，以及到货、质检和库存来源身份及历史快照。
 - [ ] 正式覆盖仍缺：主单与行新契约、金额归一化及正式身份冻结、补单来源继承、权限／幂等／并发及事务回滚，追加迁移的空库 up/down/up 与非空守卫。
 
 ### 金额推算与手工总额：已实施、待验收
 
-状态：双单价保留手填、逐行税率、总额推算与手填覆盖、下单后两项单价／税率／手填总额按主单原子审计补填与更正，以及字符串精度和最终总额／来源配对已实施，待用户手工黑盒／UI 验收及正式测试。当前口径唯一维护于[采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)，表设计及追加迁移见[Procurement 数据库](../apps/api/src/modules/procurement/docs/database.md#明细税率与最终总额迁移)，交互见[金额编辑](../apps/admin-web/docs/procurement-inbound.md#35-金额草稿与下单后更正)。
+状态：双单价保留手填、逐行税率、总额推算与手填覆盖、下单后两项单价／税率／手填总额按主单原子审计补填与更正，以及字符串精度和最终总额／来源配对已实施，待用户手工黑盒／UI 验收及正式测试。当前口径唯一维护于[采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)，表设计及初始化边界见[Procurement 数据库](../apps/api/src/modules/procurement/docs/database.md#初始化与回退边界)，交互见[金额编辑](../apps/admin-web/docs/procurement-inbound.md#35-金额草稿与下单后更正)。
 
 - [ ] 整体验收手填总额优先及手填零、两套单价公式与两价并存优先级、清空恢复、无价格依据空值、精度和舍入，以及历史保存值与新预览分离、补单默认、正式数量／身份冻结、详情中的多行金额补填与更正、总额不变的报价文本更正、已结束采购更正、取消只读、并发与未知结果保护。
 - [ ] 正式覆盖仍缺：共同计算契约及长十进制／舍入／非法输入边界、两项单价独立校验与更正、两套公式及优先级、持久化来源配对和历史总额不自动回写、非金额字段冻结、更正字段必传与草稿可选的区别、金额更正权限／幂等 scope 切换／主行版本／跨单及重复或无变化行拒绝／报价文本变更／多行原子回滚与原因审计、管理端草稿与未知结果恢复，以及追加迁移 up/down/up、对应非空守卫或保留数据的触发器往返。
@@ -460,6 +467,6 @@
 
 ## 正式上线前运维手册：待补齐
 
-- [ ] 补齐发布与回滚、备份与恢复、迁移失败处理手册；业务停写责任与恢复顺序的待决问题见 [CO-04](documentation-conflicts.md#co-04)。
+- [ ] 发布、备份恢复与迁移中断的目标服务器验收见[数据库基线与发布恢复](#数据库基线与发布恢复待部署验收)；手册存在不代表恢复演练已经完成。
 - [ ] 补齐 MySQL 连接耗尽、对象存储／Redis 不可用及磁盘空间不足的排障手册。
 - [ ] 补齐 JWT 密钥轮换及安全事件处理手册；入口由[运维手册](../ops/runbooks/README.md)维护。

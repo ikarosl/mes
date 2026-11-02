@@ -1,6 +1,10 @@
 import { expect, it, vi } from 'vitest';
 import { type RowDataPacket } from '../../../apps/api/node_modules/mysql2/promise.js';
-import type { ApprovalInstanceDetail } from '../../../packages/contracts/src/index.js';
+import type {
+  ApprovalInstanceDetail,
+  BomApprovalSnapshot,
+  JsonTableData,
+} from '../../../packages/contracts/src/index.js';
 import { ApprovalSubjectError } from '../../../apps/api/src/modules/approval/public.js';
 import {
   flushAfterCommit,
@@ -182,13 +186,42 @@ export const registerApprovalDecisionTransactionCases = (
       roleAssignee('冻结首级', fixture.assignmentRoleId),
       roleAssignee('冻结末级', fixture.assignmentRoleId),
     ]);
-    const product = await createProduct(pool, fixture, 'freeze');
+    const specValues: JsonTableData = {
+      columns: [
+        { key: 'parameter', label: '参数名称' },
+        { key: 'value', label: '参数值' },
+      ],
+      rows: [
+        { parameter: '尺寸', value: ' 12.5 ± 0.1 mm ' },
+        { parameter: '说明', value: '送审原文\n第二行' },
+      ],
+    };
+    const product = await createProduct(pool, fixture, 'freeze', { specValues });
     const submitted = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'freeze-submit'),
     );
     const snapshot = submitted.subjectSnapshot;
     if (!('materials' in snapshot)) throw new Error('Expected BOM approval evidence');
+    const expectedSnapshot: BomApprovalSnapshot = {
+      productId: String(product.productId),
+      itemCode: product.itemCode,
+      productName: '审批集成产品-freeze',
+      unit: 'pcs',
+      specValues,
+      materials: [
+        {
+          id: String(product.productMaterialId),
+          materialId: String(product.materialId),
+          itemCode: product.materialCode,
+          quantityPerUnit: '1',
+          unit: 'kg',
+          remark: null,
+        },
+      ],
+    };
+    expect(submitted.snapshotSchemaVersion).toBe(3);
+    expect(snapshot).toEqual(expectedSnapshot);
     expect(snapshot.materials[0]).not.toHaveProperty('isKeyMaterial');
     expect(snapshot.materials[0]).not.toHaveProperty('needBatchRecord');
     await expect(
@@ -205,10 +238,27 @@ export const registerApprovalDecisionTransactionCases = (
       `${product.materialName}-renamed`,
       product.materialId,
     ]);
+    // 绕过资料命令改动当前规格，确保详情从冻结证据读取，不重新拼装当前主数据。
+    await pool.execute('UPDATE products SET spec_values=? WHERE id=?', [
+      JSON.stringify({
+        columns: [{ key: 'current', label: '送审后的当前规格' }],
+        rows: [{ current: '新内容' }],
+      } satisfies JsonTableData),
+      product.productId,
+    ]);
     const historical = await approvals.getInstance(submitted.id, String(fixture.actorId), true);
+    expect(historical.subjectSnapshot).toEqual(expectedSnapshot);
     expect(historical.materialNames[String(product.materialId)]).toBe(
       `${product.materialName}-renamed`,
     );
+    const [[evidence]] = await pool.query<
+      (RowDataPacket & { snapshot_schema_version: number; subject_snapshot: string })[]
+    >(
+      'SELECT snapshot_schema_version,CAST(subject_snapshot AS CHAR) subject_snapshot FROM approval_instances WHERE id=?',
+      [submitted.id],
+    );
+    expect(evidence.snapshot_schema_version).toBe(3);
+    expect(JSON.parse(evidence.subject_snapshot)).toEqual(expectedSnapshot);
     const first = await approvals.approve(
       submitted.id,
       { version: submitted.version, stepId: submitted.steps[0]!.id },
@@ -220,6 +270,7 @@ export const registerApprovalDecisionTransactionCases = (
       context(fixture.actorId, 'freeze-final'),
     );
     expect(approved.status).toBe('approved');
+    expect(approved.subjectSnapshot).toEqual(expectedSnapshot);
     expect(approved.actions.map((action) => action.actionType)).toEqual([
       'submitted',
       'approved',

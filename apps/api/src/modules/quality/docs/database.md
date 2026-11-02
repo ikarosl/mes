@@ -34,7 +34,7 @@
 
 复合主键为 `(inspection_order_id,receipt_id)`，同时支持主单内按 receipt_id 倒序读取。`uk_incoming_inspection_order_receipt(receipt_id)` 保证同一到货至多一个当前归属。两个 FK 使用默认 RESTRICT；关系不含行号、独立 ID、version 或操作者列。解除删除关系行，转移原子替换当前归属；操作人及变更前后值由平台日志保留。关系不冻结到货或检查，Quality case／record 不增加主单外键。
 
-分组不回填既有到货或检查；即使清空关系，仍有主单或已发编号也不能回退。停写和回退条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610280001来料质检分组主单)。
+分组不改写既有检查事实；清空当前关系不授权删除主单或已发编号。基线回退要求空业务库，停写和恢复条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#down-与版本降级)。
 
 ## 检验办理 quality_inspection_case
 

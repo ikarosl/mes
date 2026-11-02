@@ -66,7 +66,7 @@ Production 处理先锁同一来源链，再调用 Quality 的公开承接命令
 
 `quality_process_inspection` 保存固定任务工序来源、当前结果指针及累计已处理量；`quality_process_inspection_record` 追加检查、冲销和替代事实。两表分开是为了保留检查历史，同时让 Production 承接当前剩余额度；不保存第二份可写 G/F 或待处理汇总。
 
-两表使用 InnoDB、utf8mb4_0900_ai_ci。ID 为 BIGINT UNSIGNED，除显式 NULL 外均为 NOT NULL，未写 DEFAULT 的字段无显式默认值；人员 FK 指向 users，外键使用 RESTRICT 并有支撑索引。创建／可变审计列组见[Quality 数据库](database.md)。物理定义与[专检 migration](../../../../../../packages/database/migrations/202610150002-process-inspection.up.sql)同步维护。
+两表使用 InnoDB、utf8mb4_0900_ai_ci。ID 为 BIGINT UNSIGNED，除显式 NULL 外均为 NOT NULL，未写 DEFAULT 的字段无显式默认值；人员 FK 指向 users，外键使用 RESTRICT 并有支撑索引。创建／可变审计列组见[Quality 数据库](database.md)。物理定义与[Quality 建表基线](../../../../../../packages/database/migrations/202611020110-baseline-quality-tables.up.sql)及[外键基线](../../../../../../packages/database/migrations/202611020210-baseline-quality-foreign-keys.up.sql)同步维护。
 
 ### quality_process_inspection
 

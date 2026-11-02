@@ -6,7 +6,7 @@
 
 职责：记录谁在何时对哪个对象执行了什么动作及其结果，关联请求诊断和必要的前后依据。审计独立于业务事实，不能用日志重建单据状态或代替库存、需求等业务账本。
 
-结构由[初始建表](../../../packages/database/migrations/202607200001-rbac-auth.up.sql)、[结果约束](../../../packages/database/migrations/202607230002-status-code-constraints.up.sql)和[请求上下文字段](../../../packages/database/migrations/202607280001-operation-log-request-context.up.sql)共同形成。使用 InnoDB、`utf8mb4_0900_ai_ci`；不使用修改审计、乐观版本或软删除列。表中可空列默认 SQL `NULL`。
+结构由[平台审计建表基线](../../../packages/database/migrations/202611020102-baseline-platform-audit-tables.up.sql)和[外键基线](../../../packages/database/migrations/202611020202-baseline-platform-audit-foreign-keys.up.sql)定义。使用 InnoDB、`utf8mb4_0900_ai_ci`；不使用修改审计、乐观版本或软删除列。表中可空列默认 SQL `NULL`。
 
 | 字段 | 类型 | 可空／默认 | 含义 |
 | --- | --- | --- | --- |

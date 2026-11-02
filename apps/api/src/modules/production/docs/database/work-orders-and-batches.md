@@ -153,10 +153,10 @@ BOM 批准与永久锁定由 [Product](../../../product/docs/product-rules.md)�
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_work_orders_reject_released_type_update](../../../../../../../packages/database/migrations/202609070002-work-order-material-version-policy.up.sql) | `BEFORE UPDATE` | 非草稿工单不得更改批量／研发类型 |
-| [trg_work_orders_reject_number_update](../../../../../../../packages/database/migrations/202609170003-work-order-auto-number.up.sql) | `BEFORE UPDATE` | 工单编号创建后不可改 |
-| [trg_work_orders_reject_self_research](../../../../../../../packages/database/migrations/202609170005-research-work-order-lineage.up.sql) | `AFTER INSERT` | 拒绝研发前序自指 |
-| [trg_work_orders_reject_research_lineage_update](../../../../../../../packages/database/migrations/202609170005-research-work-order-lineage.up.sql) | `BEFORE UPDATE` | 前序研发关联创建后不可改 |
+| [trg_work_orders_reject_released_type_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 非草稿工单不得更改批量／研发类型 |
+| [trg_work_orders_reject_number_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 工单编号创建后不可改 |
+| [trg_work_orders_reject_self_research](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `AFTER INSERT` | 拒绝研发前序自指 |
+| [trg_work_orders_reject_research_lineage_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 前序研发关联创建后不可改 |
 
 #### 工单负责人候选与历史展示
 

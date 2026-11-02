@@ -1,35 +1,32 @@
 import { loadWorkspaceEnv } from '@company/config';
 import { createDatabasePool } from './index.js';
-import {
-  assertAppliedMigrations,
-  migrationStatus,
-  readMigrations,
-  schemaMigrationsTableExistsQuery,
-} from './migration-utils.js';
-import type { RowDataPacket } from 'mysql2/promise';
+import { migrationStatus, readMigrations } from './migration-utils.js';
+import { migrationErrorCode, readMigrationHistory } from './migration-runner.js';
 
 // 状态检查与实际迁移使用同一环境加载入口，避免连接到错误数据库。
 loadWorkspaceEnv();
 const pool = createDatabasePool();
 try {
-  // 仅检查迁移记录表是否存在；不读取 information_schema.tables 中不存在的 name 字段。
-  const [rows] = await pool.query<RowDataPacket[]>(schemaMigrationsTableExistsQuery);
-  const applied = new Map<string, string>();
-  if (rows.length) {
-    const [migrationRows] = await pool.query<
-      (RowDataPacket & { name: string; checksum: string })[]
-    >('SELECT name, checksum FROM _schema_migrations');
-    migrationRows.forEach((row) => applied.set(row.name, row.checksum));
-  }
   const migrations = await readMigrations();
-  assertAppliedMigrations(migrations, applied);
+  const applied = new Map(
+    (await readMigrationHistory(pool, migrations)).map((row) => [row.name, row]),
+  );
   let invalid = false;
+  // 状态查询只读：任何待执行/未完成记录都返回非零，部署和人工恢复据此停止启动。
   for (const migration of migrations) {
-    const status = migrationStatus(applied.get(migration.name), migration.checksum);
+    const record = applied.get(migration.name);
+    const status = migrationStatus(record?.checksum, migration.checksum, record?.status);
     console.log(`${status} ${migration.name}`);
-    if (status === 'pending') invalid = true;
+    if (status !== 'applied') invalid = true;
   }
   if (invalid) process.exitCode = 1;
+} catch (error) {
+  console.error(
+    error instanceof Error && !('sql' in error)
+      ? error.message
+      : `迁移状态查询失败（${migrationErrorCode(error)}）。`,
+  );
+  process.exitCode = 1;
 } finally {
   await pool.end();
 }

@@ -5,11 +5,11 @@ import {
   roleAssignee,
   userAssignee,
   createProduct,
-  insert,
   context,
   SCENE_CODE,
   type ApprovalMysqlContext,
 } from './approval-fixture.js';
+import { insertUserFixture } from '../fixtures/master-data-fixture.js';
 
 export const registerApprovalFlowVersionCases = (getContext: () => ApprovalMysqlContext): void => {
   it('uses one node execution record and keeps flow version fixed while a newer flow is published', async () => {
@@ -23,7 +23,7 @@ export const registerApprovalFlowVersionCases = (getContext: () => ApprovalMysql
     expect(submitted).toMatchObject({
       status: 'pending',
       flowVersionNo: fixture.publishedFlow.published!.versionNo,
-      snapshotSchemaVersion: 2,
+      snapshotSchemaVersion: 3,
       version: 0,
     });
     expect(submitted.steps).toHaveLength(2);
@@ -120,11 +120,10 @@ export const registerApprovalAssigneeCases = (getContext: () => ApprovalMysqlCon
     );
     expect(Number(peerActionAfter.total)).toBe(Number(peerActionBefore.total));
 
-    const newMember = await insert(
-      pool,
-      'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)',
-      [`${fixture.token}-new-member`, 'integration-test-hash', '动态新增审批人'],
-    );
+    const newMember = await insertUserFixture(pool, {
+      username: `${fixture.token}-new-member`,
+      displayName: '动态新增审批人',
+    });
     fixture.extraUserIds.push(newMember);
     await pool.execute('INSERT INTO user_roles (user_id,role_id) VALUES (?,?),(?,?)', [
       newMember,

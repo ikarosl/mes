@@ -1,7 +1,6 @@
 import { loadWorkspaceEnv } from '../../../packages/config/src/index.js';
 import {
   createPool,
-  type ExecuteValues,
   type Pool,
   type PoolConnection,
   type ResultSetHeader,
@@ -14,6 +13,7 @@ import type { IdempotentCommand } from '../../../apps/api/src/common/idempotency
 import { IdempotencyHousekeepingService } from '../../../apps/api/src/infrastructure/idempotency/idempotency-housekeeping.service.js';
 import { IdempotencyMetrics } from '../../../apps/api/src/infrastructure/idempotency/idempotency.metrics.js';
 import { MysqlIdempotencyExecutor } from '../../../apps/api/src/infrastructure/idempotency/mysql-idempotency.executor.js';
+import { insertUserFixture } from '../fixtures/master-data-fixture.js';
 
 loadWorkspaceEnv();
 
@@ -45,11 +45,11 @@ describeMysql('HTTP idempotency executor (real MySQL)', () => {
       ) ENGINE=InnoDB`,
     );
     const token = `idem-test-${process.pid}-${Math.floor(Math.random() * 1_000_000)}`;
-    actorId = await insert(
-      pool,
-      'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)',
-      [`${token}-actor`, 'hash', 'Idempotency test actor'],
-    );
+    actorId = await insertUserFixture(pool, {
+      username: `${token}-actor`,
+      passwordHash: 'hash',
+      displayName: 'Idempotency test actor',
+    });
     scope = 'integration.test.write.v1';
     executor = new MysqlIdempotencyExecutor(pool as never);
   });
@@ -294,11 +294,6 @@ describeMysql('HTTP idempotency executor (real MySQL)', () => {
 
 const viFailingHandler = () => async () => {
   throw new Error('must not execute');
-};
-
-const insert = async (pool: Pool, sql: string, values: ExecuteValues[]) => {
-  const [result] = await pool.execute<ResultSetHeader>(sql, values);
-  return Number(result.insertId);
 };
 
 const requiredEnv = (name: string) => {

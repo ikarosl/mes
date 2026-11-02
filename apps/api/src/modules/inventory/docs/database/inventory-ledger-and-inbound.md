@@ -98,9 +98,9 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_item_batch_move_variant_balance](../../../../../../../packages/database/migrations/202609170002-finished-goods-inbound.up.sql) | `AFTER UPDATE` | 批次状态变更时搬移物料版本余额桶 |
-| [trg_item_batch_reject_material_identity_update](../../../../../../../packages/database/migrations/202609240001-unified-inbound-allocation-target.up.sql) | `BEFORE UPDATE` | 冻结库存身份、批号、单位及建批来源 |
-| [trg_item_batch_creation_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE INSERT` | 新批须有创建／修改人及初始版本；other 新批不携带业务来源或描述 |
+| [trg_item_batch_move_variant_balance](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `AFTER UPDATE` | 批次状态变更时搬移物料版本余额桶 |
+| [trg_item_batch_reject_material_identity_update](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 冻结库存身份、批号、单位及建批来源 |
+| [trg_item_batch_creation_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 新批须有创建／修改人及初始版本；other 新批不携带业务来源或描述 |
 
 ### 7. `inventory_transaction`
 
@@ -108,7 +108,7 @@
 
 来源只写 `reference_type/reference_detail_id`，其中 ID 是实际明细而非主单。`inbound_detail_ref`、`outbound_detail_ref`、`stock_check_detail_ref` 是只读生成指针，用有类型的组合外键核对来源、身份和批次；盘点没有成品分支。实际分支列必须齐全，不能用 NULL 绕过引用。触发器读取普通 reference 列，不读取 NEW 的生成列。
 
-每条实际入出库明细或非零盘点差额只允许一笔原始记账，`original_posting_key` 保证该唯一性，不因 `transaction_group_key` 非空而失效。服务端按实际明细身份稳定生成流水幂等键，数据库守卫核验同一规则；两个键不能改用主单号或批次 ID，具体格式见[来源守卫迁移](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql)。
+每条实际入出库明细或非零盘点差额只允许一笔原始记账，`original_posting_key` 保证该唯一性，不因 `transaction_group_key` 非空而失效。服务端按实际明细身份稳定生成流水幂等键，数据库守卫核验同一规则；两个键不能改用主单号或批次 ID，具体格式见[来源守卫触发器](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql)。
 
 重复确认返回原结果，不换键追加流水；HTTP `Idempotency-Key` 另行保护完整命令。分组键也不作为两张人工补差单的配对号。
 
@@ -196,13 +196,13 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_inventory_transaction_reject_update](../../../../../../../packages/database/migrations/202608130002-inventory-transaction-immutability.up.sql) | `BEFORE UPDATE` | 禁止改写流水；仅保留受控测试库清理例外 |
-| [trg_inventory_transaction_reject_delete](../../../../../../../packages/database/migrations/202608130002-inventory-transaction-immutability.up.sql) | `BEFORE DELETE` | 禁止删除流水；仅保留受控测试库清理例外 |
-| [trg_inventory_transaction_update_balances](../../../../../../../packages/database/migrations/202609170002-finished-goods-inbound.up.sql) | `AFTER INSERT` | 新流水同事务维护库批余额 |
-| [trg_inventory_transaction_cleanup_balances](../../../../../../../packages/database/migrations/202609170002-finished-goods-inbound.up.sql) | `AFTER DELETE` | 受控测试清理同步冲减库批余额 |
-| [trg_inventory_transaction_update_variant_balance](../../../../../../../packages/database/migrations/202609170002-finished-goods-inbound.up.sql) | `AFTER INSERT` | 物料流水同事务维护精确版本余额 |
-| [trg_inventory_transaction_cleanup_variant_balance](../../../../../../../packages/database/migrations/202609170002-finished-goods-inbound.up.sql) | `AFTER DELETE` | 受控测试清理同步冲减精确版本余额 |
-| [trg_inventory_transaction_source_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE INSERT` | 核验实际来源、完整身份、数量方向、单据阶段及稳定记账键 |
+| [trg_inventory_transaction_reject_update](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 禁止改写流水；仅保留受控测试库清理例外 |
+| [trg_inventory_transaction_reject_delete](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE DELETE` | 禁止删除流水；仅保留受控测试库清理例外 |
+| [trg_inventory_transaction_update_balances](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `AFTER INSERT` | 新流水同事务维护库批余额 |
+| [trg_inventory_transaction_cleanup_balances](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `AFTER DELETE` | 受控测试清理同步冲减库批余额 |
+| [trg_inventory_transaction_update_variant_balance](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `AFTER INSERT` | 物料流水同事务维护精确版本余额 |
+| [trg_inventory_transaction_cleanup_variant_balance](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `AFTER DELETE` | 受控测试清理同步冲减精确版本余额 |
+| [trg_inventory_transaction_source_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 核验实际来源、完整身份、数量方向、单据阶段及稳定记账键 |
 
 ### 7.1 `inventory_batch_balance`
 
@@ -239,8 +239,8 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_inventory_batch_balance_reject_negative_insert](../../../../../../../packages/database/migrations/202608250002-inventory-balances-and-demand-fulfillment.up.sql) | `BEFORE INSERT` | 拒绝负库存余额 |
-| [trg_inventory_batch_balance_reject_negative_update](../../../../../../../packages/database/migrations/202608250002-inventory-balances-and-demand-fulfillment.up.sql) | `BEFORE UPDATE` | 拒绝负库存余额 |
+| [trg_inventory_batch_balance_reject_negative_insert](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 拒绝负库存余额 |
+| [trg_inventory_batch_balance_reject_negative_update](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 拒绝负库存余额 |
 
 ### 7.2 基础物料库存合计
 
@@ -280,8 +280,8 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_inventory_variant_balance_reject_negative_insert](../../../../../../../packages/database/migrations/202609040002-production-material-variant-demand.up.sql) | `BEFORE INSERT` | 拒绝负库存余额 |
-| [trg_inventory_variant_balance_reject_negative_update](../../../../../../../packages/database/migrations/202609040002-production-material-variant-demand.up.sql) | `BEFORE UPDATE` | 拒绝负库存余额 |
+| [trg_inventory_variant_balance_reject_negative_insert](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 拒绝负库存余额 |
+| [trg_inventory_variant_balance_reject_negative_update](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 拒绝负库存余额 |
 
 ### 7.4 余额投影维护规则
 
@@ -403,9 +403,9 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_inbound_order_insert_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE INSERT` | 以待确认状态、初始版本及完整创建审计建单 |
-| [trg_inbound_order_update_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE UPDATE` | 保护身份和版本，核对草稿、确认、取消及终态条件 |
-| [trg_inbound_order_delete_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
+| [trg_inbound_order_insert_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 以待确认状态、初始版本及完整创建审计建单 |
+| [trg_inbound_order_update_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 保护身份和版本，核对草稿、确认、取消及终态条件 |
+| [trg_inbound_order_delete_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
 
 ### 9. `inbound_detail`
 
@@ -520,9 +520,9 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_inbound_detail_delete_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
-| [trg_inbound_detail_insert_guard](../../../../../../../packages/database/migrations/202610200001-procurement-supplement-logistics-decoupling.up.sql) | `BEFORE INSERT` | 锁定父单并核验来源、身份、目标和待确认阶段 |
-| [trg_inbound_detail_update_guard](../../../../../../../packages/database/migrations/202610200001-procurement-supplement-logistics-decoupling.up.sql) | `BEFORE UPDATE` | 仅放行符合阶段的草稿编辑、软删除或新目标落批，保护来源及终态 |
+| [trg_inbound_detail_delete_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
+| [trg_inbound_detail_insert_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 锁定父单并核验来源、身份、目标和待确认阶段 |
+| [trg_inbound_detail_update_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 仅放行符合阶段的草稿编辑、软删除或新目标落批，保护来源及终态 |
 
 ## 3.6 出库表
 
@@ -590,9 +590,9 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_outbound_order_insert_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE INSERT` | 以待确认状态、初始版本及完整创建审计建单 |
-| [trg_outbound_order_update_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE UPDATE` | 保护身份和版本，核对草稿、确认、取消及终态条件 |
-| [trg_outbound_order_delete_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
+| [trg_outbound_order_insert_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 以待确认状态、初始版本及完整创建审计建单 |
+| [trg_outbound_order_update_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 保护身份和版本，核对草稿、确认、取消及终态条件 |
+| [trg_outbound_order_delete_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
 
 ### 13. `outbound_detail`
 
@@ -678,9 +678,9 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_outbound_detail_insert_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE INSERT` | 锁定父单并核验来源、身份、目标和待确认阶段 |
-| [trg_outbound_detail_delete_guard](../../../../../../../packages/database/migrations/202610140001-general-inventory-documents.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
-| [trg_outbound_detail_update_guard](../../../../../../../packages/database/migrations/202610140002-other-draft-history-deletion.up.sql) | `BEFORE UPDATE` | 仅允许未记账的其他出库草稿编辑或软删除，保护创建身份、来源及终态 |
+| [trg_outbound_detail_insert_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE INSERT` | 锁定父单并核验来源、身份、目标和待确认阶段 |
+| [trg_outbound_detail_delete_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE DELETE` | 禁止物理删除；保留受控测试库清理例外 |
+| [trg_outbound_detail_update_guard](../../../../../../../packages/database/migrations/202611020312-baseline-inventory-triggers.up.sql) | `BEFORE UPDATE` | 仅允许未记账的其他出库草稿编辑或软删除，保护创建身份、来源及终态 |
 
 ## 公共单据状态与不可变规则
 

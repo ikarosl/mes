@@ -126,13 +126,22 @@ const migrationNames = (await readdir(migrationsDir))
   .filter((file) => file.endsWith('.sql'))
   .sort();
 const migrationNameSet = new Set(migrationNames);
+const sqlNamePattern = /^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.(?:up|down)\.sql$/;
+if (migrationNames.length === 0) violations.push('migration registry must not be empty');
 
+// 当前文件直接检查双向配对；文件历史由下方 Git 比较负责，不另存文件摘要清单。
 for (const name of migrationNames) {
-  if (!/^\d{12}-[a-z0-9]+(?:-[a-z0-9]+)*\.(?:up|down)\.sql$/.test(name)) {
+  if (!sqlNamePattern.test(name)) {
     violations.push(`${name}: invalid migration filename`);
   }
   if (name.endsWith('.up.sql') && !migrationNameSet.has(name.replace(/\.up\.sql$/, '.down.sql'))) {
     violations.push(`${name}: matching down migration is missing`);
+  }
+  if (
+    name.endsWith('.down.sql') &&
+    !migrationNameSet.has(name.replace(/\.down\.sql$/, '.up.sql'))
+  ) {
+    violations.push(`${name}: matching up migration is missing`);
   }
 }
 
@@ -141,13 +150,31 @@ if (baseSha) {
   if (!/^[0-9a-f]{7,40}$/i.test(baseSha)) {
     violations.push('MIGRATION_BASE_SHA is not a valid Git commit');
   } else {
+    const mergeBase = execFileSync('git', ['merge-base', baseSha, 'HEAD'], {
+      encoding: 'utf8',
+    }).trim();
     const changes = execFileSync(
       'git',
-      ['diff', '--name-status', `${baseSha}...HEAD`, '--', 'packages/database/migrations'],
+      ['diff', '--no-renames', '--name-status', mergeBase, '--', 'packages/database/migrations'],
       { encoding: 'utf8' },
     )
       .split(/\r?\n/)
       .filter(Boolean);
+    const previousNames = execFileSync(
+      'git',
+      ['ls-tree', '--name-only', `${mergeBase}:packages/database/migrations`],
+      { encoding: 'utf8' },
+    )
+      .split(/\r?\n/)
+      .filter((name) => name.endsWith('.sql'))
+      .sort();
+    const previousNameSet = new Set(previousNames);
+    const previousLastName = previousNames.at(-1);
+    for (const name of migrationNames) {
+      if (!previousNameSet.has(name) && previousLastName && name <= previousLastName) {
+        violations.push(`${name}: appended migrations must sort after existing history`);
+      }
+    }
     for (const change of changes) {
       const [status, file] = change.split(/\s+/, 2);
       if (status !== 'A') {
@@ -159,6 +186,9 @@ if (baseSha) {
 
 for (const name of migrationNames) {
   const source = await readFile(path.join(migrationsDir, name), 'utf8');
+  if (/\bforeign_key_checks\s*=\s*(?:0|OFF)\b/i.test(source)) {
+    violations.push(`${name}: disabling foreign key checks is forbidden`);
+  }
   const temporaryTables = new Set(
     [...source.matchAll(/\bCREATE\s+TEMPORARY\s+TABLE\s+`?([a-z_][a-z0-9_]*)`?/gi)].map((match) =>
       match[1].toLowerCase(),

@@ -1,0 +1,13 @@
+[Unit]
+Description=Easy MES MySQL backup on the 1st and 16th at 03:00 Beijing time
+
+[Timer]
+# 北京时间每月 1 日和 16 日凌晨 3 点；这是备份定时器，不是应用发布定时器。
+OnCalendar=*-*-01,16 03:00:00 Asia/Shanghai
+# 错过不补跑；脚本还会复核开始时间窗口。安装文件不会自动启用本单元。
+Persistent=false
+AccuracySec=1min
+Unit=easy-mes-mysql-backup.service
+
+[Install]
+WantedBy=timers.target

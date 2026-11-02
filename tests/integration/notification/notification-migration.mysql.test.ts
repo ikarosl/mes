@@ -1,90 +1,48 @@
 import { loadWorkspaceEnv } from '../../../packages/config/src/index.js';
-import {
-  createConnection,
-  type Connection,
-  type ResultSetHeader,
-  type RowDataPacket,
-} from '../../../apps/api/node_modules/mysql2/promise.js';
+import type { Connection, RowDataPacket } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { randomBytes } from 'node:crypto';
-import { readFile, readdir } from 'node:fs/promises';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import {
+  type MigrationSandbox,
+  applyMigrations,
+  baselineMigrations,
+  createMigrationSandbox,
+  insert,
+  tableExists,
+  upMigrations,
+} from '../fixtures/mysql-migration-fixture.js';
+import { captureSchemaSnapshot } from '../fixtures/mysql-schema-snapshot.js';
 
 loadWorkspaceEnv();
-
 const describeMysql = process.env.RUN_MYSQL_INTEGRATION === '1' ? describe : describe.skip;
-const MIGRATIONS_DIR = new URL('../../../packages/database/migrations/', import.meta.url);
-const TARGET_MIGRATION = '202609140001-notifications';
 
-type ConnectionOptions = {
-  host: string;
-  port: number;
-  user: string;
-  password: string;
-};
-
-describeMysql('Notification migration (real MySQL)', () => {
-  let admin: Connection;
-  let options: ConnectionOptions;
-  const tempDatabases = new Set<string>();
-
+describeMysql('Notification baseline (real MySQL)', () => {
+  let sandbox: MigrationSandbox;
   beforeAll(async () => {
-    const referenceDatabase = required('TEST_DB_NAME');
-    if (!/_test$/.test(referenceDatabase) || referenceDatabase === 'easy_mes') {
-      throw new Error(
-        'notification migration integration tests require a dedicated TEST_DB_NAME ending in _test',
-      );
-    }
-
-    const host = required('TEST_DB_HOST');
-    const port = Number(required('TEST_DB_PORT'));
-    if (!Number.isInteger(port) || port <= 0) {
-      throw new Error('TEST_DB_PORT must be a positive integer');
-    }
-    options = {
-      host,
-      port,
-      user: process.env.TEST_DB_ADMIN_USER ?? process.env.TEST_DB_USER ?? required('DB_USER'),
-      password:
-        process.env.TEST_DB_ADMIN_PASSWORD ??
-        process.env.TEST_DB_PASSWORD ??
-        required('DB_PASSWORD'),
-    };
-    // TEST_DB is a safety marker only. Each test uses a fresh temporary *_test database.
-    admin = await createConnection({ ...options, multipleStatements: false });
+    sandbox = await createMigrationSandbox();
   });
-
   afterAll(async () => {
-    for (const name of tempDatabases) {
-      try {
-        await admin.query(`DROP DATABASE IF EXISTS \`${name}\``);
-      } catch {
-        // Best-effort cleanup. A leftover *_test database is safer than a failed teardown.
-      }
-    }
-    await admin?.end();
+    await sandbox?.dispose();
   });
 
-  it('applies the complete migration chain and supports notification down/up', async () => {
-    const tempDb = temporaryDatabaseName('notification_shape');
-    const connection = await createTempDatabase(tempDb);
+  it('supports empty notification down/up with all columns, indexes and constraints restored', async () => {
+    const { database, connection } = await sandbox.create('notification_shape');
     try {
       await applyMigrations(connection, await upMigrations());
       await expectNotificationSchema(connection, true);
-
-      await runMigration(connection, `${TARGET_MIGRATION}.down.sql`);
+      const before = await captureSchemaSnapshot(connection);
+      await applyMigrations(connection, await baselineMigrations('notification', 'down'));
       await expectNotificationSchema(connection, false);
-
-      await runMigration(connection, `${TARGET_MIGRATION}.up.sql`);
+      await applyMigrations(connection, await baselineMigrations('notification', 'up'));
       await expectNotificationSchema(connection, true);
+      expect(await captureSchemaSnapshot(connection)).toEqual(before);
     } finally {
-      await connection.end();
-      await dropTempDatabase(tempDb);
+      await sandbox.close(connection, database);
     }
   });
 
-  it('rejects a non-empty notification down before dropping either table', async () => {
-    const tempDb = temporaryDatabaseName('notification_guard');
-    const connection = await createTempDatabase(tempDb);
+  it('rejects each notification down phase before DDL and preserves messages and recipients', async () => {
+    const { database, connection } = await sandbox.create('notification_guard');
     try {
       await applyMigrations(connection, await upMigrations());
       const actorId = await insertUser(
@@ -93,35 +51,29 @@ describeMysql('Notification migration (real MySQL)', () => {
       );
       const notificationId = await insertNotification(
         connection,
-        `notification-guard-${randomBytes(4).toString('hex')}`,
+        `event-${randomBytes(4).toString('hex')}`,
         actorId,
       );
       await insertRecipient(connection, notificationId, actorId, actorId);
-
-      await expect(runMigration(connection, `${TARGET_MIGRATION}.down.sql`)).rejects.toMatchObject({
-        code: 'ER_CHECK_CONSTRAINT_VIOLATED',
-      });
-
-      // The temporary guard is the first failing statement. Neither permanent table may have
-      // been dropped before it rejected the rollback.
-      await expectNotificationSchema(connection, true);
-      const [[counts]] = await connection.query<
-        (RowDataPacket & { messages: number; recipients: number })[]
-      >(
-        `SELECT
-           (SELECT COUNT(*) FROM notifications) messages,
-           (SELECT COUNT(*) FROM notification_recipients) recipients`,
+      const before = await captureSchemaSnapshot(connection);
+      for (const name of await baselineMigrations('notification', 'down')) {
+        await expect(applyMigrations(connection, [name])).rejects.toMatchObject({
+          cause: { code: 'ER_CHECK_CONSTRAINT_VIOLATED' },
+        });
+        expect(await captureSchemaSnapshot(connection)).toEqual(before);
+      }
+      const [[counts]] = await connection.query<RowDataPacket[]>(
+        'SELECT (SELECT COUNT(*) FROM notifications) messages,(SELECT COUNT(*) FROM notification_recipients) recipients',
       );
-      expect(counts).toMatchObject({ messages: 1, recipients: 1 });
+      expect(Number(counts?.messages)).toBe(1);
+      expect(Number(counts?.recipients)).toBe(1);
     } finally {
-      await connection.end();
-      await dropTempDatabase(tempDb);
+      await sandbox.close(connection, database);
     }
   });
 
   it('enforces notification foreign keys, uniqueness, and source/target/read checks', async () => {
-    const tempDb = temporaryDatabaseName('notification_constraints');
-    const connection = await createTempDatabase(tempDb);
+    const { database, connection } = await sandbox.create('notification_constraints');
     try {
       await applyMigrations(connection, await upMigrations());
       const actorId = await insertUser(
@@ -192,65 +144,14 @@ describeMysql('Notification migration (real MySQL)', () => {
       const [[receipt]] = await connection.query<
         (RowDataPacket & { read_at: Date; updated_by: number; version: number })[]
       >('SELECT read_at,updated_by,version FROM notification_recipients WHERE id=?', [receiptId]);
-      expect(receipt).toMatchObject({ updated_by: recipientId, version: 1 });
+      expect(Number(receipt?.updated_by)).toBe(recipientId);
+      expect(receipt?.version).toBe(1);
       expect(receipt?.read_at).toBeTruthy();
     } finally {
-      await connection.end();
-      await dropTempDatabase(tempDb);
+      await sandbox.close(connection, database);
     }
   });
-
-  const createTempDatabase = async (name: string): Promise<Connection> => {
-    await admin.query(
-      `CREATE DATABASE \`${name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_0900_ai_ci`,
-    );
-    tempDatabases.add(name);
-    return createConnection({ ...options, database: name, multipleStatements: true });
-  };
-
-  const dropTempDatabase = async (name: string): Promise<void> => {
-    await admin.query(`DROP DATABASE IF EXISTS \`${name}\``);
-    tempDatabases.delete(name);
-  };
 });
-
-const required = (name: string): string => {
-  const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
-  return value;
-};
-
-const temporaryDatabaseName = (prefix: string): string =>
-  `${prefix}_${Date.now()}_${randomBytes(4).toString('hex')}_test`;
-
-const applyMigrations = async (connection: Connection, names: string[]): Promise<void> => {
-  for (const name of names) {
-    try {
-      await runMigration(connection, name);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`migration ${name} failed: ${message}`, { cause: error });
-    }
-  }
-};
-
-const runMigration = async (connection: Connection, name: string): Promise<void> => {
-  const sql = await readFile(new URL(name, MIGRATIONS_DIR), 'utf8');
-  await connection.query(sql);
-};
-
-const upMigrations = async (): Promise<string[]> =>
-  (await readdir(MIGRATIONS_DIR)).filter((name) => name.endsWith('.up.sql')).sort();
-
-const tableExists = async (connection: Connection, table: string): Promise<boolean> => {
-  const [[row]] = await connection.query<(RowDataPacket & { count: number })[]>(
-    `SELECT COUNT(*) count
-       FROM information_schema.tables
-      WHERE table_schema=DATABASE() AND table_name=?`,
-    [table],
-  );
-  return Number(row?.count ?? 0) === 1;
-};
 
 const constraintExists = async (
   connection: Connection,
@@ -289,15 +190,6 @@ const expectNotificationSchema = async (connection: Connection, exists: boolean)
       'chk_notification_recipients_read',
     ),
   ).toBe(true);
-};
-
-const insert = async (
-  connection: Connection,
-  sql: string,
-  values: (string | number | null)[],
-): Promise<number> => {
-  const [result] = await connection.execute<ResultSetHeader>(sql, values);
-  return Number(result.insertId);
 };
 
 const insertUser = async (connection: Connection, username: string): Promise<number> =>

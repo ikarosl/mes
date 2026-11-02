@@ -88,7 +88,7 @@
 
 [`PERMISSION_CATALOG`](../../../../../../packages/constants/src/permission-catalog.ts) 是当前可分配业务权限的显式清单，以及中文展示名、父级、类型、页面路由、排序及 API 元数据的唯一源码来源；[`PERMISSIONS`](../../../../../../packages/constants/src/permissions.ts) 提供运行代码引用的稳定编码。前后端需要权限名称时消费 catalog，不建立另一份中文映射。Identity 的只读查询返回数据库已发布目录；角色授权通过 `role_permissions.permission_id` 关联目录，不由运行时根据常量自动改库。
 
-目录随版本化 migration 发布静态快照，回退不读取当前 TypeScript catalog，也不修改已执行文件。目录发布不自动授予已有角色；系统 seed 负责初始化，演示 seed 只保证显式配置的演示角色。具体切换与回退见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610150001显式权限目录与仓储职责)。
+目录随版本化 migration 发布静态快照，当前初始化快照见[权限目录基线](../../../../../../packages/database/migrations/202611020401-baseline-permission-catalog.up.sql)；回退不读取当前 TypeScript catalog，也不修改已执行文件。目录发布不自动授予已有角色；系统 seed 负责初始化，演示 seed 只保证显式配置的演示角色。发布与回退边界见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。
 
 `*` 是系统 seed 管理的全权限例外，不属于业务 catalog 的模块树。授权匹配复用共享 `permissionMatches`：具体编码命中自身，合法的 `:*` 编码按前缀匹配，`*` 命中全部；模块分组的 `:view` 不是通配符。
 
@@ -104,7 +104,7 @@
 
 采购／成品入库共用 `warehouse:inbound:view`，生产领料出库独立使用 `warehouse:outbound:view`。其他入库／出库分类继续分别使用 `warehouse:other-inbounds:view`／`warehouse:other-outbounds:view`，各写动作独立授权。同一方向页面的菜单可进入不代表取得所有分类或接口权限。实际读取与写入边界见 [Production 领料接口](../../production/docs/database/demand-allocation-and-outbound.md#http-权限与消费者)、[入库读取](../../production/docs/database/inventory-ledger-and-inbound.md)、[到货查询](../../procurement/docs/receipt-queries.md)和[到货处置](../../procurement/docs/receipts.md)。
 
-生产任务与生产报工记录使用独立页面权限，报工读取与员工范围见 [Production 接口矩阵](../../production/docs/database/execution-traceability-quality.md#http-读取权限与消费者)。报工新权限不复制任务查看授权，已有环境须明确分配；迁移和演示授权边界见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610190001独立生产报工记录查看)。
+生产任务与生产报工记录使用独立页面权限，报工读取与员工范围见 [Production 接口矩阵](../../production/docs/database/execution-traceability-quality.md#http-读取权限与消费者)。报工读取不继承任务查看授权，角色须明确分配；演示授权由[演示 seed](../../../../../../packages/database/demo/README.md)显式配置。
 
 ## 1.5 `user_roles`
 

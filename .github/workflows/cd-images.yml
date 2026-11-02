@@ -60,6 +60,7 @@ jobs:
           API_CHANGED: ${{ steps.changes.outputs.api_changed }}
           WEB_CHANGED: ${{ steps.changes.outputs.web_changed }}
           CONTROL_CHANGED: ${{ steps.changes.outputs.control_changed }}
+          AUTO_DEPLOY_ENABLED: ${{ vars.AUTO_DEPLOY_ENABLED == 'true' }}
         run: |
           {
             echo "### Release impact"
@@ -67,6 +68,7 @@ jobs:
             echo "- API image changed: \`$API_CHANGED\`"
             echo "- Web image changed: \`$WEB_CHANGED\`"
             echo "- Server control files changed: \`$CONTROL_CHANGED\`"
+            echo "- Automatic server deployment enabled: \`$AUTO_DEPLOY_ENABLED\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish-api:
@@ -223,8 +225,10 @@ jobs:
 
   deploy-test-server:
     needs: [detect-changes, publish-api, publish-web]
+    # 默认只构建镜像；仓库 Actions 变量显式开启后才同步控制文件和部署服务器。
     if: >-
       always() &&
+      vars.AUTO_DEPLOY_ENABLED == 'true' &&
       needs.detect-changes.result == 'success' &&
       (needs.publish-api.result == 'success' || needs.publish-api.result == 'skipped') &&
       (needs.publish-web.result == 'success' || needs.publish-web.result == 'skipped') &&
@@ -291,6 +295,7 @@ jobs:
             fail 'Verified SSH connection failed; check host reachability, authorized_keys, and the deployment username.'
 
       - name: Synchronize changed server control files
+        # 先更新服务器执行入口；不上传 api.env/mysql.env 等凭证配置。
         if: env.CONTROL_CHANGED == 'true'
         shell: bash
         run: |
@@ -307,6 +312,12 @@ jobs:
             ops/scripts/deploy-api.sh \
             ops/scripts/deploy-web.sh \
             ops/scripts/apply-control.sh \
+            ops/scripts/mysql-backup-common.sh \
+            ops/scripts/backup-mysql.sh \
+            ops/scripts/restore-mysql.sh \
+            ops/scripts/resume-api.sh \
+            ops/config/systemd/easy-mes-mysql-backup.service \
+            ops/config/systemd/easy-mes-mysql-backup.timer \
             "$remote:$bundle/"
           printf -v remote_command 'sudo -n /opt/easy-mes/apply-control.sh %q' "$RELEASE_SHA"
           printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se
@@ -320,10 +331,13 @@ jobs:
 
           if [[ -n "$API_DIGEST" ]]; then
             [[ "$API_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
+            # 和手动发布共用入口：脚本内先完整备份，成功后才迁移并切换 API。
+            # 不把备份单独放在 CI 步骤中，以免手动调用漏备份或两步之间恢复写入。
             printf -v remote_command 'sudo -n /opt/easy-mes/deploy-api.sh %q' "$API_DIGEST"
             printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se
           fi
           if [[ -n "$WEB_DIGEST" ]]; then
+            # API 发布失败会中止上述步骤；只有成功后才继续发布本次受影响的 Web。
             [[ "$WEB_DIGEST" =~ ^sha256:[0-9a-f]{64}$ ]]
             printf -v remote_command 'sudo -n /opt/easy-mes/deploy-web.sh %q' "$WEB_DIGEST"
             printf '%s\n' "$remote_command" | ssh "${ssh_args[@]}" "$remote" bash -se

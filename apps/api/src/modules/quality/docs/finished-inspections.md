@@ -56,6 +56,6 @@ Quality 不写 Production 表。Production 送审和最终批准通过 Quality p
 
 ## 迁移保护
 
-旧整批量和放行建议不能解释为新版检查事实；迁移不转换既有证据，空数据守卫、停写与恢复条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#202610080001成品检验只记录检查事实)。
+旧整批量和放行建议不能解释为当前检查事实，既有证据不按新含义改写。旧开发库按[初始化基线](../../../../../../packages/database/docs/90-migration-order.md#初始化基线)重建，空业务库守卫、停写与恢复条件见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。
 
 审批快照由 [Production 结案设计](../../production/docs/database/production-termination.md)维护，幂等版本切换遵循[平台规则](../../../../docs/idempotency.md#13-scope-版本与开发重置)；旧快照和旧幂等结果不能按新的数量语义解释。

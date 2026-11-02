@@ -9,6 +9,10 @@ export PATH='/usr/sbin:/usr/bin:/sbin:/bin'
 # 与部署共享锁，避免同时替换容器；等待结束后若仍被占用则报告失败。
 exec 9>/run/lock/easy-mes-deploy.lock
 flock -w 120 9
+[[ ! -e /opt/easy-mes/mysql-maintenance.state ]] || {
+  echo 'database maintenance is active; retry the TLS reload after recovery' >&2
+  exit 1
+}
 
 compose=(docker compose --project-name easy-mes
   --env-file /etc/easy-mes/deploy.env

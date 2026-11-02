@@ -1,0 +1,14 @@
+[Unit]
+Description=Easy MES MySQL maintenance backup
+Requires=docker.service
+After=docker.service
+
+[Service]
+# timer 只触发这个一次性服务；备份逻辑仍在独立脚本中，也支持手动调用。
+Type=oneshot
+User=root
+Group=root
+UMask=0077
+ExecStart=/opt/easy-mes/backup-mysql.sh scheduled
+TimeoutStartSec=25min
+TimeoutStopSec=30s

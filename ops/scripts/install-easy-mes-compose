@@ -47,7 +47,10 @@ main() {
   # 这些条件决定后续能否写入系统目录、设置文件归属并管理服务；不满足时停止安装。
   [[ "${EUID}" -eq 0 ]] || fail 'run this installer as root'
   command -v docker >/dev/null 2>&1 || fail 'docker is required'
+  command -v flock >/dev/null 2>&1 || fail 'flock is required'
   docker compose version >/dev/null 2>&1 || fail 'the Docker Compose plugin is required'
+  exec 9>/run/lock/easy-mes-deploy.lock
+  flock -n 9 || fail 'another easy-mes deployment or maintenance task is running'
 
   # 【步骤 2：创建服务器目录】为运行文件、人工配置、MySQL 数据、MinIO 文件、备份和 Nginx 日志准备独立目录。
   # MySQL 数据目录交给容器使用的数据库用户，其余目录按当前部署方式设置归属和访问权限。
@@ -56,8 +59,8 @@ main() {
   install -d -o root -g root -m 700 "${CONFIG_DIR}"
   install -d -o 999 -g 999 -m 750 "${DATA_DIR}/mysql"
   install -d -o root -g root -m 750 "${DATA_DIR}/minio"
-  install -d -o root -g root -m 750 "${DATA_DIR}/backups"
-  install -d -o root -g root -m 750 "${DATA_DIR}/backups/mysql"
+  install -d -o root -g root -m 700 "${DATA_DIR}/backups"
+  install -d -o root -g root -m 700 "${DATA_DIR}/backups/mysql"
   install -d -o root -g root -m 750 "${DATA_DIR}/backups/minio"
   install -d -o root -g root -m 750 "${DATA_DIR}/nginx-logs"
   install -d -o root -g root -m 755 "${DATA_DIR}/acme-challenge"
@@ -66,7 +69,7 @@ main() {
   install -o root -g root -m 750 "${SOURCE_ROOT}/ops/scripts/reload-web-tls.sh" \
     /etc/letsencrypt/renewal-hooks/deploy/easy-mes-reload
 
-  # 【步骤 3：复制运行控制文件】将服务定义和三个发布脚本安装到 /opt/easy-mes，作为服务器后续发布的固定入口。
+  # 【步骤 3：复制运行控制文件】运行入口和备份单元由同一文件包维护；安装不启用任何定时任务。
   # 重复执行安装器会覆盖这些控制文件，并设置脚本可执行、文件由 root 管理；人工配置由下一步单独处理。
   install -o root -g root -m 644 "${SOURCE_ROOT}/infra/compose/compose.prod.yml" \
     "${STACK_DIR}/compose.prod.yml"
@@ -76,6 +79,15 @@ main() {
     "${STACK_DIR}/deploy-web.sh"
   install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/apply-control.sh" \
     "${STACK_DIR}/apply-control.sh"
+  local name
+  for name in mysql-backup-common.sh backup-mysql.sh restore-mysql.sh resume-api.sh; do
+    install -o root -g root -m 750 "${SOURCE_ROOT}/ops/scripts/${name}" "${STACK_DIR}/${name}"
+  done
+  install -d -o root -g root -m 755 /etc/systemd/system
+  for name in easy-mes-mysql-backup.service easy-mes-mysql-backup.timer; do
+    install -o root -g root -m 644 "${SOURCE_ROOT}/ops/config/systemd/${name}" "/etc/systemd/system/${name}"
+  done
+  if [[ -d /run/systemd/system ]]; then systemctl daemon-reload; fi
 
   # 【步骤 4：生成四份初始配置】按“模板 → 正式配置”的对应关系调用上方函数。
   # deploy.env 配置镜像仓库与端口；mysql.env 配置数据库；minio.env 配置对象存储；
@@ -93,6 +105,7 @@ main() {
   printf '  1. edit files under %s\n' "${CONFIG_DIR}"
   printf '  2. install %s/minio.license\n' "${CONFIG_DIR}"
   printf '  3. deploy API/Web digests with %s/deploy-api.sh and deploy-web.sh\n' "${STACK_DIR}"
+  printf '  4. rehearse MySQL backup/restore and explicitly enable the backup timer when ready (it is not enabled by installation)\n'
 }
 
 # 【程序入口】从这里开始执行 main 中列出的安装准备流程。

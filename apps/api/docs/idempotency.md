@@ -27,7 +27,7 @@
 
 职责：记录一个命令意图的仲裁身份和成功结果，支持并发防重及原结果重放；不替代业务单据或审计历史，不保存失败结果。
 
-表由 [202608050001-http-idempotency-records.up.sql](../../../packages/database/migrations/202608050001-http-idempotency-records.up.sql) 创建，属于 API 平台幂等基础设施。使用 InnoDB、`utf8mb4`，表默认排序规则为 `utf8mb4_0900_ai_ci`。
+表由[平台幂等建表基线](../../../packages/database/migrations/202611020103-baseline-platform-idempotency-tables.up.sql)和[外键基线](../../../packages/database/migrations/202611020203-baseline-platform-idempotency-foreign-keys.up.sql)定义，属于 API 平台幂等基础设施。使用 InnoDB、`utf8mb4`，表默认排序规则为 `utf8mb4_0900_ai_ci`。
 
 | 字段 | 类型 | 允许 NULL | 默认值 / 自动生成 | 说明 |
 | --- | --- | --- | --- | --- |

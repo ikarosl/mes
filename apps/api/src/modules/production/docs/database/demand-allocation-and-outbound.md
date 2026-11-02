@@ -79,9 +79,9 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_requirement_basis_mass_insert](../../../../../../../packages/database/migrations/202609200001-task-material-policy.up.sql) | `BEFORE INSERT` | 仅批量任务可建立 BOM 需求基础 |
-| [trg_requirement_basis_immutable_update](../../../../../../../packages/database/migrations/202609200001-task-material-policy.up.sql) | `BEFORE UPDATE` | 需求基础全部字段不可改写 |
-| [trg_requirement_basis_immutable_delete](../../../../../../../packages/database/migrations/202609200001-task-material-policy.up.sql) | `BEFORE DELETE` | 需求基础不可删除 |
+| [trg_requirement_basis_mass_insert](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE INSERT` | 仅批量任务可建立 BOM 需求基础 |
+| [trg_requirement_basis_immutable_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 需求基础全部字段不可改写 |
+| [trg_requirement_basis_immutable_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 需求基础不可删除 |
 
 #### 键、索引与引用关系
 
@@ -290,8 +290,8 @@
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_demand_task_policy_insert](../../../../../../../packages/database/migrations/202609200001-task-material-policy.up.sql) | `BEFORE INSERT` | BOM 来源字段组须匹配实际工单类型 |
-| [trg_demand_material_facts_update](../../../../../../../packages/database/migrations/202609200001-task-material-policy.up.sql) | `BEFORE UPDATE` | 冻结来源、版本、原始数量、公式、单位及提示；履约状态仍由命令更新 |
+| [trg_demand_task_policy_insert](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE INSERT` | BOM 来源字段组须匹配实际工单类型 |
+| [trg_demand_material_facts_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 冻结来源、版本、原始数量、公式、单位及提示；履约状态仍由命令更新 |
 
 #### 正式需求更正与替代
 

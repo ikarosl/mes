@@ -21,6 +21,12 @@ const SERVER_CONTROL_INPUTS = new Set([
   'ops/scripts/apply-control.sh',
   'ops/scripts/deploy-api.sh',
   'ops/scripts/deploy-web.sh',
+  'ops/scripts/mysql-backup-common.sh',
+  'ops/scripts/backup-mysql.sh',
+  'ops/scripts/restore-mysql.sh',
+  'ops/scripts/resume-api.sh',
+  'ops/config/systemd/easy-mes-mysql-backup.service',
+  'ops/config/systemd/easy-mes-mysql-backup.timer',
 ]);
 
 export const classifyReleaseChanges = ({ affectedPackages, changedFiles, forceAll = false }) => {

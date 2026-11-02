@@ -21,6 +21,14 @@ import { type IdentityDirectoryService } from '../../../apps/api/src/modules/ide
 import { type ProductBomApprovalHandler } from '../../../apps/api/src/modules/product/application/product-bom-approval.handler.js';
 import { type MysqlProductCatalogRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-catalog.repository.js';
 import type { CommandContext } from '../../../apps/api/src/common/audit/audit.types.js';
+import {
+  insertItemCategoryFixture,
+  insertMaterialFixture,
+  insertProductFixture,
+  insertRoleFixture,
+  insertUserFixture,
+  type ProductFixtureInput,
+} from '../fixtures/master-data-fixture.js';
 
 export const SCENE_CODE = APPROVAL_SCENE_CODES.bom;
 let contextFixture: Fixture | undefined;
@@ -74,6 +82,7 @@ export interface Fixture {
 
 interface ProductFixture {
   productId: number;
+  productMaterialId: number;
   materialId: number;
   materialCode: string;
   itemCode: string;
@@ -170,16 +179,16 @@ export const createFixture = async (pool: Pool): Promise<Fixture> => {
   const peerId = await createUser(pool, token, 'peer', '审批集成同级人');
   const designatedId = await createUser(pool, token, 'designated', '审批集成指定人');
   const outsiderId = await createUser(pool, token, 'outsider', '审批集成无权限人');
-  const assignmentRoleId = await insert(
-    pool,
-    'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,1)',
-    ['审批分配角色', `${token}-assignment-role`, '审批节点分配角色'],
-  );
-  const qualificationRoleId = await insert(
-    pool,
-    'INSERT INTO roles (name,code,description,status) VALUES (?,?,?,1)',
-    ['审批资格角色', `${token}-qualification-role`, '仅提供审批资格'],
-  );
+  const assignmentRoleId = await insertRoleFixture(pool, {
+    name: '审批分配角色',
+    code: `${token}-assignment-role`,
+    description: '审批节点分配角色',
+  });
+  const qualificationRoleId = await insertRoleFixture(pool, {
+    name: '审批资格角色',
+    code: `${token}-qualification-role`,
+    description: '仅提供审批资格',
+  });
   const permissionCodes = [
     PERMISSIONS.approval.configure,
     PERMISSIONS.approval.decide,
@@ -227,16 +236,18 @@ export const createFixture = async (pool: Pool): Promise<Fixture> => {
       qualificationRoleId,
     ],
   );
-  const categoryId = await insert(
-    pool,
-    'INSERT INTO item_categories (category_code,category_name,item_kind,created_by,updated_by) VALUES (?,?,?,?,?)',
-    [`${token}-finished-category`, '审批集成成品分类', 'finished_product', actorId, actorId],
-  );
-  const materialCategoryId = await insert(
-    pool,
-    'INSERT INTO item_categories (category_code,category_name,item_kind,created_by,updated_by) VALUES (?,?,?,?,?)',
-    [`${token}-material-category`, '审批集成物料分类', 'material', actorId, actorId],
-  );
+  const categoryId = await insertItemCategoryFixture(pool, {
+    categoryCode: `${token}-finished-category`,
+    categoryName: '审批集成成品分类',
+    itemKind: 'finished_product',
+    actorId,
+  });
+  const materialCategoryId = await insertItemCategoryFixture(pool, {
+    categoryCode: `${token}-material-category`,
+    categoryName: '审批集成物料分类',
+    itemKind: 'material',
+    actorId,
+  });
   return {
     token,
     actorId,
@@ -328,55 +339,38 @@ export const createUser = async (
   suffix: string,
   name: string,
 ): Promise<number> =>
-  insert(pool, 'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)', [
-    `${token}-${suffix}`,
-    'integration-test-hash',
-    name,
-  ]);
+  insertUserFixture(pool, { username: `${token}-${suffix}`, displayName: name });
 
-// TODO(approval-json-table-fixture): 恢复依赖本夹具的审批鉴权、事务、通知与并发验证；高重要性，旧规格数组及省略物料规格已不满足当前表约束且正式测试暂缓；获正式测试授权后补齐 JsonTableData 夹具并同步版本 3 证据断言，保留现行审批旅程。
 export const createProduct = async (
   pool: Pool,
   current: Fixture,
   suffix: string,
+  options: Pick<ProductFixtureInput, 'specValues'> = {},
 ): Promise<ProductFixture> => {
   const productCode = `${current.token}-${suffix}-product`;
   const itemCode = productCode.toUpperCase();
   const materialCode = `${current.token}-${suffix}-material`;
   const materialName = `审批集成物料-${suffix}`;
-  const productId = await insert(
+  const productId = await insertProductFixture(pool, {
+    itemCode,
+    productName: `审批集成产品-${suffix}`,
+    categoryId: current.categoryId,
+    actorId: current.actorId,
+    ...options,
+  });
+  const materialId = await insertMaterialFixture(pool, {
+    materialCode,
+    materialName,
+    categoryId: current.materialCategoryId,
+    actorId: current.actorId,
+  });
+  const productMaterialId = await insert(
     pool,
-    'INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?)',
-    [
-      itemCode,
-      `审批集成产品-${suffix}`,
-      current.categoryId,
-      'pcs',
-      'self_made',
-      '[]',
-      current.actorId,
-      current.actorId,
-    ],
-  );
-  const materialId = await insert(
-    pool,
-    'INSERT INTO materials (material_code,material_name,category_id,unit,acquire_method,created_by,updated_by) VALUES (?,?,?,?,?,?,?)',
-    [
-      materialCode,
-      materialName,
-      current.materialCategoryId,
-      'kg',
-      'purchased',
-      current.actorId,
-      current.actorId,
-    ],
-  );
-  await pool.execute(
     'INSERT INTO product_materials (product_id,material_id,quantity_per_unit,unit,status,remark,created_by,updated_by) VALUES (?,?,?, ?,1,?,?,?)',
     [productId, materialId, '1.0000', 'kg', null, current.actorId, current.actorId],
   );
   current.productIds.push(productId);
-  return { productId, materialId, materialCode, itemCode, materialName };
+  return { productId, productMaterialId, materialId, materialCode, itemCode, materialName };
 };
 
 export const productState = async (pool: Pool, productId: number) => {

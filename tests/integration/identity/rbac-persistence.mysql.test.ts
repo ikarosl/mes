@@ -9,6 +9,7 @@ import {
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import type { AuditLogEntry } from '../../../apps/api/src/common/audit/audit.types.js';
 import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infrastructure/mysql-rbac.repository.js';
+import { insertRoleFixture, insertUserFixture } from '../fixtures/master-data-fixture.js';
 
 loadWorkspaceEnv();
 
@@ -284,14 +285,8 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO departments (name, code, status) VALUES (?,?,1)',
     [`${token}-dept`, `${token}-dept`],
   );
-  const roleId = await insert(pool, 'INSERT INTO roles (name, code, status) VALUES (?,?,1)', [
-    `${token}-role`,
-    `${token}-role`,
-  ]);
-  const secondRoleId = await insert(pool, 'INSERT INTO roles (name, code, status) VALUES (?,?,1)', [
-    `${token}-role2`,
-    `${token}-role2`,
-  ]);
+  const roleId = await insertRoleFixture(pool, { code: `${token}-role` });
+  const secondRoleId = await insertRoleFixture(pool, { code: `${token}-role2` });
   const permissionId = await insert(
     pool,
     'INSERT INTO permissions (name, code, type, status) VALUES (?,?,?,1)',
@@ -302,16 +297,17 @@ const createFixture = async (pool: Pool): Promise<Fixture> => {
     'INSERT INTO permissions (name, code, type, status) VALUES (?,?,?,1)',
     [`${token}-perm2`, `${token}-perm2`, 'api'],
   );
-  const userId = await insert(
-    pool,
-    'INSERT INTO users (department_id, username, password_hash, display_name, status) VALUES (?,?,?,?,1)',
-    [departmentId, `${token}-user`, 'hash', `${token} user`, 1],
-  );
-  const secondUserId = await insert(
-    pool,
-    'INSERT INTO users (username, password_hash, display_name, status) VALUES (?,?,?,1)',
-    [`${token}-user2`, 'hash', `${token} user2`, 1],
-  );
+  const userId = await insertUserFixture(pool, {
+    departmentId,
+    username: `${token}-user`,
+    passwordHash: 'hash',
+    displayName: `${token} user`,
+  });
+  const secondUserId = await insertUserFixture(pool, {
+    username: `${token}-user2`,
+    passwordHash: 'hash',
+    displayName: `${token} user2`,
+  });
   await pool.execute('INSERT INTO role_permissions (role_id, permission_id) VALUES (?,?)', [
     roleId,
     permissionId,

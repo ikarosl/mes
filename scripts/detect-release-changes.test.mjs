@@ -148,11 +148,20 @@ test('released tag constant keeps the stable ref name', () => {
 });
 
 test('Compose and deployment entry changes request a server control sync', () => {
-  assert.deepEqual(
-    classifyReleaseChanges({
-      affectedPackages: [],
-      changedFiles: ['infra/compose/compose.prod.yml', 'ops/scripts/deploy-api.sh'],
-    }),
-    { apiChanged: false, webChanged: false, controlChanged: true },
-  );
+  for (const file of [
+    'infra/compose/compose.prod.yml',
+    'ops/scripts/deploy-api.sh',
+    'ops/scripts/mysql-backup-common.sh',
+    'ops/scripts/backup-mysql.sh',
+    'ops/scripts/restore-mysql.sh',
+    'ops/scripts/resume-api.sh',
+    'ops/config/systemd/easy-mes-mysql-backup.service',
+    'ops/config/systemd/easy-mes-mysql-backup.timer',
+  ]) {
+    assert.deepEqual(
+      classifyReleaseChanges({ affectedPackages: [], changedFiles: [file] }),
+      { apiChanged: false, webChanged: false, controlChanged: true },
+      file,
+    );
+  }
 });

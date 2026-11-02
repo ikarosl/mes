@@ -24,38 +24,32 @@ export const assertAppliedMigrations = (
   const byName = new Map(migrations.map((migration) => [migration.name, migration]));
   for (const [name, appliedChecksum] of applied) {
     const migration = byName.get(name);
-    if (!migration) throw new Error(`数据库含当前注册表不存在的 migration：${name}`);
+    if (!migration)
+      throw new Error(
+        `数据库含当前注册表不存在的 migration：${name}。旧基线数据库须按初始化手册重建；不得删除登记后强行迁移。`,
+      );
     if (migration.checksum !== appliedChecksum)
       throw new Error(`已执行的 migration 内容发生变化：${name}`);
   }
 };
 
-/**
- * 检查当前数据库是否已创建迁移记录表。
- * 这里只需要存在性结果；`information_schema.tables` 没有 `name` 字段，因此使用常量查询。
- */
-export const schemaMigrationsTableExistsQuery = `
-  SELECT 1
-  FROM information_schema.tables
-  WHERE table_schema = DATABASE()
-    AND table_name = '_schema_migrations'
-  LIMIT 1
-`;
-
 export const migrationLockName = 'easy_mes_migration';
 export const acquireMigrationLockQuery = 'SELECT GET_LOCK(?, ?) acquired';
 export const releaseMigrationLockQuery = 'SELECT RELEASE_LOCK(?) released';
 
-export type MigrationStatus = 'applied' | 'pending' | 'checksum-mismatch';
+export type MigrationExecutionStatus = 'running' | 'applied' | 'failed';
+export type MigrationStatus = MigrationExecutionStatus | 'pending' | 'checksum-mismatch';
 export const migrationStatus = (
   appliedChecksum: string | undefined,
   expectedChecksum: string,
+  executionStatus: MigrationExecutionStatus = 'applied',
 ): MigrationStatus => {
   if (!appliedChecksum) return 'pending';
-  return appliedChecksum === expectedChecksum ? 'applied' : 'checksum-mismatch';
+  return appliedChecksum === expectedChecksum ? executionStatus : 'checksum-mismatch';
 };
 
 export const readMigrations = async (): Promise<Migration[]> => {
+  // 文件名前缀决定全项目顺序；只读取 up，down 不是失败时自动运行的补偿脚本。
   const names = (await readdir(migrationsDir)).filter((name) => name.endsWith('.up.sql')).sort();
   return Promise.all(
     names.map(async (name) => {

@@ -179,6 +179,8 @@ main() {
   # 如果另一个任务正在发布，本次直接结束，避免相互覆盖镜像记录或运行配置。
   exec 9>"${LOCK_FILE}"
   flock -n 9 || fail 'another easy-mes deployment is already running'
+  [[ ! -e "${STACK_DIR}/mysql-maintenance.state" ]] || \
+    fail 'database maintenance is active; inspect the database and use resume-api.sh before publishing Web'
 
   # 【步骤 4：检查服务器文件】检查服务定义、人工配置和许可证是否准备齐全、权限是否符合要求。
   # 即使只发布一个应用，完整的 Compose 服务定义仍引用这些文件，因此要一起检查。

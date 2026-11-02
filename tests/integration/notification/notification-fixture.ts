@@ -3,7 +3,6 @@ import { randomUUID } from 'node:crypto';
 import {
   createPool,
   type Pool,
-  type ResultSetHeader,
   type RowDataPacket,
 } from '../../../apps/api/node_modules/mysql2/promise.js';
 import { loadWorkspaceEnv } from '../../../packages/config/src/index.js';
@@ -14,6 +13,7 @@ import {
 } from '../../../apps/api/src/modules/notification/public.js';
 import { MysqlNotificationRepository } from '../../../apps/api/src/modules/notification/infrastructure/mysql-notification.repository.js';
 import type { CommandContext } from '../../../apps/api/src/common/audit/audit.types.js';
+import { insertUserFixture } from '../fixtures/master-data-fixture.js';
 
 loadWorkspaceEnv();
 
@@ -49,11 +49,12 @@ export class NotificationFixture {
   constructor(readonly pool: Pool) {}
 
   async createUser(): Promise<string> {
-    const [row] = await this.pool.execute<ResultSetHeader>(
-      'INSERT INTO users (username,password_hash,display_name) VALUES (?,?,?)',
-      [`${this.token}-${this.userIds.length}`, 'integration-test-hash', '通知测试用户'],
+    const id = String(
+      await insertUserFixture(this.pool, {
+        username: `${this.token}-${this.userIds.length}`,
+        displayName: '通知测试用户',
+      }),
     );
-    const id = String(row.insertId);
     this.userIds.push(id);
     return id;
   }

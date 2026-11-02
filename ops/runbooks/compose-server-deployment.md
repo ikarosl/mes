@@ -4,13 +4,20 @@
 
 ## 服务器目录
 
+项目运行文件集中在 `/opt/easy-mes`，人工配置与凭证放在 `/etc/easy-mes`，HTTPS 证书及 ACME 账号由 Certbot 持久化到 `/etc/letsencrypt`，数据、备份与日志放在 `/srv/easy-mes`。系统调度配置和运行锁使用对应的系统目录。
+
 ```text
 /opt/easy-mes/
 ├── compose.prod.yml
 ├── deploy-api.sh
 ├── deploy-web.sh
 ├── apply-control.sh              # 由 CD 预检查并逐个更新服务端控制文件
-└── release.env                 # 当前 API/Web 镜像 digest，由发布脚本维护
+├── mysql-backup-common.sh
+├── backup-mysql.sh
+├── restore-mysql.sh
+├── resume-api.sh
+├── mysql-maintenance.state       # 维护期间存在；记录原服务状态与目标镜像
+└── release.env                   # 当前 API/Web 镜像 digest，由发布脚本维护
 
 /etc/easy-mes/
 ├── deploy.env                  # 固定镜像仓库、基础镜像和端口
@@ -19,6 +26,17 @@
 ├── minio.env
 └── minio.license
 
+/etc/letsencrypt/               # Certbot 管理；整体只读挂载到 Web 容器
+├── live/easy-mes/
+│   ├── fullchain.pem           # 当前正式证书链入口；软链接指向 archive/easy-mes/
+│   └── privkey.pem             # 当前私钥入口；软链接指向 archive/easy-mes/
+├── archive/easy-mes/           # 实际证书、私钥及历史版本，由 Certbot 管理
+├── accounts/                   # ACME 账号凭据
+├── renewal/
+│   └── easy-mes.conf           # 持久化续期配置，包括验证方式和 webroot 路径（--cert-name easy-mes 申请配置时的配置项）
+└── renewal-hooks/deploy/
+    └── easy-mes-reload         # 续期成功后校验并重载 Nginx 的可执行钩子（当前项目中的ops/scripts/reload-web-tls.sh）
+
 /srv/easy-mes/
 ├── mysql/
 ├── minio/
@@ -26,10 +44,21 @@
 │   ├── mysql/
 │   └── minio/
 ├── nginx-logs/
-└── acme-challenge/              # Certbot HTTP-01 验证文件
+└── acme-challenge/              # 临时 HTTP-01 验证文件，不存放正式证书或私钥
+
+/etc/systemd/system/            # 系统服务与定时任务配置；这里只列本项目单元
+├── easy-mes-mysql-backup.service # 调用 /opt/easy-mes/backup-mysql.sh scheduled
+└── easy-mes-mysql-backup.timer   # 定时触发备份服务
+
+/run/lock/
+└── easy-mes-deploy.lock         # 发布、备份、恢复等操作共用的运行互斥锁
 ```
 
-`backups` 是备份落点，Compose 不自动执行或轮换备份。
+systemd 单元由安装器及 `apply-control.sh` 安装到系统默认加载目录，只负责调度；备份逻辑仍在 `/opt/easy-mes` 的脚本中。
+
+锁文件由脚本自动打开并通过 `flock` 加锁，无需人工创建或清理；所有持有锁的文件描述符关闭后，锁自动释放，文件存在不代表任务仍在运行。各入口必须使用同一锁路径，避免维护操作并发。
+
+`backups` 是备份落点，Compose 不自行执行或轮换备份。人工、API 发布和可显式启用的半月数据库备份由[备份恢复入口](mysql-backup-restore.md)管理；备份目录仅 root 可访问。
 
 Compose 不单独声明名为 `nginx` 的服务。`web` 镜像的运行阶段基于 Nginx，
 构建时保存 `infra/nginx/default.conf.template`。容器启动时由官方入口替换允许的端口、
@@ -58,8 +87,15 @@ temp_deploy/
     │   ├── deploy-api.sh
     │   ├── deploy-web.sh
     │   ├── apply-control.sh
+    │   ├── mysql-backup-common.sh
+    │   ├── backup-mysql.sh
+    │   ├── restore-mysql.sh
+    │   ├── resume-api.sh
     │   └── reload-web-tls.sh
     └── config/
+        ├── systemd/
+        │   ├── easy-mes-mysql-backup.service
+        │   └── easy-mes-mysql-backup.timer
         └── etc/
             └── easy_mes/
                 ├── deploy.env.example
@@ -90,7 +126,8 @@ sudo bash ops/scripts/install-easy-mes-compose
 安装脚本完成以下工作：
 
 - 创建上方列出的 `/opt/easy-mes`、`/etc/easy-mes` 及 `/srv/easy-mes` 数据、备份、日志目录，并设置所有者与权限。
-- 将 Compose 和三个运行时脚本复制到 `/opt/easy-mes`；重跑会覆盖这些控制文件。
+- 取得与发布共用的锁后，将 Compose 及运行脚本复制到 `/opt/easy-mes`；重跑会覆盖控制文件。
+- 安装半月备份 service/timer 到 `/etc/systemd/system` 并刷新单元，不启用或启动任务；已有人工启用状态保留。
 - 安装 Certbot 的续期后重载钩子到 `/etc/letsencrypt/renewal-hooks/deploy/easy-mes-reload`；不安装 Certbot 或申请证书。
 - 将四份 `.env.example` 复制为 `/etc/easy-mes/*.env`，仅补充不存在的配置文件，保留已有人工配置。Nginx 配置由容器启动入口生成，安装器不创建宿主机 Nginx 配置文件。
 
@@ -308,7 +345,7 @@ RENEWED_LINEAGE=/etc/letsencrypt/live/easy-mes \
   /etc/letsencrypt/renewal-hooks/deploy/easy-mes-reload
 ```
 
-IP 证书有效期约 6 天，必须确认续期任务和演练成功。钩子由安装器或人工安装，现有 CD 四文件同步
+IP 证书有效期约 6 天，必须确认续期任务和演练成功。钩子由安装器或人工安装，常规 CD 控制文件同步
 不更新它；修改钩子后需重新安装。续期无需构建镜像，保留公网 80 验证路径，定期检查续期日志和
 证书有效期。`/etc/letsencrypt` 的完整备份包含私钥与 ACME 账号，按凭证保护。
 
@@ -367,9 +404,7 @@ API 发布：
 sudo /opt/easy-mes/deploy-api.sh 'sha256:<api-digest>'
 ```
 
-它只拉取 API 镜像，确保 MySQL/MinIO 正在运行，执行数据库迁移和 Bucket 初始化，然后更新并检查 API；不拉取或重启 Web。
-
-当前脚本在迁移前不自动停止旧 API，而部分迁移明确要求暂停业务写入。该执行前置缺口记录为[冲突 CO-04](../../docs/documentation-conflicts.md#co-04)；不能把迁移建议锁当作业务停写。发布前须核对[迁移安全](../../packages/database/docs/migration-safety.md)中本次经过的迁移边界，维护窗口及脚本责任待统一处理。
+它只拉取 API 镜像，启动缺失或停止的 MySQL/MinIO 依赖而不重建既有基础设施容器；拉取和配置检查成功后停止 Web/API，完整备份数据库，再执行 migration、状态检查和 Bucket 初始化。候选 API readiness 成功后只恢复维护前已运行的 Web 入口。外部维护连接仍须遵守停写与禁止 DDL 的维护约定；细节及失败恢复见[备份恢复手册](mysql-backup-restore.md)。基础设施镜像升级须单独维护，不能依赖普通发布自动切换。
 
 Web 发布：
 
@@ -386,7 +421,7 @@ API_IMAGE=docker.io/<user>/easy-mes-api@sha256:<api-digest>
 WEB_IMAGE=docker.io/<user>/easy-mes-web@sha256:<web-digest>
 ```
 
-API 或 Web 更新失败时只恢复对应发布前的 `release.env` 和应用容器。数据库 migration 不执行 down，失败后采用 forward-fix。
+API 在维护开始后的任何失败均保持 Web/API 停止及持久维护状态，不自动恢复旧 API；数据库 migration 不执行 down。管理员审查后选择 forward-fix，或从备份恢复到新库并选回匹配 digest。Web 单独发布失败仍可恢复原 Web；数据库维护期间拒绝 Web 发布。
 
 ## 受限部署用户
 
@@ -400,13 +435,10 @@ mes-deploy ALL=(root) NOPASSWD: /opt/easy-mes/apply-control.sh *
 
 三个脚本会再次严格校验 digest 或 Git SHA 参数。部署用户不需要加入 `docker` 组，
 也不需要读取 `/etc/easy-mes`。`apply-control.sh` 只接受由 CD 上传到固定临时目录的
-四个控制文件：`compose.prod.yml`、`deploy-api.sh`、`deploy-web.sh` 和 `apply-control.sh`；
-它检查文件齐全且为非符号链接的普通文件，替换前只对 `deploy-api.sh` 执行 Bash 语法检查，
-并对候选 Compose 配置执行 `config --quiet` 校验，不修改人工配置。
+Compose、发布及备份恢复脚本和半月备份 service/timer；它检查文件齐全且为非符号链接的普通文件，检查所有脚本 Bash 语法及候选 Compose 的 `config --quiet`，不修改人工配置。从旧版四文件更新器迁移前须先按[备份手册](mysql-backup-restore.md#备份入口与产物)升级安装入口。
 
 取得共用发布锁后，脚本备份现有控制文件，再逐个覆盖，不提供整组原子替换。
-复制中途失败会中止后续步骤，没有自动恢复分支，运行目录可能保留不同版本的控制文件。
+替换失败会尝试恢复原文件；若恢复本身失败，须人工修复，不把逐个复制宣称为整组原子操作。
 
-已有非空 `release.env` 时，脚本按新 Compose 配置协调服务；仅此步骤失败时尝试恢复旧控制文件，
-再按旧配置启动服务，本次更新仍以失败结束。没有发布记录时只安装控制文件，不启动服务。
+已有非空 `release.env` 时，只协调更新前已运行的 API/Web，使用 `--no-deps`，不启动原来停止的应用，不升级或重建 MySQL/MinIO。此步骤失败时恢复原控制文件，仅尝试恢复同一组应用，本次更新仍失败。存在数据库维护状态时整个入口拒绝执行，避免恢复旧 API；没有发布记录时只安装控制文件，不启动服务。备份单元仅刷新，不自动启用或启动。
 成功或失败退出都会尝试清理本次上传包及临时备份，临时备份不能作为退出后的恢复副本。

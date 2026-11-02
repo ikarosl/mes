@@ -28,12 +28,12 @@ docs/         # 迁移运行与安全说明
 | --- | --- |
 | `pnpm db:ensure` | 按环境配置创建不存在的数据库 |
 | `pnpm db:migrate` | 应用 schema 与版本化权限目录，不创建角色或账号 |
-| `pnpm db:migrate:status` | 查询 pending 或 applied；已执行文件缺失或校验和异常直接失败 |
+| `pnpm db:migrate:status` | 只读查询 pending／running／applied／failed；未完成、文件缺失或校验和异常均失败 |
 | `pnpm db:seed` | 幂等写入无凭证的系统基础数据 |
 | `pnpm db:bootstrap-admin` | seed 后按 ADMIN_* 创建／更新管理员，重跑会重置其密码 |
 | `pnpm db:init` | 依次 ensure、migrate、seed、bootstrap-admin；生产仅升级 schema 时不使用此入口 |
 
-数据库变更只能追加成对 migration，已经执行的文件不可修改。详细规则见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)和[迁移安全](docs/migration-safety.md)。
+初始化采用按模块、按依赖阶段执行的固定基线；基线之前的开发库须重建，不提供保留旧数据的升级路径。之后数据库变更只能追加成对 migration，基线及已执行文件不可修改。注册与校验见[迁移顺序](docs/90-migration-order.md)、[迁移门禁](docs/migration-readiness.md)，失败处理见[迁移安全](docs/migration-safety.md)。
 
 权限目录的版本快照随 migration 发布，元数据源为 [constants 显式目录](../constants/src/permission-catalog.ts)；通配管理员基础数据与验收职责账号分别由 [seed](seed/README.md) 和 [demo](demo/README.md) 恢复，不将既有角色配置当作运行前提。
 
@@ -43,21 +43,24 @@ docs/         # 迁移运行与安全说明
 
 ## 迁移登记表 `_schema_migrations`
 
-职责：保存已成功执行的迁移身份和内容校验和，防止重复执行并发现历史 SQL 被改写。它不保存实际业务表结构，也不代表 schema 已通过核验。
+职责：保存迁移身份、内容校验和及执行状态，防止重复执行、历史 SQL 被改写和中断后盲目重跑。它不保存实际业务表结构，也不代表 schema 已通过核验。
 
-本表由本包的[迁移运行器](src/migrate.ts)在执行版本化 migration 前通过 `CREATE TABLE IF NOT EXISTS` 创建，属于数据库基础设施，不归任何业务模块所有。使用 InnoDB、`utf8mb4`；建表语句未显式指定排序规则。
+本表由本包的[迁移运行器](src/migration-runner.ts)在确认空库后创建，属于数据库基础设施，不归任何业务模块所有。使用 InnoDB、`utf8mb4_0900_ai_ci`；已有旧登记结构不自动升级。
 
 | 字段 | 类型 | 允许 NULL | 默认值 | 说明 |
 | --- | --- | --- | --- | --- |
 | `name` | `VARCHAR(255)` | 否（主键隐含） | 无 | 已执行的 `.up.sql` 文件名，包含扩展名；不自增 |
 | `checksum` | `CHAR(64)` | 否 | 无 | 迁移 SQL 文件内容的 SHA-256 十六进制校验和 |
-| `applied_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | SQL 执行成功后登记该迁移的时间 |
+| `status` | `VARCHAR(16)` | 否 | `running` | running／applied／failed；DDL 开始前写入 running |
+| `started_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 开始尝试执行的时间 |
+| `applied_at` | `DATETIME` | 是 | NULL | SQL 全部成功后登记；其他状态必须为空 |
+| `error_code` | `VARCHAR(64)` | 是 | NULL | 失败时尽力保存的驱动错误码，不保存 SQL 或业务数据 |
 
-物理约束只有 `PRIMARY KEY (name)`；没有额外唯一键、二级索引、外键或 CHECK。`checksum` 的摘要算法及已执行文件内容不可变由运行器校验，不由数据库 CHECK 保证。本表不继承业务审计、乐观锁或软删除字段。
+主键为 `name`；两个 CHECK 限定状态及完成时间与状态一致，没有额外唯一键、二级索引或外键。`checksum` 的摘要算法、已执行文件内容不可变及登记必须是迁移顺序的连续前缀由运行器校验。本表不继承业务审计、乐观锁或软删除字段。
 
-执行及状态查询先核对全部登记：文件缺失或校验和不符即失败。该检查不证明实际 schema 与登记一致，也不校验 down 内容；实现见 [migration-utils.ts](src/migration-utils.ts)。
+执行及状态查询先核对全部登记：文件缺失、校验和不符或顺序缺口即失败；非空但没有登记的库也拒绝初始化。该检查不证明实际 schema 与登记一致；源码历史变更由[工程门禁](docs/migration-readiness.md)通过 Git 比较。
 
-迁移执行在建议锁内按文件名顺序运行未登记的 up，SQL 成功后才登记；状态查询只读，有 pending 时退出码为 1。DDL 与登记不能整体回滚，锁范围和失败恢复见[迁移安全](docs/migration-safety.md)。
+迁移在建议锁内先持久化 running，再执行整份 SQL，成功后改为 applied；失败尽力改为 failed，连接中断可能保留 running。两种未完成状态均阻止下一次执行，禁止自动 down 或自动重试。状态查询只读，存在非 applied 状态时退出码为 1。DDL 与登记不能整体回滚，恢复及人工核验边界见[迁移安全](docs/migration-safety.md)。
 
 ## 业务数据库设计
 

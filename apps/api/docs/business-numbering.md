@@ -37,7 +37,7 @@ manual_material_demand, rework, step_report, abnormal_disposition,
 scrap_supplement_plan, material_supplement, approval_instance
 ```
 
-核验来源：[初始编号表](../../../packages/database/migrations/202609280001-business-number-daily-sequence.up.sql)、[其他出入库类型](../../../packages/database/migrations/202610140002-other-draft-history-deletion.up.sql)、[来料质检主单类型](../../../packages/database/migrations/202610280001-incoming-inspection-orders.up.sql)。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。旧 `work_order_daily_sequence` 仅保留历史 migration 所有权登记，运行时不再使用。
+核验来源：[平台编号建表基线](../../../packages/database/migrations/202611020104-baseline-platform-numbering-tables.up.sql)。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。运行时只使用 `business_number_daily_sequence`。
 
 ## 事务与日期
 
@@ -53,4 +53,4 @@ scrap_supplement_plan, material_supplement, approval_instance
 
 ## 迁移与验证边界
 
-旧编号和日计数不能推导转换；切换、空数据门禁及回退规则见[迁移安全](../../../packages/database/docs/migration-safety.md#202609280001业务日序号与库存批号唯一)，剩余验证见[路线图](../../../docs/roadmap.md)。
+编号和日计数不能用于推造业务历史。旧开发库按[初始化基线](../../../packages/database/docs/90-migration-order.md#初始化基线)重建，停写、空业务库回退及失败恢复见[迁移安全](../../../packages/database/docs/migration-safety.md)。

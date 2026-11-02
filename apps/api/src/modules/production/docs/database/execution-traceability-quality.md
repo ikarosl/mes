@@ -167,8 +167,8 @@ SOP 内容从任务工序的默认或现场实际快照解析文件名、对象�
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_step_execution_action_no_update](../../../../../../../packages/database/migrations/202610090001-production-step-execution-actions.up.sql) | `BEFORE UPDATE` | 工序状态行动不可改写 |
-| [trg_step_execution_action_no_delete](../../../../../../../packages/database/migrations/202610090001-production-step-execution-actions.up.sql) | `BEFORE DELETE` | 工序状态行动不可删除 |
+| [trg_step_execution_action_no_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 工序状态行动不可改写 |
+| [trg_step_execution_action_no_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 工序状态行动不可删除 |
 
 ## 4.2 `batch_step_reports`
 
@@ -688,7 +688,7 @@ N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
 - `ReworkRecordItem` 返回 `completedNormalReportId`、`completedAbnormalReportId`，`CompleteReworkResult` 返回 `normalReport`、`abnormalReport` 和 `abnormalDisposition`；不存在的结果侧及处置为真正的 `null`，不返回旧 `completedReportId/report` 兼容字段。返工结果携带 `quantityScope`，命令结果与历史查询一致；专检源 `sourceReportId/sourceReportNo` 为真正的 `null`。返工结果以两类事实数量表达，不维护 `pending/passed/failed` 的独立结果编码。只读 View 的两类结果编号与对应数量也按实际子事实返回，零量侧为空。
 - 返工完成按来源整笔数量校验，不以普通正常目标或首工投入上限再次封顶，不改变普通工序状态。它只恢复来源异常对象，不增加补产授权或物料需求，也不计入 `effective_direct_reported`。专检源及其后继返工的 `inspection` 结果同时排除普通正常／异常／总量汇总，服务端从源处置或源报工推导，客户端不得指定。写事务仍按共同业务根和工序顺序锁定，并保护返工事实唯一来源。
 - 两类返工结果都是返工单的下游依赖，纯正常恢复侧也不能通过通用报工冲销／更正入口调整，残余异常不能通用驳回重报。结果错误或需要部分完成时必须新增专用返工修正设计，当前没有该修正入口。
-- 历史单侧结果仅能映射到其真实完成引用，双结果不能合成历史混合事实；迁移限制见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md#202610100001返工完成双结果引用)。
+- 正常与异常完成引用只指向实际产生的结果，不合成历史混合事实。旧开发库按[初始化基线](../../../../../../../packages/database/docs/90-migration-order.md#初始化基线)重建，停写和回退边界见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
 
 **`rework_records` 字段定义**
 

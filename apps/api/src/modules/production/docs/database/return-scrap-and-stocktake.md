@@ -109,9 +109,9 @@ Production 核验退料来源和额度，经 Inventory 公开能力办理实际�
 
 | 触发器 | 时机 | 保护或维护范围 |
 | --- | --- | --- |
-| [trg_closeout_material_loss_insert](../../../../../../../packages/database/migrations/202609170006-closeout-material-loss.up.sql) | `BEFORE INSERT` | 结案损坏须关联同任务初次、未送审的 closing 根 |
-| [trg_closeout_material_loss_no_update](../../../../../../../packages/database/migrations/202609200004-material-loss-record-only.up.sql) | `BEFORE UPDATE` | 仅允许待确认损耗推进确认／取消并递增版本，冻结来源、数量、用途及原因 |
-| [trg_closeout_material_loss_no_delete](../../../../../../../packages/database/migrations/202609200004-material-loss-record-only.up.sql) | `BEFORE DELETE` | 损耗事实不可删除 |
+| [trg_closeout_material_loss_insert](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE INSERT` | 结案损坏须关联同任务初次、未送审的 closing 根 |
+| [trg_closeout_material_loss_no_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 仅允许待确认损耗推进确认／取消并递增版本，冻结来源、数量、用途及原因 |
+| [trg_closeout_material_loss_no_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 损耗事实不可删除 |
 
 #### 后续库存报废设想（须先评审，不是当前写入规则）
 

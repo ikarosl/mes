@@ -1,3 +1,0 @@
-DROP TABLE production_scrap_supplement_plan_line;
-
-DROP TABLE production_scrap_supplement_plan;

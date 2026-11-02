@@ -6,13 +6,28 @@
 
 `packages/database/migrations/*.up.sql` 按完整文件名升序组成唯一 migration 注册表；同名
 `.down.sql` 提供配对回滚 SQL。`src/migration-utils.ts` 负责读取、计算校验和及共用的已执行记录检查，`src/migrate.ts` 按注册顺序执行尚未登记的迁移，
-`src/migrate-status.ts` 报告 `pending` 或 `applied`；检查行为及登记规则见[迁移登记表](../README.md#迁移登记表-_schema_migrations)。当前运行器只执行 up，没有统一的 down／rollback 命令。
+`src/migrate-status.ts` 报告 pending／running／applied／failed；检查行为及登记规则见[迁移登记表](../README.md#迁移登记表-_schema_migrations)。当前运行器只执行 up，没有自动 down／rollback 或强制标记完成命令。
 
 文档不重复枚举 migration 文件或完成状态，避免注册表演进后产生第二份过期清单。查看当前顺序使用：
 
 ```text
 corepack pnpm db:migrate:status
 ```
+
+## 初始化基线
+
+当前初始化基线为 `20261102`，按模块保留完整结构与业务约束。文件按以下阶段全局排序，不能独立初始化某一个模块：
+
+1. 各模块建表，包含最终字段、主键、索引、CHECK。
+2. 各模块添加外键，处理相互引用及循环依赖。
+3. 各模块创建触发器，保留同一事件的执行顺序和创建时 SQL／字符集环境。
+4. 写入固定版本的权限目录；system seed、管理员初始化与可选 demo 继续使用原入口。
+
+基线之前的开发升级路径退出支持，旧 SQL 原文和回滚限制由 Git 历史保存，不进入当前运行链。旧环境须保留所需备份后另建空库，以匹配当前代码的 `db:init` 初始化；迁移命令不会清库、删除旧登记或把旧库自动认定为新基线。基线初始化也不迁移旧业务数据。
+
+基线及之后的增量构成唯一活动注册表，后续仍按下方规则追加；不把基线当作可随时编辑的建表模板。文件历史由 Git 保存，不维护额外的基线文件清单或摘要副本。运行器直接读取 migration 目录，并按数据库中的执行登记核对文件身份与校验和。
+
+该边界也退出旧链完整 down 的支持；旧链曾有重复外键缺陷，不将其退役解释为缺陷已修复。当前基线 down 仅用于受控空业务库验证，正式环境恢复以[迁移安全](migration-safety.md)为准。
 
 ## 追加规则
 

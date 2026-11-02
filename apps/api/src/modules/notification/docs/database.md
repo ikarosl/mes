@@ -1,6 +1,6 @@
 # Notification 数据库设计
 
-Notification 独占 `notifications` 和 `notification_recipients`；结构由 [202609140001 migration](../../../../../../packages/database/migrations/202609140001-notifications.up.sql)创建并与本章同步。公共类型及审计见[数据库约定](../../../../../../docs/database-conventions.md)，发布、阅读和保留规则见[模块契约](../README.md)。
+Notification 独占 `notifications` 和 `notification_recipients`；结构由[建表基线](../../../../../../packages/database/migrations/202611020108-baseline-notification-tables.up.sql)和[外键基线](../../../../../../packages/database/migrations/202611020208-baseline-notification-foreign-keys.up.sql)定义并与本章同步。公共类型及审计见[数据库约定](../../../../../../docs/database-conventions.md)，发布、阅读和保留规则见[模块契约](../README.md)。
 
 ## notifications：不可变消息事实
 
