@@ -25,21 +25,28 @@ case "${target}" in mysql|sys|information_schema|performance_schema) mes_fail 's
 mes_require_runtime
 mes_take_lock
 MES_BACKUP_DEADLINE_EPOCH=$(( $(date +%s) + 1200 ))
-for name in database.sql.gz metadata.env objects.tsv rows.tsv SHA256SUMS; do
+format="$(awk -F= '$1=="format_version" {print $2; exit}' "${backup}/metadata.env")"
+backup_files=(database.sql.gz metadata.env objects.tsv rows.tsv)
+case "${format}" in
+  1) ;; # 已有 SQL-only 备份仍可恢复，不能当作包含附件的恢复点。
+  2) backup_files+=(minio.tar.gz);;
+  *) mes_fail 'unsupported backup format';;
+esac
+for name in "${backup_files[@]}" SHA256SUMS; do
   # 首次部署空库的对象/行数清单可以为空，但全部文件都必须存在且受保护。
   [[ -f "${backup}/${name}" && ! -L "${backup}/${name}" ]] || mes_fail "backup file is missing: ${name}"
   [[ "$(stat -c '%u' -- "${backup}/${name}")" == 0 ]] || mes_fail 'backup files must be owned by root'
   mode_bits="$(stat -c '%a' -- "${backup}/${name}")"
   (( (8#${mode_bits} & 077) == 0 )) || mes_fail 'backup files must only be accessible by root'
 done
-# 先校验固定四份文件及压缩包，再接触目标库；不跟随清单中的任意路径。
-[[ "$(awk '{print $2}' "${backup}/SHA256SUMS")" == $'database.sql.gz\nmetadata.env\nobjects.tsv\nrows.tsv' ]] || \
+# 先校验对应格式的固定文件及压缩包，再接触目标库；不跟随清单中的任意路径。
+[[ "$(awk '{print $2}' "${backup}/SHA256SUMS")" == "$(printf '%s\n' "${backup_files[@]}")" ]] || \
   mes_fail 'backup checksum manifest has unexpected entries'
 (cd -- "${backup}" && sha256sum --check --status SHA256SUMS) || mes_fail 'backup checksum validation failed'
 gzip -t "${backup}/database.sql.gz" || mes_fail 'compressed dump validation failed'
 metadata_value() { awk -F= -v wanted="$1" '$1 == wanted {print substr($0,index($0,"=")+1); exit}' "${backup}/metadata.env"; }
 # metadata.env 是本份备份的数据说明，按文本取值，不当 shell 配置执行。
-[[ "$(metadata_value format_version)" == 1 ]] || mes_fail 'unsupported backup format'
+[[ "$(metadata_value format_version)" == "${format}" ]] || mes_fail 'backup format changed during validation'
 source_database="$(metadata_value source_database)"
 charset="$(metadata_value character_set)"
 collation="$(metadata_value collation)"

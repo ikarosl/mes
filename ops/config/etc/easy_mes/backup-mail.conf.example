@@ -1,0 +1,8 @@
+# 复制为 /etc/easy-mes/backup-mail.conf，root:root 600；不要提交真实配置。
+# QQ 邮箱开启 SMTP 后使用授权码，不能填写网页登录密码。
+url = "smtps://smtp.qq.com:465"
+# 显式使用 LOGIN 认证，避免客户端自动选择其他认证方式。
+login-options = "AUTH=LOGIN"
+user = "replace-with-sender@qq.com:replace-with-smtp-authorization-code"
+mail-from = "replace-with-sender@qq.com"
+mail-rcpt = "replace-with-recipient@example.com"

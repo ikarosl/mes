@@ -1,5 +1,5 @@
 [Unit]
-Description=Easy MES MySQL maintenance backup
+Description=Easy MES MySQL and MinIO maintenance backup
 Requires=docker.service
 After=docker.service
 

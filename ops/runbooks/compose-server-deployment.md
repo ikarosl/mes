@@ -13,6 +13,10 @@
 ├── deploy-web.sh
 ├── apply-control.sh              # 由 CD 预检查并逐个更新服务端控制文件
 ├── mysql-backup-common.sh
+├── minio-backup-common.sh
+├── minio-backup.mjs
+├── restore-minio.sh
+├── notify-backup-failure.sh
 ├── backup-mysql.sh
 ├── restore-mysql.sh
 ├── resume-api.sh
@@ -24,6 +28,7 @@
 ├── api.env
 ├── mysql.env
 ├── minio.env
+├── backup-mail.conf           # 人工配置 SMTP；root:root 600
 └── minio.license
 
 /etc/letsencrypt/               # Certbot 管理；整体只读挂载到 Web 容器
@@ -41,8 +46,8 @@
 ├── mysql/
 ├── minio/
 ├── backups/
-│   ├── mysql/
-│   └── minio/
+│   ├── mysql/                 # 完整恢复点：SQL + minio.tar.gz
+│   └── minio/                 # 历史预留目录，不作为配套恢复点
 ├── nginx-logs/
 └── acme-challenge/              # 临时 HTTP-01 验证文件，不存放正式证书或私钥
 
@@ -58,7 +63,7 @@ systemd 单元由安装器及 `apply-control.sh` 安装到系统默认加载目�
 
 锁文件由脚本自动打开并通过 `flock` 加锁，无需人工创建或清理；所有持有锁的文件描述符关闭后，锁自动释放，文件存在不代表任务仍在运行。各入口必须使用同一锁路径，避免维护操作并发。
 
-`backups` 是备份落点，Compose 不自行执行或轮换备份。人工、API 发布和可显式启用的半月数据库备份由[备份恢复入口](mysql-backup-restore.md)管理；备份目录仅 root 可访问。
+`backups` 是备份落点，Compose 不自行执行或轮换备份。人工、API 发布和可显式启用的半月配套备份由[备份恢复入口](mysql-backup-restore.md)管理；备份目录仅 root 可访问。
 
 Compose 不单独声明名为 `nginx` 的服务。`web` 镜像的运行阶段基于 Nginx，
 构建时保存 `infra/nginx/default.conf.template`。容器启动时由官方入口替换允许的端口、
@@ -72,7 +77,7 @@ Compose 不单独声明名为 `nginx` 的服务。`web` 镜像的运行阶段基
 ## 安装文件与入口（首次初始化部署）
 
 服务器运行 CI 已构建的镜像，不需要安装 Node.js、pnpm 或构建源码。安装前须有
-Docker Engine、Compose 插件及管理员权限；可检出仓库，也可仅上传同一代码版本的部署文件包。
+Docker Engine、Compose 插件及管理员权限；邮件提醒另需支持 SMTP/TLS 的 curl；可检出仓库，也可仅上传同一代码版本的部署文件包。
 
 安装脚本按自身位置向上两级定位文件包根目录。最小文件布局如下，`temp_deploy` 可换成其他目录名：
 
@@ -88,6 +93,10 @@ temp_deploy/
     │   ├── deploy-web.sh
     │   ├── apply-control.sh
     │   ├── mysql-backup-common.sh
+    │   ├── minio-backup-common.sh
+    │   ├── minio-backup.mjs
+    │   ├── restore-minio.sh
+    │   ├── notify-backup-failure.sh
     │   ├── backup-mysql.sh
     │   ├── restore-mysql.sh
     │   ├── resume-api.sh
@@ -101,7 +110,8 @@ temp_deploy/
                 ├── deploy.env.example
                 ├── api.env.example
                 ├── mysql.env.example
-                └── minio.env.example
+                ├── minio.env.example
+                └── backup-mail.conf.example
 ```
 
 `ops/README.md` 和 `ops/runbooks/` 可随包上传作为操作参考。服务器安装不需要
@@ -129,10 +139,12 @@ sudo bash ops/scripts/install-easy-mes-compose
 - 取得与发布共用的锁后，将 Compose 及运行脚本复制到 `/opt/easy-mes`；重跑会覆盖控制文件。
 - 安装半月备份 service/timer 到 `/etc/systemd/system` 并刷新单元，不启用或启动任务；已有人工启用状态保留。
 - 安装 Certbot 的续期后重载钩子到 `/etc/letsencrypt/renewal-hooks/deploy/easy-mes-reload`；不安装 Certbot 或申请证书。
+- 从 `backup-mail.conf.example` 创建缺失的 `/etc/easy-mes/backup-mail.conf`，已有配置保留；SMTP 账号、授权码与收件人由管理员按[备份手册](mysql-backup-restore.md#保留周期与失败邮件)填写。
 - 将四份 `.env.example` 复制为 `/etc/easy-mes/*.env`，仅补充不存在的配置文件，保留已有人工配置。Nginx 配置由容器启动入口生成，安装器不创建宿主机 Nginx 配置文件。
 
 安装脚本不安装 Docker、不拉取镜像、不启动容器、不执行 migration 或 seed，也不创建
 管理员、SSH/sudo 授权、MinIO license、HTTPS 证书或 `release.env`。`release.env` 由后续发布脚本维护。
+从仅有 MySQL 备份的旧控制脚本升级时，也须用同一提交的完整包重跑安装器，以齐套安装 MinIO 与邮件脚本；旧版 `apply-control.sh` 不会安装其清单之外的新文件。
 首次安装完成后，CD 才能通过固定的 `/opt/easy-mes/*.sh` 入口更新控制文件和镜像。
 
 ## 人工配置

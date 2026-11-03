@@ -30,7 +30,7 @@ mes_require_file() {
 mes_require_runtime() {
   local command file
   [[ "${EUID}" == 0 ]] || mes_fail 'this maintenance entry point must run as root'
-  for command in awk cmp date docker flock gzip install mktemp sha256sum sort stat timeout; do
+  for command in awk cmp date docker find flock gzip install mktemp sha256sum sort stat tar timeout; do
     command -v "${command}" >/dev/null 2>&1 || mes_fail "required command is missing: ${command}"
   done
   mes_require_file "${MES_STACK_DIR}/compose.prod.yml"
@@ -39,6 +39,10 @@ mes_require_runtime() {
   done
   if [[ -e "${MES_COMPOSE_ENV}" ]]; then mes_require_file "${MES_COMPOSE_ENV}" true; fi
 }
+
+# MinIO 导出和轮换由同一套维护入口协调，不重复获取锁。
+mes_require_file "${MES_STACK_DIR}/minio-backup-common.sh"
+source "${MES_STACK_DIR}/minio-backup-common.sh"
 
 mes_take_lock() {
   # 宿主机互斥锁防止发布、备份、恢复并发；它本身不会阻止外部 SQL 写入。
@@ -232,6 +236,7 @@ mes_create_backup() (
   set -Eeuo pipefail
   local mode="$1" target="${2:-}" database work='' lock_pid='' lock_id='' lock_in='' lock_out=''
   local ready version charset collation started_at api_was_running=false final_name original_in original_out
+  local MES_MINIO_CONTAINER=''
   local backup_finished=false
   local maintenance_started=false
   local MES_BACKUP_DEADLINE_EPOCH=$(( $(date +%s) + 1200 ))
@@ -245,6 +250,10 @@ mes_create_backup() (
     if [[ -n "${lock_in}" ]]; then exec {lock_in}>&-; fi
     if [[ -n "${lock_out}" ]]; then exec {lock_out}<&-; fi
     if [[ -n "${lock_pid}" ]]; then kill "${lock_pid}" 2>/dev/null || true; wait "${lock_pid}" 2>/dev/null || true; fi
+    # timeout 终止 Compose 客户端不保证容器退出；先停止导出器，再清理临时文件。
+    if [[ -n "${MES_MINIO_CONTAINER}" ]]; then
+      timeout --kill-after=5s 20s docker rm -f "${MES_MINIO_CONTAINER}" >/dev/null 2>&1 || true
+    fi
     if [[ -n "${work}" && -d "${work}" ]]; then rm -rf --one-file-system -- "${work}"; fi
     if [[ "${status}" != 0 && "${maintenance_started}" == true ]]; then
       MES_BACKUP_DEADLINE_EPOCH=0 MES_COMMAND_TIMEOUT=80 mes_compose stop --timeout 60 web api >/dev/null 2>&1 || \
@@ -308,6 +317,8 @@ mes_create_backup() (
     END { exit !found }
   '; then mes_fail 'dump unexpectedly selects or creates a database'; fi
   mes_write_inventory "${database}" "${work}" 2>"${work}/diagnostic.log"
+  # 两份数据共享停写窗口；MinIO 导出失败时整个恢复点不发布。
+  mes_export_minio "${work}"
   printf 'SELECT "easy-mes-still-locked";\n' >&"${lock_in}"
   IFS= read -r -t 15 -u "${lock_out}" ready || mes_fail 'database lock session was lost during backup'
   [[ "${ready}" == easy-mes-still-locked ]] || mes_fail 'database lock session verification failed'
@@ -318,19 +329,19 @@ mes_create_backup() (
   lock_pid=''; lock_id=''
   exec {lock_out}<&-
   lock_out=''
-  # metadata 记录数据对应的库及新旧镜像，不包含密码；四份产物一起计算校验和。
-  printf 'format_version=1\nmode=%s\nstarted_at=%s\ncompleted_at=%s\nsource_database=%s\nmysql_version=%s\ncharacter_set=%s\ncollation=%s\ncurrent_api_image=%s\ncurrent_web_image=%s\ntarget_api_image=%s\n' \
+  # metadata 记录数据对应的库及新旧镜像，不包含密码；数据库及附件产物一起计算校验和。
+  printf 'format_version=2\nmode=%s\nstarted_at=%s\ncompleted_at=%s\nsource_database=%s\nmysql_version=%s\ncharacter_set=%s\ncollation=%s\ncurrent_api_image=%s\ncurrent_web_image=%s\ntarget_api_image=%s\n' \
     "${mode}" "${started_at}" "$(date --iso-8601=seconds)" "${database}" "${version}" "${charset}" "${collation}" \
     "$(mes_current_image)" "$(mes_current_image WEB_IMAGE)" "${target}" >"${work}/metadata.env"
   rm -f -- "${work}/diagnostic.log"
-  (cd -- "${work}" && sha256sum database.sql.gz metadata.env objects.tsv rows.tsv >SHA256SUMS)
+  (cd -- "${work}" && sha256sum database.sql.gz metadata.env objects.tsv rows.tsv minio.tar.gz >SHA256SUMS)
   chmod 600 "${work}"/*
   # 全部成功后才将隐藏临时目录改为正式目录；目录名时间为 UTC，定时窗口为北京时间。
   final_name="${MES_BACKUP_DIR}/$(date -u +%Y%m%dT%H%M%SZ)-${mode}-${work##*.}"
   mv -T -- "${work}" "${final_name}"
   work=''
   backup_finished=true
-  mes_log "Backup completed: ${final_name}"
+  mes_log "Backup completed (MySQL + MinIO): ${final_name}"
   # release 到这里就保持停写；普通/定时备份则恢复原服务并检查 readiness。
   if [[ "${mode}" != release ]]; then
     if [[ "${api_was_running}" == true ]]; then
@@ -345,5 +356,6 @@ mes_create_backup() (
       mes_fail 'backup succeeded but Web restart failed; maintenance is still active'
     fi
     rm -f -- "${MES_MAINTENANCE_FILE}"
+    mes_prune_backups "${mode}"
   fi
 )

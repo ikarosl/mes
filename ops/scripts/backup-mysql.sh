@@ -2,7 +2,7 @@
 
 # 独立备份入口：backup-mysql.sh manual|scheduled|release [完整目标 API 镜像]。
 # manual / scheduled 成功后恢复原服务；release 成功后保持停写，供继续发布或恢复。
-# 实际导出由 mysql-backup-common.sh 的 mes_create_backup 完成，deploy-api.sh 也复用它。
+# MySQL 与当前业务 Bucket 的实际导出由 mysql-backup-common.sh 的 mes_create_backup 完成，deploy-api.sh 也复用它。
 # 不读取 BACKUP_FILE 环境变量；完成目录会打印在 Backup completed: ... 后面。
 set -Eeuo pipefail
 IFS=$'\n\t'
@@ -14,6 +14,10 @@ library="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)/mysql-backup-common
 mode_bits="$(stat -c '%a' -- "${library}")"
 (( (8#${mode_bits} & 022) == 0 )) || exit 1
 source "${library}"
+# 从参数/锁/导出到恢复服务，任一失败均通知；邮件失败不替换原错误。
+trap 'status=$?; trap - EXIT; if (( status != 0 )); then mes_notify_failure backup "$status"; fi; exit "$status"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 # 第一项选择用途；只有 release 需要第二项目标镜像，用于记录本次发布/恢复意图。
 [[ "$#" -ge 1 && "$#" -le 2 ]] || mes_fail 'usage: backup-mysql.sh manual|scheduled|release [target-image@sha256:digest]'
 mode="$1"

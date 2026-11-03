@@ -32,6 +32,7 @@ cleanup() {
     mes_log 'Release failed; maintenance remains active. Review the database and selected image before manual recovery.' >&2
   fi
   [[ -z "${candidate_env}" || ! -f "${candidate_env}" ]] || rm -f -- "${candidate_env}"
+  if [[ "${status}" != 0 ]]; then mes_notify_failure api-release "${status}"; fi
   exit "${status}"
 }
 trap cleanup EXIT
@@ -87,6 +88,8 @@ mes_wait_api_ready || mes_fail 'candidate API did not pass readiness'
 # API readiness 成功后才恢复维护前运行的 Web，最后移除维护标记。
 mes_restore_web
 rm -f -- "${MES_MAINTENANCE_FILE}"
+# 发布失败的留证备份不触发轮换，避免连续失败重试挤掉发布前恢复点。
 maintenance_started=false
+mes_prune_backups release
 mes_log "Deployment completed successfully: ${image}"
 mes_compose ps api || true

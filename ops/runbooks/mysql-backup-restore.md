@@ -1,17 +1,17 @@
-# MySQL 备份与空库恢复
+# MySQL 与 MinIO 备份恢复
 
-本手册拥有单机 Compose 的数据库备份、恢复及失败后的停写边界。数据库结构和 migration 规则仍由[数据库包](../../packages/database/README.md)维护；本入口不执行 migration down，不覆盖已有数据库，不修改 migration 账本状态。
+本手册拥有单机 Compose 的数据库与附件备份、恢复及失败后的停写边界。数据库结构和 migration 规则仍由[数据库包](../../packages/database/README.md)维护；本入口不执行 migration down，不覆盖已有数据库，不修改 migration 账本状态。
 
 ## 执行关系与阅读顺序
 
-自动与手动 API 发布统一调用 `deploy-api.sh <digest>`。该脚本负责整个发布流程，在执行迁移和切换应用之前同步完成备份；备份失败即停止后续步骤。镜像下载、配置检查及启动缺失的基础服务可以先做，以避免在停写后才发现镜像不可用。
+自动与手动 API 发布统一调用 `deploy-api.sh <digest>`。该脚本负责整个发布流程，在执行迁移和切换应用之前同步完成 MySQL 与当前业务 MinIO Bucket 的配套备份；任一部分失败即停止后续步骤。镜像下载、配置检查及启动缺失的基础服务可以先做，以避免在停写后才发现镜像不可用。
 
 ```text
 自动：cd-images.yml ──SSH──┐
 手动：sudo ────────────────┴─ deploy-api.sh <digest>（持有发布锁直到结束）
                               ├─ 检查配置、下载镜像、准备依赖
                               ├─ 记录维护状态、停止 Web/API
-                              ├─ mes_create_backup release（必须成功）
+                              ├─ mes_create_backup release（MySQL + MinIO，均须成功）
                               ├─ 候选镜像：migrate.js → migrate-status.js
                               └─ Bucket 初始化 → 切换 API → readiness → 恢复原 Web
 
@@ -33,13 +33,16 @@
 | [mysql-backup-common.sh](../scripts/mysql-backup-common.sh) | 配置读取、维护状态、数据库读锁与导出；核心是 `mes_source_database`、`mes_begin_maintenance`、`mes_create_backup`。 |
 | [migrate.ts](../../packages/database/src/migrate.ts) → [migration-runner.ts](../../packages/database/src/migration-runner.ts) | 前者加载连接并调用后者；后者校验历史、登记 running、执行 SQL，再登记 applied 或 failed。 |
 | [migration-utils.ts](../../packages/database/src/migration-utils.ts)、[migrate-status.ts](../../packages/database/src/migrate-status.ts) | 前者按文件名读取 SQL、计算校验和；后者只读检查迁移是否全部完成，供部署与恢复阻止错误启动。登记与中断规则见[迁移安全](../../packages/database/docs/migration-safety.md#运行状态与中断)。 |
+| [minio-backup.mjs](../scripts/minio-backup.mjs)、[minio-backup-common.sh](../scripts/minio-backup-common.sh) | 在 API 镜像中通过 S3 接口导出当前 Bucket；归档与数据库共同提交恢复点，完成后按类别轮换。 |
+| [restore-minio.sh](../scripts/restore-minio.sh) | 校验附件归档并恢复到隔离实例的同名新 Bucket，不覆盖已有对象。 |
+| [notify-backup-failure.sh](../scripts/notify-backup-failure.sh) | 使用服务器私有 SMTP 配置发送失败提醒，不发送业务数据或原始错误日志。 |
 | [restore-mysql.sh](../scripts/restore-mysql.sh) → [resume-api.sh](../scripts/resume-api.sh) | 前者恢复备份到新库；人工核对、切库及选择镜像后，后者检查迁移状态并恢复服务。完整步骤见下方[人工恢复](#维护失败后的人工恢复)。 |
 
 [安装器](../scripts/install-easy-mes-compose)负责首次安装运行文件；[apply-control.sh](../scripts/apply-control.sh)负责后续同步脚本与 Compose，内部的 `backup_dir` 只是临时控制文件副本。[deploy-web.sh](../scripts/deploy-web.sh)仅更新 Web，不执行数据库迁移或数据库备份；本次同时发布 API/Web 时，CD 先等 API 发布成功，再发布 Web。[service](../config/systemd/easy-mes-mysql-backup.service)负责执行独立备份脚本，[timer](../config/systemd/easy-mes-mysql-backup.timer)只负责定时触发。
 
 ## 备份入口与产物
 
-宿主机只需 Bash、Docker Compose、GNU coreutils、gzip 与 flock，无需 Node。首次安装或从旧版四文件 CD 升级时，先从同一提交的完整部署包重跑[安装器](compose-server-deployment.md#安装文件与入口)，安装全部运行脚本和 systemd 单元；安装器保留已有人工 env、不启动服务、不启用 timer。旧版 `apply-control.sh` 无法齐套安装新入口，不能直接依赖第一次 CD 自升级。
+宿主机只需 Bash、Docker Compose、GNU coreutils、tar、gzip 与 flock，无需 Node。首次安装或从旧版四文件 CD 升级时，先从同一提交的完整部署包重跑[安装器](compose-server-deployment.md#安装文件与入口)，安装全部运行脚本和 systemd 单元（包括 MinIO 导出器与邮件入口）；安装器保留已有人工 env、不启动服务、不启用 timer。旧版 `apply-control.sh` 无法齐套安装新入口，不能直接依赖第一次 CD 自升级。
 
 人工备份：
 
@@ -49,18 +52,45 @@ sudo /opt/easy-mes/backup-mysql.sh manual
 
 API 发布由上方统一入口自动执行 `release` 备份。独立维护时也可显式执行 `backup-mysql.sh release '<完整API镜像仓库>@sha256:<digest>'`，成功后保持 Web/API 停写，供人工继续维护；不得以普通备份成功推断可重新启动旧镜像。
 
-三种模式都取得 `/run/lock/easy-mes-deploy.lock`，写入持久的 `/opt/easy-mes/mysql-maintenance.state` 并记录原 API/Web 状态后，停止 Web 入口及 API。API 不发布宿主机端口，Web 停止使候选 API 在 readiness 检查完成前无法接收常规业务流量；维护文件本身不是网关拦截器。备份期间独立 MySQL 会话持有 `FLUSH TABLES WITH READ LOCK`，阻止本实例写入和 DDL；所有基础表必须是 InnoDB，dump 使用 `--single-transaction --quick`。维护窗口内不得另行修改 schema、直接写业务库或升级 MySQL/MinIO。锁会话禁止自动重连，取得锁及结束时均确认会话存活；命令、锁等待和整个数据库备份阶段设有超时，失锁、超时或任一步失败均不会发布完成目录。
+三种模式都取得 `/run/lock/easy-mes-deploy.lock`，写入持久的 `/opt/easy-mes/mysql-maintenance.state` 并记录原 API/Web 状态后，停止 Web 入口及 API。API 不发布宿主机端口，Web 停止使候选 API 在 readiness 检查完成前无法接收常规业务流量；维护文件本身不是网关拦截器。备份期间独立 MySQL 会话持有 `FLUSH TABLES WITH READ LOCK`，阻止本实例写入和 DDL；所有基础表必须是 InnoDB，dump 使用 `--single-transaction --quick`。同一停写窗口中使用 API 镜像内的 S3 SDK 导出 `api.env` 的 `S3_BUCKET`，不读取 MinIO 内部磁盘格式；数据库读锁保持到两部分导出结束。维护窗口内不得另行修改 schema、直接写业务库、通过 MinIO 控制台／外部客户端写对象或升级 MySQL/MinIO；还须暂停会修改对象的生命周期任务。锁会话禁止自动重连，取得锁及结束时均确认会话存活；命令、锁等待和整个数据库备份阶段设有超时，失锁、超时或任一步失败均不会发布完成目录。
 
 产物落在 `/srv/easy-mes/backups/mysql/<UTC时间>-<模式>-<唯一后缀>/`，目录仅 root 可访问，文件 `600`，创建时 `umask 077`：
 
 - `database.sql.gz`：所有表和全部数据，包括 `_schema_migrations`，以及触发器、routines、events；保留 mysqldump 的字符集、创建时 SQL_MODE 和触发器顺序语义。数据在触发器创建前装载，避免重复派生流水或被不可变事实触发器拒绝。
 - `metadata.env`：格式版本、起止时间、源库、MySQL 版本、库字符集/排序规则、当前 API/Web 镜像及目标 API 镜像；不保存密码或服务器 env。
 - `objects.tsv`、`rows.tsv`：同一全局读锁内的对象/列/索引/约束、触发器顺序/SQL_MODE/字符集及逐表精确行数。
-- `SHA256SUMS`：上述四文件的 SHA-256。先在隐藏临时目录完成，再原子改名；失败清理未完成目录，不产生伪成功备份。
+- `minio.tar.gz`：当前业务 Bucket 的对象正文、对象键、MIME、自定义元数据及标签；内部清单保存大小与 SHA-256。
+- `SHA256SUMS`：上述五文件的 SHA-256。先在隐藏临时目录完成，再原子改名；失败清理未完成目录，不产生伪成功备份。
 
 密码仅在 MySQL 容器内从已有环境写入临时 `600` 客户端 option file，退出删除，不进入命令参数或日志。请勿使用 `bash -x`、输出容器环境或把凭证复制到备份 metadata。备份包含业务数据，应按生产数据保护。
 
-`manual` 和 `scheduled` 成功后，只恢复备份前已运行的 API，并检查 readiness，再恢复原来运行的 Web；原来停止的组件保持停止。备份或重启失败时保留维护状态并停止 Web/API，不自动重开；已有完成备份仍保留。`release` 始终保留维护状态，直到候选镜像迁移、状态检查、Bucket 初始化及 API readiness 成功，再恢复原 Web。发布失败不自动启动旧 API，也不自动 down。首次部署的空库可以完整备份；源库不存在、连接失败或权限不足均失败关闭，不当成可跳过备份的首次发布。
+`manual` 和 `scheduled` 成功后，只恢复备份前已运行的 API，并检查 readiness，再恢复原来运行的 Web；原来停止的组件保持停止。备份或重启失败时保留维护状态并停止 Web/API，不自动重开；已有完成备份仍保留。`release` 始终保留维护状态，直到候选镜像迁移、状态检查、Bucket 初始化及 API readiness 成功，再恢复原 Web。发布失败不自动启动旧 API，也不自动 down。首次部署的空库可以完整备份，尚未创建的 Bucket 如实记录为不存在；源库不存在、连接失败或权限不足均失败关闭，不当成可跳过备份的首次发布。
+
+当前配套备份格式为 `format_version=2`，仍存放在原 `backups/mysql` 根目录中；整份目录一起复制和保留。旧 `format_version=1` 的 MySQL-only 备份仍可由 `restore-mysql.sh` 恢复，但没有附件恢复能力。`backups/minio` 的历史预留目录不参与新版恢复点，不能仅凭目录存在判断已备份。
+
+附件范围限于当前 `S3_BUCKET` 的当前对象；有版本历史的 Bucket 拒绝导出，不静默丢失旧版本。不包含其他 Bucket、MinIO IAM、Bucket 策略／生命周期、服务器配置或 `/etc/easy-mes` 凭证。当前应用使用私有 Bucket、独立对象键和持续保留的技术文件；如启用额外对象存储功能或更换 Bucket，应先扩展备份范围。恢复创建私有桶，身份凭证仍由目标环境配置。
+
+每次备份只验证导出成功、文件大小、归档可读并生成校验和，不逐条比较数据库附件引用与对象。恢复前验证归档及对象校验和；数据库与附件的业务一致性在首次恢复演练及方案变更后验证。
+
+## 保留周期与失败邮件
+
+每类定时（`scheduled`）和发布（`release`）备份各保留最近 3 份。只有新配套恢复点完整生成且服务恢复成功后，才清理同类超额目录；发布类进一步要求新 API 发布成功，独立 `release` 留证或失败重试期间不清理。手动备份、旧 MySQL-only 备份和重建时保留的原始 MySQL 目录不自动删除。备份导出失败不触发清理。异地副本由管理员手动复制完整恢复点，不自动上传或同步。
+
+邮件使用宿主机 `curl` 的 SMTP 功能，不自建邮件服务器。QQ 邮箱先在邮箱设置中开启 SMTP 并取得授权码，再在服务器配置：
+
+```bash
+sudo editor /etc/easy-mes/backup-mail.conf
+```
+
+模板使用 `smtps://smtp.qq.com:465`；填写 `user` 中的 QQ 邮箱地址与 SMTP 授权码、同一发件地址 `mail-from` 和收件地址 `mail-rcpt`。不要填写网页登录密码或提交真实配置。安装器仅在正式文件缺失时从模板创建 `backup-mail.conf`，已有配置保留，CD 不覆盖实际配置。服务器须允许出站 TCP 465，并有支持 SMTP/TLS 的 curl 和 CA 证书。
+
+配置完成后可人工发送一封测试提醒：
+
+```bash
+sudo /opt/easy-mes/notify-backup-failure.sh mail-test 1
+```
+
+独立备份及 API 发布失败均尝试通知；邮件只含操作、主机、时间及退出码，不附加原始日志、SQL 或凭证。邮件未配置或发送失败会写警告，不覆盖原操作错误；定时任务仍由 systemd 标记失败，发布仍中止。SMTP 服务接受不代表收件箱投递成功，需检查实际收信及垃圾邮件目录；本机邮件也无法报告整台服务器断电或定时任务未被触发。
 
 ## 配置与备份目录从哪里来
 
@@ -95,7 +125,7 @@ sudo journalctl -u easy-mes-mysql-backup.service
 
 任务在北京时间每月 1 日和 16 日 03:00 执行。`Persistent=false`，脚本还自行限定当日 03:00–03:14 可开始；错过窗口直接跳过，不补发。锁被占用则报告失败，不排队占用后续维护窗口。手动入口不受定时窗口限制。停用使用 `systemctl disable --now easy-mes-mysql-backup.timer`。
 
-半月频率意味着故障时可能丢失约半月、最长约 16 天的数据，不提供时间点恢复承诺。脚本不自动清理备份；异地副本、MinIO 备份与保留策略尚待确定，不能自动删除唯一可用副本。磁盘空间与失败/跳过任务需纳入部署报警验收。
+当前接受半月备份间隔，最长约 16 天；备份失败会延长可能的数据损失窗口，不提供任意时间点恢复承诺。自动清理仅按上方保留规则执行；异地副本手动维护，磁盘空间、失败邮件与跳过日志由管理员核对。
 
 ## 恢复演练与新库恢复
 
@@ -112,6 +142,22 @@ sudo /opt/easy-mes/restore-mysql.sh \
 入口先核对文件权限、全部 SHA-256 和 gzip，再检查目标未存在，按源库字符集/排序规则创建。目标不得是源库、当前应用库或系统库；即使现有库没有表也拒绝覆盖。dump 不使用 `--databases`，不得含源库 `USE` / `CREATE DATABASE`；发现源库限定引用也拒绝换名恢复，须在隔离环境审查其语义，不能机械替换业务 SQL。
 
 mysqldump 官方导入脚本会暂存并调整会话级外键检查等设置，只允许在此新空库恢复边界内使用；不得把它作为 migration 关闭外键检查的依据。恢复失败保留部分库供检查，不 DROP、不覆盖重试；再次演练用另一个新库名。完整恢复后比较对象、约束、触发器顺序/SQL_MODE/字符集及每张表行数，任何差异报告失败；不会重写 `_schema_migrations` 的 `running` / `failed` / `applied` 状态。校验通过不代表业务、附件或数据库账号授权已验收。
+
+## MinIO 恢复与配套演练
+
+使用同一份完整恢复点。MySQL 按上节恢复到新库；MinIO 恢复到隔离实例中的同名、尚不存在的 Bucket，不能直接覆盖当前业务桶。目标实例使用与源实例兼容的版本和有效许可证，并接入 `easy-mes_backend` Docker 网络；不要挂载当前 `/srv/easy-mes/minio` 数据目录。服务器无需安装 Node，恢复复用当前 API 镜像内的 S3 客户端。
+
+在 `/etc/easy-mes/restore-s3.env` 中填写目标 `S3_ENDPOINT`、原名 `S3_BUCKET`、`S3_REGION`、`S3_ACCESS_KEY_ID`、`S3_SECRET_ACCESS_KEY`、`S3_FORCE_PATH_STYLE`（可选 `S3_SESSION_TOKEN`），文件为 root:root 600。端点指向隔离实例，不能复制后仍指向当前 MinIO：
+
+```bash
+sudo /opt/easy-mes/restore-minio.sh \
+  --backup '/srv/easy-mes/backups/mysql/<完整恢复点>' \
+  --target-env /etc/easy-mes/restore-s3.env
+```
+
+脚本验证整份恢复点的校验和、归档路径和每个对象内容，再创建私有桶并上传。目标桶已存在即拒绝；中途失败保留部分恢复桶供检查，重试须使用新的隔离实例或经明确授权清理失败目标。脚本不改写业务数据库 locator、不导入 IAM／Bucket 策略、不切换运行中应用。
+
+演练时用与备份匹配的应用镜像连接恢复后的新数据库及隔离 MinIO，保留原 Bucket 名和对象键，实际验证登录、业务记录及历史 SOP／规格书下载。原业务服务不切换到演练环境。当前备份存在缺失桶或对象时会如实保存该状态，导出成功不能替代这项配套恢复验证。
 
 ## 维护失败后的人工恢复
 
@@ -130,7 +176,7 @@ sudo /opt/easy-mes/backup-mysql.sh release \
 
 当前门禁要求所选镜像识别全部已登记迁移，常见适用情形是没有数据库迁移的应用发布。即使人工判断新增字段兼容旧代码，只要旧镜像不认识新迁移记录也会拒绝启动；本入口不提供跳过检查的参数或自动兼容判断。
 
-恢复新库后，由 DBA 核验原应用数据库账号对新库的访问授权，脚本不擅自扩大权限，缺少授权时 readiness 会失败。再将 `/etc/easy-mes/api.env` 的 `DB_NAME` 与 `/etc/easy-mes/mysql.env` 的 `MYSQL_DATABASE` 指向新库，并按恢复点 `metadata.env` 中的 `current_api_image` / `current_web_image` 在 `release.env` 显式选择匹配的 API/Web digest。首次部署尚无 Web 镜像记录时，该项为空，须人工核对适配的版本，不能猜测或使用 `latest`。密码继续仅存 `600` 的人工配置。备份不会自动恢复这些配置、账号或 MinIO 文件，需同时处理附件一致性。
+恢复新库后，由 DBA 核验原应用数据库账号对新库的访问授权，脚本不擅自扩大权限，缺少授权时 readiness 会失败。再将 `/etc/easy-mes/api.env` 的 `DB_NAME` 与 `/etc/easy-mes/mysql.env` 的 `MYSQL_DATABASE` 指向新库，并按恢复点 `metadata.env` 中的 `current_api_image` / `current_web_image` 在 `release.env` 显式选择匹配的 API/Web digest。首次部署尚无 Web 镜像记录时，该项为空，须人工核对适配的版本，不能猜测或使用 `latest`。密码继续仅存 `600` 的人工配置。数据库恢复不会自动恢复这些配置、账号或 MinIO 文件；附件按上方配套恢复入口处理，人工核对后再切换应用。
 
 迁移失败不会自动把字段改回去；恢复数据库会回到所选备份时间点。只有发布前已停写、备份完整且验证成功，并且此后没有需保留的新写入等条件满足时，才能按该恢复点讨论无数据损失。上线后已产生的数据不会因恢复旧备份自动保留，应从保留的问题库及留证备份核对恢复点后的新增和修改，按所属模块允许的业务操作人工补录、纠正并核验附件，不直接合并不兼容表或篡改不可变事实；不能承诺任意故障和降级都无损。
 
@@ -142,7 +188,7 @@ sudo /opt/easy-mes/resume-api.sh 'sha256:<当前已选API digest>' --database-re
 
 该确认参数表示人工已核对数据库、镜像、外部写入和失败原因。入口验证 digest 一致，先执行镜像内只读 migration status；存在 pending、running、failed、checksum/顺序异常则拒绝启动。状态检查无法证明实际 schema 与账本完全等价，不能替代恢复或人工 schema 核验。检查通过后启动所选 API，readiness 成功才恢复维护前运行的 Web 并移除维护状态；失败再次停止 Web/API。之后仍须人工验收登录、核心业务读写和附件访问。
 
-正式上线门禁还包括：从有效备份在新库完成恢复演练，保留可用异地副本，确认数据库与 MinIO 附件的一致恢复时间点，以及监控、磁盘空间、备份失败/跳过报警和恢复授权流程。当前脚本提供执行入口，不代表上述部署验收已通过。
+正式上线门禁还包括：从有效配套备份完成数据库与 MinIO 恢复演练，核对手动异地副本，以及磁盘空间、备份失败邮件／跳过日志和恢复授权流程。当前脚本提供执行入口，不代表上述部署验收已通过。
 
 ## 后续凌晨部署约束（尚未启用）
 

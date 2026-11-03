@@ -80,7 +80,7 @@ main() {
   install -o root -g root -m 755 "${SOURCE_ROOT}/ops/scripts/apply-control.sh" \
     "${STACK_DIR}/apply-control.sh"
   local name
-  for name in mysql-backup-common.sh backup-mysql.sh restore-mysql.sh resume-api.sh; do
+  for name in mysql-backup-common.sh minio-backup-common.sh minio-backup.mjs backup-mysql.sh restore-mysql.sh restore-minio.sh notify-backup-failure.sh resume-api.sh; do
     install -o root -g root -m 750 "${SOURCE_ROOT}/ops/scripts/${name}" "${STACK_DIR}/${name}"
   done
   install -d -o root -g root -m 755 /etc/systemd/system
@@ -89,13 +89,14 @@ main() {
   done
   if [[ -d /run/systemd/system ]]; then systemctl daemon-reload; fi
 
-  # 【步骤 4：生成四份初始配置】按“模板 → 正式配置”的对应关系调用上方函数。
+  # 【步骤 4：生成初始配置】按“模板 → 正式配置”的对应关系调用上方函数。
   # deploy.env 配置镜像仓库与端口；mysql.env 配置数据库；minio.env 配置对象存储；
   # api.env 配置后端连接和鉴权。模板仅在正式文件缺失时复制，不会补改已有文件中的字段。
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/deploy.env.example" "${CONFIG_DIR}/deploy.env"
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/mysql.env.example" "${CONFIG_DIR}/mysql.env"
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/minio.env.example" "${CONFIG_DIR}/minio.env"
   install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/api.env.example" "${CONFIG_DIR}/api.env"
+  install_example_if_missing "${SOURCE_ROOT}/ops/config/etc/easy_mes/backup-mail.conf.example" "${CONFIG_DIR}/backup-mail.conf"
 
   # 【步骤 5：提示后续人工工作】编辑刚才的配置，准备有效的 MinIO 许可证，再发布 API/Web。
   # Nginx 模板已在 Web 镜像中，容器启动时生成最终配置，服务器无需额外准备 nginx.conf。
@@ -105,7 +106,7 @@ main() {
   printf '  1. edit files under %s\n' "${CONFIG_DIR}"
   printf '  2. install %s/minio.license\n' "${CONFIG_DIR}"
   printf '  3. deploy API/Web digests with %s/deploy-api.sh and deploy-web.sh\n' "${STACK_DIR}"
-  printf '  4. rehearse MySQL backup/restore and explicitly enable the backup timer when ready (it is not enabled by installation)\n'
+  printf '  4. configure backup-mail.conf, rehearse MySQL/MinIO backup/restore and explicitly enable the backup timer when ready (it is not enabled by installation)\n'
 }
 
 # 【程序入口】从这里开始执行 main 中列出的安装准备流程。

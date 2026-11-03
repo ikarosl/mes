@@ -11,7 +11,8 @@ readonly STACK_DIR='/opt/easy-mes'
 readonly LOCK_FILE='/run/lock/easy-mes-deploy.lock'
 readonly UNIT_DIR='/etc/systemd/system'
 readonly -a CONTROL_FILES=(compose.prod.yml deploy-api.sh deploy-web.sh apply-control.sh
-  mysql-backup-common.sh backup-mysql.sh restore-mysql.sh resume-api.sh)
+  mysql-backup-common.sh minio-backup-common.sh minio-backup.mjs backup-mysql.sh
+  restore-mysql.sh restore-minio.sh notify-backup-failure.sh resume-api.sh)
 readonly -a UNIT_FILES=(easy-mes-mysql-backup.service easy-mes-mysql-backup.timer)
 bundle_dir=''
 backup_dir=''

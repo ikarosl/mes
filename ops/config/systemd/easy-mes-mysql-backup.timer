@@ -1,5 +1,5 @@
 [Unit]
-Description=Easy MES MySQL backup on the 1st and 16th at 03:00 Beijing time
+Description=Easy MES MySQL and MinIO backup on the 1st and 16th at 03:00 Beijing time
 
 [Timer]
 # 北京时间每月 1 日和 16 日凌晨 3 点；这是备份定时器，不是应用发布定时器。

@@ -6,6 +6,6 @@
 
 数据库 migration 后的首次 system seed、管理员初始化和可选演示数据见[数据库首次初始化](database-initialization.md)。
 
-[MySQL 备份与空库恢复](mysql-backup-restore.md)维护人工／半月／发布备份、恢复演练和失败停写恢复入口；正式上线仍需完成其中的异地副本、附件一致性和报警验收。
+[MySQL／MinIO 备份与恢复](mysql-backup-restore.md)维护人工／半月／发布的配套备份、保留规则、SMTP 提醒及失败停写恢复入口；手动异地副本、配套恢复演练和邮件送达仍需部署验收。
 
 正式上线前所需手册及完成状态集中见[运维手册待办](../../docs/roadmap.md#正式上线前运维手册待补齐)。

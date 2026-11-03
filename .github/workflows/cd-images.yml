@@ -114,7 +114,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:sha-${{ env.IMAGE_SHA }}
+            ${{ env.IMAGE_NAME }}:git-${{ env.IMAGE_SHA }}
             ${{ env.IMAGE_NAME }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -132,7 +132,7 @@ jobs:
             echo "### API image published"
             echo
             echo "- Image: \`$IMAGE_NAME\`"
-            echo "- Commit tag: \`sha-$IMAGE_SHA\`"
+            echo "- Commit tag: \`git-$IMAGE_SHA\`"
             echo "- Digest: \`$IMAGE_DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -179,7 +179,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ${{ env.IMAGE_NAME }}:sha-${{ env.IMAGE_SHA }}
+            ${{ env.IMAGE_NAME }}:git-${{ env.IMAGE_SHA }}
             ${{ env.IMAGE_NAME }}:latest
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
@@ -197,7 +197,7 @@ jobs:
             echo "### Web image published"
             echo
             echo "- Image: \`$IMAGE_NAME\`"
-            echo "- Commit tag: \`sha-$IMAGE_SHA\`"
+            echo "- Commit tag: \`git-$IMAGE_SHA\`"
             echo "- Digest: \`$IMAGE_DIGEST\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -313,6 +313,10 @@ jobs:
             ops/scripts/deploy-web.sh \
             ops/scripts/apply-control.sh \
             ops/scripts/mysql-backup-common.sh \
+            ops/scripts/minio-backup-common.sh \
+            ops/scripts/minio-backup.mjs \
+            ops/scripts/restore-minio.sh \
+            ops/scripts/notify-backup-failure.sh \
             ops/scripts/backup-mysql.sh \
             ops/scripts/restore-mysql.sh \
             ops/scripts/resume-api.sh \

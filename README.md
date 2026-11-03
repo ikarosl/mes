@@ -14,7 +14,7 @@
 4. 启动 API：`pnpm dev:api`。
 5. 启动管理端：`pnpm dev:admin`。
 
-开发测试数据库允许重置，重置后通过 migration／seed 恢复，不依赖原有业务数据。数据库集成测试使用专用测试库，配置与门禁见[测试策略](docs/testing-strategy.md)。
+已有业务库通过增量 migration 保留数据升级，重置授权边界见 [AGENTS.md](AGENTS.md#数据库与交付约定)。数据库集成测试使用隔离的专用测试库，配置与门禁见[测试策略](docs/testing-strategy.md)。
 
 ## 数据库命令
 

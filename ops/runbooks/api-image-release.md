@@ -17,7 +17,7 @@
 
 每个实际发布的镜像都有两个标签：
 
-- `sha-<完整 Git SHA>`：用于追踪代码来源。
+- `git-<完整 Git SHA>`：用于追踪代码来源。
 - `latest`：用于发现最新版本，不作为服务器部署或回滚依据。
 
 工作流摘要会记录镜像 digest。服务器发布必须使用 `repository@sha256:...`，并继续发布 BuildKit provenance 与 SBOM。
@@ -43,7 +43,7 @@ SSH_KNOWN_HOSTS 有格式要求：IP地址 公钥算法 公钥内容
 digest；某个应用未受影响时，不调用对应的部署脚本。Compose 或部署脚本变化时，工作流
 先同步并应用控制文件，但绝不上传或覆盖 `/etc/easy-mes` 下的人工配置。
 
-API 发布在停 Web/API 入口后先做完整数据库备份，再执行 migration 和候选镜像激活；失败保持维护状态，不自动恢复旧 API。备份、空库恢复、一次性控制入口升级及后续凌晨部署的未启用约束见[备份恢复手册](mysql-backup-restore.md)。控制文件协调只处理原来运行的 API/Web，不升级 MySQL/MinIO，也不自动启用备份 timer。
+API 发布在停 Web/API 入口后先做 MySQL 与当前业务 MinIO Bucket 的配套备份，再执行 migration 和候选镜像激活；失败保持维护状态，不自动恢复旧 API。备份、空库恢复、一次性控制入口升级及后续凌晨部署的未启用约束见[备份恢复手册](mysql-backup-restore.md)。控制文件协调只处理原来运行的 API/Web，不升级 MySQL/MinIO，也不自动启用备份 timer。
 
 如果 `SSH_DEPLOY_HOST` 是 `192.168.x.x` 等内网地址，`ubuntu-latest` 无法直接访问，
 必须使用同一网络内的 self-hosted runner，或者建立受控的 VPN/公网 SSH 入口。
