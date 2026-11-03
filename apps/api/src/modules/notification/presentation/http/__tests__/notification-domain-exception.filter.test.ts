@@ -9,7 +9,7 @@ const invoke = (error: NotificationDomainError) => {
   const host = {
     switchToHttp: () => ({
       getRequest: () => ({
-        originalUrl: '/api/notifications/99/read',
+        originalUrl: '/api/notifications/read-all',
         requestId: 'notification-request',
       }),
       getResponse: () => ({ status, setHeader }),
@@ -22,9 +22,7 @@ const invoke = (error: NotificationDomainError) => {
 
 describe('NotificationDomainExceptionFilter', () => {
   it.each([
-    ['NOT_FOUND', 404],
     ['FORBIDDEN', 403],
-    ['CONCURRENT_MODIFICATION', 409],
     ['NOTIFICATION_EVENT_CONFLICT', 409],
     ['INVALID_INPUT', 400],
   ] as const)('maps %s to the expected HTTP envelope', (code, expectedStatus) => {
@@ -38,7 +36,7 @@ describe('NotificationDomainExceptionFilter', () => {
         code,
         message: '通知业务错误',
         requestId: 'notification-request',
-        path: '/api/notifications/99/read',
+        path: '/api/notifications/read-all',
         timestamp: expect.stringMatching(/\+08:00$/),
       }),
     );

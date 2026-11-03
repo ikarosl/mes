@@ -1,5 +1,5 @@
-import { Body, Controller, Get, HttpCode, Param, Post, Query, UseFilters } from '@nestjs/common';
-import type { UserProfile } from '@company/contracts';
+import { Body, Controller, Get, HttpCode, Post, Query, UseFilters } from '@nestjs/common';
+import type { NotificationReadAllResult, UserProfile } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
@@ -8,11 +8,7 @@ import {
 } from '../../../../common/security/auth.decorators.js';
 import { NotificationService } from '../../application/notification.service.js';
 import { NotificationDomainExceptionFilter } from './notification-domain-exception.filter.js';
-import {
-  NotificationIdDto,
-  NotificationQueryDto,
-  ReadNotificationDto,
-} from './dto/notification.dto.js';
+import { NotificationQueryDto, ReadAllNotificationsDto } from './dto/notification.dto.js';
 
 /** 全部接口由全局 AuthGuard 登录鉴权，并在仓储限定本人；不绑定目标业务权限。 */
 @Controller('notifications')
@@ -27,14 +23,13 @@ export class NotificationController {
   unreadCount(@CurrentUser() user: UserProfile) {
     return this.service.unreadCount(user.id);
   }
-  @Post(':id/read')
+  @Post('read-all')
   @HttpCode(200)
   @AuditInApplication()
-  read(
-    @Param() { id }: NotificationIdDto,
-    @Body() body: ReadNotificationDto,
+  readAll(
+    @Body() _body: ReadAllNotificationsDto,
     @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.read(id, body.version, audit);
+  ): Promise<NotificationReadAllResult> {
+    return this.service.readAll(audit);
   }
 }

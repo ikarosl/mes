@@ -1,7 +1,7 @@
 import type {
   NotificationItem,
   NotificationQuery,
-  NotificationReadResult,
+  NotificationReadAllResult,
   PageResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
@@ -14,9 +14,5 @@ export abstract class NotificationRepository {
   ): Promise<PublishNotificationResult>;
   abstract list(query: NotificationQuery, actorId: string): Promise<PageResult<NotificationItem>>;
   abstract unreadCount(actorId: string): Promise<{ count: number }>;
-  abstract read(
-    id: string,
-    version: number,
-    audit: CommandContext,
-  ): Promise<NotificationReadResult>;
+  abstract readAll(audit: CommandContext): Promise<NotificationReadAllResult>;
 }

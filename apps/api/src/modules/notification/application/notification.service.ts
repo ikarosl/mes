@@ -4,7 +4,7 @@ import {
   NOTIFICATION_SOURCE_TYPES,
   NOTIFICATION_TARGET_TYPES,
 } from '@company/constants';
-import type { NotificationQuery } from '@company/contracts';
+import type { NotificationQuery, NotificationReadAllResult } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { NotificationDomainError } from '../domain/notification.errors.js';
 import { NotificationRepository } from './ports/notification.repository.js';
@@ -51,11 +51,9 @@ export class NotificationService {
   unreadCount(actorId: string) {
     return this.repository.unreadCount(actorId);
   }
-  read(id: string, version: number, audit: CommandContext) {
+  readAll(audit: CommandContext): Promise<NotificationReadAllResult> {
     this.requireActor(audit);
-    if (!validId(id) || !Number.isInteger(version) || version < 0 || version > 2147483647)
-      throw new NotificationDomainError('INVALID_INPUT', '通知信息无效，请刷新通知列表后重试');
-    return this.repository.read(id, version, audit);
+    return this.repository.readAll(audit);
   }
   private requireActor(audit: CommandContext) {
     if (!audit.actorId || !validId(audit.actorId))

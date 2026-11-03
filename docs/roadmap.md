@@ -12,6 +12,7 @@
 - [ ] 恢复 `tests/integration/idempotency/create-batch-http-pipeline.mysql.test.ts` 的 HTTP 安全、鉴权及幂等闭环，以及 `create-batch-closed-loop.mysql.test.ts` 的任务／幂等结果／成功审计原子提交、失败回滚与重放，使用任务负责人场景资格、显式路线及当前 BOM 结构重建夹具。
 - [ ] 恢复管理端相邻 TODO 中的仓储子页办理、异常处理弹窗、批准产出完工资格、菜单路由上下文、任务创建数量／日期保护及审批提交／失败回读期间的切换保护与对象隔离；废弃的产品默认路线与自动选路行为不作为恢复目标。
 - [ ] 恢复[请求层 TODO](../packages/request/src/__tests__/request.test.ts)中的写请求禁止传输自动重试边界，覆盖携带幂等键、残留旧配置、网络／超时／5xx、401 认证恢复例外及原请求手动恢复；不恢复旧的自动写重试能力。
+- [ ] 恢复通知本人收件隔离、全部已读与审计回滚、面板会话隔离及晚响应保护的原位 TODO；覆盖范围由 [Notification](../apps/api/src/modules/notification/README.md#自动化验证)维护。
 
 ## 数据库基线与发布恢复：待部署验收
 
@@ -401,18 +402,13 @@
 
 - 当前接入 BOM、生产需求更正和批次收尾场景，按角色、指定用户或场景业务来源配置顺序多级审批；当前使用入口、表结构和事务职责见 [Approval](../apps/api/src/modules/approval/README.md)。长期业务决策见 [ADR-0006](adr/0006-approval-workflow-boundaries.md) 和 [ADR-0008](adr/0008-approval-node-assignees.md)，未实施扩展见[审批与通知设计](approval-design.md)。
 - 工单审批后续接入：沿用现有研发/批量工单，核对所选产品与外部订单要求、数量和交期；BOM 审批与工单审批独立。工单审批关联字段仍是所有者文档中的未来结构，不因规划改变当前工单下达状态机。
-- Notification 独立提供站内通知，Approval 是首个调用方；同事务落库、非阻塞空钩子及当前验收项见下方“通用通知验收”，不在审批模块内建设专用外部发送能力。
 - 通用审批决定的 HTTP 幂等重放仍待单独设计；目前决定使用版本、锁与唯一约束防重，不自动重试。Production 新增业务送审已纳入其幂等命令，与申请和绑定共事务。
 - 新增审批场景时扩展明确的对象/证据契约、详情展示和接口权限入口，复用通用提交引擎；当前详情契约明确覆盖 BOM、需求更正和批次收尾。列表已经在分页前过滤实时资格，但仍逐申请读取节点并解析候选人，后续按实际查询量评估批量读取，须保留实时资格与实际处理历史可见性的区别。
 - 外部订单核对是否需要附件或引用信息仍待明确；不据此提前增加采购审批或第二套生产需求。
 
-## 通用通知验收
+## 通知后续扩展（未批准）
 
-长期边界见 [ADR-0007](adr/0007-general-notification-boundaries.md) 和[通知设计](notification-design.md)，当前发布契约、接口、权限与数据库规则由 [Notification](../apps/api/src/modules/notification/README.md) 所有。Approval 是首个实际调用方，其他业务场景仍须单独批准。
-
-- [ ] 完成全仓库验证：执行 `corepack pnpm verify` 及 `corepack pnpm --filter @company/api typecheck:test`，处理剩余失败并核对最终结果。测试覆盖与执行边界见[测试策略](testing-strategy.md)及 Notification 所有者文档。
-- [ ] 在独立测试库完成 `corepack pnpm test:production:mysql` 全量回归，核对通知并发去重与首次已读、审批通知联动、事务及钩子隔离、迁移 up/down/up 与非空回滚保护；修复失败后取得完整通过结果。环境门禁见[跨模块测试](../tests/README.md)。
-- 公告发布入口、独立中心页、人工定向发布的收件范围，以及非 Approval 的实际通知场景未批准；首期仅保留通用纯文本发布能力，不预建公告管理、定时提醒、全部已读、多标签页同步或清理归档。
+- 公告发布入口、独立中心页、人工定向发布的收件范围，以及非 Approval 的实际通知场景未批准；仅保留通用纯文本发布能力，不预建公告管理、定时提醒、多标签页同步或清理归档。
 
 ### 实际接入外部渠道时再设计
 

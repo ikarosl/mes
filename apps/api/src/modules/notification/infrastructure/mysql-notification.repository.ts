@@ -4,7 +4,7 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import type {
   NotificationItem,
   NotificationQuery,
-  NotificationReadResult,
+  NotificationReadAllResult,
   PageResult,
 } from '@company/contracts';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -30,17 +30,13 @@ interface MessageRow extends RowDataPacket {
   title: string;
   body: string;
 }
-interface ReceiptRow extends RowDataPacket {
+interface UnreadReceiptRow extends RowDataPacket {
   id: string;
-  user_id: string;
-  read_at: Date | null;
-  version: number;
 }
 interface ListRow extends MessageRow {
   notification_id: string;
   created_at: Date;
   read_at: Date | null;
-  version: number;
 }
 
 @Injectable()
@@ -183,16 +179,15 @@ export class MysqlNotificationRepository extends NotificationRepository {
   async list(query: NotificationQuery, actorId: string): Promise<PageResult<NotificationItem>> {
     const page = query.page ?? 1,
       pageSize = query.pageSize ?? 10;
-    const where = `r.user_id=?${query.read === 'unread' ? ' AND r.read_at IS NULL' : ''}`;
     return withActiveConnection(this.pool, async (db) => {
       const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-        `SELECT COUNT(*) total FROM notification_recipients r WHERE ${where}`,
+        'SELECT COUNT(*) total FROM notification_recipients WHERE user_id=?',
         [actorId],
       );
       const [rows] = await db.query<ListRow[]>(
         `SELECT CAST(r.id AS CHAR) id,CAST(n.id AS CHAR) notification_id,n.event_type,n.title,n.body,
-        n.target_type,CAST(n.target_id AS CHAR) target_id,r.created_at,r.read_at,r.version
-        FROM notification_recipients r JOIN notifications n ON n.id=r.notification_id WHERE ${where}
+        n.target_type,CAST(n.target_id AS CHAR) target_id,r.created_at,r.read_at
+        FROM notification_recipients r JOIN notifications n ON n.id=r.notification_id WHERE r.user_id=?
         ORDER BY r.created_at DESC,r.id DESC LIMIT ? OFFSET ?`,
         [actorId, pageSize, (page - 1) * pageSize],
       );
@@ -206,8 +201,7 @@ export class MysqlNotificationRepository extends NotificationRepository {
           targetType: r.target_type,
           targetId: r.target_id,
           createdAt: toBeijingISOString(r.created_at),
-          readAt: r.read_at ? toBeijingISOString(r.read_at) : null,
-          version: r.version,
+          isUnread: r.read_at === null,
         })),
         total: Number(count!.total),
         page,
@@ -224,30 +218,37 @@ export class MysqlNotificationRepository extends NotificationRepository {
       return { count: Number(row!.count) };
     });
   }
-  async read(id: string, version: number, audit: CommandContext): Promise<NotificationReadResult> {
+  async readAll(audit: CommandContext): Promise<NotificationReadAllResult> {
     return withTransaction(this.pool, async (db) => {
-      const [[row]] = await db.query<ReceiptRow[]>(
-        'SELECT CAST(id AS CHAR) id,read_at,version FROM notification_recipients WHERE id=? AND user_id=? FOR UPDATE',
-        [id, audit.actorId],
+      // 初始未读 ID 供本次面板展示新消息标记。
+      const [receipts] = await db.query<UnreadReceiptRow[]>(
+        `SELECT CAST(r.id AS CHAR) id FROM notification_recipients r
+         WHERE r.user_id=? AND r.read_at IS NULL ORDER BY r.id`,
+        [audit.actorId],
       );
-      if (!row) throw new NotificationDomainError('NOT_FOUND', '通知不存在或不属于当前用户');
-      if (row.read_at) return { id, readAt: toBeijingISOString(row.read_at), version: row.version };
-      if (row.version !== version)
-        throw new NotificationDomainError('CONCURRENT_MODIFICATION', '通知已变化，请刷新后重试');
+      const unreadIds = receipts.map((receipt) => receipt.id);
       const [result] = await db.execute<ResultSetHeader>(
-        'UPDATE notification_recipients SET read_at=NOW(),updated_by=?,version=version+1 WHERE id=? AND user_id=? AND version=? AND read_at IS NULL',
-        [audit.actorId, id, audit.actorId, version],
+        `UPDATE notification_recipients SET read_at=NOW(),version=1,updated_by=?
+         WHERE user_id=? AND read_at IS NULL`,
+        [audit.actorId, audit.actorId],
       );
-      if (result.affectedRows !== 1)
-        throw new NotificationDomainError('CONCURRENT_MODIFICATION', '通知已变化，请刷新后重试');
-      const [[updated]] = await db.query<ReceiptRow[]>(
-        'SELECT read_at,version FROM notification_recipients WHERE id=? AND user_id=?',
-        [id, audit.actorId],
-      );
-      await this.audit(db, audit, 'notification.read', id, {
-        readAt: toBeijingISOString(updated!.read_at!),
-      });
-      return { id, readAt: toBeijingISOString(updated!.read_at!), version: updated!.version };
+      const readCount = result.affectedRows;
+      if (readCount > 0) {
+        await writeTransactionalAudit(db, {
+          logType: 'business',
+          module: 'notification',
+          action: 'notification.read-all',
+          userId: audit.actorId,
+          targetId: audit.actorId,
+          targetType: 'notification_inbox',
+          result: 'success',
+          afterData: { readCount },
+          requestId: audit.requestId,
+          ip: audit.ip,
+          userAgent: audit.userAgent,
+        });
+      }
+      return { readCount, unreadIds };
     });
   }
   private audit(
@@ -263,7 +264,7 @@ export class MysqlNotificationRepository extends NotificationRepository {
       action,
       userId: context.actorId,
       targetId: id,
-      targetType: action === 'notification.read' ? 'notification_recipient' : 'notification',
+      targetType: 'notification',
       result: 'success',
       afterData: data,
       requestId: context.requestId,

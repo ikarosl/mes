@@ -7,8 +7,6 @@ export const NOTIFICATION_EVENT_TYPES = [
 ] as const;
 export const NOTIFICATION_SOURCE_TYPES = ['approval_action'] as const;
 export const NOTIFICATION_TARGET_TYPES = ['approval_instance'] as const;
-export const NOTIFICATION_READ_FILTERS = ['all', 'unread'] as const;
-export const NOTIFICATION_READ_FILTER_LABELS = { all: '全部', unread: '未读' } as const;
 export const NOTIFICATION_EVENT_LABELS = {
   approval_task_assigned: '审批待处理',
   approval_approved: '审批已通过',

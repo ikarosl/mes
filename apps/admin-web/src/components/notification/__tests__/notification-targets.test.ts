@@ -11,8 +11,7 @@ const item = (overrides: Partial<NotificationItem> = {}): NotificationItem => ({
   targetType: 'approval_instance',
   targetId: '100',
   createdAt: '2026-09-14T10:00:00+08:00',
-  readAt: null,
-  version: 0,
+  isUnread: true,
   ...overrides,
 });
 

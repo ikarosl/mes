@@ -1,7 +1,7 @@
 import type {
   NotificationItem,
   NotificationQuery,
-  NotificationReadResult,
+  NotificationReadAllResult,
   NotificationUnreadCount,
   PageResult,
 } from '@company/contracts';
@@ -20,11 +20,11 @@ export const notificationApi = {
     request<PageResult<NotificationItem>>({ url: '/notifications', params }),
   unreadCount: () =>
     request<NotificationUnreadCount>({ url: '/notifications/unread-count', skipRetry: true }),
-  read: (id: string, version: number) =>
-    request<NotificationReadResult>({
-      url: `/notifications/${encodeURIComponent(id)}/read`,
+  readAll: () =>
+    request<NotificationReadAllResult>({
+      url: '/notifications/read-all',
       method: 'POST',
-      data: { version },
+      data: {},
       skipRetry: true,
     }),
 };

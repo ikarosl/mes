@@ -23,19 +23,19 @@ Notification 独占 `notifications` 和 `notification_recipients`；结构由[�
 
 唯一键竞争后以当前共享读核对消息与固定收件集合，避免旧事务快照，也不把重复 INSERT 的共享锁升级为排他锁；复用路径不修改内容或收件人。
 
-## notification_recipients：收件及首次阅读
+## notification_recipients：收件及首次已读确认
 
-每行固定一条消息的一名收件人，并保存其首次阅读事实；后续角色成员变化不重算历史收件集合。
+每行固定一条消息的一名收件人，并保存其首次已读确认；后续角色成员变化不重算历史收件集合。打开面板的批量确认不表示用户逐条阅读；历史确认时间保持原值。
 
 | 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
 | `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
 | `notification_id` | `BIGINT UNSIGNED NOT NULL` | 消息 |
 | `user_id` | `BIGINT UNSIGNED NOT NULL` | 收件人 |
-| `read_at` | `DATETIME NULL` | 首次阅读时间 |
+| `read_at` | `DATETIME NULL` | 首次标记已读时间；空值是唯一未读依据 |
 | `created_by` | `BIGINT UNSIGNED NOT NULL` | 沿用消息发布人 |
 | `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 收件记录建立时间 |
-| `updated_by` | `BIGINT UNSIGNED NULL` | 阅读时填收件人本人 |
+| `updated_by` | `BIGINT UNSIGNED NULL` | 标记已读时填收件人本人 |
 | `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近更新时间 |
 | `version` | `INT NOT NULL DEFAULT 0` | 未读为 `0`，首次已读为 `1` |
 
@@ -43,7 +43,7 @@ Notification 独占 `notifications` 和 `notification_recipients`；结构由[�
 
 `chk_notification_recipients_version` 保证版本非负；`chk_notification_recipients_read` 要求未读时 `read_at IS NULL AND version=0 AND updated_by IS NULL`，已读时 `read_at IS NOT NULL AND version=1 AND updated_by=user_id` 且修改人非空。
 
-阅读只允许首次单向更新，不能覆盖时间或改回未读；本人记录锁串行化并发阅读。重复已读的旧版本容错由接口定义。接口并发与重复请求语义见[阅读契约](../README.md#接口及权限登记)。
+已读只允许首次单向更新，不能覆盖时间或改回未读；全部已读以本人 `user_id` 和 `read_at IS NULL` 为条件执行集合更新。版本仅保留数据库约束，不由客户端提交。`read_at` 同时表达未读与历史确认时间，不另增布尔状态或用户级已读游标。接口及结果语义见[阅读契约](../README.md#接口及权限登记)。
 
 列表、未读计数和历史展示只读收件事实，不重查业务资格。
 

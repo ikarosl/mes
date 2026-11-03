@@ -1,14 +1,10 @@
-import { IsIn, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
-import { NOTIFICATION_READ_FILTERS } from '@company/constants';
-import type { NotificationReadFilter } from '@company/contracts';
+import { Equals } from 'class-validator';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
-export class NotificationQueryDto extends PageQueryDto {
-  @IsOptional() @IsIn(NOTIFICATION_READ_FILTERS) read?: NotificationReadFilter;
-}
-export class NotificationIdDto {
-  @Matches(/^[1-9]\d{0,19}$/) id!: string;
-}
-export class ReadNotificationDto {
-  @IsInt() @Min(0) @Max(2147483647) version!: number;
+export class NotificationQueryDto extends PageQueryDto {}
+
+export class ReadAllNotificationsDto {
+  // 空请求仍需校验元数据；此私有字段不接受任何 JSON 值，其余字段由白名单拒绝。
+  @Equals(undefined, { message: '此操作不接受请求字段' })
+  private readonly _empty?: never;
 }

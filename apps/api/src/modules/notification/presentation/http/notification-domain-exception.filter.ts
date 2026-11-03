@@ -28,8 +28,7 @@ export class NotificationDomainExceptionFilter implements ExceptionFilter {
 }
 
 const notificationErrorStatus = (code: NotificationDomainError['code']): number => {
-  if (code === 'NOT_FOUND') return 404;
   if (code === 'FORBIDDEN') return 403;
-  if (code === 'CONCURRENT_MODIFICATION' || code === 'NOTIFICATION_EVENT_CONFLICT') return 409;
+  if (code === 'NOTIFICATION_EVENT_CONFLICT') return 409;
   return 400;
 };
