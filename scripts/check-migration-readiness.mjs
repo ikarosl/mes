@@ -35,6 +35,7 @@ const allowedTables = new Set([
   'notifications',
   'notification_recipients',
   'business_templates',
+  'business_template_defaults',
   'approval_flow_definitions',
   'approval_flow_versions',
   'approval_flow_steps',
@@ -122,6 +123,11 @@ const forbiddenModels = [
   'batch_material_usages',
 ];
 const violations = [];
+const allowHistoryEdits = process.env.NODE_ENV === 'development' && !process.env.CI;
+const reportHistoryDifference = (message) => {
+  if (allowHistoryEdits) console.log(`开发历史提示：${message}`);
+  else violations.push(message);
+};
 const migrationNames = (await readdir(migrationsDir))
   .filter((file) => file.endsWith('.sql'))
   .sort();
@@ -172,13 +178,15 @@ if (baseSha) {
     const previousLastName = previousNames.at(-1);
     for (const name of migrationNames) {
       if (!previousNameSet.has(name) && previousLastName && name <= previousLastName) {
-        violations.push(`${name}: appended migrations must sort after existing history`);
+        reportHistoryDifference(`${name}: appended migrations must sort after existing history`);
       }
     }
     for (const change of changes) {
       const [status, file] = change.split(/\s+/, 2);
       if (status !== 'A') {
-        violations.push(`${file ?? change}: historical migrations are append-only (${status})`);
+        reportHistoryDifference(
+          `${file ?? change}: historical migrations are append-only (${status})`,
+        );
       }
     }
   }

@@ -83,12 +83,16 @@ receipt_line_id 单列引用到货明细；receipt_revision_id、incoming_round_
 | release_decision | VARCHAR(30) | released／pending_reinspection／not_released |
 | previous_record_id | ID NULL | 同到货或同结案前驱 |
 | inspected_at | DATETIME | 真实检查时间 |
-| result_note / evidence_reference | TEXT，CHECK trim 后非空 | 检查说明和凭据 |
+| result_note | TEXT NULL | 成品检查说明必填；历史来料原文保留，新来料命令写 SQL NULL |
+| evidence_reference | TEXT，CHECK trim 后非空 | 检查凭据，来料及成品均必填 |
+| inspection_details | JSON NULL DEFAULT NULL | 本次检查的完整 `JsonTableData`；历史及尚未接入的来源允许 SQL NULL |
 | 创建审计 | 见本章公共列组 | 不含可变审计、version 或软删除 |
 
 主键 id；唯一键为 case_id、`(id,receipt_line_id)`、`(id,closeout_id)`；历史索引为 `(receipt_line_id,id)`、`(production_batch_id,id)`。case_id 有单列 FK，另以 `(case_id,receipt_line_id,receipt_revision_id)` 和 `(case_id,closeout_id,production_batch_id)` 组合引用办理的同源键；previous_record_id 分别与 receipt_line_id／closeout_id 组合自引用，created_by 引用 users。
 
-来源 CHECK 要求来料或成品字段组完整互斥；放行结论与说明凭据有值域／非空 CHECK。数量 CHECK 保证 G/F 各在 0..99999999 且合计不超上限；测量 CHECK 要求 covered_quantity 为空、普通 full／sampling 的 G+F>0，或仅成品使用 zero_confirmation 且 G=F=0、结论为 released。`trg_quality_record_no_update/no_delete` 禁止改写或删除结果。
+来源 CHECK 要求来料或成品字段组完整互斥；放行结论有值域 CHECK。`chk_quality_record_evidence` 要求凭据非空，说明仅来料允许 SQL NULL，此时表格不得为 SQL NULL；非 NULL 说明须 trim 后非空，成品说明不得为 NULL。数量 CHECK 保证 G/F 各在 0..99999999 且合计不超上限；测量 CHECK 要求 covered_quantity 为空、普通 full／sampling 的 G+F>0，或仅成品使用 zero_confirmation 且 G=F=0、结论为 released。`trg_quality_record_no_update/no_delete` 禁止改写或删除结果。
+
+`inspection_details` 无独立索引或模板外键，随结果保持不可变。`chk_quality_record_inspection_details` 允许 SQL NULL；非空时要求恰含 `columns`、`rows` 两项的对象，两项均为数组，列数为 1..20、行数为 1..200。列键、列名、单元格及完整结构由[共享规范化](../../../../../../packages/utils/README.md#json-表格)校验。新来料命令额外执行[默认模板及填写校验](unified-inspection-model.md#来料检验记录)，填写结果仍完整保存在此列，不增加规则、模板 ID 或模板版本字段；当前配置由 [Template](../../template/docs/database.md)所有。数据库仍允许旧记录缺少表格，也不将来源类型加入此列的 CHECK，成品命令保持原有输入范围。
 
 注意区分来料办理响应的 `coveredQuantity`：它是发起时申报快照，不是结果 G/F，也不是库管核实的剩余实物量。
 
@@ -97,6 +101,8 @@ receipt_line_id 单列引用到货明细；receipt_revision_id、incoming_round_
 成品数量、零产出核实及固定已入基准的含义见[成品检验](finished-inspections.md)。历史读取通过 case 的来源轮取得固定基准，不能随以后入库、归批或领用重算；Quality 不生成正式数量授权。
 
 ## 迁移及查询
+
+检验表格及来料说明的可空约束通过同一[增量 up](../../../../../../packages/database/migrations/202611030101-quality-incoming-inspection-details.up.sql)调整，既有结果的表格保持 SQL NULL、文字说明原值不变，不回填模板或推造检查资料。[down](../../../../../../packages/database/migrations/202611030101-quality-incoming-inspection-details.down.sql)在删除表格列、恢复旧说明约束前检查所有结果；任何非 NULL 表格或不满足旧必填约束的说明、凭据都会拒绝回退，缺少的文字不能用占位内容补造。执行前须停写并备份共用结果表。
 
 来料处理轮、成品固定轮次及检查数量切换的空数据守卫、停写和回退条件由[迁移安全](../../../../../../packages/database/docs/migration-safety.md)维护，不推造旧轮次或改写既有检验／审批证据。
 

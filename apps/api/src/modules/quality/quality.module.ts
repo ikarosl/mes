@@ -7,6 +7,9 @@ import { MysqlProcessInspectionRepository } from './infrastructure/mysql-process
 import { ProcessInspectionController } from './presentation/http/process-inspection.controller.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { IdentityModule } from '../identity/public.js';
+import { TemplateModule } from '../template/public.js';
+import { IncomingInspectionTemplateService } from './application/incoming-inspection-template.service.js';
+import { IncomingInspectionTemplateController } from './presentation/http/incoming-inspection-template.controller.js';
 import { FinishedInspectionService } from './application/finished-inspection.service.js';
 import { FinishedInspectionRepository } from './application/ports/finished-inspection.repository.js';
 import { QualityFinishedInspectionQuery } from './application/quality-finished-inspection.query.js';
@@ -22,9 +25,14 @@ import { QualityIncomingInspectionOrderCommand } from './application/quality-inc
 import { MysqlIncomingInspectionOrderCommand } from './infrastructure/mysql-incoming-inspection-order.command.js';
 
 @Module({
-  imports: [DatabaseModule, IdempotencyModule, IdentityModule],
-  controllers: [FinishedInspectionController, ProcessInspectionController],
+  imports: [DatabaseModule, IdempotencyModule, IdentityModule, TemplateModule],
+  controllers: [
+    FinishedInspectionController,
+    ProcessInspectionController,
+    IncomingInspectionTemplateController,
+  ],
   providers: [
+    IncomingInspectionTemplateService,
     {
       provide: QualityIncomingInspectionOrderCommand,
       useClass: MysqlIncomingInspectionOrderCommand,

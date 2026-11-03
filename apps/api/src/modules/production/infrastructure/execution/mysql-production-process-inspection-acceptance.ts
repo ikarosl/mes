@@ -1,5 +1,6 @@
 import type { Pool, ResultSetHeader } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
+import { QUALITY_INSPECTION_TEMPLATE_CHANGED } from '@company/constants';
 import type {
   AcceptProcessInspectionPayload,
   BatchStepAbnormalDispositionItem,
@@ -82,7 +83,10 @@ export async function acceptProcessInspection(
     });
   } catch (error) {
     if (error instanceof QualityCommandError)
-      throw new ProductionDomainError(error.code, error.message);
+      throw new ProductionDomainError(
+        error.code === QUALITY_INSPECTION_TEMPLATE_CHANGED ? 'INVALID_STATE' : error.code,
+        error.message,
+      );
     throw error;
   }
 }

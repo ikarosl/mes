@@ -1,4 +1,9 @@
-import type { QualityInboundCaseItem, QualityInboundInspectionItem } from '@company/contracts';
+import type {
+  JsonTableData,
+  QualityInboundCaseItem,
+  QualityInboundInspectionItem,
+} from '@company/contracts';
+import { normalizeJsonTable } from '@company/utils';
 import type { RowDataPacket } from 'mysql2/promise';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 
@@ -30,8 +35,9 @@ export type InspectionRow = RowDataPacket & {
   release_decision: QualityInboundInspectionItem['releaseDecision'];
   previous_record_id: string | null;
   inspected_at: Date;
-  result_note: string;
+  result_note: string | null;
   evidence_reference: string;
+  inspection_details: JsonTableData | string | null;
   created_by: string;
   created_at: Date;
 };
@@ -52,9 +58,16 @@ export function mapInspection(row: InspectionRow): QualityInboundInspectionItem 
     inspectedAt: toBeijingISOString(row.inspected_at),
     remark: row.result_note,
     evidence: row.evidence_reference,
+    inspectionDetails: readInspectionDetails(row.inspection_details),
     createdBy: String(row.created_by),
     createdAt: toBeijingISOString(row.created_at),
   };
+}
+
+function readInspectionDetails(value: unknown): JsonTableData | null {
+  if (value === undefined || value === null) return null;
+  const table = normalizeJsonTable(typeof value === 'string' ? JSON.parse(value) : value);
+  return table.columns.length === 0 ? null : table;
 }
 export function mapCase(
   row: CaseRow,

@@ -37,6 +37,7 @@ import type {
   ReceiptAllocationDisposition,
   ReceiptReturnReason,
   InventoryInboundTarget,
+  JsonTableData,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 import { PurchaseOrderIdDto, PurchaseOrderVersionDto } from './purchase-order.dto.js';
@@ -134,12 +135,16 @@ export class InspectReceiptDto extends ReceiptRoundCommandDto {
   @IsString()
   @IsNotEmpty()
   @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH)
-  remark!: string;
-  @Transform(trim)
-  @IsString()
-  @IsNotEmpty()
-  @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH)
   evidence!: string;
+  @Matches(ID, { message: '请加载来料检验默认模板' })
+  inspectionTemplateId!: string;
+  @IsInt({ message: '检验模板版本必须是整数' })
+  @Min(0)
+  @Max(2147483647)
+  inspectionTemplateVersion!: number;
+  @IsDefined({ message: '请填写检验记录' })
+  @IsObject({ message: '检验记录必须是 JSON 对象' })
+  inspectionDetails!: JsonTableData;
 }
 export class ConfirmSupplierReturnDto extends ReceiptAllocationCommandDto {
   @Matches(ID) receiptRevisionId!: string;

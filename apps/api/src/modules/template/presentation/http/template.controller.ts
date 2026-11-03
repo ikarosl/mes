@@ -1,6 +1,10 @@
 import { Body, Controller, Get, HttpException, Param, Patch, Post, Query } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
-import type { BusinessTemplateItem, PageResult } from '@company/contracts';
+import type {
+  BusinessTemplateDefaultItem,
+  BusinessTemplateItem,
+  PageResult,
+} from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
   AuditInApplication,
@@ -8,11 +12,13 @@ import {
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { TemplateService } from '../../application/template.service.js';
-import { TemplateDomainError, type TemplateErrorCode } from '../../domain/template.errors.js';
+import { TemplateCommandError, type TemplateErrorCode } from '../../template-command.error.js';
 import {
   CreateTemplateDto,
   TemplateIdParamDto,
   TemplateListQueryDto,
+  TemplateSceneParamDto,
+  UpdateTemplateDefaultDto,
   UpdateTemplateDto,
 } from './dto/template.dto.js';
 
@@ -24,6 +30,23 @@ export class TemplateController {
   @RequirePermission(PERMISSIONS.system.templates.view)
   list(@Query() query: TemplateListQueryDto): Promise<PageResult<BusinessTemplateItem>> {
     return this.execute(() => this.service.list(query));
+  }
+
+  @Get('defaults')
+  @RequirePermission(PERMISSIONS.system.templates.view)
+  listDefaults(): Promise<BusinessTemplateDefaultItem[]> {
+    return this.execute(() => this.service.listDefaults());
+  }
+
+  @Patch('defaults/:sceneCode')
+  @RequirePermission(PERMISSIONS.system.templates.update)
+  @AuditInApplication()
+  updateDefault(
+    @Param() { sceneCode }: TemplateSceneParamDto,
+    @Body() body: UpdateTemplateDefaultDto,
+    @CurrentCommandContext() context: CommandContext,
+  ): Promise<BusinessTemplateDefaultItem> {
+    return this.execute(() => this.service.updateDefault(sceneCode, body, context));
   }
 
   @Get(':id')
@@ -57,7 +80,7 @@ export class TemplateController {
     try {
       return await operation();
     } catch (error) {
-      if (error instanceof TemplateDomainError)
+      if (error instanceof TemplateCommandError)
         throw new HttpException(
           { code: error.code, message: error.message },
           statusFor(error.code),

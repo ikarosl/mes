@@ -1,5 +1,5 @@
 import { Catch, HttpException, HttpStatus, Logger, type ArgumentsHost } from '@nestjs/common';
-import { PROCUREMENT_ERROR_CODES } from '@company/constants';
+import { PROCUREMENT_ERROR_CODES, QUALITY_INSPECTION_TEMPLATE_CHANGED } from '@company/constants';
 import { HttpExceptionFilter } from '../../../../presentation/http/http-exception.filter.js';
 import { createRequestId } from '../../../../common/http/request-context.middleware.js';
 import { ProcurementDomainError } from '../../domain/procurement.errors.js';
@@ -55,6 +55,7 @@ const procurementErrorStatus = (code: string): HttpStatus => {
     code === PROCUREMENT_ERROR_CODES.receiptState ||
     code === 'INVALID_STATE' ||
     code === 'CONCURRENT_MODIFICATION' ||
+    code === QUALITY_INSPECTION_TEMPLATE_CHANGED ||
     code === 'CONFLICT'
   )
     return HttpStatus.CONFLICT;

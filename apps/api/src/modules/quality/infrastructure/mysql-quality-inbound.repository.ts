@@ -22,6 +22,7 @@ import type {
   QualityInboundReleaseBasis,
 } from '../application/quality-inbound.query.js';
 import { requireQualityText, requireQuantity } from '../domain/inbound-inspection.policy.js';
+import { IncomingInspectionTemplateService } from '../application/incoming-inspection-template.service.js';
 import { QualityCommandError } from '../quality-command.error.js';
 import {
   mapCase,
@@ -37,7 +38,10 @@ export class MysqlQualityInboundRepository
   extends QualityInboundCommand
   implements QualityInboundQuery
 {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly inspectionTemplates: IncomingInspectionTemplateService,
+  ) {
     super();
   }
 
@@ -104,8 +108,8 @@ export class MysqlQualityInboundRepository
       const inspectedAt = new Date(input.inspectedAt);
       if (!Number.isFinite(inspectedAt.getTime()))
         throw new QualityCommandError('INVALID_INPUT', '检验时间无效');
-      const remark = requireQualityText(input.remark, '检验说明');
       const evidence = requireQualityText(input.evidence, '检验凭据');
+      const inspectionDetails = await this.inspectionTemplates.validate(input);
       if (input.previousRecordId) {
         const [[previous]] = await db.query<InspectionRow[]>(
           'SELECT * FROM quality_inspection_record WHERE id=? AND receipt_line_id=? FOR SHARE',
@@ -116,7 +120,8 @@ export class MysqlQualityInboundRepository
       const [result] = await db.execute<ResultSetHeader>(
         `INSERT INTO quality_inspection_record(case_id,receipt_line_id,receipt_revision_id,covered_quantity,
           inspection_method,qualified_quantity,unqualified_quantity,release_decision,previous_record_id,
-          inspected_at,result_note,evidence_reference,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          inspected_at,result_note,evidence_reference,inspection_details,created_by)
+          VALUES(?,?,?,?,?,?,?,?,?,?,NULL,?,?,?)`,
         [
           input.caseId,
           input.receiptLineId,
@@ -128,8 +133,8 @@ export class MysqlQualityInboundRepository
           quantities.releaseDecision,
           input.previousRecordId ?? null,
           inspectedAt,
-          remark,
           evidence,
+          JSON.stringify(inspectionDetails),
           context.actorId,
         ],
       );

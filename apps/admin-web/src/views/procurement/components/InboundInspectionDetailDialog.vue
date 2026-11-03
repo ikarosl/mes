@@ -172,7 +172,11 @@
                 :covered-quantity="Number(caseRecord.coveredQuantity)"
                 :unit="contextLine.unit"
                 :disabled="blocked || stale"
+                :template="inspectionTemplate"
+                :template-loading="inspectionTemplateLoading"
+                :template-error="inspectionTemplateError"
                 @valid="inspectionValid = $event"
+                @reload-template="loadInspectionTemplate"
               />
             </div>
           </template>
@@ -366,6 +370,10 @@ const {
   caseRecord,
   inspection,
   inspectionValid,
+  inspectionTemplate,
+  inspectionTemplateLoading,
+  inspectionTemplateError,
+  loadInspectionTemplate,
   canConfirm,
   command,
 } = actions;

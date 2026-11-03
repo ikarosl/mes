@@ -32,6 +32,8 @@
       <JsonTableEditor
         v-if="visible"
         v-model="draft.content"
+        v-model:column-rules="draft.columnRules"
+        mode="design"
         :disabled="saving"
       />
     </el-form>
@@ -62,8 +64,12 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { BUSINESS_TEMPLATE_STATUS } from '@company/constants';
-import type { BusinessTemplateItem, BusinessTemplatePayload } from '@company/contracts';
-import { normalizeJsonTable } from '@company/utils';
+import type {
+  BusinessTemplateColumnRules,
+  BusinessTemplateItem,
+  BusinessTemplatePayload,
+} from '@company/contracts';
+import { normalizeBusinessTemplateColumnRules, normalizeJsonTable } from '@company/utils';
 import { businessTemplatesApi } from '../../../api/templates';
 import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import { useDraftCloseGuard } from '../../../composables/useDraftCloseGuard';
@@ -74,10 +80,12 @@ const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
   (event: 'saved'): void;
 }>();
-const emptyDraft = (): BusinessTemplatePayload => ({
+type TemplateDraft = BusinessTemplatePayload & { columnRules: BusinessTemplateColumnRules | null };
+const emptyDraft = (): TemplateDraft => ({
   name: '',
   status: BUSINESS_TEMPLATE_STATUS.enabled,
   content: { columns: [], rows: [] },
+  columnRules: null,
 });
 const draft = reactive(emptyDraft());
 const baseline = ref('');
@@ -92,16 +100,14 @@ watch(
   () => props.visible,
   (visible) => {
     if (!visible) return;
-    Object.assign(
-      draft,
-      props.item
-        ? {
-            name: props.item.name,
-            status: props.item.status,
-            content: normalizeJsonTable(props.item.content),
-          }
-        : emptyDraft(),
-    );
+    if (props.item)
+      Object.assign(draft, {
+        name: props.item.name,
+        status: props.item.status,
+        content: normalizeJsonTable(props.item.content),
+        columnRules: props.item.columnRules ? { ...props.item.columnRules } : null,
+      });
+    else Object.assign(draft, emptyDraft());
     baseline.value = JSON.stringify(draft);
     errorMessage.value = '';
   },
@@ -119,10 +125,12 @@ const save = async (): Promise<void> => {
   try {
     if (!draft.name.trim()) throw new Error('请填写模板名称');
     if (!draft.content.columns.length) throw new Error('请至少配置一列');
+    const content = normalizeJsonTable(draft.content);
     payload = {
       name: draft.name.trim(),
       status: draft.status,
-      content: normalizeJsonTable(draft.content),
+      content,
+      columnRules: normalizeBusinessTemplateColumnRules(draft.columnRules, content),
     };
   } catch (error) {
     EMessage.warning(error instanceof Error ? error.message : '请检查模板配置');

@@ -1,7 +1,7 @@
 <template>
   <div class="json-table-editor">
     <div
-      v-if="!readonly"
+      v-if="canDesign"
       class="table-actions"
     >
       <div v-if="$slots.actions"><slot name="actions" /></div>
@@ -45,11 +45,38 @@
         </el-button>
       </div>
     </div>
+    <div
+      v-if="mode === 'design' && !readonly"
+      class="column-rules"
+    >
+      <el-switch
+        :model-value="columnRules !== null"
+        :disabled="disabled || confirming"
+        active-text="启用填写规则"
+        @change="toggleColumnRules"
+      />
+      <template v-if="columnRules !== null">
+        <el-button
+          :disabled="disabled || confirming || !hasInputColumns"
+          @click="changeInputColumnModes(BUSINESS_TEMPLATE_COLUMN_MODE.required)"
+          >全部输入列必填</el-button
+        >
+        <el-button
+          :disabled="disabled || confirming || !hasInputColumns"
+          @click="changeInputColumnModes(BUSINESS_TEMPLATE_COLUMN_MODE.optional)"
+          >全部输入列可空</el-button
+        >
+      </template>
+    </div>
     <p
       v-if="!readonly"
       class="table-hint"
     >
-      首行为列名（必填），数据行数不含表头。调整行列会保留已有内容。
+      <template v-if="mode === 'fill'">固定内容已锁定，请填写输入列；带 * 的列每行必填。</template>
+      <template v-else-if="mode === 'design' && columnRules !== null">
+        固定列保留模板内容；必填列和可空列供业务填写，使用模板时会清空预设值。
+      </template>
+      <template v-else>首行为列名（必填），数据行数不含表头。调整行列会保留已有内容。</template>
     </p>
     <el-table
       v-if="modelValue.columns.length"
@@ -64,30 +91,56 @@
         min-width="180"
       >
         <template #header>
-          <span v-if="readonly">{{ column.label }}</span>
-          <div
-            v-else
-            class="column-heading"
-          >
+          <span v-if="readonly || mode === 'fill'">
             <span
+              v-if="
+                !readonly && columnRules?.[column.key] === BUSINESS_TEMPLATE_COLUMN_MODE.required
+              "
               class="required-mark"
               aria-hidden="true"
               >*</span
             >
-            <el-input
-              :model-value="column.label"
+            {{ column.label }}
+          </span>
+          <div
+            v-else
+            class="column-heading"
+          >
+            <div class="column-label">
+              <span
+                class="required-mark"
+                aria-hidden="true"
+                >*</span
+              >
+              <el-input
+                :model-value="column.label"
+                :disabled="disabled || confirming"
+                maxlength="100"
+                placeholder="列名（必填）"
+                :aria-label="`第 ${index + 1} 列列名`"
+                aria-required="true"
+                @update:model-value="changeColumnLabel(index, $event)"
+              />
+            </div>
+            <el-select
+              v-if="mode === 'design' && columnRules !== null"
+              :model-value="columnRules[column.key]"
               :disabled="disabled || confirming"
-              maxlength="100"
-              placeholder="列名（必填）"
-              :aria-label="`第 ${index + 1} 列列名`"
-              aria-required="true"
-              @update:model-value="changeColumnLabel(index, $event)"
-            />
+              :aria-label="`${column.label || `第 ${index + 1} 列`}填写规则`"
+              @update:model-value="changeColumnMode(column.key, $event)"
+            >
+              <el-option
+                v-for="columnMode in BUSINESS_TEMPLATE_COLUMN_MODES"
+                :key="columnMode"
+                :value="columnMode"
+                :label="BUSINESS_TEMPLATE_COLUMN_MODE_LABELS[columnMode]"
+              />
+            </el-select>
           </div>
         </template>
         <template #default="{ row, $index }">
           <span
-            v-if="readonly"
+            v-if="readonly || isFixedColumn(column.key)"
             class="cell-text"
             >{{ row[column.key] || '—' }}</span
           >
@@ -97,12 +150,13 @@
             :disabled="disabled || confirming"
             maxlength="1000"
             :aria-label="`${column.label || `第 ${index + 1} 列`}，第 ${$index + 1} 行`"
+            :aria-required="columnRules?.[column.key] === BUSINESS_TEMPLATE_COLUMN_MODE.required"
             @update:model-value="changeCell($index, column.key, $event)"
           />
         </template>
       </el-table-column>
       <el-table-column
-        v-if="!readonly"
+        v-if="canDesign"
         label="操作"
         width="76"
         fixed="right"
@@ -122,18 +176,47 @@
       v-else
       class="empty-table"
     >
-      {{ readonly ? '暂无内容' : '设置行列数量后生成表格' }}
+      {{ readonly || mode === 'fill' ? '暂无内容' : '设置行列数量后生成表格' }}
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { onScopeDispose, ref, useId, watch } from 'vue';
-import type { JsonTableData } from '@company/contracts';
+import { computed, onScopeDispose, ref, useId, watch } from 'vue';
+import {
+  BUSINESS_TEMPLATE_COLUMN_MODE,
+  BUSINESS_TEMPLATE_COLUMN_MODES,
+  BUSINESS_TEMPLATE_COLUMN_MODE_LABELS,
+} from '@company/constants';
+import type {
+  BusinessTemplateColumnMode,
+  BusinessTemplateColumnRules,
+  JsonTableData,
+} from '@company/contracts';
 import { EMessage } from '../utils/message';
 import { RouteMessageBox } from '../utils/route-message-box';
-const props = defineProps<{ modelValue: JsonTableData; readonly?: boolean; disabled?: boolean }>();
-const emit = defineEmits<{ (event: 'update:modelValue', value: JsonTableData): void }>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: JsonTableData;
+    readonly?: boolean;
+    disabled?: boolean;
+    mode?: 'free' | 'design' | 'fill';
+    columnRules?: BusinessTemplateColumnRules | null;
+  }>(),
+  { mode: 'free', columnRules: null },
+);
+const emit = defineEmits<{
+  (event: 'update:modelValue', value: JsonTableData): void;
+  (event: 'update:columnRules', value: BusinessTemplateColumnRules | null): void;
+}>();
+const canDesign = computed(() => !props.readonly && props.mode !== 'fill');
+const hasInputColumns = computed(() =>
+  Object.values(props.columnRules ?? {}).some(
+    (mode) => mode !== BUSINESS_TEMPLATE_COLUMN_MODE.fixed,
+  ),
+);
+const isFixedColumn = (key: string): boolean =>
+  props.mode === 'fill' && props.columnRules?.[key] === BUSINESS_TEMPLATE_COLUMN_MODE.fixed;
 const inputId = useId();
 const columnCount = ref<number | undefined>(3);
 const rowCount = ref<number | undefined>(1);
@@ -158,6 +241,7 @@ watch(
 );
 
 const changeColumnLabel = (index: number, label: string): void => {
+  if (!canDesign.value || props.disabled || confirming.value) return;
   emit('update:modelValue', {
     columns: props.modelValue.columns.map((column, i) =>
       i === index ? { ...column, label } : column,
@@ -166,14 +250,45 @@ const changeColumnLabel = (index: number, label: string): void => {
   });
 };
 const changeCell = (index: number, key: string, value: string): void => {
+  if (props.readonly || props.disabled || confirming.value || isFixedColumn(key)) return;
   emit('update:modelValue', {
     columns: props.modelValue.columns,
     rows: props.modelValue.rows.map((row, i) => (i === index ? { ...row, [key]: value } : row)),
   });
 };
+const toggleColumnRules = (enabled: boolean | string | number): void => {
+  if (!canDesign.value || props.disabled || confirming.value) return;
+  emit(
+    'update:columnRules',
+    enabled
+      ? Object.fromEntries(
+          props.modelValue.columns.map(({ key }) => [key, BUSINESS_TEMPLATE_COLUMN_MODE.optional]),
+        )
+      : null,
+  );
+};
+const changeColumnMode = (key: string, mode: BusinessTemplateColumnMode): void => {
+  if (!canDesign.value || props.disabled || confirming.value || props.columnRules === null) return;
+  emit('update:columnRules', { ...props.columnRules, [key]: mode });
+};
+const changeInputColumnModes = (mode: BusinessTemplateColumnMode): void => {
+  if (!canDesign.value || props.disabled || confirming.value || props.columnRules === null) return;
+  emit(
+    'update:columnRules',
+    Object.fromEntries(
+      props.modelValue.columns.map(({ key }) => [
+        key,
+        props.columnRules?.[key] === BUSINESS_TEMPLATE_COLUMN_MODE.fixed
+          ? BUSINESS_TEMPLATE_COLUMN_MODE.fixed
+          : mode,
+      ]),
+    ),
+  );
+};
 const replaceTable = async (next: JsonTableData, warning?: string): Promise<void> => {
-  if (props.disabled || props.readonly || confirming.value) return;
+  if (props.disabled || !canDesign.value || confirming.value) return;
   const previous = props.modelValue;
+  const previousRules = props.columnRules;
   if (warning) {
     confirming.value = true;
     try {
@@ -187,8 +302,25 @@ const replaceTable = async (next: JsonTableData, warning?: string): Promise<void
       confirming.value = false;
     }
   }
-  if (!disposed && !props.disabled && !props.readonly && props.modelValue === previous)
+  if (
+    !disposed &&
+    !props.disabled &&
+    canDesign.value &&
+    props.modelValue === previous &&
+    props.columnRules === previousRules
+  ) {
+    if (props.mode === 'design' && previousRules !== null)
+      emit(
+        'update:columnRules',
+        Object.fromEntries(
+          next.columns.map(({ key }) => [
+            key,
+            previousRules[key] ?? BUSINESS_TEMPLATE_COLUMN_MODE.optional,
+          ]),
+        ),
+      );
     emit('update:modelValue', next);
+  }
 };
 const resizeTable = async (): Promise<void> => {
   const columnsCount = columnCount.value;
@@ -244,11 +376,15 @@ const removeRow = async (index: number): Promise<void> => {
 
 <style scoped>
 .table-actions,
-.table-size {
+.table-size,
+.column-rules {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
+}
+.column-rules {
+  margin-bottom: 8px;
 }
 .table-actions {
   justify-content: space-between;
@@ -273,6 +409,10 @@ const removeRow = async (index: number): Promise<void> => {
   overflow-wrap: anywhere;
 }
 .column-heading {
+  display: grid;
+  gap: 6px;
+}
+.column-label {
   display: flex;
   align-items: center;
   gap: 6px;

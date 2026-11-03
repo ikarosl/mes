@@ -89,3 +89,4 @@ export const PROCESS_INSPECTION_RECORD_TYPE_LABELS = {
   normal: '检查结果',
   reversal: '冲销记录',
 } as const;
+export const QUALITY_INSPECTION_TEMPLATE_CHANGED = 'QUALITY_INSPECTION_TEMPLATE_CHANGED' as const;

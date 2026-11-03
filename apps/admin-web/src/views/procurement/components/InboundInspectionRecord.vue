@@ -46,9 +46,22 @@
       >{{ inspection.previousRecordId }}</el-descriptions-item
     >
     <el-descriptions-item
-      label="结论说明"
+      v-if="inspection.inspectionDetails?.columns.length || !inspection.remark"
+      label="检验记录"
       :span="3"
-      >{{ inspection.remark }}</el-descriptions-item
+    >
+      <JsonTableEditor
+        v-if="inspection.inspectionDetails?.columns.length"
+        :model-value="inspection.inspectionDetails"
+        readonly
+      />
+      <span v-else>未填写</span>
+    </el-descriptions-item>
+    <el-descriptions-item
+      v-if="inspection.remark"
+      label="历史检验说明"
+      :span="3"
+      ><span class="historical-inspection-note">{{ inspection.remark }}</span></el-descriptions-item
     >
     <el-descriptions-item
       label="检验凭据"
@@ -65,6 +78,7 @@ import {
   QUALITY_RELEASE_DECISION_LABELS,
 } from '@company/constants';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import InspectionQuantity from '../../quality/components/InspectionQuantity.vue';
 const props = defineProps<{ inspection: QualityInboundInspectionItem; roundNo?: number }>();
 const releaseDecisionTag = computed(() => {
@@ -73,3 +87,9 @@ const releaseDecisionTag = computed(() => {
   return 'warning';
 });
 </script>
+<style scoped>
+.historical-inspection-note {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+</style>

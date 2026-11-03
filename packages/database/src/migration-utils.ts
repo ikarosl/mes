@@ -13,23 +13,41 @@ export interface Migration {
   checksum: string;
 }
 
+export interface MigrationHistoryPolicy {
+  allowHistoryEdits?: boolean;
+  onHistoryEdit?: (message: string) => void;
+}
+
 /**
  * 执行与状态查询共用的历史完整性检查。
- * 先核对全部已登记文件及其校验和，避免执行部分待迁移 SQL 后才发现历史文件缺失或被修改。
+ * 默认拒绝历史文件缺失或改写；开发入口可显式允许差异，但不改写登记或重新执行同名 SQL。
  */
 export const assertAppliedMigrations = (
   migrations: readonly Migration[],
   applied: ReadonlyMap<string, string>,
+  policy: MigrationHistoryPolicy = {},
 ): void => {
   const byName = new Map(migrations.map((migration) => [migration.name, migration]));
   for (const [name, appliedChecksum] of applied) {
     const migration = byName.get(name);
-    if (!migration)
+    if (!migration) {
+      if (policy.allowHistoryEdits) {
+        policy.onHistoryEdit?.(`开发历史提示：${name} 已不在当前文件集，原登记继续保留。`);
+        continue;
+      }
       throw new Error(
         `数据库含当前注册表不存在的 migration：${name}。旧基线数据库须按初始化手册重建；不得删除登记后强行迁移。`,
       );
-    if (migration.checksum !== appliedChecksum)
+    }
+    if (migration.checksum !== appliedChecksum) {
+      if (policy.allowHistoryEdits) {
+        policy.onHistoryEdit?.(
+          `开发历史提示：${name} 当前内容与登记摘要不同，保留原摘要且不重放。`,
+        );
+        continue;
+      }
       throw new Error(`已执行的 migration 内容发生变化：${name}`);
+    }
   }
 };
 

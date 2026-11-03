@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="应用模板"
+    :title="mode === 'default' ? '选择默认模板' : '应用模板'"
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
   >
@@ -53,13 +53,25 @@
         ><template #default="{ row }">{{ row.content.rows.length }}</template></el-table-column
       >
       <el-table-column
+        v-if="mode === 'default'"
+        label="填写规则"
+        min-width="180"
+      >
+        <template #default="{ row }">{{ templateRuleError(row) || '可用于业务填写' }}</template>
+      </el-table-column>
+      <el-table-column
         label="操作"
         width="80"
         ><template #default="{ row }"
           ><el-button
             link
             type="primary"
-            :disabled="loading || list.loading.value || Boolean(list.errorMessage.value)"
+            :disabled="
+              loading ||
+              list.loading.value ||
+              Boolean(list.errorMessage.value) ||
+              (mode === 'default' && Boolean(templateRuleError(row)))
+            "
             @click="select(row)"
             >预览</el-button
           ></template
@@ -92,7 +104,7 @@
         :disabled="!selected || loading"
         :loading="loading"
         @click="apply"
-        >应用模板</el-button
+        >{{ mode === 'default' ? '选择模板' : '应用模板' }}</el-button
       >
     </template>
   </el-dialog>
@@ -102,7 +114,7 @@
 import { ref, watch } from 'vue';
 import { BUSINESS_TEMPLATE_STATUS } from '@company/constants';
 import type { BusinessTemplateItem, JsonTableColumn, JsonTableData } from '@company/contracts';
-import { normalizeJsonTable } from '@company/utils';
+import { normalizeBusinessTemplateColumnRules, normalizeJsonTable } from '@company/utils';
 import { businessTemplatesApi } from '../../../api/templates';
 import { useBusinessTemplateList } from '../composables/use-business-template-list';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -110,15 +122,27 @@ import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
-const props = defineProps<{ visible: boolean }>();
+const props = withDefaults(defineProps<{ visible: boolean; mode?: 'copy' | 'default' }>(), {
+  mode: 'copy',
+});
 const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
   (event: 'apply', data: JsonTableData): void;
+  (event: 'select', item: BusinessTemplateItem): void;
 }>();
 const list = useBusinessTemplateList(() => props.visible);
 const selected = ref<BusinessTemplateItem | null>(null);
 const loading = ref(false);
 const reads = useLatestReadRequest(() => (loading.value = false));
+const templateRuleError = (item: BusinessTemplateItem): string => {
+  if (!item.columnRules) return '尚未启用填写规则';
+  try {
+    normalizeBusinessTemplateColumnRules(item.columnRules, item.content);
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : '填写规则无效';
+  }
+};
 watch(
   () => props.visible,
   (visible) => {
@@ -139,6 +163,10 @@ const readTemplate = async (id: string): Promise<BusinessTemplateItem | null> =>
     const item = await businessTemplatesApi.detail(id, signal);
     if (!isCurrent()) return null;
     if (item.status !== BUSINESS_TEMPLATE_STATUS.enabled) throw new Error('模板已停用，请重新选择');
+    if (props.mode === 'default') {
+      const ruleError = templateRuleError(item);
+      if (ruleError) throw new Error(ruleError);
+    }
     return item;
   } catch (error) {
     if (isCurrent()) EMessage.error(error, '模板读取失败');
@@ -161,7 +189,8 @@ const apply = async (): Promise<void> => {
     EMessage.warning('模板内容已更新，请核对预览后再应用');
     return;
   }
-  emit('apply', normalizeJsonTable(item.content));
+  if (props.mode === 'default') emit('select', item);
+  else emit('apply', normalizeJsonTable(item.content));
   emit('update:visible', false);
 };
 </script>

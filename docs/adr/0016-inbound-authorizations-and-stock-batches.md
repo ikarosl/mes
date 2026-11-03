@@ -34,7 +34,7 @@
 
 Production 拥有成品办理轮次、批准版和授权；Procurement 拥有物料来源及授权；Quality 拥有检查办理和不可变结果；Inventory 拥有实际入库、库批和唯一流水。来源先锁内核验资格，Inventory 核验目标身份并原子记账，成功审计及幂等结果同事务；完整锁序见[库存协作协议](../inventory-extraction-design.md)。
 
-当前字段由各模块所有者维护：[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)、[来料正式分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)、[成品质检](../../apps/api/src/modules/quality/docs/finished-inspections.md)、[库存](../../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)。结构切换只追加成对 migration，开发库由统一入口重建，不猜测旧基准、不兼容双写。
+当前字段由各模块所有者维护：[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)、[来料正式分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)、[成品质检](../../apps/api/src/modules/quality/docs/finished-inspections.md)、[库存](../../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)。结构切换遵守[迁移规则](../../packages/database/docs/90-migration-order.md)，不猜测旧基准、不兼容双写。
 
 ## 取代范围
 

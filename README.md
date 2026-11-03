@@ -19,7 +19,7 @@
 ## 数据库命令
 
 - `pnpm db:init`：从数据库创建到 migration、system seed、管理员初始化；重跑会按当前 `ADMIN_PASSWORD` 更新管理员密码。
-- `pnpm db:migrate`：已有环境只升级 schema 与随版本发布的权限目录，不创建角色或账号。
+- `pnpm db:migrate`：已有环境升级 schema 与随版本发布的权限目录；development 先创建[迁移前副本](packages/database/docs/migration-safety.md#开发迁移前副本与手动切库)，不创建角色或账号。
 - `pnpm db:migrate:status`：查询当前环境的迁移状态。
 - `pnpm db:seed:demo`：显式加载演示数据，要求 `ALLOW_DEMO_SEED=1` 和独立 `DEMO_USER_PASSWORD`；不自动进入初始化、生产部署或 CI。
 

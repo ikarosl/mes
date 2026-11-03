@@ -6,6 +6,7 @@ import {
   releaseMigrationLockQuery,
   type Migration,
   type MigrationExecutionStatus,
+  type MigrationHistoryPolicy,
 } from './migration-utils.js';
 
 type MigrationConnection = Pick<Connection, 'query' | 'execute'>;
@@ -45,12 +46,17 @@ const hasMigrationHistory = async (connection: MigrationConnection): Promise<boo
 export const readMigrationHistory = async (
   connection: MigrationConnection,
   migrations: readonly Migration[],
+  policy: MigrationHistoryPolicy = {},
 ): Promise<MigrationRecord[]> => {
   if (!(await hasMigrationHistory(connection))) return [];
   const [identities] = await connection.query<
     (RowDataPacket & { name: string; checksum: string })[]
   >('SELECT name, checksum FROM _schema_migrations ORDER BY name');
-  assertAppliedMigrations(migrations, new Map(identities.map((row) => [row.name, row.checksum])));
+  assertAppliedMigrations(
+    migrations,
+    new Map(identities.map((row) => [row.name, row.checksum])),
+    policy,
+  );
   if (identities.length === 0) {
     const [unregistered] = await connection.query<RowDataPacket[]>(
       `SELECT 1 FROM information_schema.tables
@@ -67,17 +73,45 @@ export const readMigrationHistory = async (
     if (!columns.some((column) => column.name === required))
       throw new Error('旧迁移登记结构不支持当前基线；请按初始化手册重建，不自动修改旧库。');
   }
-  const [records] = await connection.query<(RowDataPacket & MigrationRecord)[]>(
-    'SELECT name, checksum, status, error_code FROM _schema_migrations ORDER BY name',
+  const [rows] = await connection.query<
+    (RowDataPacket & MigrationRecord & { started_at: Date | null; applied_at: Date | null })[]
+  >(
+    'SELECT name, checksum, status, error_code, started_at, applied_at FROM _schema_migrations ORDER BY name',
   );
+  const records = rows.map((row): MigrationRecord => {
+    if (
+      typeof row.name !== 'string' ||
+      !row.name.trim() ||
+      typeof row.checksum !== 'string' ||
+      !/^[0-9a-f]{64}$/i.test(row.checksum) ||
+      !['running', 'applied', 'failed'].includes(row.status) ||
+      !row.started_at ||
+      (row.status === 'applied' ? !row.applied_at : row.applied_at !== null)
+    ) {
+      throw new Error('迁移登记不完整或包含非法状态，拒绝执行；请核对账本和恢复来源。');
+    }
+    return {
+      name: row.name,
+      checksum: row.checksum,
+      status: row.status,
+      error_code: row.error_code,
+    };
+  });
   const names = new Set(records.map((row) => row.name));
   let missingPredecessor = false;
   for (const migration of migrations) {
     if (!names.has(migration.name)) missingPredecessor = true;
-    else if (missingPredecessor)
+    else if (missingPredecessor) {
+      if (policy.allowHistoryEdits) {
+        policy.onHistoryEdit?.(
+          '开发历史提示：当前文件顺序与历史登记存在缺口，仅执行当前未登记的文件。',
+        );
+        break;
+      }
       throw new Error(
         `迁移登记存在顺序缺口：${migration.name}。请核对恢复来源，禁止跳过前置迁移。`,
       );
+    }
   }
   return records;
 };
@@ -98,6 +132,8 @@ export const runMigrations = async (
   connection: MigrationConnection,
   migrations: readonly Migration[],
   onApplied: (name: string) => void = () => undefined,
+  policy: MigrationHistoryPolicy = {},
+  beforeMigrate?: () => Promise<void>,
 ): Promise<void> => {
   // 数据库建议锁只串行化迁移进程；业务停写仍由外层维护流程负责。
   const [[lock]] = await connection.query<(RowDataPacket & { acquired: number | null })[]>(
@@ -107,15 +143,16 @@ export const runMigrations = async (
   if (lock?.acquired !== 1) throw new Error('无法获取迁移 advisory 锁');
   let releaseError: unknown;
   try {
-    // 先核验整段历史，确认没有缺失、改写或上次未完成的迁移，再执行任何新 SQL。
-    const records = await readMigrationHistory(connection, migrations);
+    // 开发历史编辑策略不豁免未完成或非法登记；全部核验在任何新 SQL 之前完成。
+    const records = await readMigrationHistory(connection, migrations, policy);
     const unfinished = records.find((record) => record.status !== 'applied');
     if (unfinished)
       throw new Error(
         `迁移 ${unfinished.name} 状态为 ${unfinished.status}，禁止自动重跑。保持停写，按迁移恢复手册核对或恢复备份。`,
       );
-    if (!(await hasMigrationHistory(connection))) await connection.query(createHistoryQuery);
     const applied = new Set(records.map((row) => row.name));
+    await beforeMigrate?.();
+    if (!(await hasMigrationHistory(connection))) await connection.query(createHistoryQuery);
     for (const migration of migrations) {
       if (applied.has(migration.name)) continue;
       // DDL 前先落库登记；即使之后进程崩溃，下次也能识别这次尚未确认的执行。

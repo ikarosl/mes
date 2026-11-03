@@ -1,8 +1,11 @@
 import type {
   BusinessTemplateItem,
+  BusinessTemplateDefaultItem,
+  BusinessTemplateSceneCode,
   BusinessTemplateListQuery,
   BusinessTemplatePayload,
   UpdateBusinessTemplatePayload,
+  UpdateBusinessTemplateDefaultPayload,
   PageResult,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
@@ -17,6 +20,18 @@ const request = async <T>(config: RetryRequestConfig): Promise<T> => {
   }
 };
 export const businessTemplatesApi = {
+  defaults: (signal?: AbortSignal) =>
+    request<BusinessTemplateDefaultItem[]>({ url: '/templates/defaults', signal }),
+  updateDefault: (
+    sceneCode: BusinessTemplateSceneCode,
+    data: UpdateBusinessTemplateDefaultPayload,
+  ) =>
+    request<BusinessTemplateDefaultItem>({
+      url: `/templates/defaults/${sceneCode}`,
+      method: 'PATCH',
+      data,
+      skipRetry: true,
+    }),
   list: (params: BusinessTemplateListQuery, signal?: AbortSignal) =>
     request<PageResult<BusinessTemplateItem>>({ url: '/templates', params, signal }),
   detail: (id: string, signal?: AbortSignal) =>

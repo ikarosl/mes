@@ -40,7 +40,7 @@
             :icon="Plus"
             @click="createTemplate"
             >创建模板</el-button
-          ></template
+          ><el-button @click="defaultsVisible = true">场景默认模板</el-button></template
         ><template #tools
           ><el-button
             :icon="Refresh"
@@ -139,6 +139,7 @@
       :item="editingItem"
       @saved="list.load"
     />
+    <TemplateDefaultsDialog v-model:visible="defaultsVisible" />
   </section>
 </template>
 
@@ -164,6 +165,7 @@ import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox } from '../../utils/route-message-box';
 import TemplateEditorDialog from './components/TemplateEditorDialog.vue';
+import TemplateDefaultsDialog from './components/TemplateDefaultsDialog.vue';
 defineOptions({ name: 'TemplatesPage' });
 const active = ref(true);
 const list = useBusinessTemplateList(() => active.value);
@@ -172,6 +174,7 @@ const editingItem = ref<BusinessTemplateItem | null>(null);
 const detailLoading = ref(false);
 const pendingId = ref<string | null>(null);
 const reads = useLatestReadRequest(() => (detailLoading.value = false));
+const defaultsVisible = ref(false);
 onMounted(list.load);
 onActivated(() => (active.value = true));
 onDeactivated(() => (active.value = false));

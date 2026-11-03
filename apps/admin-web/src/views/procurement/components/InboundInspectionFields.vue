@@ -102,15 +102,37 @@
       />
     </el-form-item>
     <el-form-item
-      label="检验结论说明"
+      label="检验记录"
       required
-      ><el-input
-        v-model="model.remark"
-        type="textarea"
-        :rows="3"
-        :maxlength="QUALITY_INBOUND_TEXT_MAX_LENGTH"
-        show-word-limit
-    /></el-form-item>
+      :error="inspectionDetailsError"
+    >
+      <div class="inspection-details">
+        <div class="inspection-template">
+          <span>{{ template ? `使用模板：${template.name}` : '来料检验默认模板' }}</span>
+          <el-button
+            :disabled="disabled || templateLoading"
+            :loading="templateLoading"
+            @click="emit('reload-template')"
+            >{{ template ? '重新加载模板' : '重试加载模板' }}</el-button
+          >
+        </div>
+        <el-alert
+          v-if="templateError || (!template && !templateLoading)"
+          :title="templateError || '默认模板尚未加载，请重试；配置不可用时请联系管理员。'"
+          type="error"
+          :closable="false"
+          show-icon
+          class="template-error"
+        />
+        <JsonTableEditor
+          v-if="template"
+          v-model="model.inspectionDetails"
+          mode="fill"
+          :column-rules="template.columnRules"
+          :disabled="disabled || templateLoading || Boolean(templateError)"
+        />
+      </div>
+    </el-form-item>
     <el-form-item
       label="凭据编号 / 位置"
       required
@@ -133,17 +155,35 @@ import {
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
   PURCHASE_ORDER_MAX_QUANTITY,
 } from '@company/constants';
-import type { QualityInboundInspectionInput } from '@company/contracts';
+import type { BusinessTemplateItem, QualityInboundInspectionInput } from '@company/contracts';
 import InlineHint from '../../../components/InlineHint.vue';
+import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
 import {
   inboundInspectionInput,
   inboundInspectionPreview,
+  normalizeInboundInspectionDetails,
   type InboundInspectionDraft,
 } from '../../quality/inbound-inspection';
 const model = defineModel<InboundInspectionDraft>({ required: true });
-const props = defineProps<{ coveredQuantity: number; unit: string; disabled: boolean }>();
-const emit = defineEmits<{ valid: [boolean] }>();
+const props = defineProps<{
+  coveredQuantity: number;
+  unit: string;
+  disabled: boolean;
+  template: BusinessTemplateItem | null;
+  templateLoading: boolean;
+  templateError: string;
+}>();
+const emit = defineEmits<{ valid: [boolean]; 'reload-template': [] }>();
+const inspectionDetailsError = computed(() => {
+  if (!props.template || props.templateLoading || props.templateError) return '';
+  try {
+    normalizeInboundInspectionDetails(model.value.inspectionDetails, props.template);
+    return '';
+  } catch (error) {
+    return error instanceof Error ? error.message : '请检查检验记录';
+  }
+});
 const preview = computed(() => inboundInspectionPreview(model.value));
 const previewTone = computed(() => {
   if (!preview.value) return 'info';
@@ -154,7 +194,12 @@ const previewTone = computed(() => {
   if (preview.value.inspectedQuantity !== props.coveredQuantity) return 'warning';
   return 'info';
 });
-const valid = computed(() => inboundInspectionInput(model.value) !== null);
+const valid = computed(
+  () =>
+    !props.templateLoading &&
+    !props.templateError &&
+    inboundInspectionInput(model.value, props.template) !== null,
+);
 const changeMethod = (value: string | number | boolean | undefined) => {
   if (!QUALITY_INBOUND_METHODS.includes(value as QualityInboundInspectionInput['inspectionMethod']))
     return;
@@ -168,6 +213,20 @@ watch(valid, (value) => emit('valid', value), { immediate: true });
 <style scoped>
 .inspection-preview {
   margin-bottom: 16px;
+}
+.inspection-details {
+  width: 100%;
+  min-width: 0;
+}
+.inspection-template {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.template-error {
+  margin-bottom: 12px;
 }
 .inspection-quantity-grid {
   display: grid;

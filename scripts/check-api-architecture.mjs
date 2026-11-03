@@ -126,6 +126,7 @@ const knownIdempotencyScopes = [
   'procurement.receipt.correct.v2',
   'procurement.receipt.review.v3',
   'procurement.receipt.review.v2',
+  'procurement.receipt.inspect.v5',
   'procurement.receipt.inspect.v3',
   'procurement.receipt.accept.v2',
   'procurement.receipt.reject.v1',

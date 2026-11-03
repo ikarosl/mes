@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { loadWorkspaceEnv } from '../../packages/config/dist/index.js';
+import { BUSINESS_TEMPLATE_COLUMN_MODE } from '../../packages/constants/dist/index.js';
 
 loadWorkspaceEnv({ quiet: true });
 
@@ -203,6 +204,8 @@ async function completeReview(client, config, lineId) {
     (row) => row.roundId === line.currentRound.id && row.status === 'reviewing',
     '当前检验办理',
   );
+  const { template } = await client.request('/quality/incoming-inspection-template');
+  if (!template?.columnRules) throw new Error('来料检验默认模板尚未配置填写规则');
   await client.request(`/procurement/receipt-lines/${lineId}/actions/inspect`, {
     version: line.version,
     roundId: line.currentRound.id,
@@ -215,7 +218,21 @@ async function completeReview(client, config, lineId) {
     unqualifiedQuantity: 0,
     releaseDecision: 'released',
     inspectedAt: new Date().toISOString(),
-    remark: note(config, 'awaiting-acceptance'),
+    inspectionTemplateId: template.id,
+    inspectionTemplateVersion: template.version,
+    inspectionDetails: {
+      columns: template.content.columns,
+      rows: template.content.rows.map((row) =>
+        Object.fromEntries(
+          template.content.columns.map(({ key }) => [
+            key,
+            template.columnRules[key] === BUSINESS_TEMPLATE_COLUMN_MODE.fixed
+              ? (row[key] ?? '')
+              : note(config, 'awaiting-acceptance'),
+          ]),
+        ),
+      ),
+    },
     evidence: note(config, 'inspection-evidence'),
   });
 }

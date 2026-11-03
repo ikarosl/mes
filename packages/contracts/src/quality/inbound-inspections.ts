@@ -1,4 +1,5 @@
 import type { QualityInspectionMethod, QualityReleaseDecision } from './inspection.js';
+import type { JsonTableData } from '../template.js';
 
 export type QualityInboundCaseType =
   'initial' | 'reinspection' | 'inspection_correction' | 'receipt_correction';
@@ -11,8 +12,11 @@ export interface QualityInboundInspectionInput {
   unqualifiedQuantity: number;
   releaseDecision: QualityReleaseDecision;
   inspectedAt: string;
-  remark: string;
   evidence: string;
+  /** 本次填写所依据的默认模板，仅在提交时核对，不作为历史记录的读取来源。 */
+  inspectionTemplateId: string;
+  inspectionTemplateVersion: number;
+  inspectionDetails: JsonTableData;
 }
 
 export interface QualityInboundInspectionItem {
@@ -27,8 +31,10 @@ export interface QualityInboundInspectionItem {
   releaseDecision: QualityReleaseDecision;
   previousRecordId: string | null;
   inspectedAt: string;
-  remark: string;
+  /** 历史来料检查说明；新登记不再填写。 */
+  remark: string | null;
   evidence: string;
+  inspectionDetails: JsonTableData | null;
   createdBy: string;
   createdAt: string;
 }
