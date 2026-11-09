@@ -8,10 +8,7 @@ import type {
   ProductionBatchItem,
   ProductionBatchQuery,
   ProductionBatchStartRecord,
-  ProductionBatchStepRecords,
-  ProductionStepCommandResult,
   UpdateProductionBatchPayload,
-  UpdateBatchStepExecutionPayload,
   UpdateWorkOrderPayload,
   UserOption,
   WorkOrderDetail,
@@ -84,24 +81,6 @@ export class ProductionService {
   }
   async getBatch(id: string) {
     return this.enrichBatchDetail(await this.production.getBatch(id));
-  }
-  async getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords> {
-    const result = await this.production.getBatchStepRecords(id);
-    const names = await this.resolveUserNames(
-      result.stepRecords.flatMap((step) => [step.defaultResponsibleUserId, step.responsibleUserId]),
-    );
-    return {
-      ...result,
-      stepRecords: result.stepRecords.map((step) => ({
-        ...step,
-        defaultResponsibleUserName: step.defaultResponsibleUserId
-          ? (names.get(step.defaultResponsibleUserId) ?? null)
-          : null,
-        responsibleUserName: step.responsibleUserId
-          ? (names.get(step.responsibleUserId) ?? null)
-          : null,
-      })),
-    };
   }
   async getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
     const record = await this.production.getBatchStartRecord(id);
@@ -290,21 +269,6 @@ export class ProductionService {
     return this.enrichBatchDetail(
       await this.production.cancelBatch(id, version, normalizedReason, audit),
     );
-  }
-  async updateBatchStepExecution(
-    batchId: string,
-    recordId: string,
-    payload: UpdateBatchStepExecutionPayload,
-    audit: CommandContext,
-  ): Promise<ProductionStepCommandResult> {
-    let actualSop: ResolvedBatchStepOverride['actualSop'] | undefined;
-    if (payload.actualSopFileId === undefined) actualSop = undefined;
-    else if (payload.actualSopFileId === null) actualSop = null;
-    else
-      actualSop = this.requireProduct(
-        await this.products.getEnabledSopFileSnapshot(payload.actualSopFileId),
-      );
-    return this.production.updateBatchStepExecution(batchId, recordId, payload, actualSop, audit);
   }
   private requireProduct<T>(result: ProductQueryResult<T>): T {
     if (result.status === 'success') return result.value;

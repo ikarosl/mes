@@ -1,10 +1,12 @@
 # ADR-0015：统一质检数量与放行语义
 
+> 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
+
 本 ADR 涉及补单承接、分配采购归属及其取消／继续办理资格的条款，在 [ADR-0023](0023-supplement-source-and-receipt-ownership.md) 明确范围内被取代；其余业务边界继续有效。
 
 本文取代关系中保留的 ADR-0013 逐行供应商规则，由 [ADR-0026](0026-purchase-order-supplier-and-amounts.md) 的采购主单唯一供应商取代；检验、正式授权及实际入库的职责不变。
 
-状态：Accepted，成品 C/R/S 部分由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。本文保留检验事实、来源数量授权与实际入库分离的跨模块决策及取代关系。当前完整规则分别由 [Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)、[Procurement 来料正式清单](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)和 [Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)维护，统一事实结构见 [Quality 模型](../../apps/api/src/modules/quality/docs/unified-inspection-model.md)。入库授权、库批分离及成品执行方式由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 调整；未完成验收及正式测试见[路线图](../roadmap.md)。
+状态：Accepted，成品 C/R/S 部分由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。本文保留检验事实、来源数量授权与实际入库分离的跨模块决策及取代关系。当前完整规则分别由 [实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)、[Procurement 来料正式清单](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)和 [Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)维护，统一事实结构见 [Quality 模型](../../apps/api/src/modules/quality/docs/unified-inspection-model.md)。入库授权、库批分离及成品执行方式由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 调整；未完成验收及正式测试见[路线图](../roadmap.md)。
 
 ## 统一职责与数量定义
 
@@ -16,7 +18,7 @@
 - `C`：来料由库管核实的整批未处置实物量，不是检后可用量；成品质检不测量 C。
 - `A`：本次正式清单分配的可入数量；不是本次实际入库量。
 
-**成品剩余复检范围**：部分类别已入库后，新复检针对全部剩余送检实物所在轮次，已入部分不重新检查。发起复检时固定历史已入基准并冻结剩余入库资格，保留检查事实及最终清单的可追溯关联；基准不能从动态库存余额倒推。原成品整批 C、本次建议 R、累计建议 S 公式已由 ADR-0019 取代，不再是当前数量规则。固定基准、剩余范围及冻结按 ADR-0016 的来源轮次实施；实施与验收状态以路线图为准。具体定义见[Quality 成品规则](../../apps/api/src/modules/quality/docs/finished-inspections.md#部分已入后的复检与固定范围)。
+**成品剩余复检范围**：部分类别已入库后，新复检针对全部剩余送检实物所在轮次，已入部分不重新检查。发起复检时固定历史已入基准并冻结剩余入库资格，保留检查事实及最终清单的可追溯关联；基准不能从动态库存余额倒推。原成品整批 C、本次建议 R、累计建议 S 公式已由 ADR-0019 取代，不再是当前数量规则。固定基准、剩余范围及冻结按 ADR-0016 的来源轮次实施；实施与验收状态以路线图为准。具体定义见[实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)。
 
 质量检查样本不自动证明整批数量；来料来源原报 D 仍由库管独立核实为 C，不能直接替代核实。不按样本合格率外推整批。不合格不自动代表已报废或已退货，实际处置分别留事实。来料与成品的输入职责和依据要求分别维护在两侧所有者文档。
 
@@ -64,7 +66,7 @@
 
 成品质检只保存 G/F 与明确结论，由产线管理员核对清单、工单负责人批准；库管按有效正式批准量实际入库。仅 Production 定稿引用 `full+released` 时，以原检验轮固定历史已入基准加 G 比较累计目标，差异只提示。来料库管的 C 核实和强制超建议说明不套入成品。
 
-当前输入见[Quality 成品数量规则](../../apps/api/src/modules/quality/docs/finished-inspections.md#数量输入与放行)，固定基准与剩余复检目标见其复检章节。普通检验须有真实检查，零产出使用独立核实方式且明确放行；实际报废独立处理。负责人批准后，仓管按当前有效授权分次确认，计划内外可进入同一合资格库存批次。计划内任务计划约束、对应类别累计不低于历史已入量、整数及检验计数合法性保持。
+当前输入见[实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)，固定基准与剩余复检目标见其复检章节。普通检验须有真实检查，零产出使用独立核实方式且明确放行；实际报废独立处理。负责人批准后，仓管按当前有效授权分次确认，计划内外可进入同一合资格库存批次。计划内任务计划约束、对应类别累计不低于历史已入量、整数及检验计数合法性保持。
 
 本 ADR 的成品范围决定取代以质检计算量限制成品定稿的硬门禁，以及将历史已入量纳入新检验的范围定义。ADR-0019 随后取代成品 C/R/S 建议公式及相关字段／展示。当前只有 Production 对引用的 `full+released` 检验，用该检验原轮已入基准加 G 核对累计目标，差异只提示；抽检不推整批。原有产出说明、更正原因及负责人审批保留。不自动改 G/F、产出或库存；实际入库继续受有效正式批准数量约束。
 

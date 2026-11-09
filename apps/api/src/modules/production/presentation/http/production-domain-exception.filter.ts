@@ -7,6 +7,7 @@ import {
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import { InventoryCommandError } from '../../../inventory/public.js';
+import { PersonnelError } from '../../../identity/public.js';
 
 interface RequestWithContext {
   originalUrl?: string;
@@ -20,9 +21,12 @@ interface ResponseWriter {
   status(status: number): { json(body: ApiErrorResponse): void };
 }
 
-@Catch(ProductionDomainError, InventoryCommandError)
+@Catch(ProductionDomainError, InventoryCommandError, PersonnelError)
 export class ProductionDomainExceptionFilter implements ExceptionFilter {
-  catch(exception: ProductionDomainError | InventoryCommandError, host: ArgumentsHost): void {
+  catch(
+    exception: ProductionDomainError | InventoryCommandError | PersonnelError,
+    host: ArgumentsHost,
+  ): void {
     const http = host.switchToHttp();
     const request = http.getRequest<RequestWithContext>();
     const response = http.getResponse<ResponseWriter>();
@@ -38,15 +42,13 @@ export class ProductionDomainExceptionFilter implements ExceptionFilter {
       requestId,
       timestamp: toBeijingISOString(new Date()),
       path: request.originalUrl ?? request.url ?? '',
-      ...(exception.details ? { details: exception.details } : {}),
+      ...('details' in exception && exception.details ? { details: exception.details } : {}),
     });
   }
 }
 
 const statusFor = (code: ProductionDomainError['code']): number => {
   if (code === 'NOT_FOUND') return HttpStatus.NOT_FOUND;
-  if (code === 'NOT_STEP_ASSIGNEE') return HttpStatus.FORBIDDEN;
-  if (code === 'SOP_SNAPSHOT_UNAVAILABLE') return HttpStatus.SERVICE_UNAVAILABLE;
   if (
     code === 'CONFLICT' ||
     code === 'CONCURRENT_MODIFICATION' ||
@@ -69,16 +71,7 @@ const statusFor = (code: ProductionDomainError['code']): number => {
     code === 'STOCK_CHECK_COUNT_NOT_ALLOWED' ||
     code === 'STOCK_CHECK_INCOMPLETE' ||
     code === 'STOCK_CHECK_SNAPSHOT_CHANGED' ||
-    code === 'STOCK_CHECK_CANCEL_NOT_ALLOWED' ||
-    code === 'STEP_ASSIGNMENT_CONFLICT' ||
-    code === 'STEP_START_NOT_ALLOWED' ||
-    code === 'STEP_REPORT_NOT_ALLOWED' ||
-    code === 'STEP_REPORT_QUANTITY_EXCEEDED' ||
-    code === 'STEP_REPORT_ALREADY_REVERSED' ||
-    code === 'STEP_REPORT_DEPENDENCY_CONFLICT' ||
-    code === 'BATCH_EXECUTION_COMPLETION_NOT_ALLOWED' ||
-    code === 'NO_REQUIRED_REPORTING_STEP' ||
-    code === 'REQUIRED_STEP_INCOMPLETE'
+    code === 'STOCK_CHECK_CANCEL_NOT_ALLOWED'
   )
     return HttpStatus.CONFLICT;
   return HttpStatus.BAD_REQUEST;

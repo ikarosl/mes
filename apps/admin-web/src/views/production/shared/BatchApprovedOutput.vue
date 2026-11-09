@@ -1,21 +1,14 @@
 <template>
   <div
-    v-if="output"
+    v-if="output && output.confirmedOutputCount > 0"
     class="approved-output"
   >
     <strong>可用 {{ formatQuantity(approvedUsableQuantity(output)) }}</strong>
-    <div v-if="!compact">
-      计划内 {{ formatQuantity(output.availableQuantity) }} / 计划外
-      {{ formatQuantity(output.extraQuantity) }}
-    </div>
-    <div v-if="!compact">
-      报废 {{ formatQuantity(output.scrapQuantity) }} · 第 {{ output.revisionNo }} 版
-    </div>
   </div>
   <span
     v-else
     class="unapproved"
-    >尚无批准清单</span
+    >尚未确认产出</span
   >
 </template>
 

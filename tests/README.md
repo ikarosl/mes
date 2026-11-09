@@ -8,15 +8,15 @@
 
 测试按所验证的业务归属组织，生产相关入口进一步按职责分目录：
 
-| 目录 | 内容 |
-| --- | --- |
-| `integration/database/` | 共享事务、迁移初始化与重复执行、基线回退保护及运行器的失败保护 |
-| `integration/production/execution/` | 工序状态、报工事实、报废补产执行 |
-| `integration/production/materials/` | 生产分配、领料、退料与损耗、供需及追溯 |
-| `integration/production/persistence/` | 批次与需求持久化、数据库约束及事务 |
-| `integration/production/fixtures/` | 生产套件共用的测试数据清理 |
-| `integration/inventory/` | 库存流水不可变性、余额投影及库存事务；`migrations/` 验证库存结构迁移 |
-| `integration/fixtures/` | 当前结构的基础资料构造器，以及迁移读取与执行辅助函数 |
+| 目录                                  | 内容                                                           |
+| ------------------------------------- | -------------------------------------------------------------- |
+| `integration/database/`               | 共享事务、迁移初始化与重复执行、基线回退保护及运行器的失败保护 |
+| `integration/production/execution/`   | 追踪卡执行、异常、数量与事务覆盖的待恢复说明                   |
+| `integration/production/materials/`   | 生产分配、领料、退料与损耗、供需及追溯                         |
+| `integration/production/persistence/` | 批次与需求持久化、数据库约束及事务                             |
+| `integration/production/fixtures/`    | 生产测试数据清理的待恢复说明                                   |
+| `integration/inventory/`              | 库存流水不可变性、余额投影及库存事务的待恢复说明               |
+| `integration/fixtures/`               | 当前结构的基础资料构造器，以及迁移读取与执行辅助函数           |
 
 生产领退料用例包含库存影响断言时，仍作为完整生产流程保留，不因涉及库存表就拆断同一用例。跨模块夹具按需复用，目录位置不表示其依赖已全部消除。
 
@@ -24,9 +24,9 @@
 
 这些入口按当前表结构直接写入，不代表通过业务命令的资格校验。验证历史迁移区间时，继续在所属迁移测试中显式构造该版本的数据；只有已应用最新完整迁移链、且受测迁移未改变这些基础表结构的场景才复用当前夹具。
 
-`*.mysql.test.ts` 是 Vitest 运行入口。共享可变夹具及执行顺序的审批、生产持久化套件保留统一入口，在 `*.cases.ts` 中按功能定义场景，由入口按原顺序注册；`*-fixture.ts` 只提供初始化、数据构造和清理，不单独注册测试。目录拆分不代表新增覆盖或既有场景已通过当前业务回归。
+包含有效测试的 `*.mysql.test.ts` 是 Vitest 运行入口。共享可变夹具及执行顺序的审批套件保留统一入口，在 `*.cases.ts` 中按功能定义场景，由入口按原顺序注册；有效的 `*-fixture.ts` 只提供初始化、数据构造和清理，不单独注册测试。仅含恢复说明的原文件不注册测试，也不计为通过覆盖。
 
-生产 `execution/`、`materials/`、`persistence/` 及 `inventory/inventory-ledger.mysql.test.ts` 的旧结构夹具覆盖目前暂停执行：原文件仅保留测试说明和恢复条件注释，测试入口逐场景登记 `it.todo`，不保留旧测试实现。这些场景属于待恢复的高重要性覆盖，不是已通过的数据库验证；恢复范围与优先级见[路线图](../docs/roadmap.md#存量测试恢复待正式测试授权)。迁移专项是否保留按[迁移测试取舍](../docs/testing-strategy.md#migration-测试的范围与维护)判断，不逐份 SQL 创建测试。
+生产 `execution/`、`materials/`、`persistence/` 及 `inventory/inventory-ledger.mysql.test.ts` 的旧结构夹具覆盖目前暂停执行，原位置只保留测试目的、重要性与暂停原因、恢复条件的 TODO 注释；失效共用夹具不保留实现或专属导入。旧人工报工、异常审批和返工补产已由追踪卡流转、随盘异常及末道终检替代，恢复时使用当前所有者契约，不恢复退役业务主线。上述说明属于待恢复的高重要性覆盖，不是已通过的数据库验证；恢复范围与优先级见[路线图](../docs/roadmap.md#存量测试恢复待正式测试授权)。迁移专项是否保留按[迁移测试取舍](../docs/testing-strategy.md#migration-测试的范围与维护)判断。
 
 创建任务 HTTP 等当前能力的夹具恢复仍按路线图推进。已退役旧链的历史库存投影转换及完整 down 缺陷不再属于当前支持路径；退役不表示旧缺陷已修复。当前基线、非空保护和迁移失败的验证边界见[迁移安全](../packages/database/docs/migration-safety.md#验证边界)。
 

@@ -20,6 +20,9 @@
         >添加路线步骤</el-button
       >
     </div>
+    <InlineHint
+      >路线按顺序流转，最后一步用于终检确认产出。中间检验可作为独立工序命名配置。</InlineHint
+    >
     <el-table
       :data="localSteps"
       class="step-table"
@@ -67,34 +70,6 @@
         min-width="180"
       >
         <template #default="{ row }">{{ getProcessSop(row.processStepId) || '-' }}</template>
-      </el-table-column>
-      <el-table-column
-        label="需检验"
-        width="90"
-        align="center"
-      >
-        <template #default="{ row }"><el-switch v-model="row.needInspection" /></template>
-      </el-table-column>
-      <el-table-column
-        label="默认负责人"
-        min-width="150"
-      >
-        <template #default="{ row }">
-          <el-select
-            v-model="row.defaultOwnerId"
-            clearable
-            placeholder="请选择"
-            @visible-change="(visible: boolean) => visible && userSource.refresh()"
-          >
-            <el-option
-              v-for="choice in userChoices(row.defaultOwnerId)"
-              :key="choice.value"
-              :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
-              :value="choice.value"
-              :disabled="choice.isUnavailable"
-            />
-          </el-select>
-        </template>
       </el-table-column>
       <el-table-column
         label="备注"
@@ -153,15 +128,13 @@ import { DialogWidth } from '../../../utils/dialog';
 import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-options';
 import { EMessage } from '../../../utils/message';
 import { useProcessStepOptions } from '../composables/useProcessStepOptions';
-import { useUserOptions } from '../../../composables/options/useUserOptions';
+import InlineHint from '../../../components/InlineHint.vue';
 import { useRouteStepEditor } from '../composables/useRouteStepEditor';
 
 export type StepRow = {
   processStepId: string;
   stepOrder: number;
-  defaultOwnerId: string;
   sopFileId: string;
-  needInspection: boolean;
   status: number;
   remark: string;
 };
@@ -178,7 +151,6 @@ const emit = defineEmits<{
 }>();
 
 const processSource = useProcessStepOptions();
-const userSource = useUserOptions();
 const { stepsStatus, loadSteps, invalidateSteps } = useRouteStepEditor();
 const localSteps = ref<StepRow[]>([]);
 
@@ -189,7 +161,6 @@ const setSteps = (initial: StepRow[]): void => {
 /** 刷新弹窗自持的工序与负责人候选，不重载步骤行；BOM 不属于路线步骤。 */
 const refreshDialogOptions = (): void => {
   void processSource.refresh();
-  void userSource.refresh();
 };
 
 /** 打开弹窗时并发加载路线步骤明细与候选；关闭时推进请求代际，迟到的步骤响应不得写回 localSteps */
@@ -212,9 +183,7 @@ watch(
       steps.map((step) => ({
         processStepId: step.processStepId,
         stepOrder: step.stepOrder,
-        defaultOwnerId: step.defaultOwnerId ?? '',
         sopFileId: step.sopFileId ?? '',
-        needInspection: step.needInspection,
         status: step.status,
         remark: step.remark ?? '',
       })),
@@ -226,9 +195,7 @@ const addStep = (): void => {
   localSteps.value.push({
     processStepId: '',
     stepOrder: localSteps.value.length + 1,
-    defaultOwnerId: '',
     sopFileId: '',
-    needInspection: false,
     status: 1,
     remark: '',
   });
@@ -265,13 +232,6 @@ const processChoices = (selectedValue: string) =>
     (item) => item.id,
   );
 
-const userChoices = (selectedValue: string) =>
-  buildLiveOptions(
-    userSource.options.value,
-    selectedValue ? [selectedValue] : [],
-    (item) => item.id,
-  );
-
 const handleSubmit = (): void => {
   // 加载中/失败/未加载时禁止保存，避免把旧路线步骤保存到新路线
   if (stepsStatus.value !== 'success') {
@@ -287,21 +247,15 @@ const handleSubmit = (): void => {
     return;
   }
   if (
-    localSteps.value.some(
-      (step) =>
-        hasUnavailableSelection(
-          processSource.options.value,
-          step.processStepId ? [step.processStepId] : [],
-          (item) => item.id,
-        ) ||
-        hasUnavailableSelection(
-          userSource.options.value,
-          step.defaultOwnerId ? [step.defaultOwnerId] : [],
-          (item) => item.id,
-        ),
+    localSteps.value.some((step) =>
+      hasUnavailableSelection(
+        processSource.options.value,
+        step.processStepId ? [step.processStepId] : [],
+        (item) => item.id,
+      ),
     )
   ) {
-    EMessage.warning('所选工序或负责人已不可用，请重新选择');
+    EMessage.warning('所选工序已不可用，请重新选择');
     return;
   }
   normalizeStepOrders();

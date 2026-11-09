@@ -45,8 +45,7 @@ describe('mysql production material demand mapper', () => {
     expect(result).toMatchObject({
       generationGroupKey: 'NORMAL:2',
       generationGroupType: 'normal',
-      supplementId: null,
-      supplementNo: null,
+      manualAdditionNo: null,
     });
     expect(result).not.toHaveProperty('progressStatus');
   });

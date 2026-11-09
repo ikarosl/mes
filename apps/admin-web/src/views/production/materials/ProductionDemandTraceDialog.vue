@@ -170,26 +170,7 @@
                   >
                   <span v-else>更正审批 id:{{ row.correction.correctionApprovalId }}</span>
                 </div>
-                <div v-if="row.correction?.closeoutId">
-                  结案记录 id:{{ row.correction.closeoutId }}
-                </div>
-                <div v-if="row.correction?.closeoutApprovalId">
-                  <el-button
-                    v-if="canAccessRoute({ name: 'approval-inbox' })"
-                    link
-                    type="primary"
-                    @click="openApproval(row.correction.closeoutApprovalId)"
-                    >查看结案审批 id:{{ row.correction.closeoutApprovalId }}</el-button
-                  >
-                  <span v-else>结案审批 id:{{ row.correction.closeoutApprovalId }}</span>
-                </div>
-                <span
-                  v-if="
-                    !row.correction?.closeCause &&
-                    !row.correction?.correctionApprovalId &&
-                    !row.correction?.closeoutId &&
-                    !row.correction?.closeoutApprovalId
-                  "
+                <span v-if="!row.correction?.closeCause && !row.correction?.correctionApprovalId"
                   >—</span
                 >
               </template>
@@ -204,7 +185,9 @@
         >
           <h4>{{ original.demandType === 'manual_additional' ? '人工追加原因' : '来源说明' }}</h4>
           <div class="secondary-text">
-            <template v-if="original.supplementNo">来源 {{ original.supplementNo }} · </template>
+            <template v-if="original.manualAdditionNo"
+              >来源 {{ original.manualAdditionNo }} ·
+            </template>
             原始需求 id:{{ original.demandId }} · 创建时间
             {{ formatDateTimeForDisplay(original.createdAt) }}
           </div>

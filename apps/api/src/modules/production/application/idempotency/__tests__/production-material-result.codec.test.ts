@@ -88,7 +88,7 @@ describe('production material result codecs', () => {
             itemName: '物料',
             generationGroupKey: 'NORMAL:1',
             generationGroupType: 'normal' as const,
-            supplementNo: null,
+            manualAdditionNo: null,
             outboundQuantity: '2.0000',
             unit: 'kg',
             inventoryTransactionId: '12',

@@ -1,11 +1,2 @@
-import { describe, it } from 'vitest';
-
-describe('MysqlProductionAbnormalRepository rejection', () => {
-  // TODO(test-migration): 高重要性：异常冲销；正式测试获准后补齐工单锁和专检来源。
-  it.todo(
-    'reverses a direct pure-abnormal report in the same transaction without creating scrap authorization',
-  );
-
-  // TODO(test-migration): 高重要性：异常冲销；正式测试获准后补齐工单锁和专检来源。
-  it.todo('rejects a mixed or rework-completion source instead of silently reversing it');
-});
+// TODO(production-tracking-abnormal): 验证异常来源约束、审计同事务及失败不留部分事实；高重要性覆盖。
+// 旧报工冲销与异常审批模型已退役，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡顺序流转、随盘异常与末道终检的新契约恢复覆盖。

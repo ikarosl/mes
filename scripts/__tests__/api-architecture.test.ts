@@ -276,7 +276,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/leak.ts',
-        source: `const duplicated = 'production.batch.create.v14';\n`,
+        source: `const duplicated = 'production.batch.create.v15';\n`,
       },
     ]);
 
@@ -287,7 +287,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/idempotency/fixture-idempotency-scopes.contract.ts',
-        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v14' as const;\n`,
+        source: `export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v15' as const;\n`,
       },
     ]);
 
@@ -298,7 +298,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/presentation/http/leak.controller.ts',
-        source: `@IdempotentEndpoint({ scope: 'production.batch.create.v9' })\n`,
+        source: `@IdempotentEndpoint({ scope: 'production.batch.create.v15' })\n`,
       },
     ]);
 
@@ -346,7 +346,7 @@ describe('checkApiArchitecture', () => {
     const violations = await checkApiArchitecture([
       {
         path: 'apps/api/src/modules/production/application/leak.ts',
-        source: `await this.idempotency.execute({ scope: 'production.batch.create.v9', key });\n`,
+        source: `await this.idempotency.execute({ scope: 'production.batch.create.v15', key });\n`,
       },
     ]);
 

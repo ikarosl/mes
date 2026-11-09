@@ -8,14 +8,15 @@
 
 ### 2.1 详情定位
 
-| 入口 | 定位身份与特殊含义 |
-| --- | --- |
-| 采购 | `purchaseOrderId`；具体行附 `purchaseOrderLineId` |
-| 从需求建单 | `workOrderId+demandId`；不能只凭需求 ID 猜工单 |
+| 入口         | 定位身份与特殊含义                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------ |
+| 采购         | `purchaseOrderId`；具体行附 `purchaseOrderLineId`                                                      |
+| 从需求建单   | `workOrderId+demandId`；不能只凭需求 ID 猜工单                                                         |
 | 从到货办补单 | 原采购定位加 `supplementLineId+supplementReason+receiptLineId`；重新核验后进入补单选择，不自动采用依据 |
-| 到货／来料 | 到货用 `receiptId`，具体行附 `receiptLineId`；来料直接用到货行 ID |
-| 入库 | `inboundId`；外购附 `sourceType=purchased`。缺少类型的既有入口仍按成品处理，再由详情核实 |
-| 库存批次 | `itemBatchId` |
+| 到货／来料   | 到货用 `receiptId`，具体行附 `receiptLineId`；来料直接用到货行 ID                                      |
+| 外购入库     | `inboundId`，附 `sourceType=purchased`                                                                 |
+| 成品入库记录 | `inventoryBatchId`；输入与跨页约束见[工序追踪](production-tracking.md)                                 |
+| 库存批次     | `itemBatchId`                                                                                          |
 
 采购行与到货行分别标为真实“采购行 ID”“到货行 ID”，不借用彼此行号、处理轮或页内序号。退回历史只定位来源采购，不带补单参数开启办理。关联补单从目标详情按原采购行、可选到货明细及补因解析目标行；没有唯一匹配就只展示主单并提示核对，不猜首行。
 
@@ -65,7 +66,7 @@
 
 ## 7. 有效放行与实际入库
 
-业务确认范围及原子性见[外购入库决定](../../../docs/adr/0018-purchase-inbound-multiple-suppliers.md)、[成品入库](../../api/src/modules/production/docs/database/finished-goods-inbound.md)；批次身份与共批资格见 [Inventory 目标契约](../../api/src/modules/inventory/docs/public-contracts.md)。
+外购入库确认范围及原子性见[外购入库决定](../../../docs/adr/0018-purchase-inbound-multiple-suppliers.md)；批次身份与共批资格见 [Inventory 目标契约](../../api/src/modules/inventory/docs/public-contracts.md)。成品的终检与入库入口见[工序追踪](production-tracking.md)。
 
 候选选择和确认弹窗使用同一份本地草稿；分组及块内选择只覆盖本页命中项，并保留跨页已选，不能代表整张到货或工单。核对仅使用当前已选范围；加入新来源保留已有选择、数量和目标，不能静默扩大或清空选择。各入库场景独立持有候选及草稿。
 

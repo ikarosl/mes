@@ -74,19 +74,6 @@
           min-width="190"
         />
         <el-table-column
-          label="登记用途"
-          min-width="205"
-          ><template #default="{ row }"
-            ><div>{{ MATERIAL_LOSS_PURPOSE_LABELS[row.purpose as MaterialLossPurpose] }}</div>
-            <div
-              v-if="row.closeoutId"
-              class="secondary-cell"
-            >
-              收尾记录 #{{ row.closeoutId }}
-            </div></template
-          ></el-table-column
-        >
-        <el-table-column
           label="生产来源"
           min-width="220"
           ><template #default="{ row }"
@@ -116,9 +103,9 @@
           label="损耗原因"
           min-width="220"
           ><template #default="{ row }"
-            ><div>{{ row.purpose === 'closeout_record' ? row.remark : row.reasonType }}</div>
+            ><div>{{ row.reasonType }}</div>
             <div
-              v-if="row.purpose !== 'closeout_record' && row.remark"
+              v-if="row.remark"
               class="secondary-cell"
             >
               {{ row.remark }}
@@ -154,7 +141,7 @@
           fixed="right"
           ><template #default="{ row }">
             <el-button
-              v-if="row.purpose === 'production_record' && row.status === 'pending'"
+              v-if="row.status === 'pending'"
               link
               type="success"
               :loading="pendingAction === `confirm:${row.id}`"
@@ -162,7 +149,7 @@
               >确认损耗</el-button
             >
             <el-button
-              v-if="row.purpose === 'production_record' && row.status === 'pending'"
+              v-if="row.status === 'pending'"
               link
               :loading="pendingAction === `cancel:${row.id}`"
               @click="cancelLoss(row)"
@@ -294,14 +281,12 @@
 </template>
 
 <script setup lang="ts">
-import { MATERIAL_LOSS_PURPOSE_LABELS } from '@company/constants';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   MaterialLossBatchOption,
   MaterialLossCandidateItem,
   MaterialLossItem,
-  MaterialLossPurpose,
   ScrapStatus,
 } from '@company/contracts';
 import PaginationFooter from '../../components/PaginationFooter.vue';

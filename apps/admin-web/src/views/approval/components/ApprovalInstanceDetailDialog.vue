@@ -216,25 +216,6 @@
           >
         </el-descriptions>
       </section>
-      <section
-        v-if="closeoutSnapshot"
-        class="section-block"
-      >
-        <el-descriptions
-          v-if="ownerEvidence"
-          :column="2"
-          border
-          class="summary"
-        >
-          <el-descriptions-item label="负责人来源工单">{{
-            ownerEvidence.workOrderNo
-          }}</el-descriptions-item>
-          <el-descriptions-item label="送审时工单负责人">{{
-            ownerEvidenceName
-          }}</el-descriptions-item>
-        </el-descriptions>
-        <BatchCloseoutEvidence :snapshot="closeoutSnapshot" />
-      </section>
       <section class="section-block">
         <div class="section-title">处理记录</div>
         <el-timeline v-if="detail.actions.length">
@@ -352,7 +333,6 @@ import type {
   ApprovalStepStatus,
 } from '@company/contracts';
 import { DemandCorrectionEvidence } from '../../production/public';
-import { BatchCloseoutEvidence } from '../../production/public';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { formatDateTimeForDisplay } from '../../../utils/date';
@@ -386,23 +366,6 @@ const correctionSnapshot = computed(() =>
     ? props.detail.subjectSnapshot
     : null,
 );
-const closeoutSnapshot = computed(() =>
-  props.detail &&
-  'kind' in props.detail.subjectSnapshot &&
-  props.detail.subjectSnapshot.kind === 'batch_closeout'
-    ? props.detail.subjectSnapshot
-    : null,
-);
-const ownerEvidence = computed(() => closeoutSnapshot.value?.workOrderOwnerEvidence ?? null);
-const ownerEvidenceName = computed(() => {
-  if (!ownerEvidence.value) return '—';
-  const step = props.detail?.steps.find(
-    (step) =>
-      step.assigneeSourceCode === ownerEvidence.value?.sourceCode &&
-      step.resolvedAssigneeUserId === ownerEvidence.value?.ownerId,
-  );
-  return step?.resolvedAssigneeUserName ?? `用户 #${ownerEvidence.value.ownerId}`;
-});
 const stepDecisions = computed(
   () =>
     new Map(

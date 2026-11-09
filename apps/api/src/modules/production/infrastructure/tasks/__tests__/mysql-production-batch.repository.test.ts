@@ -15,10 +15,10 @@ describe('MysqlProductionBatchRepository persistence', () => {
   });
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('opens the batch-creation transaction before invoking route snapshot orchestration');
+  // TODO(production-test-recovery): opens the batch-creation transaction before invoking route snapshot orchestration；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('locks capacity inputs and persists route and step snapshots before its success audit');
+  // TODO(production-test-recovery): locks capacity inputs and persists route and step snapshots before its success audit；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('rolls back and does not audit a stale batch update', async () => {
     const connection = transactionConnection();
@@ -45,7 +45,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
   });
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('rejects creation dates outside the locked work-order plan window');
+  // TODO(production-test-recovery): rejects creation dates outside the locked work-order plan window；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('rejects update dates outside the locked work-order plan window', async () => {
     const connection = transactionConnection();
@@ -69,16 +69,16 @@ describe('MysqlProductionBatchRepository persistence', () => {
   });
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('previews every side effect before a pre-start cancellation');
+  // TODO(production-test-recovery): previews every side effect before a pre-start cancellation；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('blocks cancellation when material has already been outbound');
+  // TODO(production-test-recovery): blocks cancellation when material has already been outbound；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('cancels pending outbounds, allocations, demands and the batch in one transaction');
+  // TODO(production-test-recovery): cancels pending outbounds, allocations, demands and the batch in one transaction；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  it.todo('forbids cancelling a task after material outbound or production start');
+  // TODO(production-test-recovery): forbids cancelling a task after material outbound or production start；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 });
 
 const transactionConnection = () => ({

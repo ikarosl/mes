@@ -451,8 +451,8 @@
               min-width="170"
             >
               <template #default="{ row }">
-                <template v-if="row.productionOutputAllocationId"
-                  >成品授权 #{{ row.productionOutputAllocationId }}<br />任务 #{{
+                <template v-if="row.productionOutputId"
+                  >产出确认 #{{ row.productionOutputId }}<br />任务 #{{
                     row.productionBatchId
                   }}</template
                 >
@@ -466,14 +466,6 @@
               prop="provider"
               label="供应方"
               ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
-            ><el-table-column
-              label="批准清单"
-              min-width="140"
-              ><template #default="{ row }">{{
-                row.outputRevisionNo
-                  ? `第 ${row.outputRevisionNo} 版（#${row.outputRevisionId}）`
-                  : '—'
-              }}</template></el-table-column
             ><el-table-column
               label="确认时间"
               width="180"
@@ -637,7 +629,13 @@ const canOpenInbound = (sourceType: InventorySourceType): boolean => {
 const openInbound = (inboundId: string, sourceType: InventorySourceType) => {
   const name = inventoryInboundRouteName(sourceType);
   if (!name || !canOpenInbound(sourceType)) return;
-  return router.push({ name, query: { inboundId, sourceType } });
+  return router.push({
+    name,
+    query:
+      sourceType === 'finished_product'
+        ? { inventoryBatchId: selectedBatchId.value || undefined }
+        : { inboundId, sourceType },
+  });
 };
 const viewMode = ref<'supply-demand' | 'material-batches' | 'finished-product-batches'>(
   'supply-demand',
@@ -745,17 +743,7 @@ const demandTypeLabel = (type: DemandType): string => DEMAND_GENERATION_GROUP_TY
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
 const demandSourceText = (row: InventoryMaterialDemandTraceItem) => {
-  if (row.demandType === 'scrap_supplement')
-    return (
-      [
-        row.supplementNo ? `补料单 ${row.supplementNo}` : null,
-        row.abnormalDispositionNo ? `异常处置 ${row.abnormalDispositionNo}` : null,
-      ]
-        .filter(Boolean)
-        .join(' · ') || '-'
-    );
-  if (row.demandType === 'manual_additional')
-    return row.parentDemandId ? `源需求 #${row.parentDemandId}` : '人工追加';
+  if (row.demandType === 'manual_additional') return '人工追加';
   return row.batchNo;
 };
 const refreshCurrentView = () => {

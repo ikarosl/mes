@@ -181,7 +181,7 @@ type OutboundAllocation = ProductionMaterialAllocationItem & {
   itemName: string;
   generationGroupKey: string;
   generationGroupType: ProductionMaterialDemandItem['generationGroupType'];
-  supplementNo: string | null;
+  manualAdditionNo: string | null;
 };
 const props = defineProps<{
   visible: boolean;
@@ -218,7 +218,7 @@ const availableAllocations = computed<OutboundAllocation[]>(() =>
           itemName: d.itemName,
           generationGroupKey: d.generationGroupKey,
           generationGroupType: d.generationGroupType,
-          supplementNo: d.supplementNo,
+          manualAdditionNo: d.manualAdditionNo,
         })),
     ),
 );

@@ -12,16 +12,6 @@ export interface ProductionMaterialQuantities {
   issuedByDemand: Map<string, number>;
 }
 
-/** 实核与关闭需求共用剩余预留／异常／未确认领料的判断。 */
-export const allocationRequiresCloseout = (
-  allocation: { id: string; status: string; assignedQuantity: string | number },
-  quantities: ProductionMaterialQuantities,
-): boolean =>
-  !['released', 'cancelled'].includes(allocation.status) &&
-  (['frozen', 'abnormal'].includes(allocation.status) ||
-    Number(allocation.assignedQuantity) > (quantities.issued.get(allocation.id) ?? 0) ||
-    (quantities.pendingIssue.get(allocation.id) ?? 0) > 0);
-
 /** 公共实际单据按生产场景返回，人工其他单永不参与生产履约或退料额度。 */
 export const materialQuantitiesOf = (
   facts: InventoryProductionDocumentFacts,

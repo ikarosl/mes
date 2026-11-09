@@ -4,11 +4,10 @@
 
 ## 已接入场景
 
-| 场景 | 业务所有者 |
-| --- | --- |
-| `product.bom.approve` | [Product BOM](../apps/api/src/modules/product/docs/database.md) |
+| 场景                        | 业务所有者                                                                                                                   |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `product.bom.approve`       | [Product BOM](../apps/api/src/modules/product/docs/database.md)                                                              |
 | `production.demand.correct` | [Production 需求更正](../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代) |
-| `production.batch.closeout` | [Production 结案](../apps/api/src/modules/production/docs/database/production-termination.md) |
 
 业务模块提供受审证据、来源锁及最终生效能力；Approval 管理流程与决定，通过 Identity 核验人员。审批证据不成为第二份可写业务事实，流程配置也不能绕过来源资格。Quality 检查与业务审批独立，其职责见[统一检验模型](../apps/api/src/modules/quality/docs/unified-inspection-model.md)。
 

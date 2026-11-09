@@ -13,9 +13,6 @@ import type {
   ProductionBatchItem,
   ProductionBatchQuery,
   ProductionBatchStartRecord,
-  ProductionBatchStepRecords,
-  ProductionStepCommandResult,
-  UpdateBatchStepExecutionPayload,
   UpdateProductionBatchPayload,
   UpdateWorkOrderPayload,
   WorkOrderDetail,
@@ -114,9 +111,6 @@ export class MysqlProductionRepository extends ProductionRepository {
   getBatch(id: string): Promise<ProductionBatchDetail> {
     return this.batches.get(id);
   }
-  getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords> {
-    return this.batches.getStepRecords(id);
-  }
   getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
     return this.batches.getStartRecord(id);
   }
@@ -158,16 +152,6 @@ export class MysqlProductionRepository extends ProductionRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return this.batches.cancel(id, version, reason, audit);
-  }
-  updateBatchStepExecution(
-    batchId: string,
-    recordId: string,
-    payload: UpdateBatchStepExecutionPayload,
-    actualSop:
-      { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
-    audit: CommandContext,
-  ): Promise<ProductionStepCommandResult> {
-    return this.batches.updateStepExecution(batchId, recordId, payload, actualSop, audit);
   }
   getBatchProductId(batchId: string): Promise<string> {
     return this.batches.getProductId(batchId);

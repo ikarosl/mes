@@ -21,12 +21,12 @@ presentation -> application -> domain
 infrastructure -> application ports + domain
 ```
 
-| 层 | 允许依赖 | 禁止依赖 |
-| --- | --- | --- |
-| domain | 本模块纯规则、纯共享契约 | 其他内部层、框架、数据库、HTTP 与 SDK |
-| application | 本模块 domain、ports、contracts | presentation、infrastructure、连接与 SDK |
-| presentation | 本模块 application、公共 HTTP 能力 | infrastructure、SQL、数据库连接 |
-| infrastructure | 本模块 application ports、domain、基础设施包 | 其他模块内部实现 |
+| 层             | 允许依赖                                     | 禁止依赖                                 |
+| -------------- | -------------------------------------------- | ---------------------------------------- |
+| domain         | 本模块纯规则、纯共享契约                     | 其他内部层、框架、数据库、HTTP 与 SDK    |
+| application    | 本模块 domain、ports、contracts              | presentation、infrastructure、连接与 SDK |
+| presentation   | 本模块 application、公共 HTTP 能力           | infrastructure、SQL、数据库连接          |
+| infrastructure | 本模块 application ports、domain、基础设施包 | 其他模块内部实现                         |
 
 Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL、不开事务、不处理 Token 密钥。Identity 密码与令牌通过应用端口访问，bcrypt/JWT SDK 和密钥配置归其 infrastructure。
 
@@ -40,11 +40,11 @@ Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL�
 
 平台表有以下独立边界：
 
-| 表 | 所有权与访问 |
-| --- | --- |
-| `operation_logs` | 平台审计；唯一写入口为 `common/audit/transactional-audit-writer`，模块在自身事务直接调用，无需 public 转发。这是跨模块写入规则的显式例外；其他 Repository／Controller 不得直接写。Identity 提供审计查询。 |
+| 表                               | 所有权与访问                                                                                                                                                                                                        |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `operation_logs`                 | 平台审计；唯一写入口为 `common/audit/transactional-audit-writer`，模块在自身事务直接调用，无需 public 转发。这是跨模块写入规则的显式例外；其他 Repository／Controller 不得直接写。Identity 提供审计查询。           |
 | `business_number_daily_sequence` | 平台编号；唯一运行时写入口为 `infrastructure/numbering/mysql-business-number`，业务 infrastructure 在当前事务内调用。前缀、技术字段、离线 seed 例外和归批边界见[业务编号](../apps/api/docs/business-numbering.md)。 |
-| `http_idempotency_records` | 平台 HTTP 幂等；只允许 `infrastructure/idempotency` 的 executor 登记／重放及 housekeeping 到期清理，业务 Controller、Service、Repository 不直接读写。Guard 通过平台装配公开。 |
+| `http_idempotency_records`       | 平台 HTTP 幂等；只允许 `infrastructure/idempotency` 的 executor 登记／重放及 housekeeping 到期清理，业务 Controller、Service、Repository 不直接读写。Guard 通过平台装配公开。                                       |
 
 平台表不因最初 migration 位置而归属 Identity 或 `common`。审计完整规则见[事务审计](../apps/api/docs/audit.md)，幂等上下文、scope、结果重放及脱敏观测见[幂等契约](../apps/api/docs/idempotency.md)；成功重放不制造第二条业务审计。
 
@@ -54,7 +54,7 @@ Controller 只做 DTO、协议映射、鉴权声明和响应转换，不写 SQL�
 
 - 读取放在登记的 `infrastructure/queries/` 专用目录，目标表及字段通过 `API_DISPLAY_READ_ACCESS` 明确授权。固定 SQL 片段可在本模块 infrastructure 组合，不向 application、Controller 或前端泄漏 SQL。
 - 只用于展示、搜索、排序和分页；禁止跨模块写入、DDL、锁定或存储过程调用，也不能替代命令权限、状态、版本和数量资格。按查询实际用途判定，不能仅凭方法名含 Query 放行。
-- 筛选先于分页，不逐行查名称。物料名称及历史身份统一遵守[数据库规则](database-conventions.md#基础物料名称与历史身份)。Product 获取用户候选仍经 Identity 公开目录，不直接读 `users`。
+- 筛选先于分页，不逐行查名称。物料名称及历史身份统一遵守[数据库规则](database-conventions.md#基础物料名称与历史身份)。登录账号和现场人员资格经 Identity 公开能力复核，不直接读其业务表进行写入资格判断。
 - 改表必须核对登记调用方，保持公开查询的筛选、行数与分页语义。不因展示读取开放深层 import、第二套读库或业务写能力。
 
 ## 5. Port、Adapter 与文件拆分

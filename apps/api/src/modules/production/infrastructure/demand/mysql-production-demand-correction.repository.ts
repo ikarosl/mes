@@ -24,7 +24,6 @@ import {
   correctionRemaining,
   demandCorrectionBlockers,
   demandCorrectionCloseCause,
-  evaluateZeroRemainderImpact,
 } from '../../domain/production-demand-correction.policy.js';
 import { fixedIntegerQuantity } from '../../domain/integer-quantity.js';
 import { lockWorkOrderForBatch } from '../tasks/mysql-work-order-material-version.js';
@@ -33,11 +32,6 @@ import {
   mysqlProductionDemandPlanWriter,
   type DemandPlanLine,
 } from './mysql-production-demand-plan.writer.js';
-import {
-  fulfillReadySupplements,
-  selectRouteSupplementSources,
-} from '../execution/mysql-production-supplement-activation.js';
-import { loadSupplementRequirements } from '../execution/mysql-production-supplement-requirements.js';
 import { DEMAND_CORRECTION_APPROVAL_SNAPSHOT_SCHEMA_VERSION } from '../../application/production-approval-snapshot.schema.js';
 import { writeProductionAudit } from '../shared/mysql-production-audit.js';
 
@@ -59,9 +53,7 @@ type Demand = RowDataPacket & {
   demand_type: DemandCorrectionCheck['demandType'];
   business_status: DemandCorrectionChainItem['businessStatus'];
   close_cause: DemandCorrectionChainItem['closeCause'];
-  parent_demand_id: number | null;
   manual_addition_id: number | null;
-  supplement_id: number | null;
   replaces_demand_id: number | null;
   pending_correction_id: number | null;
   version: number;
@@ -82,22 +74,12 @@ type Correction = RowDataPacket & {
   new_demand_id: number | null;
   applied_at: Date | null;
   ended_at: Date | null;
-  result_snapshot: { fulfilledSupplementIds: string[] } | string | null;
   created_at: Date;
   version: number;
 };
 const id = (value: number | string | null): string | null =>
   value === null ? null : String(value);
 const hash = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
-
-const correctionResultOf = (
-  snapshot: Correction['result_snapshot'],
-): { fulfilledSupplementIds: string[] } => {
-  if (snapshot === null) return { fulfilledSupplementIds: [] };
-  if (typeof snapshot === 'string')
-    return JSON.parse(snapshot) as { fulfilledSupplementIds: string[] };
-  return snapshot;
-};
 
 const correctionStateOf = (row: Correction): DemandCorrectionHistoryItem['state'] => {
   if (row.applied_at) return 'applied';
@@ -144,7 +126,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         ids,
       );
       return rows.map((row) => {
-        const result = correctionResultOf(row.result_snapshot);
         return {
           id: String(row.id),
           oldDemandId: String(row.old_demand_id),
@@ -154,7 +135,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
           snapshot: this.snapshot(row),
           createdAt: toBeijingISOString(row.created_at),
           appliedAt: row.applied_at ? toBeijingISOString(row.applied_at) : null,
-          ...result,
         };
       });
     });
@@ -302,7 +282,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       if (!check.canCorrect || check.checkToken !== row.evidence_hash)
         throw new ProductionDomainError(
           'CONCURRENT_MODIFICATION',
-          '领退料、损耗或补产影响已变化，请驳回或撤回后重新复核送审',
+          '领退料或损耗事实已变化，请驳回或撤回后重新复核送审',
         );
       const newQuantity = Number(row.new_remaining_quantity);
       const closeCause = demandCorrectionCloseCause(row.correction_kind, newQuantity);
@@ -346,8 +326,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         supplierHint: demand.supplier_hint,
         needNumber: newQuantity,
         demandType: demand.demand_type,
-        parentDemandId: demand.parent_demand_id,
-        supplementId: demand.supplement_id,
         manualAdditionId: demand.manual_addition_id,
         replacesDemandId: demand.id,
       };
@@ -359,31 +337,19 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         reason: row.reason,
         closeCause,
         expectedBatchVersion: batch.version,
-        source:
-          demand.demand_type === 'scrap_supplement'
-            ? { type: 'scrap_supplement', supplementId: demand.supplement_id!, correctionId }
-            : {
-                type: 'manual_additional',
-                productionBatchId: batch.id,
-                businessActionNo: additionNo!,
-                correctionId,
-              },
+        source: {
+          type: 'manual_additional',
+          productionBatchId: batch.id,
+          businessActionNo: additionNo!,
+          correctionId,
+        },
         lines: newQuantity > 0 ? [line] : [],
       });
       await db.execute(
         `UPDATE production_demand_correction SET new_demand_id=?,applied_by=?,applied_at=NOW(),ended_at=NOW(),
-        result_snapshot=JSON_OBJECT('fulfilledSupplementIds',JSON_ARRAY()),version=version+1,updated_by=? WHERE id=?`,
+        version=version+1,updated_by=? WHERE id=?`,
         [newDemandId, context.actorId, context.actorId, correctionId],
       );
-      await db.query(
-        'SELECT id FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id FOR UPDATE',
-        [batch.id],
-      );
-      const activation = await fulfillReadySupplements(db, String(batch.id), context.actorId);
-      await db.execute('UPDATE production_demand_correction SET result_snapshot=? WHERE id=?', [
-        JSON.stringify(activation),
-        correctionId,
-      ]);
       // 未开工的分配状态重新按全部当前需求核对；已开工任务继续保持 doing。
       if (['material_pending', 'material_assigned'].includes(batch.status)) {
         await db.execute(
@@ -407,7 +373,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
           instanceId,
           newDemandId,
           closeCause,
-          ...activation,
         },
       );
     });
@@ -582,74 +547,8 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
             `SELECT addition_no,reason FROM production_manual_demand_addition WHERE id=?${suffix}`,
             [demand.manual_addition_id],
           );
-    const [[supplement]] =
-      demand.supplement_id === null
-        ? [[]]
-        : await db.query<
-            (RowDataPacket & { supplement_no: string; status: string; reason: string | null })[]
-          >(
-            `SELECT supplement_no,status,remark reason FROM production_material_supplement WHERE id=?${suffix}`,
-            [demand.supplement_id],
-          );
-    const [authorizations] = await db.query<
-      (RowDataPacket & { id: string; quantity: string; stepName: string })[]
-    >(
-      `SELECT CAST(a.id AS CHAR) id,a.authorized_quantity quantity,s.step_name_snapshot stepName
-       FROM batch_step_scrap_reproduction_authorization a JOIN batch_step_records s ON s.id=a.quota_end_step_record_id
-       WHERE a.supplement_id=? ORDER BY a.id${suffix}`,
-      [demand.supplement_id],
-    );
     const pendingCorrectionId = id(demand.pending_correction_id);
     const ownPending = ownCorrectionId !== undefined && pendingCorrectionId === ownCorrectionId;
-    const [requirementRows] =
-      demand.supplement_id === null
-        ? [[]]
-        : await db.query<Demand[]>(
-            `SELECT * FROM production_item_demand WHERE supplement_id=? ORDER BY id${suffix}`,
-            [demand.supplement_id],
-          );
-    const supplementRequirements: DemandCorrectionCheck['supplementRequirements'] =
-      requirementRows.map((row) => ({
-        demandId: String(row.id),
-        replacesDemandId: id(row.replaces_demand_id),
-        demandQuantity: String(row.need_number),
-        remainingQuantity: String(row.remaining_number),
-        outboundQuantity: fixedIntegerQuantity(
-          Number(row.need_number) - Number(row.remaining_number),
-        ),
-        businessStatus: row.business_status,
-        closeCause: row.close_cause,
-        itemCode: row.item_code_snapshot,
-        materialVariantCode: row.material_variant_code_snapshot,
-        unit: row.unit_snapshot,
-        pendingCorrectionId:
-          ownPending && String(row.id) === demandId ? null : id(row.pending_correction_id),
-      }));
-    const [originalPlan] =
-      demand.supplement_id === null
-        ? [[]]
-        : await db.query<(RowDataPacket & DemandCorrectionCheck['originalPlan'][number])[]>(
-            `SELECT CAST(p.id AS CHAR) planId,CAST(l.original_demand_id AS CHAR) originalDemandId,l.planned_quantity plannedQuantity
-       FROM production_scrap_supplement_plan p JOIN production_scrap_supplement_plan_line l ON l.plan_id=p.id
-       WHERE p.confirmed_supplement_id=? ORDER BY l.id${suffix}`,
-            [demand.supplement_id],
-          );
-    const sources =
-      demand.supplement_id === null
-        ? []
-        : ((await selectRouteSupplementSources(db, [batchId], lock)).get(batchId) ?? []);
-    let zeroRemainderImpact: DemandCorrectionCheck['zeroRemainderImpact'] = null;
-    if (demand.supplement_id !== null) {
-      const requirements = await loadSupplementRequirements(db, String(demand.supplement_id), lock);
-      zeroRemainderImpact = evaluateZeroRemainderImpact(
-        demandId,
-        String(demand.supplement_id),
-        issued,
-        batch.planned_quantity,
-        requirements,
-        sources,
-      );
-    }
     const pendingOutboundNos = [
       ...new Set(
         outbounds
@@ -665,8 +564,6 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       businessStatus: demand.business_status,
       hasOtherPendingCorrection: Boolean(pendingCorrectionId) && !ownPending,
       batchStatus: batch.status,
-      hasSupplement: demand.supplement_id !== null,
-      supplementStatus: supplement?.status ?? null,
       hasPendingOutbound: pendingOutboundNos.length > 0,
       allocationStatuses: allocations.map((allocation) => allocation.allocation_status),
       hasPendingLoss: losses.some((loss) => loss.status === 'pending'),
@@ -681,11 +578,8 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
       materialVariantCode: demand.material_variant_code_snapshot,
       unit: demand.unit_snapshot,
       demandType: demand.demand_type,
-      parentDemandId: id(demand.parent_demand_id),
       manualAdditionId: id(demand.manual_addition_id),
-      supplementId: id(demand.supplement_id),
-      supplementNo: supplement?.supplement_no ?? null,
-      sourceReason: addition?.reason ?? supplement?.reason ?? null,
+      sourceReason: addition?.reason ?? null,
       version: Number(demand.version) - (ownPending ? 1 : 0),
       currentTotalQuantity: fixedIntegerQuantity(issued + Number(demand.remaining_number)),
       issuedQuantity: fixedIntegerQuantity(issued),
@@ -708,15 +602,11 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
           };
         }),
       pendingOutboundNos,
-      authorizations,
-      supplementRequirements,
-      originalPlan,
-      zeroRemainderImpact,
       blockers,
       canCorrect: blockers.length === 0,
     };
     return {
-      check: { ...body, checkToken: hash({ body, returns, losses, sources }) },
+      check: { ...body, checkToken: hash({ body, returns, losses }) },
       demand,
       batch,
       additionNo: addition?.addition_no ?? null,

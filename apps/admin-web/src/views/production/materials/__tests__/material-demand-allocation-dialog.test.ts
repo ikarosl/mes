@@ -49,7 +49,7 @@ describe('MaterialDemandAllocationDialog', () => {
           businessStatus: 'active',
           generationGroupKey: 'NORMAL:b1',
           generationGroupType: 'normal',
-          supplementNo: null,
+          manualAdditionNo: null,
           createdAt: '2026-09-01T09:00:00+08:00',
           remainingQuantity: '2.0000',
           allocations: [],
@@ -75,7 +75,7 @@ describe('MaterialDemandAllocationDialog', () => {
             businessStatus: 'active',
             generationGroupKey: 'NORMAL:b1',
             generationGroupType: 'normal',
-            supplementNo: null,
+            manualAdditionNo: null,
             createdAt: '2026-09-01T09:00:00+08:00',
             remainingQuantity: '5.0000',
             allocations: [],
@@ -172,7 +172,7 @@ describe('MaterialDemandAllocationDialog', () => {
           businessStatus: 'fulfilled',
           generationGroupKey: 'NORMAL:b1',
           generationGroupType: 'normal',
-          supplementNo: null,
+          manualAdditionNo: null,
           createdAt: '2026-09-01T09:00:00+08:00',
           remainingQuantity: '0',
           allocations: [],
@@ -183,20 +183,9 @@ describe('MaterialDemandAllocationDialog', () => {
           businessStatus: 'active',
           generationGroupKey: 'NORMAL:b1',
           generationGroupType: 'normal',
-          supplementNo: null,
+          manualAdditionNo: null,
           createdAt: '2026-09-01T09:00:00+08:00',
           remainingQuantity: '2',
-          allocations: [],
-        },
-        {
-          demandId: 'd-newer-actionable',
-          itemName: '后续补料',
-          businessStatus: 'active',
-          generationGroupKey: 'SCRAPSUP:s1',
-          generationGroupType: 'scrap_supplement',
-          supplementNo: 'SUP-0001',
-          createdAt: '2026-09-01T10:00:00+08:00',
-          remainingQuantity: '1',
           allocations: [],
         },
       ] as never,
@@ -214,10 +203,7 @@ describe('MaterialDemandAllocationDialog', () => {
       }) => void;
     };
     expect(vm.selectedDemandId).toBe('d-oldest-actionable');
-    expect(vm.demandGroups.map((group) => group.generationGroupKey)).toEqual([
-      'NORMAL:b1',
-      'SCRAPSUP:s1',
-    ]);
+    expect(vm.demandGroups.map((group) => group.generationGroupKey)).toEqual(['NORMAL:b1']);
     expect(wrapper.emitted('load-available')).toEqual([['d-oldest-actionable']]);
 
     vm.selectDemand({
@@ -245,7 +231,7 @@ describe('MaterialDemandAllocationDialog', () => {
             businessStatus: 'active',
             generationGroupKey: 'NORMAL:b1',
             generationGroupType: 'normal',
-            supplementNo: null,
+            manualAdditionNo: null,
             createdAt: '2026-09-01T09:00:00+08:00',
             remainingQuantity: '5',
             allocations: [],

@@ -37,7 +37,6 @@ const createdWorkOrderSchema: z.ZodType<WorkOrderDetail> = z
     planStartDate: z.string(),
     planEndDate: z.string(),
     assignedQuantity: z.string(),
-    terminatedPlannedQuantity: z.string(),
     status: z.literal('draft'),
     releasedAt: z.null(),
     cancelReason: z.null(),
@@ -60,14 +59,9 @@ const createdWorkOrderSchema: z.ZodType<WorkOrderDetail> = z
     finalOutput: z
       .object({
         availableQuantity: z.string(),
-        extraQuantity: z.string(),
-        scrapQuantity: z.string(),
-        totalQuantity: z.string(),
         plannedShortfallQuantity: z.string(),
         finalizedBatchCount: z.number().int().nonnegative(),
-        closingBatchCount: z.number().int().nonnegative(),
-        pendingAvailableQuantity: z.string(),
-        pendingExtraQuantity: z.string(),
+        confirmedOutputCount: z.number().int().nonnegative(),
       })
       .strict(),
   })

@@ -10,8 +10,6 @@ export interface DemandCorrectionTrace {
   closedById: string | null;
   closedAt: string | null;
   correctionApprovalId: string | null;
-  closeoutId: string | null;
-  closeoutApprovalId: string | null;
 }
 export interface DemandCorrectionChainItem {
   demandId: string;
@@ -38,10 +36,7 @@ export interface DemandCorrectionCheck {
   materialVariantCode: string;
   unit: string;
   demandType: DemandType;
-  parentDemandId: string | null;
   manualAdditionId: string | null;
-  supplementId: string | null;
-  supplementNo: string | null;
   sourceReason: string | null;
   version: number;
   currentTotalQuantity: string;
@@ -51,23 +46,6 @@ export interface DemandCorrectionCheck {
   chain: DemandCorrectionChainItem[];
   reservations: DemandCorrectionReservation[];
   pendingOutboundNos: string[];
-  /** 原补料单的历史和当前要求，原始补料方案保持不变。 */
-  supplementRequirements: (DemandCorrectionChainItem & {
-    itemCode: string;
-    materialVariantCode: string;
-    unit: string;
-    pendingCorrectionId: string | null;
-  })[];
-  originalPlan: { planId: string; originalDemandId: string; plannedQuantity: string }[];
-  /** 新剩余为零时的即时影响；有新剩余时必须先领齐，不能立即放行。 */
-  zeroRemainderImpact: null | {
-    fulfillsSupplement: boolean;
-    blockingDemandIds: string[];
-    hasConfirmedIssue: boolean;
-    activatedSupplementQuantity: string;
-    upperLimitQuantity: string;
-  };
-  authorizations: { id: string; quantity: string; stepName: string }[];
   blockers: string[];
   canCorrect: boolean;
   checkToken: string;
@@ -97,7 +75,6 @@ export interface DemandCorrectionHistoryItem {
   snapshot: DemandCorrectionApprovalSnapshot;
   createdAt: string;
   appliedAt: string | null;
-  fulfilledSupplementIds: string[];
 }
 export interface ProductionApprovalResult {
   subjectId: string;

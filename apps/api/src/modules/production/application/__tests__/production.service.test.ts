@@ -51,12 +51,8 @@ const validBatchDetail = (
   startedById: null,
   startedByName: null,
   status: 'pending',
-  closeoutMode: null,
-  closeoutVersion: null,
-  finalOutput: null,
-  currentOutputRevisionId: null,
-  executionCompletedAt: null,
-  executionCompletedBy: null,
+  finalOutput: { availableQuantity: '0', confirmedOutputCount: 0 },
+  finishReason: null,
   ownerId: null,
   ownerName: null,
   completedAt: null,
@@ -132,60 +128,7 @@ describe('ProductionService first-stage commands', () => {
     expect(repository.listWorkOrderOptions).toHaveBeenCalledWith();
   });
 
-  it('maps a route public query failure to HTTP 404', async () => {
-    const repository = {
-      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
-    };
-    const productDefinitions = {
-      requireApprovedBomForProductionTask: vi
-        .fn()
-        .mockResolvedValue({ status: 'not-found', message: '工艺路线不可用' }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      {} as never,
-      {} as never,
-      executingIdempotencyExecutor as never,
-      eligibleOwners as never,
-      eligibleOwners as never,
-      productDefinitions as never,
-    );
-
-    await expect(
-      service.createBatch('6', { plannedQuantity: 1, routeId: '9', ownerId: '7' }, idempotentAudit),
-    ).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-      message: '工艺路线不可用',
-    });
-    expect(productDefinitions.requireApprovedBomForProductionTask).toHaveBeenCalledWith(
-      '8',
-      '9',
-      expect.objectContaining({ actorId: '1', requestId: 'test-request' }),
-    );
-  });
-
-  it('maps an SOP public query failure to HTTP 404', async () => {
-    const products = {
-      getEnabledSopFileSnapshot: vi
-        .fn()
-        .mockResolvedValue({ status: 'not-found', message: 'SOP 文件不可用' }),
-    };
-    const service = new ProductionService(
-      {} as never,
-      products as never,
-      {} as never,
-      {} as never,
-      eligibleOwners as never,
-      eligibleOwners as never,
-    );
-
-    await expect(
-      service.updateBatchStepExecution('6', '7', { version: 3, actualSopFileId: '8' }, audit),
-    ).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-      message: 'SOP 文件不可用',
-    });
-  });
+  // TODO(production-step-update-retirement): 验证已创建任务的执行参数变更边界；高重要性，旧任务工序参数更新端点已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡快照与更正边界恢复。
 
   it('re-reads the active product and freezes its snapshot inside the release transaction', async () => {
     const repository = {
@@ -411,40 +354,6 @@ describe('ProductionService first-stage commands', () => {
     expect(repository.updateBatch).toHaveBeenCalledWith('6', payload, audit);
   });
 
-  it('only accepts creation-time execution overrides for steps in the selected route', async () => {
-    const repository = {
-      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
-    };
-    const productDefinitions = {
-      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
-        status: 'success',
-        value: { id: '9', steps: [{ routeStepId: '41' }] },
-      }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      {} as never,
-      {} as never,
-      executingIdempotencyExecutor as never,
-      eligibleOwners as never,
-      eligibleOwners as never,
-      productDefinitions as never,
-    );
-
-    await expect(
-      service.createBatch(
-        '6',
-        {
-          routeId: '9',
-          plannedQuantity: 1,
-          ownerId: '7',
-          stepOverrides: [{ routeStepId: '42', actualSopFileId: null }],
-        },
-        idempotentAudit,
-      ),
-    ).rejects.toThrow('工序覆盖项不属于所选工艺路线');
-  });
-
   // TODO(test-migration): 验证选定路线快照与任务写入处于同一事务；高重要性：生产定义和任务原子性。
   // 旧用例依赖默认路线，当前暂停；用户明确授权正式测试后按显式路线和合格任务负责人恢复。
 
@@ -556,36 +465,69 @@ describe('ProductionService first-stage commands', () => {
   // TODO(test-migration): 验证任务历史人员引用通过一次批量 Identity 查询解析；高重要性：历史身份一致性。
   // 旧用例依赖合并工序响应，当前暂停；用户明确授权正式测试后按任务概览和独立工序契约恢复。
 
-  it('resolves the actual SOP snapshot before updating a step execution override', async () => {
-    const repository = { updateBatchStepExecution: vi.fn().mockResolvedValue({ id: '6' }) };
-    const products = {
-      getEnabledSopFileSnapshot: vi.fn().mockResolvedValue({
+  it('maps a route public query failure to HTTP 404', async () => {
+    const repository = {
+      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
+    };
+    const productDefinitions = {
+      requireApprovedBomForProductionTask: vi
+        .fn()
+        .mockResolvedValue({ status: 'not-found', message: '工艺路线不可用' }),
+    };
+    const service = new ProductionService(
+      repository as never,
+      {} as never,
+      {} as never,
+      executingIdempotencyExecutor as never,
+      eligibleOwners as never,
+      eligibleOwners as never,
+      productDefinitions as never,
+    );
+
+    await expect(
+      service.createBatch('6', { plannedQuantity: 1, routeId: '9', ownerId: '7' }, idempotentAudit),
+    ).rejects.toMatchObject({
+      code: 'NOT_FOUND',
+      message: '工艺路线不可用',
+    });
+    expect(productDefinitions.requireApprovedBomForProductionTask).toHaveBeenCalledWith(
+      '8',
+      '9',
+      expect.objectContaining({ actorId: '1', requestId: 'test-request' }),
+    );
+  });
+
+  it('only accepts creation-time execution overrides for steps in the selected route', async () => {
+    const repository = {
+      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
+    };
+    const productDefinitions = {
+      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
         status: 'success',
-        value: {
-          id: '8',
-          fileName: '现场作业.pdf',
-          objectKey: 'sop/8.pdf',
-          versionNo: 'V2',
-        },
+        value: { id: '9', steps: [{ routeStepId: '41' }] },
       }),
     };
     const service = new ProductionService(
       repository as never,
-      products as never,
       {} as never,
       {} as never,
+      executingIdempotencyExecutor as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      productDefinitions as never,
     );
 
-    await service.updateBatchStepExecution('6', '7', { version: 3, actualSopFileId: '8' }, audit);
-
-    expect(repository.updateBatchStepExecution).toHaveBeenCalledWith(
-      '6',
-      '7',
-      { version: 3, actualSopFileId: '8' },
-      expect.objectContaining({ id: '8', versionNo: 'V2' }),
-      audit,
-    );
+    await expect(
+      service.createBatch(
+        '6',
+        {
+          routeId: '9',
+          plannedQuantity: 1,
+          ownerId: '7',
+          stepOverrides: [{ routeStepId: '42', actualSopFileId: null }],
+        },
+        idempotentAudit,
+      ),
+    ).rejects.toThrow('工序覆盖项不属于所选工艺路线');
   });
 });

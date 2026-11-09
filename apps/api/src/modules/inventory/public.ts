@@ -7,8 +7,8 @@ export {
 } from './application/inventory-stock.command.js';
 export {
   InventoryInboundCommand,
-  type FinishedOutputInput,
-  type FinishedOutputResult,
+  type TrackingOutputInput,
+  type TrackingOutputResult,
 } from './application/inventory-inbound.command.js';
 export { InventoryInboundRepository } from './application/ports/inventory-inbound.repository.js';
 export { InventoryCommandError } from './inventory-command.error.js';

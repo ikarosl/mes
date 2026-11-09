@@ -1,10 +1,2 @@
-import { describe, expect, it } from 'vitest';
-import { requireReworkCompletionQuantities } from '../production-rework.policy.js';
-
-describe('production rework policy', () => {
-  it('requires one full disposition quantity per completion', () => {
-    expect(() => requireReworkCompletionQuantities('2.0000', 1, 1)).not.toThrow();
-    expect(() => requireReworkCompletionQuantities('2.0000', 1, 0)).toThrow('必须等于返工单数量');
-    expect(() => requireReworkCompletionQuantities('2.0000', 1.5, 0.5)).toThrow('必须为整数');
-  });
-});
+// TODO(production-tracking-quantity): 验证结果数量完整性及重复计量保护；高重要性覆盖。
+// 旧返工完成数量模型已退役，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡顺序流转、随盘异常与末道终检的新契约恢复覆盖。

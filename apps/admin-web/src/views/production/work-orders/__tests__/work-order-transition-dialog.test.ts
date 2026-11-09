@@ -51,7 +51,7 @@ const mountDialog = (mode: 'complete' | 'early-close' | 'archive', value = order
 
 describe('WorkOrderTransitionDialog', () => {
   // TODO(work-order-transition): 保留按批准产出精确完工的数量与提交校验；正式测试获准并补齐批准清单夹具后恢复。
-  it.todo('lets an administrator explicitly confirm exact-quantity completion');
+  // TODO(production-test-recovery): lets an administrator explicitly confirm exact-quantity completion；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('blocks completion and early close while a production batch is unfinished', () => {
     const unfinished = {

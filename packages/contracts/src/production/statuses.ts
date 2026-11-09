@@ -8,17 +8,9 @@ export type ProductionBatchStatus =
   | 'material_outbound'
   | 'doing'
   | 'completed'
-  | 'cancelled'
-  | 'terminated'
-  | 'closing';
-
-export type BatchStepStatus = 'pending' | 'assigned' | 'doing' | 'completed' | 'terminated';
-
-export type BatchStepAbnormalDispositionType = 'rework' | 'scrap';
+  | 'cancelled';
 
 export type InventorySourceType =
-  | 'self_made'
-  | 'production_extra'
   | 'finished_product'
   | 'purchased'
   | 'outsourced'
@@ -54,14 +46,14 @@ export type InventoryReferenceType =
 
 export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
 
-export type DemandType = 'normal' | 'manual_additional' | 'scrap_supplement';
+export type DemandType = 'normal' | 'manual_additional';
 
 /** 同一次需求生成动作的分组类型。 */
 export type DemandGenerationGroupType = DemandType;
 
 export type DemandBusinessStatus = 'active' | 'fulfilled' | 'cancelled' | 'closed';
 export type DemandCloseCause =
-  'correction_replaced' | 'correction_exhausted' | 'single_close' | 'batch_closeout';
+  'correction_replaced' | 'correction_exhausted' | 'single_close' | 'task_finished';
 
 /** 单条生产物料需求的分配/出库展示进度。 */
 export type MaterialDemandProgressStatus =
@@ -75,26 +67,16 @@ export type MaterialDemandProgressStatus =
   | 'closed'
   | 'correction_pending';
 
-export type BatchStepAbnormalOrigin = 'current_step' | 'previous_step';
-
 export type AllocationStatus = 'active' | 'released' | 'cancelled' | 'frozen' | 'abnormal';
 
 export type OutboundOrderStatus = 'pending_picking' | 'completed' | 'cancelled';
 
 export type MaterialOutboundBlockedCode = 'allocation_incomplete' | 'no_orderable_allocation';
 
-export type BatchStepReportType = 'normal' | 'reversal';
-
-export type BatchStepAbnormalReviewStatus =
-  'pending_review' | 'approved' | 'rejected' | 'cancelled' | 'terminated';
-
 export type ReturnOrderStatus = 'pending' | 'returned' | 'cancelled';
 
 export type ScrapStatus = 'pending' | 'confirmed' | 'cancelled';
-export type MaterialLossPurpose = 'production_record' | 'closeout_record';
 
 export type StockCheckStatus = 'pending' | 'counting' | 'completed' | 'cancelled';
 
 export type StockCheckResult = 'surplus' | 'shortage' | 'matched';
-
-export type ReworkStatus = 'pending' | 'doing' | 'completed' | 'cancelled';

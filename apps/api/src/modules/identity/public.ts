@@ -1,4 +1,6 @@
 export { IdentityDirectoryService } from './application/identity-directory.service.js';
+export { PersonnelService } from './application/personnel.service.js';
+export { PersonnelError } from './domain/personnel.errors.js';
 export {
   UserCandidateService,
   type UserCandidateEligibility,

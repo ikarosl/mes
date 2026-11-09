@@ -1,13 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   ALLOCATION_STATUSES,
-  BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
-  BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
-  BATCH_STEP_STATUSES,
-  BATCH_STEP_REPORT_TYPES,
   DEMAND_TYPES,
-  DEMAND_GENERATION_GROUP_TYPES,
-  DEMAND_GENERATION_GROUP_TYPE_LABELS,
   INVENTORY_REFERENCE_TYPE_LABELS,
   INVENTORY_REFERENCE_TYPES,
   INVENTORY_SOURCE_TYPES,
@@ -16,7 +10,6 @@ import {
   MATERIAL_DEMAND_PROGRESS_LABELS,
   MATERIAL_OUTBOUND_BLOCKED_LABELS,
   OUTBOUND_ORDER_STATUSES,
-  REWORK_STATUSES,
   STOCK_STATUSES,
 } from '../index';
 
@@ -26,11 +19,6 @@ const persistedCodeSets = [
   INVENTORY_TRANSACTION_TYPES,
   INVENTORY_REFERENCE_TYPES,
   ALLOCATION_STATUSES,
-  BATCH_STEP_STATUSES,
-  BATCH_STEP_REPORT_TYPES,
-  BATCH_STEP_ABNORMAL_REVIEW_STATUSES,
-  BATCH_STEP_ABNORMAL_DISPOSITION_TYPES,
-  REWORK_STATUSES,
   DEMAND_TYPES,
   OUTBOUND_ORDER_STATUSES,
 ] as const;
@@ -62,29 +50,6 @@ describe('business persisted codes', () => {
 
   it('provides complete outbound eligibility labels', () => {
     expect(MATERIAL_OUTBOUND_BLOCKED_LABELS.allocation_incomplete).toContain('先完成分配');
-  });
-
-  it('separates step execution, abnormal review and current demand type codes', () => {
-    expect(BATCH_STEP_STATUSES).toEqual([
-      'pending',
-      'assigned',
-      'doing',
-      'completed',
-      'terminated',
-    ]);
-    expect(BATCH_STEP_ABNORMAL_REVIEW_STATUSES).toEqual([
-      'pending_review',
-      'approved',
-      'rejected',
-      'cancelled',
-      'terminated',
-    ]);
-    expect(BATCH_STEP_ABNORMAL_DISPOSITION_TYPES).toEqual(['rework', 'scrap']);
-    expect(BATCH_STEP_REPORT_TYPES).toEqual(['normal', 'reversal']);
-    expect(REWORK_STATUSES).toEqual(['pending', 'doing', 'completed', 'cancelled']);
-    expect(DEMAND_TYPES).toEqual(['normal', 'manual_additional', 'scrap_supplement']);
-    expect(DEMAND_GENERATION_GROUP_TYPES).toBe(DEMAND_TYPES);
-    expect(Object.keys(DEMAND_GENERATION_GROUP_TYPE_LABELS)).toEqual(DEMAND_TYPES);
   });
 
   // TODO(production-execution-completion): 核对任务尚未执行、没有工序及必需工序未完成时的执行结束阻断；该边界防止任务越过真实执行条件，旧常量数组仅被历史测试使用而暂缓覆盖；获正式测试授权后围绕现行结束命令、投影和运行标签恢复。

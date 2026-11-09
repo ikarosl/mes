@@ -5,11 +5,18 @@
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
   >
+    <el-alert
+      v-if="intentStatus !== 'idle'"
+      :title="submissionRecoveryMessage(intentStatus, '生产任务列表')"
+      type="warning"
+      :closable="false"
+      show-icon
+    />
     <el-form
       class="dialog-form"
       label-position="top"
       :model="form"
-      :disabled="submitting"
+      :disabled="submitting || intentStatus !== 'idle'"
     >
       <div
         v-if="editingTaskId"
@@ -111,37 +118,17 @@
           <div class="output-reference">
             <strong class="output-label">产出参考</strong>
             <div class="output-values">
-              <span v-if="selectedWorkOrder.finalOutput.finalizedBatchCount > 0">
-                已批准可用产出
+              <span
+                >已确认实际产出
                 <strong>{{
-                  formatQuantity(approvedUsableQuantity(selectedWorkOrder.finalOutput))
-                }}</strong>
-                <span
-                  >（计划内 {{ formatQuantity(selectedWorkOrder.finalOutput.availableQuantity) }} /
-                  计划外 {{ formatQuantity(selectedWorkOrder.finalOutput.extraQuantity) }}）</span
-                >
-              </span>
-              <span v-else>暂无已批准产出</span>
-              <span v-if="selectedWorkOrder.finalOutput.closingBatchCount > 0">
-                另有
-                {{ selectedWorkOrder.finalOutput.closingBatchCount }} 个任务收尾中，产出未计入。
-              </span>
+                  formatQuantity(selectedWorkOrder.finalOutput.availableQuantity)
+                }}</strong></span
+              ><span>{{ selectedWorkOrder.finalOutput.confirmedOutputCount }} 次终检确认</span>
             </div>
           </div>
-          <InlineHint class="allocation-notes">
-            <div>
-              已终止/取消的任务，不占用分配量。
-              <span v-if="Number(selectedWorkOrder.terminatedPlannedQuantity) > 0">
-                已终止任务曾有
-                {{ formatQuantity(selectedWorkOrder.terminatedPlannedQuantity) }}分配，不占额度。
-              </span>
-            </div>
-            <div>
-              <span class="output-caution"
-                >已终止任务可能存在产出，请结合已有产出核对本次分配数量。</span
-              >
-            </div>
-          </InlineHint>
+          <InlineHint class="allocation-notes"
+            >已结束任务继续占用原计划分配量；取消的任务不占分配额度。</InlineHint
+          >
         </template>
       </section>
       <el-alert
@@ -291,9 +278,13 @@
       <el-button
         type="primary"
         :loading="submitting"
-        :disabled="!editingTaskId && workOrderSource.status.value !== 'ready'"
-        @click="handleSubmit"
-        >保存任务</el-button
+        :disabled="
+          intentStatus === 'blocked' ||
+          intentStatus === 'expired' ||
+          (intentStatus === 'idle' && !editingTaskId && workOrderSource.status.value !== 'ready')
+        "
+        @click="intentStatus === 'idle' ? handleSubmit() : emit('retry')"
+        >{{ intentStatus === 'idle' ? '保存任务' : '重试本次提交' }}</el-button
       >
     </template>
   </el-dialog>
@@ -302,6 +293,10 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
+import {
+  submissionRecoveryMessage,
+  type IdempotentIntentStatus,
+} from '../../../composables/idempotency/useIdempotentIntent';
 import type {
   ProcessRouteOption,
   ProductionBatchDetail,
@@ -316,18 +311,19 @@ import { useProcessRouteOptions } from '../../../composables/options/useProcessR
 import { useWorkOrderOptions } from '../work-orders/use-work-order-options';
 import { useTaskOwnerOptions } from './use-task-owner-options';
 import { formatQuantity } from '../../../utils/quantity';
-import { approvedUsableQuantity } from '../shared/production-output-quantity';
 import type { TaskFormValue } from './task-form';
 
 const props = defineProps<{
   visible: boolean;
   editingTaskId: string | null;
   submitting: boolean;
+  intentStatus: IdempotentIntentStatus;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'save', data: TaskFormValue): void;
+  (e: 'retry'): void;
 }>();
 
 const existingBatchNo = ref('');
@@ -380,6 +376,7 @@ watch(
 );
 
 const form = reactive(initialForm());
+let initialSignature = JSON.stringify(form);
 const originalOwner = ref<{ id: string; name: string | null } | null>(null);
 const rememberOwnerSelection = (): void => {
   const id = form.ownerId;
@@ -494,6 +491,7 @@ const resetForm = (): void => {
   existingTaskContext.value = null;
   originalOwner.value = null;
   Object.assign(form, initialForm());
+  initialSignature = JSON.stringify(form);
 };
 
 const setForm = (row: {
@@ -527,6 +525,7 @@ const setForm = (row: {
     planEndDate: toDateInputValue(row.planEndDate),
     remark: row.remark ?? '',
   });
+  initialSignature = JSON.stringify(form);
 };
 
 const handleSubmit = (): void => {
@@ -603,7 +602,7 @@ const handleSubmit = (): void => {
   });
 };
 
-defineExpose({ setForm, resetForm });
+defineExpose({ setForm, resetForm, isDirty: () => JSON.stringify(form) !== initialSignature });
 </script>
 
 <style scoped>

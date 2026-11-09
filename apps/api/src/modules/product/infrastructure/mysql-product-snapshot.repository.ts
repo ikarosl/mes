@@ -42,14 +42,12 @@ type RouteStepRow = RowDataPacket & {
   step_code_snapshot: string;
   step_name_snapshot: string;
   description_snapshot: string | null;
-  default_owner_id: number | null;
   sop_file_id: number | null;
   sop_file_name_snapshot: string | null;
   sop_object_key_snapshot: string | null;
   sop_version_no_snapshot: string | null;
   sop_status: number | null;
   sop_is_deleted: number | null;
-  need_inspection: number;
 };
 
 @Injectable()
@@ -279,9 +277,9 @@ export class MysqlProductSnapshotRepository
     if (!route) throw new ProductDomainError('NOT_FOUND', '已启用的生产工艺路线不存在');
     const [steps] = await db.query<RouteStepRow[]>(
       `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
-                rs.description_snapshot,rs.default_owner_id,rs.sop_file_id,rs.sop_file_name_snapshot,
+                rs.description_snapshot,rs.sop_file_id,rs.sop_file_name_snapshot,
                 rs.sop_object_key_snapshot,rs.sop_version_no_snapshot,tf.status sop_status,
-                tf.is_deleted sop_is_deleted,rs.need_inspection
+                tf.is_deleted sop_is_deleted
          FROM process_route_steps rs
          LEFT JOIN technical_files tf ON tf.id=rs.sop_file_id AND tf.file_type='sop'
         WHERE rs.route_id=? AND rs.status=1 AND rs.is_deleted=0
@@ -315,7 +313,6 @@ export class MysqlProductSnapshotRepository
         stepCode: step.step_code_snapshot,
         stepName: step.step_name_snapshot,
         description: step.description_snapshot,
-        defaultOwnerId: step.default_owner_id === null ? null : String(step.default_owner_id),
         sop:
           step.sop_file_id === null
             ? null
@@ -325,7 +322,6 @@ export class MysqlProductSnapshotRepository
                 objectKey: step.sop_object_key_snapshot!,
                 versionNo: step.sop_version_no_snapshot!,
               },
-        needInspection: Boolean(step.need_inspection),
       })),
     };
   }

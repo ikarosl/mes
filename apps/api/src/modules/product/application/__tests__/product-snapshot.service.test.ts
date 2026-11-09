@@ -8,7 +8,6 @@ describe('ProductSnapshotService', () => {
       itemCode: 'FG-001',
       productName: 'Finished good',
       unit: 'pcs',
-      defaultRouteId: '2',
     };
     const repository = {
       getProductionProduct: vi.fn().mockResolvedValue(product),
@@ -24,8 +23,7 @@ describe('ProductSnapshotService', () => {
     expect(repository.getProductionProduct).toHaveBeenCalledWith('1');
   });
 
-  // TODO(test-migration): 高重要性：跨模块路线快照；正式测试获准后按显式路线公开能力恢复。
-  it.todo('delegates production route snapshots with the work-order product boundary');
+  // TODO(product-route-snapshot): 验证跨模块路线快照的来源资格；高重要性，旧默认路线夹具失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按显式路线公开能力恢复。
 
   it('delegates inactive-safe display reference reads through the Product boundary', async () => {
     const references = [{ id: '2', itemCode: 'MAT-2', productName: '停用物料', unit: 'pcs' }];

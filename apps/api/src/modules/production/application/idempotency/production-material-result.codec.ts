@@ -65,7 +65,7 @@ const outboundDetailSchema = z
     itemName: z.string(),
     generationGroupKey: z.string(),
     generationGroupType: z.enum(DEMAND_GENERATION_GROUP_TYPES),
-    supplementNo: nullableString,
+    manualAdditionNo: nullableString,
     outboundQuantity: z.string(),
     unit: z.string(),
     inventoryTransactionId: nullableString,

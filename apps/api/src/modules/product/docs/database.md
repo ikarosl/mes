@@ -4,13 +4,13 @@
 
 各表使用 InnoDB、`utf8mb4_0900_ai_ci`，`id` 均为 `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` 主键。未写 `DEFAULT` 的非空列无数据库默认值，可空列默认 `NULL`。下表的审计列组 M 在九张表中逐列存在：
 
-| 字段 | 物理定义 | 含义 |
-| --- | --- | --- |
-| `created_by` / `updated_by` / `deleted_by` | `BIGINT UNSIGNED NULL` | 创建、修改、删除人，各自外键指向 `users.id` |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
-| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
-| `is_deleted` | `TINYINT NOT NULL DEFAULT 0` | 软删除标志，CHECK 限定 `0/1` |
-| `deleted_at` | `DATETIME NULL` | 删除时间 |
+| 字段                                       | 物理定义                                                                  | 含义                                        |
+| ------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------- |
+| `created_by` / `updated_by` / `deleted_by` | `BIGINT UNSIGNED NULL`                                                    | 创建、修改、删除人，各自外键指向 `users.id` |
+| `created_at`                               | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 创建时间                                    |
+| `updated_at`                               | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间                                |
+| `is_deleted`                               | `TINYINT NOT NULL DEFAULT 0`                                              | 软删除标志，CHECK 限定 `0/1`                |
+| `deleted_at`                               | `DATETIME NULL`                                                           | 删除时间                                    |
 
 外键未另注时限制物理删除；MySQL 为外键维护所需支撑索引，下文另列显式查询索引。各表均有删除标志值域 CHECK，但只有 `materials/material_variants` 另用 CHECK 约束删除人、时间成套；其余表的完整删除审计由应用保证。`version` 不属于 M 组，仅在 `products` 中单列。
 
@@ -24,16 +24,16 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 
 职责：统一维护物料和成品分类，不创建第二套库存分类表。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `parent_id` | `BIGINT UNSIGNED NULL` | 父分类 |
-| `category_code` | `VARCHAR(64) NOT NULL` | 永久唯一分类编码 |
-| `category_name` | `VARCHAR(100) NOT NULL` | 分类名称 |
-| `item_kind` | `VARCHAR(30) NOT NULL` | `material/finished_product` |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `TEXT NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段            | 类型、空值与默认值                        | 含义                         |
+| --------------- | ----------------------------------------- | ---------------------------- |
+| `id`            | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                         |
+| `parent_id`     | `BIGINT UNSIGNED NULL`                    | 父分类                       |
+| `category_code` | `VARCHAR(64) NOT NULL`                    | 永久唯一分类编码             |
+| `category_name` | `VARCHAR(100) NOT NULL`                   | 分类名称                     |
+| `item_kind`     | `VARCHAR(30) NOT NULL`                    | `material/finished_product`  |
+| `status`        | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
+| `remark`        | `TEXT NULL`                               | 备注                         |
+| 审计列组 M      | 见公共列组                                | 主数据创建、修改与软删除审计 |
 
 唯一键 `uk_item_categories_code(category_code)`；索引 `idx_item_categories_parent(parent_id)`；自外键 `parent_id → item_categories.id`，另有 M 组操作者外键。CHECK 分别限定物品类型 `material/finished_product`、状态 `0/1` 和删除标志 `0/1`；父子同类型及防环由应用校验。
 
@@ -57,25 +57,25 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 
 职责：只维护成品。一条记录对应一个确定的成品编码；同名不同编码是不同成品，名称不形成父成品或成品类型，不另外建立成品大小版本表。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `item_code` | `VARCHAR(100) NOT NULL` | 成品永久编码 |
-| `product_name` | `VARCHAR(200) NOT NULL` | 可重复的展示名称 |
-| `category_id` | `BIGINT UNSIGNED NOT NULL` | 成品分类 |
-| `default_route_id` | `BIGINT UNSIGNED NULL` | 未启用保留列，应用不读写 |
-| `bom_status` | `VARCHAR(30) NOT NULL DEFAULT 'draft'` | `draft/pending_approval/approved` |
-| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL` | 当前送审或最终批准的申请 |
-| `version` | `INT NOT NULL DEFAULT 0` | 成品聚合并发版本，不是 BOM 业务版本 |
-| `bom_locked_at` | `DATETIME NULL` | BOM 最终批准并永久锁定的时间 |
-| `bom_locked_by` | `BIGINT UNSIGNED NULL` | 最后一级实际批准人 |
-| `unit` | `VARCHAR(20) NOT NULL` | 固定基础计量单位 |
-| `acquire_method` | `VARCHAR(32) NOT NULL` | `self_made/outsourced/purchased` |
-| `spec_values` | `JSON NOT NULL` | 完整规格参数表格；无数据库默认值 |
-| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前规格书 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `TEXT NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段                       | 类型、空值与默认值                        | 含义                                |
+| -------------------------- | ----------------------------------------- | ----------------------------------- |
+| `id`                       | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                                |
+| `item_code`                | `VARCHAR(100) NOT NULL`                   | 成品永久编码                        |
+| `product_name`             | `VARCHAR(200) NOT NULL`                   | 可重复的展示名称                    |
+| `category_id`              | `BIGINT UNSIGNED NOT NULL`                | 成品分类                            |
+| `default_route_id`         | `BIGINT UNSIGNED NULL`                    | 未启用保留列，应用不读写            |
+| `bom_status`               | `VARCHAR(30) NOT NULL DEFAULT 'draft'`    | `draft/pending_approval/approved`   |
+| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL`                    | 当前送审或最终批准的申请            |
+| `version`                  | `INT NOT NULL DEFAULT 0`                  | 成品聚合并发版本，不是 BOM 业务版本 |
+| `bom_locked_at`            | `DATETIME NULL`                           | BOM 最终批准并永久锁定的时间        |
+| `bom_locked_by`            | `BIGINT UNSIGNED NULL`                    | 最后一级实际批准人                  |
+| `unit`                     | `VARCHAR(20) NOT NULL`                    | 固定基础计量单位                    |
+| `acquire_method`           | `VARCHAR(32) NOT NULL`                    | `self_made/outsourced/purchased`    |
+| `spec_values`              | `JSON NOT NULL`                           | 完整规格参数表格；无数据库默认值    |
+| `specification_file_id`    | `BIGINT UNSIGNED NULL`                    | 当前规格书                          |
+| `status`                   | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`                  |
+| `remark`                   | `TEXT NULL`                               | 备注                                |
+| 审计列组 M                 | 见公共列组                                | 主数据创建、修改与软删除审计        |
 
 - 唯一键 `uk_products_item_code(item_code)`；索引 `idx_products_category(category_id)`、`idx_products_default_route(default_route_id)`、`idx_products_bom_locked_by(bom_locked_by)`、`idx_products_bom_approval_instance(bom_approval_instance_id)`、`idx_products_specification_file(specification_file_id)`。
 - 外键：`category_id → item_categories.id`；`default_route_id → process_routes.id ON DELETE SET NULL`；`bom_approval_instance_id → approval_instances.id`；`bom_locked_by → users.id`；`specification_file_id → technical_files.id ON DELETE RESTRICT`；另有 M 组操作者外键。
@@ -96,18 +96,18 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 
 职责：维护 BOM 引用的基础物料编码，例如 `m1.077.012`。名称（例如“微带”）仅用于展示和搜索，分类可表达“半成品 → 微带电路”；两者都不决定物料唯一身份。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `material_code` | `VARCHAR(100) NOT NULL` | 永久唯一基础物料编码 |
-| `material_name` | `VARCHAR(200) NOT NULL` | 可重复的当前名称 |
-| `category_id` | `BIGINT UNSIGNED NOT NULL` | 物料分类 |
-| `unit` | `VARCHAR(20) NOT NULL` | 固定基础单位 |
-| `acquire_method` | `VARCHAR(32) NOT NULL` | `self_made/outsourced/purchased` |
-| `spec_values` | `JSON NOT NULL` | 全部精确版本共用的规格参数表格 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `TEXT NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段             | 类型、空值与默认值                        | 含义                             |
+| ---------------- | ----------------------------------------- | -------------------------------- |
+| `id`             | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                             |
+| `material_code`  | `VARCHAR(100) NOT NULL`                   | 永久唯一基础物料编码             |
+| `material_name`  | `VARCHAR(200) NOT NULL`                   | 可重复的当前名称                 |
+| `category_id`    | `BIGINT UNSIGNED NOT NULL`                | 物料分类                         |
+| `unit`           | `VARCHAR(20) NOT NULL`                    | 固定基础单位                     |
+| `acquire_method` | `VARCHAR(32) NOT NULL`                    | `self_made/outsourced/purchased` |
+| `spec_values`    | `JSON NOT NULL`                           | 全部精确版本共用的规格参数表格   |
+| `status`         | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`               |
+| `remark`         | `TEXT NULL`                               | 备注                             |
+| 审计列组 M       | 见公共列组                                | 主数据创建、修改与软删除审计     |
 
 唯一键 `uk_materials_code(material_code)`；索引 `idx_materials_category(category_id)`；外键 `category_id → item_categories.id`，另有 M 组操作者外键。CHECK 限定获取方式为表列三值、状态和删除标志为 `0/1`；`chk_materials_delete_facts` 保证未删除时删除人／时间均空，删除时二者均非空。规格参数 CHECK 见下文。`trg_materials_reject_identity_update` 在 `BEFORE UPDATE` 拒绝改变 `material_code` 或 `unit`。
 
@@ -140,16 +140,16 @@ process_routes → process_route_steps
 
 职责：维护成品的统一 BOM 明细，是批量生产需求基础生成的唯一 BOM 数据源。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `product_id` | `BIGINT UNSIGNED NOT NULL` | 被生产的成品 |
-| `material_id` | `BIGINT UNSIGNED NOT NULL` | 投入的基础物料 |
-| `quantity_per_unit` | `INT NOT NULL` | 每件成品所需物料数量 |
-| `unit` | `VARCHAR(20) NOT NULL` | 用量单位，须等于物料基础单位 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `TEXT NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段                | 类型、空值与默认值                        | 含义                         |
+| ------------------- | ----------------------------------------- | ---------------------------- |
+| `id`                | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                         |
+| `product_id`        | `BIGINT UNSIGNED NOT NULL`                | 被生产的成品                 |
+| `material_id`       | `BIGINT UNSIGNED NOT NULL`                | 投入的基础物料               |
+| `quantity_per_unit` | `INT NOT NULL`                            | 每件成品所需物料数量         |
+| `unit`              | `VARCHAR(20) NOT NULL`                    | 用量单位，须等于物料基础单位 |
+| `status`            | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
+| `remark`            | `TEXT NULL`                               | 备注                         |
+| 审计列组 M          | 见公共列组                                | 主数据创建、修改与软删除审计 |
 
 唯一键 `uk_product_materials_item(product_id,material_id)`、`uk_product_materials_reference(id,material_id)`；外键 `product_id → products.id`、`material_id → materials.id`，另有 M 组操作者外键。两种 ID 属于不同身份空间，允许数值相等。
 
@@ -195,22 +195,22 @@ BOM 完整替换的并发及送审前保存规则见[业务命令](product-rules
 
 职责：保存 SOP 与规格书的元数据，文件内容通过 Product 的 S3-compatible 存储端口访问。其他附件用途尚未接入本能力。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `file_name` | `VARCHAR(255) NOT NULL` | 显示文件名，新上传使用原始文件名 |
-| `original_name` | `VARCHAR(255) NOT NULL` | 上传原始名称 |
-| `storage_provider` | `VARCHAR(32) NOT NULL` | 存储提供方，当前使用 `s3` |
-| `bucket` | `VARCHAR(128) NULL` | 稳定 Bucket，当前 S3 写入必填 |
-| `object_key` | `VARCHAR(500) NOT NULL` | 稳定对象键，不保存临时 URL |
-| `mime_type` | `VARCHAR(128) NOT NULL` | MIME 类型 |
-| `size_bytes` | `BIGINT UNSIGNED NOT NULL` | 文件字节数 |
-| `checksum_sha256` | `CHAR(64) NOT NULL` | 内容摘要 |
-| `file_type` | `VARCHAR(64) NOT NULL` | `sop/specification` |
-| `version_no` | `VARCHAR(64) NULL` | SOP 版本，规格书为空 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `VARCHAR(255) NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段               | 类型、空值与默认值                        | 含义                             |
+| ------------------ | ----------------------------------------- | -------------------------------- |
+| `id`               | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                             |
+| `file_name`        | `VARCHAR(255) NOT NULL`                   | 显示文件名，新上传使用原始文件名 |
+| `original_name`    | `VARCHAR(255) NOT NULL`                   | 上传原始名称                     |
+| `storage_provider` | `VARCHAR(32) NOT NULL`                    | 存储提供方，当前使用 `s3`        |
+| `bucket`           | `VARCHAR(128) NULL`                       | 稳定 Bucket，当前 S3 写入必填    |
+| `object_key`       | `VARCHAR(500) NOT NULL`                   | 稳定对象键，不保存临时 URL       |
+| `mime_type`        | `VARCHAR(128) NOT NULL`                   | MIME 类型                        |
+| `size_bytes`       | `BIGINT UNSIGNED NOT NULL`                | 文件字节数                       |
+| `checksum_sha256`  | `CHAR(64) NOT NULL`                       | 内容摘要                         |
+| `file_type`        | `VARCHAR(64) NOT NULL`                    | `sop/specification`              |
+| `version_no`       | `VARCHAR(64) NULL`                        | SOP 版本，规格书为空             |
+| `status`           | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`               |
+| `remark`           | `VARCHAR(255) NULL`                       | 备注                             |
+| 审计列组 M         | 见公共列组                                | 主数据创建、修改与软删除审计     |
 
 唯一键 `uk_technical_files_object(storage_provider,bucket,object_key)`；外键为 M 组操作者引用。CHECK 保证 `size_bytes >= 0`、状态和删除标志为 `0/1`、用途仅 `sop/specification`；`chk_technical_files_version` 要求 SOP 版本非空、规格书版本为空。物理可空 Bucket 不提供当前 S3 写入省略入口；未填 Bucket 的行不受普通联合唯一键的完整去重保护。
 
@@ -220,16 +220,16 @@ BOM 完整替换的并发及送审前保存规则见[业务命令](product-rules
 
 职责：维护唯一的工序主数据。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `step_code` | `VARCHAR(100) NOT NULL` | 永久唯一工序编码 |
-| `step_name` | `VARCHAR(100) NOT NULL` | 工序名称 |
-| `description` | `VARCHAR(255) NULL` | 工序说明 |
-| `default_sop_file_id` | `BIGINT UNSIGNED NULL` | 默认 SOP |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `TEXT NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段                  | 类型、空值与默认值                        | 含义                         |
+| --------------------- | ----------------------------------------- | ---------------------------- |
+| `id`                  | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                         |
+| `step_code`           | `VARCHAR(100) NOT NULL`                   | 永久唯一工序编码             |
+| `step_name`           | `VARCHAR(100) NOT NULL`                   | 工序名称                     |
+| `description`         | `VARCHAR(255) NULL`                       | 工序说明                     |
+| `default_sop_file_id` | `BIGINT UNSIGNED NULL`                    | 默认 SOP                     |
+| `status`              | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
+| `remark`              | `TEXT NULL`                               | 备注                         |
+| 审计列组 M            | 见公共列组                                | 主数据创建、修改与软删除审计 |
 
 唯一键 `uk_process_steps_code(step_code)`；外键 `default_sop_file_id → technical_files.id ON DELETE SET NULL`，另有 M 组操作者外键；CHECK 限定状态和删除标志为 `0/1`。路线步骤引用工序身份并另存快照，工序主数据不承载具体路线中的位置。
 
@@ -239,15 +239,15 @@ BOM 完整替换的并发及送审前保存规则见[业务命令](product-rules
 
 职责：维护可复用、可版本化的工艺路线。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `route_code` | `VARCHAR(64) NOT NULL` | 路线编码 |
-| `route_name` | `VARCHAR(128) NOT NULL` | 路线名称 |
-| `version_no` | `VARCHAR(64) NOT NULL` | 业务路线版本 |
-| `status` | `VARCHAR(20) NOT NULL DEFAULT 'draft'` | `draft/enabled/disabled/archived` |
-| `remark` | `VARCHAR(255) NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段         | 类型、空值与默认值                        | 含义                              |
+| ------------ | ----------------------------------------- | --------------------------------- |
+| `id`         | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                              |
+| `route_code` | `VARCHAR(64) NOT NULL`                    | 路线编码                          |
+| `route_name` | `VARCHAR(128) NOT NULL`                   | 路线名称                          |
+| `version_no` | `VARCHAR(64) NOT NULL`                    | 业务路线版本                      |
+| `status`     | `VARCHAR(20) NOT NULL DEFAULT 'draft'`    | `draft/enabled/disabled/archived` |
+| `remark`     | `VARCHAR(255) NULL`                       | 备注                              |
+| 审计列组 M   | 见公共列组                                | 主数据创建、修改与软删除审计      |
 
 唯一键 `uk_process_routes_version(route_code,version_no)`；外键为 M 组操作者引用；CHECK 限定状态为表列四值、删除标志为 `0/1`。表不再包含 `product_id`，同一路线可被不同任务显式选择；发布内容不可改由应用保证。
 
@@ -259,30 +259,28 @@ BOM 完整替换的并发及送审前保存规则见[业务命令](product-rules
 
 职责：维护路线中的工序顺序，并保存发布时必要快照。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `route_id` | `BIGINT UNSIGNED NOT NULL` | 所属路线版本 |
-| `process_step_id` | `BIGINT UNSIGNED NOT NULL` | 工序主数据身份 |
-| `step_order` | `INT NOT NULL` | 顺序，从 `1` 开始 |
-| `step_code_snapshot` | `VARCHAR(100) NOT NULL` | 工序编码快照 |
-| `step_name_snapshot` | `VARCHAR(100) NOT NULL` | 工序名称快照 |
-| `description_snapshot` | `VARCHAR(255) NULL` | 工序说明快照 |
-| `default_owner_id` | `BIGINT UNSIGNED NULL` | 默认负责人 |
-| `sop_file_id` | `BIGINT UNSIGNED NULL` | 使用的 SOP 文件 |
-| `sop_file_name_snapshot` | `VARCHAR(255) NULL` | SOP 名称快照 |
-| `sop_object_key_snapshot` | `VARCHAR(500) NULL` | SOP 对象键快照 |
-| `sop_version_no_snapshot` | `VARCHAR(64) NULL` | SOP 版本快照 |
-| `need_inspection` | `TINYINT NOT NULL DEFAULT 0` | 是否要求检验 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `VARCHAR(255) NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段                      | 类型、空值与默认值                        | 含义                         |
+| ------------------------- | ----------------------------------------- | ---------------------------- |
+| `id`                      | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                         |
+| `route_id`                | `BIGINT UNSIGNED NOT NULL`                | 所属路线版本                 |
+| `process_step_id`         | `BIGINT UNSIGNED NOT NULL`                | 工序主数据身份               |
+| `step_order`              | `INT NOT NULL`                            | 顺序，从 `1` 开始            |
+| `step_code_snapshot`      | `VARCHAR(100) NOT NULL`                   | 工序编码快照                 |
+| `step_name_snapshot`      | `VARCHAR(100) NOT NULL`                   | 工序名称快照                 |
+| `description_snapshot`    | `VARCHAR(255) NULL`                       | 工序说明快照                 |
+| `sop_file_id`             | `BIGINT UNSIGNED NULL`                    | 使用的 SOP 文件              |
+| `sop_file_name_snapshot`  | `VARCHAR(255) NULL`                       | SOP 名称快照                 |
+| `sop_object_key_snapshot` | `VARCHAR(500) NULL`                       | SOP 对象键快照               |
+| `sop_version_no_snapshot` | `VARCHAR(64) NULL`                        | SOP 版本快照                 |
+| `status`                  | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
+| `remark`                  | `VARCHAR(255) NULL`                       | 备注                         |
+| 审计列组 M                | 见公共列组                                | 主数据创建、修改与软删除审计 |
 
-唯一键 `uk_process_route_steps_order(route_id,step_order)`、`uk_process_route_steps_reference(id,route_id)`；外键 `route_id → process_routes.id`、`process_step_id → process_steps.id`、`default_owner_id → users.id`、`sop_file_id → technical_files.id ON DELETE SET NULL`，另有 M 组操作者外键。
+唯一键 `uk_process_route_steps_order(route_id,step_order)`、`uk_process_route_steps_reference(id,route_id)`；外键 `route_id → process_routes.id`、`process_step_id → process_steps.id`、`sop_file_id → technical_files.id ON DELETE SET NULL`，另有 M 组操作者外键。
 
-CHECK 保证 `step_order > 0`，`need_inspection/status/is_deleted` 均为 `0/1`；`chk_process_route_steps_sop_version_snapshot` 要求 SOP 名称、对象键及版本三项快照同为空或同非空，不依赖当前文件关联仍存在。所有步骤均须报工，表无报工开关。
+CHECK 保证 `step_order > 0`，`status/is_deleted` 均为 `0/1`；`chk_process_route_steps_sop_version_snapshot` 要求 SOP 名称、对象键及版本三项快照同为空或同非空，不依赖当前文件关联仍存在。表无报工开关。
 
-每步保存工序编码、名称、说明及 SOP 名称、对象键、版本快照，以及负责人和检验规则。路线内顺序唯一；恢复已删的同一顺序须复用原记录。
+每步保存工序编码、名称、说明及 SOP 名称、对象键、版本快照。路线内顺序唯一；恢复已删的同一顺序须复用原记录。`202611090025-route-station-simplification` 移除默认负责人和独立检验开关；检查节点及末站职责见[路线工作流](product-rules.md#稳定身份与工作流)。
 
 ## 2.5 路线与 BOM 的边界
 
@@ -295,17 +293,17 @@ CHECK 保证 `step_order > 0`，`need_inspection/status/is_deleted` 均为 `0/1`
 职责：维护同一基础物料下可供管理员选择的精确版本。`materials.id` 是 BOM 的稳定基础物料身份，
 `material_variants.id` 才是采购批次、生产需求和库存流水中不可替代的版本身份。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `material_id` | `BIGINT UNSIGNED NOT NULL` | 所属基础物料 |
-| `major_version` | `VARCHAR(32) NOT NULL` | 主版本 |
-| `minor_version` | `VARCHAR(32) NOT NULL` | 次版本 |
-| `variant_code` | `VARCHAR(180) NOT NULL` | 服务端生成的永久版本编码 |
-| `specification_file_id` | `BIGINT UNSIGNED NULL` | 当前精确版本规格书 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `remark` | `TEXT NULL` | 备注 |
-| 审计列组 M | 见公共列组 | 主数据创建、修改与软删除审计 |
+| 字段                    | 类型、空值与默认值                        | 含义                         |
+| ----------------------- | ----------------------------------------- | ---------------------------- |
+| `id`                    | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                         |
+| `material_id`           | `BIGINT UNSIGNED NOT NULL`                | 所属基础物料                 |
+| `major_version`         | `VARCHAR(32) NOT NULL`                    | 主版本                       |
+| `minor_version`         | `VARCHAR(32) NOT NULL`                    | 次版本                       |
+| `variant_code`          | `VARCHAR(180) NOT NULL`                   | 服务端生成的永久版本编码     |
+| `specification_file_id` | `BIGINT UNSIGNED NULL`                    | 当前精确版本规格书           |
+| `status`                | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
+| `remark`                | `TEXT NULL`                               | 备注                         |
+| 审计列组 M              | 见公共列组                                | 主数据创建、修改与软删除审计 |
 
 - 唯一键 `uk_material_variants_code(variant_code)`、`uk_material_variants_version(material_id,major_version,minor_version)`、`uk_material_variants_material_reference(id,material_id)`；索引 `idx_material_variants_material_status(material_id,status,is_deleted,id)`、`idx_material_variants_specification_file(specification_file_id)`。
 - 外键 `material_id → materials.id`、`specification_file_id → technical_files.id ON DELETE RESTRICT`，另有 M 组操作者外键。组合引用键支持外部同时校验精确版本及基础物料归属。

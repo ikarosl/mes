@@ -16,8 +16,6 @@ export const approvalRoutes: RouteRecordRaw[] = [
       PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
       PERMISSIONS.production.materials.correctDemand,
-      PERMISSIONS.production.tasks.terminate,
-      PERMISSIONS.production.tasks.manageOutput,
     ],
     'ApprovalInboxPage',
   ),

@@ -40,12 +40,8 @@ const stepRow = () =>
     stepCode: 'P1',
     stepName: '工序1',
     description: '首道装配',
-    defaultOwnerId: 'u1',
-    defaultOwnerName: '张三',
     sopFileId: 'f1',
     sopFileName: 'sop.pdf',
-    needInspection: true,
-    needRecord: true,
     status: 1,
     remark: null,
   }) as never;
@@ -98,11 +94,9 @@ describe('RouteDetailDialog', () => {
     expect(wrapper.text()).toContain('工序1');
     expect(wrapper.text()).toContain('P1');
     expect(wrapper.text()).toContain('首道装配');
-    expect(wrapper.text()).toContain('张三');
     expect(wrapper.text()).toContain('sop.pdf');
     expect(wrapper.text()).not.toContain('使用 BOM');
     expect(wrapper.text()).not.toContain('单件用量');
-    expect(wrapper.text()).not.toContain('需报工');
   });
 
   it('shows a failed route-step state without presenting an empty BOM', async () => {

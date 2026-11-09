@@ -52,155 +52,56 @@ const idempotencyRecordsWritePattern =
  * ——scope 只能经由契约常量标识符引用。
  */
 const knownIdempotencyScopes = [
-  'quality.incoming-inspection-order.create.v1',
-  'quality.incoming-inspection-order.associations.v1',
-  'quality.incoming-inspection-order.remark.v1',
-  'quality.process-inspection.create.v1',
-  'quality.process-inspection.correct.v1',
-  'quality.process-inspection.reverse.v1',
-  'production.process-inspection.accept.v1',
-  'production.step-report.create.v5',
-  'production.step-report.correct.v6',
-  'production.step-report.history-create.v3',
-  'production.step-report.history-correct.v2',
-  'production.step-report.batch-reverse.v2',
-  'production.rework.complete.v4',
-  'production.abnormal.scrap-supplement-plan.confirm.v3',
-  'procurement.inbound.confirm.v8',
-  'procurement.inbound.confirm.v7',
-  'production.finished-inbound.confirm.v4',
+  'inventory.other-inbound.cancel.v1',
+  'inventory.other-inbound.confirm.v1',
   'inventory.other-inbound.create.v1',
   'inventory.other-inbound.save.v1',
-  'inventory.other-inbound.confirm.v1',
-  'inventory.other-inbound.cancel.v1',
+  'inventory.other-outbound.cancel.v1',
+  'inventory.other-outbound.confirm.v1',
   'inventory.other-outbound.create.v1',
   'inventory.other-outbound.save.v1',
-  'inventory.other-outbound.confirm.v1',
-  'inventory.other-outbound.cancel.v1',
-  'production.batch.create.v14',
-  'production.batch.create.v12',
-  'production.batch-closeout.begin.v2',
-  'production.batch-closeout.withdraw.v1',
-  'production.material-outbound.create.v4',
-  'production.material-outbound.confirm.v3',
-  'production.step-report.history-create.v2',
-  'production.execution.start.v1',
-  'production.execution.complete.v2',
-  'production.execution.complete.v1',
-  'production.research.complete.v3',
-  'production.research.complete.v2',
-  'production.batch.create.v10',
-  'production.demand-correction.submit.v2',
-  'production.step-report.create.v4',
-  'production.step-report.correct.v5',
-  'production.step-report.correct.v4',
-  'production.step-report.history-create.v1',
-  'production.step-report.history-correct.v1',
-  'production.step-report.batch-reverse.v1',
-  'production.rework.complete.v3',
-  'production.rework.complete.v2',
-  'production.abnormal.scrap-supplement-plan.confirm.v2',
-  'procurement.inbound.confirm.v6',
-  'production.batch.create.v9',
-  'production.finished-inbound.confirm.v3',
-  'production.work-order.create.v5',
-  'procurement.receipt.correct.v3',
-  'procurement.receipt.void.v3',
-  'procurement.receipt.void.v2',
-  'procurement.receipt.accept.v4',
-  'procurement.receipt.accept.v3',
-  'procurement.receipt.reject.v3',
-  'procurement.receipt.reject.v2',
-  'procurement.receipt.revoke-rejection.v1',
-  'procurement.receipt.return.v4',
-  'procurement.inbound.confirm.v5',
-  'procurement.inbound.confirm.v4',
-  'procurement.purchase-order.supplement.v10',
-  'procurement.purchase-order.supplement.v8',
-  'procurement.purchase-order.supplement.v7',
-  'procurement.purchase-order.supplement.v6',
-  'procurement.purchase-order.supplement.v5',
-  'procurement.purchase-order.supplement.v4',
-  'procurement.purchase-order.supplement.v3',
-  'procurement.receipt.confirm.v2',
-  'procurement.receipt.correct.v2',
-  'procurement.receipt.review.v3',
-  'procurement.receipt.review.v2',
-  'procurement.receipt.inspect.v3',
-  'procurement.receipt.accept.v2',
-  'procurement.receipt.reject.v1',
-  'procurement.receipt.return.v3',
-  'procurement.inbound.confirm.v3',
-  'procurement.receipt.confirm.v1',
-  'procurement.receipt.accept.v1',
-  'procurement.receipt.correct.v1',
-  'procurement.receipt.review.v1',
-  'procurement.receipt.inspect.v1',
-  'procurement.receipt.inspect.v2',
-  'procurement.receipt.terminate-return.v1',
-  'procurement.receipt.terminate-return.v2',
-  'procurement.receipt.return.v1',
-  'procurement.receipt.return.v2',
-  'procurement.inbound.confirm.v1',
-  'procurement.inbound.confirm.v2',
-
-  'procurement.purchase-order.create.v6',
-  'procurement.purchase-order.create.v4',
-  'procurement.purchase-order.create.v3',
-  'procurement.purchase-order.create.v2',
-  'procurement.purchase-order.update.v8',
-  'procurement.purchase-order.update.v6',
-  'procurement.purchase-order.update.v5',
-  'procurement.purchase-order.update.v4',
-  'procurement.purchase-order.update.v3',
-  'procurement.purchase-order.update.v2',
-  'procurement.purchase-order.place.v8',
-  'procurement.purchase-order.place.v6',
-  'procurement.purchase-order.place.v5',
-  'procurement.purchase-order.place.v4',
-  'procurement.purchase-order.place.v3',
-  'procurement.purchase-order.place.v2',
-  'procurement.purchase-order.place.v1',
-  'procurement.purchase-order.cancel.v3',
-  'procurement.purchase-order.cancel.v2',
-  'procurement.purchase-order.close.v1',
+  'procurement.inbound.confirm.v8',
   'procurement.purchase-order-line.close.v2',
   'procurement.purchase-order-line.reopen.v1',
+  'procurement.purchase-order.cancel.v3',
+  'procurement.purchase-order.close.v1',
   'procurement.purchase-order.correct-amounts.v4',
-  'procurement.purchase-order.supplement.v1',
-  'procurement.purchase-order.supplement.v2',
-  'production.batch.create.v8',
-  'production.batch.terminate.v1',
-  'production.demand-correction.submit.v1',
-  'production.batch-closeout.begin.v1',
-  'production.batch-closeout.handle.v1',
-  'production.output.draft.v1',
-  'production.output.reinspection.begin.v1',
-  'quality.finished-inspection.record.v3',
-  'quality.finished-inspection.start.v1',
-  'quality.finished-reinspection.begin.v1',
-  'production.output.material-review.v1',
-  'production.closeout.material-loss.record.v1',
-  'production.output.submit.v1',
-  'production.output.correction.begin.v1',
-  'production.output.correction.cancel.v1',
-  'production.material-allocation.create.v1',
-  'production.work-order.create.v3',
-  'production.research.start.v1',
-  'production.research.complete.v1',
-  'production.material-outbound.create.v3',
-  'production.material-outbound.confirm.v2',
-  'production.purchase-inbound.create.v1',
-  'production.purchase-inbound.confirm.v1',
-  'production.finished-inbound.confirm.v2',
-  'production.step-report.create.v3',
-  'production.step-report.correct.v3',
-  'production.rework.complete.v1',
-  'production.abnormal.scrap-supplement-plan.confirm.v1',
-  'production.material-loss.create.v3',
-  'production.material-loss.confirm.v3',
-  'production.material-demands.configure.v2',
-  'production.material-demands.add-manual.v3',
+  'procurement.purchase-order.create.v6',
+  'procurement.purchase-order.place.v8',
+  'procurement.purchase-order.supplement.v10',
+  'procurement.purchase-order.update.v8',
+  'procurement.receipt.accept.v4',
+  'procurement.receipt.confirm.v2',
+  'procurement.receipt.correct.v3',
+  'procurement.receipt.inspect.v3',
+  'procurement.receipt.reject.v3',
+  'procurement.receipt.return.v4',
+  'procurement.receipt.review.v3',
+  'procurement.receipt.revoke-rejection.v1',
+  'procurement.receipt.void.v3',
+  'production.batch.create.v15',
+  'production.demand-correction.submit.v3',
+  'production.material-allocation.create.v2',
+  'production.material-demands.add-manual.v4',
+  'production.material-demands.configure.v3',
+  'production.material-loss.confirm.v4',
+  'production.material-loss.create.v4',
+  'production.material-outbound.confirm.v4',
+  'production.material-outbound.create.v5',
+  'production.tracking.abnormality.create.v1',
+  'production.tracking.abnormality.handle.v1',
+  'production.tracking.confirm-output.v1',
+  'production.tracking.confirm-research-output.v1',
+  'production.tracking.correct-quantity.v1',
+  'production.tracking.create.v1',
+  'production.tracking.scan.v1',
+  'production.tracking.task.finish.v1',
+  'production.tracking.task.start.v1',
+  'production.tracking.void.v1',
+  'production.work-order.create.v6',
+  'quality.incoming-inspection-order.associations.v1',
+  'quality.incoming-inspection-order.create.v1',
+  'quality.incoming-inspection-order.remark.v1',
 ];
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const idempotencyScopeLiteralPattern = new RegExp(
@@ -256,14 +157,198 @@ const resolveRelativeImport = (fileRelative, specifier) => {
     .replace(/\.js$/, '.ts');
 };
 
-/** 提取契约文件 `export const NAME = '<value>'` 的 scope 常量导出：{ name: value }。 */
+const scopeExportName = (name, keys = []) =>
+  name + keys.map((key) => `[${JSON.stringify(key)}]`).join('');
+
+const unwrapConstAssertion = (expression) => {
+  while (expression && (ts.isAsExpression(expression) || ts.isParenthesizedExpression(expression)))
+    expression = expression.expression;
+  return expression;
+};
+
+/** 只读取显式导出的字符串和常量字典，不执行契约源码。 */
 const extractContractExports = (source) => {
   const exports = {};
-  const pattern = /export\s+const\s+(\w+)\s*=\s*['"]([^'"]+)['"]/g;
-  for (const match of source.matchAll(pattern)) {
-    exports[match[1]] = match[2];
+  const file = ts.createSourceFile('idempotency.contract.ts', source, ts.ScriptTarget.Latest, true);
+  const declarations = file.statements
+    .filter(
+      (statement) =>
+        ts.isVariableStatement(statement) &&
+        statement.declarationList.flags & ts.NodeFlags.Const &&
+        statement.modifiers?.some((modifier) => modifier.kind === ts.SyntaxKind.ExportKeyword),
+    )
+    .flatMap((statement) => [...statement.declarationList.declarations])
+    .filter((declaration) => ts.isIdentifier(declaration.name));
+  for (const declaration of declarations) {
+    const value = unwrapConstAssertion(declaration.initializer);
+    if (value && ts.isStringLiteral(value)) exports[declaration.name.text] = value.text;
   }
+  const collect = (name, keys, expression) => {
+    const value = unwrapConstAssertion(expression);
+    if (!value) return;
+    if (ts.isStringLiteral(value)) exports[scopeExportName(name, keys)] = value.text;
+    else if (ts.isIdentifier(value) && typeof exports[value.text] === 'string')
+      exports[scopeExportName(name, keys)] = exports[value.text];
+    else if (ts.isObjectLiteralExpression(value)) {
+      for (const property of value.properties) {
+        if (
+          ts.isPropertyAssignment(property) &&
+          (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+        )
+          collect(name, [...keys, property.name.text], property.initializer);
+      }
+    }
+  };
+  for (const declaration of declarations)
+    collect(declaration.name.text, [], declaration.initializer);
   return exports;
+};
+
+/** 静态成员逐层解析，任何运行时 key 均不作为端点声明接受。 */
+const scopeReferenceOf = (expression) => {
+  if (ts.isIdentifier(expression)) return { name: expression.text, keys: [] };
+  if (ts.isPropertyAccessExpression(expression)) {
+    const parent = scopeReferenceOf(expression.expression);
+    return parent ? { ...parent, keys: [...parent.keys, expression.name.text] } : null;
+  }
+  if (
+    ts.isElementAccessExpression(expression) &&
+    expression.argumentExpression &&
+    ts.isStringLiteral(expression.argumentExpression)
+  ) {
+    const parent = scopeReferenceOf(expression.expression);
+    return parent
+      ? { ...parent, keys: [...parent.keys, expression.argumentExpression.text] }
+      : null;
+  }
+  return null;
+};
+
+const executorScopeExpressions = (node) => {
+  const expressions = [];
+  const visit = (child) => {
+    if (
+      ts.isCallExpression(child) &&
+      ts.isPropertyAccessExpression(child.expression) &&
+      child.expression.name.text === 'execute' &&
+      child.arguments[0] &&
+      ts.isObjectLiteralExpression(child.arguments[0])
+    ) {
+      const property = child.arguments[0].properties.find(
+        (candidate) => ts.isPropertyAssignment(candidate) && candidate.name.getText() === 'scope',
+      );
+      if (property) expressions.push(property.initializer);
+    }
+    ts.forEachChild(child, visit);
+  };
+  visit(node);
+  return expressions;
+};
+
+const controllerApplicationCalls = (expression) => {
+  let method = expression.parent;
+  while (method && !ts.isMethodDeclaration(method)) method = method.parent;
+  if (!method) return [];
+  const calls = [];
+  const visit = (node) => {
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      ts.isPropertyAccessExpression(node.expression.expression) &&
+      node.expression.expression.expression.kind === ts.SyntaxKind.ThisKeyword
+    ) {
+      calls.push({
+        method: node.expression.name.text,
+        arguments: node.arguments.map((argument) =>
+          ts.isStringLiteral(argument) ? argument.text : null,
+        ),
+      });
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(method);
+  return calls;
+};
+
+const hasScopeExecutorBinding = (source, reference, localName, controllerCalls) => {
+  const file = ts.createSourceFile('application.ts', source, ts.ScriptTarget.Latest, true);
+  const sameKeys = (keys) => JSON.stringify(keys) === JSON.stringify(reference.keys);
+  if (
+    executorScopeExpressions(file).some((expression) => {
+      const candidate = scopeReferenceOf(expression);
+      return candidate?.name === localName && sameKeys(candidate.keys);
+    })
+  )
+    return true;
+  if (!reference.keys.length) return false;
+
+  // 字典 helper 只通过具体 Controller 调用传播静态字符串及方法参数。
+  // 仅在精确成员一路进入 executor 时通过；HTTP 输入或任意动态表达式不能充当 scope。
+  let wired = false;
+  const visitClass = (node) => {
+    if (ts.isClassDeclaration(node)) {
+      const methods = new Map(
+        node.members
+          .filter(
+            (member) =>
+              ts.isMethodDeclaration(member) && member.body && ts.isIdentifier(member.name),
+          )
+          .map((member) => [member.name.text, member]),
+      );
+      const follow = (name, arguments_, seen = new Set()) => {
+        const method = methods.get(name);
+        const identity = JSON.stringify([name, arguments_]);
+        if (!method || seen.has(identity)) return;
+        const visited = new Set([...seen, identity]);
+        const parameters = new Map(
+          method.parameters.flatMap((parameter, index) =>
+            ts.isIdentifier(parameter.name)
+              ? [[parameter.name.text, arguments_[index] ?? null]]
+              : [],
+          ),
+        );
+        const valueOf = (expression) => {
+          if (ts.isStringLiteral(expression)) return expression.text;
+          if (ts.isIdentifier(expression)) return parameters.get(expression.text) ?? null;
+          return null;
+        };
+        const memberKeys = (expression) => {
+          if (ts.isIdentifier(expression)) return expression.text === localName ? [] : null;
+          if (ts.isPropertyAccessExpression(expression)) {
+            const parent = memberKeys(expression.expression);
+            return parent ? [...parent, expression.name.text] : null;
+          }
+          if (ts.isElementAccessExpression(expression) && expression.argumentExpression) {
+            const parent = memberKeys(expression.expression);
+            const key = valueOf(expression.argumentExpression);
+            return parent && key !== null ? [...parent, key] : null;
+          }
+          return null;
+        };
+        if (
+          executorScopeExpressions(method.body).some((expression) => {
+            const keys = memberKeys(expression);
+            return keys !== null && sameKeys(keys);
+          })
+        )
+          wired = true;
+        const followCalls = (child) => {
+          if (
+            ts.isCallExpression(child) &&
+            ts.isPropertyAccessExpression(child.expression) &&
+            child.expression.expression.kind === ts.SyntaxKind.ThisKeyword
+          )
+            follow(child.expression.name.text, child.arguments.map(valueOf), visited);
+          ts.forEachChild(child, followCalls);
+        };
+        followCalls(method.body);
+      };
+      for (const call of controllerCalls) follow(call.method, call.arguments);
+    }
+    ts.forEachChild(node, visitClass);
+  };
+  visitClass(file);
+  return wired;
 };
 
 /** 去掉注释（检测专用副本）：避免注释里的标识符触发跨文件检查。 */
@@ -301,47 +386,25 @@ const checks = [
     exclude: [
       'apps/api/src/modules/inventory/application/other-inventory.service.ts',
       'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
+      'apps/api/src/modules/procurement/application/incoming-inspection-order.service.ts',
       'apps/api/src/modules/procurement/application/purchase-order.service.ts',
       'apps/api/src/modules/procurement/application/receipt.service.ts',
-      'apps/api/src/modules/procurement/application/incoming-inspection-order.service.ts',
-      'apps/api/src/modules/quality/application/finished-inspection.service.ts',
-      'apps/api/src/modules/quality/application/process-inspection.service.ts',
+      'apps/api/src/modules/procurement/presentation/http/incoming-inspection-order.controller.ts',
       'apps/api/src/modules/procurement/presentation/http/purchase-order.controller.ts',
       'apps/api/src/modules/procurement/presentation/http/receipt.controller.ts',
-      'apps/api/src/modules/procurement/presentation/http/incoming-inspection-order.controller.ts',
-      'apps/api/src/modules/quality/presentation/http/finished-inspection.controller.ts',
-      'apps/api/src/modules/quality/presentation/http/process-inspection.controller.ts',
-      'apps/api/src/modules/production/application/production.service.ts',
-      'apps/api/src/modules/production/application/production-termination.service.ts',
       'apps/api/src/modules/production/application/production-demand-correction.service.ts',
-      'apps/api/src/modules/production/application/production-closeout.service.ts',
-      'apps/api/src/modules/production/application/production-output.service.ts',
-      'apps/api/src/modules/production/application/production-closeout-material-loss.service.ts',
-      'apps/api/src/modules/production/application/production-execution.service.ts',
-      'apps/api/src/modules/production/application/production-material.service.ts',
-      'apps/api/src/modules/production/application/production-material-outbound.service.ts',
-      'apps/api/src/modules/production/application/production-inbound.service.ts',
-      'apps/api/src/modules/production/application/production-finished-inbound.service.ts',
-      'apps/api/src/modules/production/application/production-reporting.service.ts',
-      'apps/api/src/modules/production/application/production-abnormal.service.ts',
-      'apps/api/src/modules/production/application/production-supplement.service.ts',
-      'apps/api/src/modules/production/application/production-material-loss.service.ts',
       'apps/api/src/modules/production/application/production-material-demand.service.ts',
-      'apps/api/src/modules/production/presentation/http/production.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-termination.controller.ts',
+      'apps/api/src/modules/production/application/production-material-loss.service.ts',
+      'apps/api/src/modules/production/application/production-material-outbound.service.ts',
+      'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-tracking.service.ts',
+      'apps/api/src/modules/production/application/production.service.ts',
       'apps/api/src/modules/production/presentation/http/production-demand-correction.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-closeout.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-output.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-closeout-material-loss.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-execution.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-inbound.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-finished-inbound.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-reporting.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-abnormal.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-supplement.controller.ts',
-      'apps/api/src/modules/production/presentation/http/production-material-loss.controller.ts',
       'apps/api/src/modules/production/presentation/http/production-material-demand.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-material-loss.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-material.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production-tracking.controller.ts',
+      'apps/api/src/modules/production/presentation/http/production.controller.ts',
     ],
   },
   {
@@ -351,28 +414,16 @@ const checks = [
       '只有已登记的 Production application 用例可依赖 IdempotencyExecutor；新增用例必须先完成契约登记与验收',
     exclude: [
       'apps/api/src/modules/inventory/application/other-inventory.service.ts',
-      'apps/api/src/modules/inventory/presentation/http/other-inventory.controller.ts',
+      'apps/api/src/modules/procurement/application/incoming-inspection-order.service.ts',
       'apps/api/src/modules/procurement/application/purchase-order.service.ts',
       'apps/api/src/modules/procurement/application/receipt.service.ts',
-      'apps/api/src/modules/procurement/application/incoming-inspection-order.service.ts',
-      'apps/api/src/modules/quality/application/finished-inspection.service.ts',
-      'apps/api/src/modules/quality/application/process-inspection.service.ts',
-      'apps/api/src/modules/production/application/production.service.ts',
-      'apps/api/src/modules/production/application/production-termination.service.ts',
       'apps/api/src/modules/production/application/production-demand-correction.service.ts',
-      'apps/api/src/modules/production/application/production-closeout.service.ts',
-      'apps/api/src/modules/production/application/production-output.service.ts',
-      'apps/api/src/modules/production/application/production-closeout-material-loss.service.ts',
-      'apps/api/src/modules/production/application/production-execution.service.ts',
-      'apps/api/src/modules/production/application/production-material.service.ts',
-      'apps/api/src/modules/production/application/production-material-outbound.service.ts',
-      'apps/api/src/modules/production/application/production-inbound.service.ts',
-      'apps/api/src/modules/production/application/production-finished-inbound.service.ts',
-      'apps/api/src/modules/production/application/production-reporting.service.ts',
-      'apps/api/src/modules/production/application/production-abnormal.service.ts',
-      'apps/api/src/modules/production/application/production-supplement.service.ts',
-      'apps/api/src/modules/production/application/production-material-loss.service.ts',
       'apps/api/src/modules/production/application/production-material-demand.service.ts',
+      'apps/api/src/modules/production/application/production-material-loss.service.ts',
+      'apps/api/src/modules/production/application/production-material-outbound.service.ts',
+      'apps/api/src/modules/production/application/production-material.service.ts',
+      'apps/api/src/modules/production/application/production-tracking.service.ts',
+      'apps/api/src/modules/production/application/production.service.ts',
     ],
     fileMatch: isApplicationLayerFile,
   },
@@ -389,26 +440,17 @@ const checks = [
     pattern: /(?:['"]Idempotency-Key['"]\s*:|\[\s*IDEMPOTENCY_KEY_HEADER\s*\]\s*:)/,
     message: '只有已登记的 API wrapper 可设置 Idempotency-Key；新增调用必须先登记后端幂等契约',
     exclude: [
-      'apps/admin-web/src/api/other-inventory.ts',
-      'apps/admin-web/src/api/production/work-orders.ts',
-      'apps/admin-web/src/api/production/tasks.ts',
-      'apps/admin-web/src/api/production/execution.ts',
-      'apps/admin-web/src/api/production/step-reports.ts',
-      'apps/admin-web/src/api/production/abnormal-dispositions.ts',
-      'apps/admin-web/src/api/production/material-demands.ts',
-      'apps/admin-web/src/api/production/material-allocations.ts',
-      'apps/admin-web/src/api/production/material-outbounds.ts',
-      'apps/admin-web/src/api/production/closeout.ts',
-      'apps/admin-web/src/api/production/outputs.ts',
-      'apps/admin-web/src/api/production/inbounds.ts',
-      'apps/admin-web/src/api/production/process-inspections.ts',
-      'apps/admin-web/src/api/production/research.ts',
-      'apps/admin-web/src/api/finished-inspections.ts',
-      'apps/admin-web/src/api/process-inspections.ts',
-      'apps/admin-web/src/api/warehouse.ts',
-      'apps/admin-web/src/api/procurement.ts',
-      'apps/admin-web/src/api/procurement-inbounds.ts',
       'apps/admin-web/src/api/incoming-inspection-orders.ts',
+      'apps/admin-web/src/api/other-inventory.ts',
+      'apps/admin-web/src/api/procurement-inbounds.ts',
+      'apps/admin-web/src/api/procurement.ts',
+      'apps/admin-web/src/api/production/material-allocations.ts',
+      'apps/admin-web/src/api/production/material-demands.ts',
+      'apps/admin-web/src/api/production/material-outbounds.ts',
+      'apps/admin-web/src/api/production/tasks.ts',
+      'apps/admin-web/src/api/production/tracking.ts',
+      'apps/admin-web/src/api/production/work-orders.ts',
+      'apps/admin-web/src/api/warehouse.ts',
     ],
   },
   // 通用 persistence helper 不得依赖 Nest HTTP/框架异常
@@ -766,13 +808,40 @@ const applyIdempotencyBindingChecks = (sources, violations) => {
   }
 
   // 规则 2/3：装饰器 scope 与 application executor 使用同一契约常量
-  const decoratorScopePattern = /@IdempotentEndpoint\(\s*\{\s*scope\s*:\s*(\w+)\s*\}\)/g;
   for (const [relative, rawSource] of byPath) {
     if (!isPresentationHttpFile(relative)) continue;
     const source = stripComments(rawSource);
-    for (const match of source.matchAll(decoratorScopePattern)) {
-      const scopeName = match[1];
-      const imported = parseNamedImports(source).find((imp) => imp.local === scopeName);
+    const file = ts.createSourceFile(relative, source, ts.ScriptTarget.Latest, true);
+    const endpoints = [];
+    const visit = (node) => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === 'IdempotentEndpoint' &&
+        node.arguments[0] &&
+        ts.isObjectLiteralExpression(node.arguments[0])
+      ) {
+        const scope = node.arguments[0].properties.find(
+          (property) =>
+            ts.isPropertyAssignment(property) && property.name.getText(file) === 'scope',
+        );
+        if (scope) endpoints.push(scope.initializer);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(file);
+    for (const expression of endpoints) {
+      const reference = scopeReferenceOf(expression);
+      const scopeName = reference
+        ? scopeExportName(reference.name, reference.keys)
+        : expression.getText(file);
+      if (!reference) {
+        violations.push(
+          `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 必须是契约常量或常量对象的静态成员，不接受动态表达式`,
+        );
+        continue;
+      }
+      const imported = parseNamedImports(source).find((imp) => imp.local === reference.name);
       if (!imported || !imported.specifier.startsWith('.')) {
         violations.push(
           `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 必须来自本模块幂等契约文件（*-idempotency.contract.ts / *-idempotency-scopes.contract.ts）的具名导入`,
@@ -787,7 +856,8 @@ const applyIdempotencyBindingChecks = (sources, violations) => {
         );
         continue;
       }
-      if (!(scopeName in extractContractExports(stripComments(contractSource)))) {
+      const exportedName = scopeExportName(imported.exported, reference.keys);
+      if (!(exportedName in extractContractExports(stripComments(contractSource)))) {
         violations.push(
           `${relative}: @IdempotentEndpoint 的 scope '${scopeName}' 不是契约文件 ${contractPath} 的导出常量`,
         );
@@ -804,16 +874,20 @@ const applyIdempotencyBindingChecks = (sources, violations) => {
         if (!appRelative.startsWith(`apps/api/src/modules/${moduleRoot}/application/`))
           return false;
         const appSource = stripComments(appRaw);
-        const importsContract = parseNamedImports(appSource).some(
+        const importsContract = parseNamedImports(appSource).filter(
           (imp) =>
             imp.specifier.startsWith('.') &&
-            resolveRelativeImport(appRelative, imp.specifier) === contractPath,
+            resolveRelativeImport(appRelative, imp.specifier) === contractPath &&
+            imp.exported === imported.exported,
         );
-        if (!importsContract) return false;
-        // 允许 execute<TGeneric>({ ... }) 形态（service 常用泛型标注返回类型）
-        return new RegExp(
-          `execute(?:\\s*<[^>]*>)?\\s*\\(\\s*\\{[\\s\\S]*?\\bscope\\s*:\\s*${scopeName}\\b`,
-        ).test(appSource);
+        return importsContract.some((imp) =>
+          hasScopeExecutorBinding(
+            appSource,
+            reference,
+            imp.local,
+            controllerApplicationCalls(expression),
+          ),
+        );
       });
       if (!wired) {
         violations.push(

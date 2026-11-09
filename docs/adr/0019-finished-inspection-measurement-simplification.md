@@ -1,6 +1,8 @@
 # ADR-0019：成品质检只记录检查事实
 
-状态：Accepted。仅取代 [ADR-0015](0015-unified-quality-quantity-semantics.md)与 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md)中成品质检测量整批 C、全检／抽检放行建议 R、累计建议 S 及其产出差异展示的裁决。来料由 Procurement 核实整批 C、计算定稿建议及确认超建议依据的规则不变。当前执行细节由 [Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)、[Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)和[管理端成品约束](../../apps/admin-web/docs/finished-inspections.md)维护；实施、运行验证及验收状态见[路线图](../roadmap.md)。
+> 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
+
+状态：Accepted。仅取代 [ADR-0015](0015-unified-quality-quantity-semantics.md)与 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md)中成品质检测量整批 C、全检／抽检放行建议 R、累计建议 S 及其产出差异展示的裁决。来料由 Procurement 核实整批 C、计算定稿建议及确认超建议依据的规则不变。当前执行细节由 [实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)、[Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)和[实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)维护；实施、运行验证及验收状态见[路线图](../roadmap.md)。
 
 ## 决定与理由
 

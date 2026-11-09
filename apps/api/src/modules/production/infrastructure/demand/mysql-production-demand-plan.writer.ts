@@ -22,8 +22,6 @@ export type DemandPlanLine = {
   needNumber: string | number;
   supplierHint?: string | null;
   demandType: DemandType;
-  parentDemandId?: string | number | null;
-  supplementId?: string | number | null;
   manualAdditionId?: string | number | null;
   replacesDemandId?: string | number | null;
 };
@@ -59,8 +57,8 @@ export class MysqlProductionDemandPlanWriter {
          (production_batch_id,requirement_basis_id,product_material_id,item_id,material_variant_id,
           item_code_snapshot,material_variant_code_snapshot,
           quantity_per_unit_snapshot,unit_snapshot,planned_output_quantity_snapshot,need_number,remaining_number,demand_type,generation_group_key,
-          idempotency_key,parent_demand_id,manual_addition_id,supplement_id,replaces_demand_id,supplier_hint,business_status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
+          idempotency_key,manual_addition_id,replaces_demand_id,supplier_hint,business_status,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'active',?,?)`,
         [
           params.batchId,
           line.requirementBasisId,
@@ -77,9 +75,7 @@ export class MysqlProductionDemandPlanWriter {
           line.demandType,
           keys.generationGroupKey,
           keys.idempotencyKey,
-          line.parentDemandId ?? null,
           line.manualAdditionId ?? null,
-          line.supplementId ?? null,
           line.replacesDemandId ?? null,
           line.supplierHint ?? null,
           params.actorId,
@@ -121,35 +117,6 @@ export class MysqlProductionDemandPlanWriter {
     const ids = await this.insertDemandGroup(db, params);
     await this.advanceBatchPlan(db, params);
     return ids[0] ?? null;
-  }
-
-  async closeDemandForCloseout(
-    db: Db,
-    params: {
-      batchId: string;
-      demandId: string;
-      closeoutId: string;
-      actorId: string;
-      reason: string;
-      expectedBatchVersion: number;
-    },
-  ): Promise<void> {
-    const [closed] = await db.execute<ResultSetHeader>(
-      `UPDATE production_item_demand SET business_status='closed',close_cause='batch_closeout',close_reason=?,
-       closed_by=?,closed_at=NOW(),closeout_id=?,version=version+1,updated_by=?
-       WHERE id=? AND production_batch_id=? AND business_status='active' AND pending_correction_id IS NULL`,
-      [
-        params.reason,
-        params.actorId,
-        params.closeoutId,
-        params.actorId,
-        params.demandId,
-        params.batchId,
-      ],
-    );
-    if (closed.affectedRows !== 1)
-      throw new ProductionDomainError('INVALID_STATE', '需求不存在、已结束或正在审批');
-    await this.advanceBatchPlan(db, params);
   }
 
   async cancelBatchDemands(

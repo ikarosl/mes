@@ -264,7 +264,7 @@ watch(
 );
 const generationGroupTitle = (group: MaterialDemandGroup<ProductionMaterialDemandItem>): string =>
   group.rows.some((row) => row.correction?.replacesDemandId)
-    ? `更正生成 · 来源 ${group.supplementNo ?? group.label}`
+    ? `更正生成 · 来源 ${group.manualAdditionNo ?? group.label}`
     : group.label;
 const closeEditor = async (): Promise<boolean> =>
   !correctionVisible.value || (await correctionDialog.value?.close()) === true;

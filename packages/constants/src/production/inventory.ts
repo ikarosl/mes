@@ -1,6 +1,4 @@
 export const INVENTORY_SOURCE_TYPES = [
-  'self_made',
-  'production_extra',
   'finished_product',
   'purchased',
   'outsourced',
@@ -9,19 +7,12 @@ export const INVENTORY_SOURCE_TYPES = [
   'other',
 ] as const;
 
-export const FINISHED_GOODS_INBOUND_SOURCES = ['self_made', 'production_extra'] as const;
-export const FINISHED_GOODS_INBOUND_SOURCE_LABELS = {
-  self_made: '计划内',
-  production_extra: '计划外',
-} as const;
 export const INVENTORY_ITEM_KINDS = ['material', 'finished_product'] as const;
 export const INVENTORY_ITEM_KIND_LABELS = {
   material: '物料',
   finished_product: '成品',
 } as const;
 export const INVENTORY_SOURCE_TYPE_LABELS = {
-  self_made: '生产流转入库',
-  production_extra: '额外产出入库',
   finished_product: '成品入库',
   purchased: '外购物料入库',
   outsourced: '委外入库',
@@ -93,11 +84,6 @@ export const RETURN_ORDER_STATUS_LABELS = {
 } as const;
 
 export const SCRAP_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
-export const MATERIAL_LOSS_PURPOSES = ['production_record', 'closeout_record'] as const;
-export const MATERIAL_LOSS_PURPOSE_LABELS = {
-  production_record: '在产损坏登记（不补料）',
-  closeout_record: '结案损坏登记（不补料）',
-} as const;
 
 export const STOCK_CHECK_STATUSES = ['pending', 'counting', 'completed', 'cancelled'] as const;
 

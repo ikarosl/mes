@@ -71,9 +71,9 @@
 
       <section
         class="detail-section"
-        aria-label="计划与审定产出"
+        aria-label="计划与实际产出"
       >
-        <h3 class="dialog-section-title">计划与审定产出</h3>
+        <h3 class="dialog-section-title">计划与实际产出</h3>
         <el-descriptions
           class="order-descriptions"
           :column="3"
@@ -85,50 +85,20 @@
           <el-descriptions-item label="已分配"
             ><strong>{{ formatQuantity(order.assignedQuantity) }}</strong></el-descriptions-item
           >
-          <el-descriptions-item label="已终止计划">
-            {{ formatQuantity(order.terminatedPlannedQuantity) }}
-            <div class="field-note">不计入已分配</div>
-          </el-descriptions-item>
-          <el-descriptions-item label="审定计划内产出">{{
-            formatQuantity(order.finalOutput?.availableQuantity)
-          }}</el-descriptions-item>
-          <el-descriptions-item label="审定计划外产出">{{
-            formatQuantity(order.finalOutput?.extraQuantity)
-          }}</el-descriptions-item>
-          <el-descriptions-item label="审定报废合计"
-            ><strong :class="{ 'text-danger': Number(order.finalOutput?.scrapQuantity) > 0 }">{{
-              formatQuantity(order.finalOutput?.scrapQuantity)
-            }}</strong></el-descriptions-item
-          >
-          <el-descriptions-item label="审定可用产出合计"
+          <el-descriptions-item label="实际最终产出"
             ><strong>{{
-              formatQuantity(approvedUsableQuantity(order.finalOutput))
+              formatQuantity(order.finalOutput?.availableQuantity ?? 0)
             }}</strong></el-descriptions-item
+          ><el-descriptions-item label="终检确认次数">{{
+            order.finalOutput?.confirmedOutputCount ?? 0
+          }}</el-descriptions-item
+          ><el-descriptions-item label="产出与计划比较"
+            ><strong>{{ plannedOutputGapText(plannedGap) }}</strong></el-descriptions-item
           >
-          <el-descriptions-item label="计划内产出与计划比较">
-            <strong :class="{ 'text-warning': Number(plannedGap) !== 0 }">{{
-              plannedOutputGapText(plannedGap)
-            }}</strong>
-            <div class="field-note">未批准任务尚未计入</div>
-          </el-descriptions-item>
-          <el-descriptions-item label="待结案（未计入）">
-            <strong :class="{ 'text-warning': (order.finalOutput?.closingBatchCount ?? 0) > 0 }"
-              >{{ order.finalOutput?.closingBatchCount ?? 0 }} 批</strong
-            >
-            <div class="field-note">
-              草稿计划内 {{ formatQuantity(order.finalOutput?.pendingAvailableQuantity) }}
-            </div>
-          </el-descriptions-item>
         </el-descriptions>
-        <InlineHint class="output-note">
-          <div>
-            已终止/取消的任务，不计入已分配。
-            <span v-if="Number(order.terminatedPlannedQuantity) > 0">
-              已终止任务曾分配 {{ formatQuantity(order.terminatedPlannedQuantity) }}。
-            </span>
-          </div>
-          <div class="text-danger">已终止任务可能存在产出，请结合已有产出核对任务分配数量。</div>
-        </InlineHint>
+        <InlineHint class="output-note"
+          >已分配按非取消任务的计划量合计；实际最终产出按终检确认事实合计。</InlineHint
+        >
       </section>
 
       <section
@@ -299,7 +269,7 @@
             <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
           </el-table-column>
           <el-table-column
-            label="当前批准产出"
+            label="实际最终产出"
             min-width="230"
           >
             <template #default="{ row }"
@@ -349,7 +319,7 @@ import type { WorkOrderCloseType, WorkOrderDetail } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import InlineHint from '../../../components/InlineHint.vue';
 import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
-import { approvedUsableQuantity, plannedOutputGapText } from '../shared/production-output-quantity';
+import { plannedOutputGapText } from '../shared/production-output-quantity';
 import { canStartNextResearchRound } from './research-work-order';
 import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../../utils/quantity';

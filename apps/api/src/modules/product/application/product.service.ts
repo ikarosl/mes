@@ -30,7 +30,6 @@ import {
 } from '@company/constants';
 import { normalizeJsonTable } from '@company/utils';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
-import { IdentityDirectoryService } from '../../identity/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireValidBomReplacement } from '../domain/product-bom.policy.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
@@ -53,7 +52,6 @@ export class ProductService {
     private readonly routes: ProcessRouteRepository,
     private readonly routeSteps: ProcessRouteStepRepository,
     private readonly storage: TechnicalFileStorage,
-    private readonly identityDirectory: IdentityDirectoryService,
     private readonly materialVariants: MaterialVariantRepository,
     private readonly materials: MaterialRepository,
   ) {}
@@ -122,22 +120,11 @@ export class ProductService {
   listRouteOptions() {
     return this.routes.listRouteOptions();
   }
-  listUserOptions() {
-    return this.identityDirectory.listActiveUserOptions();
-  }
   listMaterials(productId: string) {
     return this.catalog.listMaterials(productId);
   }
-  async listRouteSteps(routeId: string) {
-    const items = await this.routeSteps.listRouteSteps(routeId);
-    const ownerIds = [...new Set(items.flatMap((item) => item.defaultOwnerId ?? []))];
-    if (ownerIds.length === 0) return items;
-    const owners = await this.identityDirectory.listActiveUserOptionsByIds(ownerIds);
-    const names = new Map(owners.map((owner) => [owner.id, owner.displayName]));
-    return items.map((item) => ({
-      ...item,
-      defaultOwnerName: item.defaultOwnerId ? (names.get(item.defaultOwnerId) ?? null) : null,
-    }));
+  listRouteSteps(routeId: string) {
+    return this.routeSteps.listRouteSteps(routeId);
   }
 
   createCategory(payload: ProductCategoryPayload, audit: CommandContext) {
@@ -249,13 +236,6 @@ export class ProductService {
         'INVALID_INPUT',
         '路线至少包含一个工序，且工序顺序必须从 1 开始连续排列',
       );
-    }
-    const ownerIds = [...new Set(items.flatMap((item) => item.defaultOwnerId ?? []))];
-    if (ownerIds.length > 0) {
-      const owners = await this.identityDirectory.listActiveUserOptionsByIds(ownerIds);
-      if (owners.length !== ownerIds.length) {
-        throw new ProductDomainError('INVALID_INPUT', '默认负责人不存在或已停用');
-      }
     }
     return this.routeSteps.replaceRouteSteps(id, items, audit);
   }

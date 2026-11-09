@@ -24,7 +24,7 @@
     </el-descriptions>
 
     <div class="route-detail-steps">
-      <div class="route-detail-steps__title">工序顺序（路线不绑定 BOM）</div>
+      <div class="route-detail-steps__title">工序顺序</div>
       <div
         v-if="stepsStatus === 'loading'"
         class="route-detail-steps__state"
@@ -75,16 +75,12 @@
               >已停用</el-tag
             >
           </div>
-          <div class="step-card__meta">
-            <div class="step-card__meta-item">
-              <span class="step-card__label">默认负责人：</span>
-              <span>{{ step.defaultOwnerName || '未设置' }}</span>
-            </div>
-            <div class="step-card__meta-item">
-              <span class="step-card__label">检验：</span>
-              <span>{{ step.needInspection ? '需检验' : '无需检验' }}</span>
-            </div>
-          </div>
+          <el-tag
+            v-if="step.id === steps[steps.length - 1]?.id"
+            size="small"
+            effect="plain"
+            >最后一步 · 终检确认产出</el-tag
+          >
           <div
             v-if="step.description"
             class="step-card__desc"

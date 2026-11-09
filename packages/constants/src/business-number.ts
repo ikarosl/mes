@@ -2,6 +2,7 @@
 export const BUSINESS_NUMBER_PREFIX = {
   work_order: 'GD', // 工单
   production_batch: 'SC', // 生产任务
+  production_tracking_card: 'GZK', // 追踪卡
   purchase_order: 'CG', // 采购订单
   purchase_receipt: 'DH', // 采购到货
   incoming_inspection_order: 'LLZJ', // 来料质检单
@@ -16,11 +17,6 @@ export const BUSINESS_NUMBER_PREFIX = {
   production_material_return: 'TL', // 退料
   material_loss: 'SH', // 损耗
   manual_material_demand: 'RGXQ', // 人工需求
-  rework: 'FG', // 返工
-  step_report: 'GXBG', // 工序报工
-  abnormal_disposition: 'YCCZ', // 异常处置
-  scrap_supplement_plan: 'BLFA', // 补料方案
-  material_supplement: 'BL', // 补料
   approval_instance: 'SP', // 审批
 } as const;
 

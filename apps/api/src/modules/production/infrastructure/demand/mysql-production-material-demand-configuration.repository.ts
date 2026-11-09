@@ -79,7 +79,6 @@ type DemandRow = RowDataPacket & {
   need_number: string;
   remaining_number: string;
   demand_type: DemandType;
-  parent_demand_id: number | null;
   business_status: DemandBusinessStatus;
   supplier_hint: string | null;
 };
@@ -129,7 +128,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
       `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,
           d.item_code_snapshot,${currentMaterialNameSql('d.item_id')} item_name,d.unit_snapshot,
           d.material_variant_id,d.material_variant_code_snapshot,d.need_number,d.remaining_number,
-          d.demand_type,d.parent_demand_id,d.business_status,COALESCE(basis.supplier_hint,d.supplier_hint) supplier_hint
+          d.demand_type,d.business_status,COALESCE(basis.supplier_hint,d.supplier_hint) supplier_hint
        FROM production_item_demand d
        LEFT JOIN production_material_requirement_basis basis ON basis.id=d.requirement_basis_id
        WHERE d.production_batch_id IN (${placeholders(batchIds)}) ORDER BY d.production_batch_id,d.id`,
@@ -603,7 +602,6 @@ const mapManagementDemand = (demand: DemandRow): MaterialDemandManagementDemand 
   demandQuantity: String(demand.need_number),
   remainingQuantity: String(demand.remaining_number),
   demandType: demand.demand_type,
-  parentDemandId: demand.parent_demand_id === null ? null : String(demand.parent_demand_id),
   businessStatus: demand.business_status,
   supplierHint: demand.supplier_hint,
 });

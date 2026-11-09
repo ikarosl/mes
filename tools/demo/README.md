@@ -2,11 +2,12 @@
 
 本目录随 Git 维护可复用的场景数据准备与 JSON 报告工具，用于人工验收。目录职责见[工程脚本与临时文件](../../docs/coding-standards.md#工程脚本与临时文件)；基础数据和 SQL 演示种子通过[数据库包](../../packages/database/README.md)的统一入口维护。
 
-| 文件 | 用途 |
-| --- | --- |
-| [`prepare-procurement-amount-demo.mjs`](prepare-procurement-amount-demo.mjs) | 采购金额补填与正式单更正，核对报价、总额来源、舍入和成功审计 |
-| [`prepare-incoming-inspection-demo.mjs`](prepare-incoming-inspection-demo.mjs) | 来料分组分页、跨采购与供应商、完整明细、移组、空组、作废及实物办理完成场景 |
-| [`prepare-procurement-receipt-demo.mjs`](prepare-procurement-receipt-demo.mjs) | 采购／到货两层分页、完整明细、待定稿与作废、组合筛选和页外定位场景 |
+| 文件                                                                           | 用途                                                                             |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| [`prepare-tracking-workbench-demo.mjs`](prepare-tracking-workbench-demo.mjs)   | 在已有执行中批量任务下准备六盘追踪卡、交接改量、随盘异常、作废及正数／零产出确认 |
+| [`prepare-procurement-amount-demo.mjs`](prepare-procurement-amount-demo.mjs)   | 采购金额补填与正式单更正，核对报价、总额来源、舍入和成功审计                     |
+| [`prepare-incoming-inspection-demo.mjs`](prepare-incoming-inspection-demo.mjs) | 来料分组分页、跨采购与供应商、完整明细、移组、空组、作废及实物办理完成场景       |
+| [`prepare-procurement-receipt-demo.mjs`](prepare-procurement-receipt-demo.mjs) | 采购／到货两层分页、完整明细、待定稿与作废、组合筛选和页外定位场景               |
 
 ## 前置准备
 
@@ -50,21 +51,25 @@ PROCUREMENT_AMOUNT_DEMO_TAG=acceptance_01 node tools/demo/prepare-procurement-am
 
 以下配置同时适用于 `prepare` 与 `report`。
 
-| 环境变量 | 默认值／要求 |
-| --- | --- |
-| `ALLOW_DEMO_SEED` | 两种模式都必须显式为 `1` |
-| `ADMIN_USERNAME` | `admin` |
-| `ADMIN_PASSWORD` | 必填，与初始化管理员密码一致 |
-| `NODE_ENV` | 为 `production` 时禁止执行，比较前会 trim 并转为小写 |
-| `PROCUREMENT_AMOUNT_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api` |
-| `PROCUREMENT_AMOUNT_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1` |
-| `PROCUREMENT_AMOUNT_DEMO_TAG` | 未设置时使用 `[demo-procurement-amount-v5]` |
-| `INCOMING_INSPECTION_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api` |
-| `INCOMING_INSPECTION_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1` |
-| `INCOMING_INSPECTION_DEMO_TAG` | 未设置时使用 `[demo-incoming-group-v1]` |
-| `PROCUREMENT_RECEIPT_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api` |
-| `PROCUREMENT_RECEIPT_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1` |
-| `PROCUREMENT_RECEIPT_DEMO_TAG` | 未设置时使用 `[demo-procurement-receipts-v1]` |
+| 环境变量                                | 默认值／要求                                         |
+| --------------------------------------- | ---------------------------------------------------- |
+| `TRACKING_DEMO_API_BASE_URL`            | `http://127.0.0.1:3002/api`                          |
+| `TRACKING_DEMO_ALLOW_REMOTE`            | 未设置时禁止远程；远程须为 `1`                       |
+| `TRACKING_DEMO_TAG`                     | 默认 `sample`，标记为 `[demo-tracking-v1:<TAG>]`     |
+| `TRACKING_DEMO_BATCH_ID`                | 必填，已有 doing 批量任务，至少两道冻结工序          |
+| `ALLOW_DEMO_SEED`                       | 两种模式都必须显式为 `1`                             |
+| `ADMIN_USERNAME`                        | `admin`                                              |
+| `ADMIN_PASSWORD`                        | 必填，与初始化管理员密码一致                         |
+| `NODE_ENV`                              | 为 `production` 时禁止执行，比较前会 trim 并转为小写 |
+| `PROCUREMENT_AMOUNT_DEMO_API_BASE_URL`  | `http://127.0.0.1:3002/api`                          |
+| `PROCUREMENT_AMOUNT_DEMO_ALLOW_REMOTE`  | 未设置时禁止远程；远程须为 `1`                       |
+| `PROCUREMENT_AMOUNT_DEMO_TAG`           | 未设置时使用 `[demo-procurement-amount-v5]`          |
+| `INCOMING_INSPECTION_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api`                          |
+| `INCOMING_INSPECTION_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1`                       |
+| `INCOMING_INSPECTION_DEMO_TAG`          | 未设置时使用 `[demo-incoming-group-v1]`              |
+| `PROCUREMENT_RECEIPT_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api`                          |
+| `PROCUREMENT_RECEIPT_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1`                       |
+| `PROCUREMENT_RECEIPT_DEMO_TAG`          | 未设置时使用 `[demo-procurement-receipts-v1]`        |
 
 API 基址仅接受 HTTP(S)，路径须以 `/api` 结尾，不得包含凭证、查询串或片段。`localhost`、`127.0.0.1`、`[::1]` 视为本地；其他主机必须同时使用 HTTPS 并显式设置对应工具的 `ALLOW_REMOTE` 变量为 `1`。所有请求禁止重定向。
 
@@ -75,3 +80,16 @@ API 基址仅接受 HTTP(S)，路径须以 `/api` 结尾，不得包含凭证、
 每次业务写入携带新的 UUID `Idempotency-Key`，失败请求不自动重试；备注标记用于防止重复启动，不承担跨次执行的请求幂等。整个工具没有跨请求事务，失败不会回滚此前成功提交的事实。失败后先用相同 TAG 执行 `report` 核对并人工处理；需要重新准备时使用新的对应 TAG，或从空开发库通过统一初始化与演示种子恢复，避免对同一标记盲目续写。
 
 报告用于辅助人工核对。用户办理后的状态与统计可能偏离初始基准，报告或准备成功不代表正式测试或用户验收通过；验证阶段遵守[测试策略](../../docs/testing-strategy.md)。
+
+## 追踪卡工作台样例
+
+追踪卡工具使用独立现场人员目录，要求至少一名启用 production 人员和一名启用 quality 人员。先通过正常产品 BOM 审批、任务创建和物料初配，再明确开始批量任务；缺料开工仍须填写原因。工具不创建替代主数据、不跳过上述业务资格，也不自动结束任务。
+
+```powershell
+$env:ALLOW_DEMO_SEED='1'
+$env:TRACKING_DEMO_BATCH_ID='<已有执行中批量任务ID>'
+$env:TRACKING_DEMO_TAG='acceptance_01'
+node tools/demo/prepare-tracking-workbench-demo.mjs prepare
+```
+
+六盘分别是正常流转后确认9件、已交接后盘量5改7且前道异常处理后确认6件、首站暂停异常待处理、未使用待打印、已用作废保留到站，以及显式零产出。前两盘形成实际库存，零产出只保留确认事实；已有暂停、未用及未完卡供人工继续办理。重复同TAG只读取报告，不覆盖或续写现有样例。业务语义见[追踪卡所有者](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。

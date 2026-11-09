@@ -54,9 +54,7 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'doing'
     | 'completed'
     | 'cancelled'
-    | 'material_partially_outbound'
-    | 'terminated'
-    | 'closing';
+    | 'material_partially_outbound';
   planned_quantity: string;
   current_revision_id: number | null;
   approved_available_quantity: string | null;
@@ -123,7 +121,6 @@ export class MysqlWorkOrderRepository {
       productName: row.product_name_snapshot,
       plannedQuantity: String(row.planned_quantity),
       assignedQuantity: String(row.assigned_quantity),
-      terminatedPlannedQuantity: String(row.terminated_planned_quantity),
       finalOutput: mapWorkOrderFinalOutput(row),
       remainingQuantity: String(Number(row.planned_quantity) - Number(row.assigned_quantity)),
       planStartDate: toDateOnlyString(row.plan_start_date),
@@ -370,18 +367,16 @@ export class MysqlWorkOrderRepository {
         );
       const batches = await this.lockBatchSummaries(connection, id);
       const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
-      const unfinishedBatches = activeBatches.filter(
-        (batch) => batch.status !== 'completed' || batch.current_revision_id === null,
-      );
+      const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
       const approvedPlannedQuantity = sumApprovedPlannedQuantity(activeBatches);
       if (
         activeBatches.length === 0 ||
         unfinishedBatches.length > 0 ||
-        integerQuantity(approvedPlannedQuantity) !== integerQuantity(before.planned_quantity)
+        integerQuantity(approvedPlannedQuantity) < integerQuantity(before.planned_quantity)
       ) {
         throw new ProductionDomainError(
           'WORK_ORDER_COMPLETION_NOT_ALLOWED',
-          '工单尚未达到审定计划内产出足量条件，请核对任务结案清单',
+          '工单仍有未结束任务或最终确认产出不足，请核对任务与追踪卡',
           workOrderBatchDetails(
             before.planned_quantity,
             approvedPlannedQuantity,
@@ -428,11 +423,7 @@ export class MysqlWorkOrderRepository {
         );
       const batches = await this.lockBatchSummaries(connection, id);
       const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
-      const unfinishedBatches = activeBatches.filter(
-        (batch) =>
-          (batch.status !== 'completed' && batch.status !== 'terminated') ||
-          batch.current_revision_id === null,
-      );
+      const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
       const approvedPlannedQuantity = sumApprovedPlannedQuantity(activeBatches);
       const isEarlyClose = before.status === 'released' || before.status === 'doing';
       if (isEarlyClose && unfinishedBatches.length > 0)
@@ -450,8 +441,7 @@ export class MysqlWorkOrderRepository {
       if (
         isEarlyClose &&
         activeBatches.length > 0 &&
-        !activeBatches.some((batch) => batch.status === 'terminated') &&
-        integerQuantity(approvedPlannedQuantity) === integerQuantity(before.planned_quantity)
+        integerQuantity(approvedPlannedQuantity) >= integerQuantity(before.planned_quantity)
       )
         throw new ProductionDomainError(
           'WORK_ORDER_CLOSE_NOT_ALLOWED',
@@ -459,8 +449,6 @@ export class MysqlWorkOrderRepository {
         );
       let closeType: WorkOrderDetail['closeType'];
       if (before.status === 'completed') closeType = 'completed_archive';
-      else if (activeBatches.some((batch) => batch.status === 'terminated'))
-        closeType = 'production_terminated';
       else if (activeBatches.length === 0) closeType = 'unproduced';
       else closeType = 'underproduced';
       const [result] = await connection.execute<ResultSetHeader>(
@@ -492,15 +480,9 @@ export class MysqlWorkOrderRepository {
     workOrderId: string,
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
-      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,
-        c.current_revision_id,(round.baseline_planned_received+COALESCE((SELECT a.quantity FROM production_output_allocation a WHERE a.revision_id=r.id AND a.category='self_made'),0)) approved_available_quantity
-       FROM production_batches b
-       LEFT JOIN production_batch_closeout c ON c.production_batch_id=b.id
-       LEFT JOIN production_output_revision r ON r.id=c.current_revision_id AND r.closeout_id=c.id
-       LEFT JOIN production_output_round round ON round.id=r.round_id
-       WHERE b.work_order_id=?
-       ORDER BY b.id
-       FOR UPDATE`,
+      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,NULL current_revision_id,
+        CAST(COALESCE((SELECT SUM(o.quantity) FROM production_tracking_output o WHERE o.production_batch_id=b.id),0) AS CHAR) approved_available_quantity
+       FROM production_batches b WHERE b.work_order_id=? ORDER BY b.id FOR UPDATE`,
       [workOrderId],
     );
     return rows;

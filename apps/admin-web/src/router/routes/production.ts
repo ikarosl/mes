@@ -2,9 +2,8 @@ import type { RouteRecordRaw } from 'vue-router';
 import { PERMISSIONS } from '@company/constants';
 import ProductionOrdersPage from '../../views/production/work-orders/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../../views/production/tasks/ProductionTasksPage.vue';
-import ProductionWorkerTasksPage from '../../views/production/execution/WorkerTasksPage.vue';
-import ProductionExecutionRecordsPage from '../../views/production/execution/ProductionExecutionRecordsPage.vue';
-import ProductionTracePage from '../../views/production/traceability/ProductionTracePage.vue';
+import ProductionWorkbenchPage from '../../views/production/tracking/ProductionWorkbenchPage.vue';
+import ProductionTrackingPage from '../../views/production/tracking/ProductionTrackingPage.vue';
 import { page } from '../page';
 
 export const productionRoutes: RouteRecordRaw[] = [
@@ -25,27 +24,19 @@ export const productionRoutes: RouteRecordRaw[] = [
     'ProductionTasksPage',
   ),
   page(
-    'production/worker-tasks',
-    'production-worker-tasks',
-    '我的工序',
-    ProductionWorkerTasksPage,
-    PERMISSIONS.production.workerTasks.view,
-    'ProductionWorkerTasksPage',
+    'production/workbench',
+    'production-workbench',
+    '员工工作台',
+    ProductionWorkbenchPage,
+    PERMISSIONS.production.workbench.view,
+    'ProductionWorkbenchPage',
   ),
   page(
-    'production/execution-records',
-    'production-execution-records',
-    '生产报工记录',
-    ProductionExecutionRecordsPage,
-    PERMISSIONS.production.executionRecords.view,
-    'ProductionExecutionRecordsPage',
-  ),
-  page(
-    'production/trace',
-    'production-trace',
-    '生产追溯',
-    ProductionTracePage,
-    PERMISSIONS.production.trace.view,
-    'ProductionTracePage',
+    'production/tracking',
+    'production-tracking',
+    '工序追踪',
+    ProductionTrackingPage,
+    PERMISSIONS.production.tracking.view,
+    'ProductionTrackingPage',
   ),
 ];

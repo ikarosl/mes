@@ -37,7 +37,6 @@ import {
 } from '../demand/mysql-production-material.mapper.js';
 import { lockIds } from '../demand/mysql-production-material-persistence.js';
 import { findBatch } from '../tasks/mysql-production-batch.persistence.js';
-import { fulfillReadySupplements } from '../execution/mysql-production-supplement-activation.js';
 
 @Injectable()
 export class MysqlProductionMaterialOutboundRepository extends ProductionMaterialOutboundRepository {
@@ -281,11 +280,6 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
       );
       if (batchUpdated.affectedRows !== 1)
         throw new ProductionDomainError('CONCURRENT_MODIFICATION', '生产任务已变化，请刷新后重试');
-      const supplementFulfillment = await fulfillReadySupplements(
-        connection,
-        String(order.productionBatchId),
-        context.actorId,
-      );
       await this.audit(
         connection,
         context,
@@ -296,7 +290,6 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
           status: 'completed',
           version: version + 1,
           transactionCount: details.length,
-          fulfilledSupplementIds: supplementFulfillment.fulfilledSupplementIds,
         },
       );
       const batch = await findBatch(connection, String(order.productionBatchId));

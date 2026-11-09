@@ -30,7 +30,7 @@ describe('productApi contract mapping', () => {
 
   it('uses dedicated endpoints for immutable route version steps and status', async () => {
     const { productApi } = await import('../product');
-    const items = [{ processStepId: '8', stepOrder: 1, needInspection: true, needRecord: true }];
+    const items = [{ processStepId: '8', stepOrder: 1 }];
 
     await productApi.replaceRouteSteps('7', items);
     await productApi.setRouteStatus('7', 'enabled');

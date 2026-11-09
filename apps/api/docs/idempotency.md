@@ -4,7 +4,7 @@
 
 ## 1. 当前启用范围
 
-幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[Quality 成品质检](../src/modules/quality/application/idempotency/finished-inspection-idempotency.contract.ts)、[Quality 工序专检](../src/modules/quality/application/idempotency/process-inspection-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。
+幂等按端点显式启用，以 Controller 的 `@IdempotentEndpoint({ scope })` 和 application scope 契约为准：[Production 任务、追踪卡及物料命令](../src/modules/production/application/idempotency/production-idempotency-scopes.contract.ts)、[Procurement](../src/modules/procurement/application/idempotency/procurement-idempotency-scopes.contract.ts)、[来料质检分组编排](../src/modules/procurement/application/idempotency/incoming-inspection-order-idempotency.contract.ts)、[Inventory](../src/modules/inventory/application/idempotency/other-inventory-idempotency-scopes.contract.ts)。本文不复制命令与版本清单。追踪卡流转、异常处理、终检和任务结束的业务原子边界由 [Production](../src/modules/production/docs/database/execution-traceability-quality.md) 维护。
 
 客户端头部、未启用端点拒绝规则和成功重放响应由[公共 HTTP 规范](../../../docs/api-conventions.md#7-请求上下文与幂等键)维护；不能仅按 HTTP 方法扩大启用范围。
 
@@ -29,31 +29,31 @@
 
 表由[平台幂等建表基线](../../../packages/database/migrations/202611020103-baseline-platform-idempotency-tables.up.sql)和[外键基线](../../../packages/database/migrations/202611020203-baseline-platform-idempotency-foreign-keys.up.sql)定义，属于 API 平台幂等基础设施。使用 InnoDB、`utf8mb4`，表默认排序规则为 `utf8mb4_0900_ai_ci`。
 
-| 字段 | 类型 | 允许 NULL | 默认值 / 自动生成 | 说明 |
-| --- | --- | --- | --- | --- |
-| `id` | `BIGINT UNSIGNED` | 否 | `AUTO_INCREMENT` | 幂等记录主键 |
-| `scope` | `VARCHAR(128)` | 否 | 无 | 服务端命令契约范围，列排序规则 `utf8mb4_bin` |
-| `idempotency_key` | `VARCHAR(150)` | 否 | 无 | 客户端业务意图键，列排序规则 `utf8mb4_bin` |
-| `request_fingerprint` | `CHAR(64)` | 否 | 无 | 规范化请求的 SHA-256 十六进制摘要，列排序规则 `ascii_bin` |
-| `actor_id` | `BIGINT UNSIGNED` | 否 | 无 | 首次请求的认证操作者 |
-| `initial_request_id` | `VARCHAR(128)` | 否 | 无 | 首次请求追踪 ID，重放不覆盖 |
-| `status` | `VARCHAR(16)` | 否 | 无 | `processing` 或 `completed`，由 executor 显式写入 |
-| `result_json` | `JSON` | 是 | `NULL` | 经结果 codec 校验的完成结果快照 |
-| `created_at` | `DATETIME` | 否 | `CURRENT_TIMESTAMP` | 首次登记时间 |
-| `completed_at` | `DATETIME` | 是 | `NULL` | 完成时间，由 executor 写入 |
-| `expires_at` | `DATETIME` | 是 | `NULL` | 允许清理时间，由 executor 按完成时间与下述保留期写入 |
+| 字段                  | 类型              | 允许 NULL | 默认值 / 自动生成   | 说明                                                      |
+| --------------------- | ----------------- | --------- | ------------------- | --------------------------------------------------------- |
+| `id`                  | `BIGINT UNSIGNED` | 否        | `AUTO_INCREMENT`    | 幂等记录主键                                              |
+| `scope`               | `VARCHAR(128)`    | 否        | 无                  | 服务端命令契约范围，列排序规则 `utf8mb4_bin`              |
+| `idempotency_key`     | `VARCHAR(150)`    | 否        | 无                  | 客户端业务意图键，列排序规则 `utf8mb4_bin`                |
+| `request_fingerprint` | `CHAR(64)`        | 否        | 无                  | 规范化请求的 SHA-256 十六进制摘要，列排序规则 `ascii_bin` |
+| `actor_id`            | `BIGINT UNSIGNED` | 否        | 无                  | 首次请求的认证操作者                                      |
+| `initial_request_id`  | `VARCHAR(128)`    | 否        | 无                  | 首次请求追踪 ID，重放不覆盖                               |
+| `status`              | `VARCHAR(16)`     | 否        | 无                  | `processing` 或 `completed`，由 executor 显式写入         |
+| `result_json`         | `JSON`            | 是        | `NULL`              | 经结果 codec 校验的完成结果快照                           |
+| `created_at`          | `DATETIME`        | 否        | `CURRENT_TIMESTAMP` | 首次登记时间                                              |
+| `completed_at`        | `DATETIME`        | 是        | `NULL`              | 完成时间，由 executor 写入                                |
+| `expires_at`          | `DATETIME`        | 是        | `NULL`              | 允许清理时间，由 executor 按完成时间与下述保留期写入      |
 
 可空列未显式声明 `DEFAULT`，其隐式默认值为 SQL `NULL`。本表采用专用生命周期字段，不继承业务单据的 `updated_by`、`updated_at`、`version` 或软删除字段。
 
-| 物理约束 / 索引 | 定义与用途 |
-| --- | --- |
-| `PRIMARY KEY` | `(id)` |
-| `uk_http_idempotency_scope_key` | `UNIQUE (scope, idempotency_key)`，区分大小写地仲裁同一命令范围内的键；不按操作者另分唯一键 |
-| `idx_http_idempotency_expires_at` | `INDEX (expires_at)`，支持到期清理 |
-| `idx_http_idempotency_initial_request` | `INDEX (initial_request_id)`，支持首次请求追踪 |
-| `fk_http_idempotency_actor` | `FOREIGN KEY (actor_id) REFERENCES users(id)`；InnoDB 为外键列提供支撑索引 |
-| `chk_http_idempotency_status` | `CHECK (status IN ('processing', 'completed'))` |
-| `chk_http_idempotency_completed` | `completed` 时 `result_json`、`completed_at`、`expires_at` 必须全部非 SQL `NULL`；`processing` 时三列必须全部为 SQL `NULL` |
+| 物理约束 / 索引                        | 定义与用途                                                                                                                 |
+| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `PRIMARY KEY`                          | `(id)`                                                                                                                     |
+| `uk_http_idempotency_scope_key`        | `UNIQUE (scope, idempotency_key)`，区分大小写地仲裁同一命令范围内的键；不按操作者另分唯一键                                |
+| `idx_http_idempotency_expires_at`      | `INDEX (expires_at)`，支持到期清理                                                                                         |
+| `idx_http_idempotency_initial_request` | `INDEX (initial_request_id)`，支持首次请求追踪                                                                             |
+| `fk_http_idempotency_actor`            | `FOREIGN KEY (actor_id) REFERENCES users(id)`；InnoDB 为外键列提供支撑索引                                                 |
+| `chk_http_idempotency_status`          | `CHECK (status IN ('processing', 'completed'))`                                                                            |
+| `chk_http_idempotency_completed`       | `completed` 时 `result_json`、`completed_at`、`expires_at` 必须全部非 SQL `NULL`；`processing` 时三列必须全部为 SQL `NULL` |
 
 CHECK 只约束完成字段的 SQL NULL 组合，不校验结果形状、时间先后或 12 小时间隔；这些由 codec／executor 保证。JSON 字面值 null 不等于 SQL NULL，是否接受该结果由对应 codec 决定。
 
@@ -75,13 +75,13 @@ application 将 DTO 及嵌套 DTO 显式转成普通对象并完成 trim 后再�
 
 ## 8. 错误与日志语义
 
-| 情况 | 结果 |
-| --- | --- |
-| 同键不同指纹 | `409 IDEMPOTENCY_CONFLICT` |
-| 已识别的 MySQL NOWAIT 冲突、锁等待、死锁、连接中断或池关闭 | `503 IDEMPOTENCY_STORAGE_RETRYABLE` |
-| 已保存结果无法通过 codec | `500 IDEMPOTENCY_RESULT_CORRUPT` |
-| 业务／权限校验失败 | 保留原错误，失败结果不保存 |
-| 指纹、executor 或 handler 的未知代码异常 | `500 INTERNAL_SERVER_ERROR`，不能因处于幂等链路而改写分类 |
+| 情况                                                       | 结果                                                      |
+| ---------------------------------------------------------- | --------------------------------------------------------- |
+| 同键不同指纹                                               | `409 IDEMPOTENCY_CONFLICT`                                |
+| 已识别的 MySQL NOWAIT 冲突、锁等待、死锁、连接中断或池关闭 | `503 IDEMPOTENCY_STORAGE_RETRYABLE`                       |
+| 已保存结果无法通过 codec                                   | `500 IDEMPOTENCY_RESULT_CORRUPT`                          |
+| 业务／权限校验失败                                         | 保留原错误，失败结果不保存                                |
+| 指纹、executor 或 handler 的未知代码异常                   | `500 INTERNAL_SERVER_ERROR`，不能因处于幂等链路而改写分类 |
 
 业务主动重试必须在 executor 的整个事务结束后保持原意图重试，不能在失败事务内只重试 SQL；其他出入库的重试范围由[Inventory](../src/modules/inventory/docs/public-contracts.md)维护。
 

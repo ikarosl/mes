@@ -5,9 +5,18 @@ import RolesPage from '../../views/system/RolesPage.vue';
 import SystemUserCandidates from '../../views/system/SystemUserCandidates.vue';
 import PermissionsPage from '../../views/system/PermissionsPage.vue';
 import LogsPage from '../../views/system/LogsPage.vue';
+import PersonnelPage from '../../views/system/PersonnelPage.vue';
 import { page } from '../page';
 
 export const systemRoutes: RouteRecordRaw[] = [
+  page(
+    'system/personnel',
+    'system-personnel',
+    '现场人员',
+    PersonnelPage,
+    PERMISSIONS.system.personnel.view,
+    'PersonnelPage',
+  ),
   page(
     'system/users',
     'system-users',

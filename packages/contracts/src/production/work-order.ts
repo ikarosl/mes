@@ -2,8 +2,7 @@ import type { PageQuery, VersionedCommand } from '../common.js';
 import type { WorkOrderStatus } from './statuses.js';
 import type { ProductionBatchItem } from './batch.js';
 
-export type WorkOrderCloseType =
-  'unproduced' | 'underproduced' | 'completed_archive' | 'production_terminated';
+export type WorkOrderCloseType = 'unproduced' | 'underproduced' | 'completed_archive';
 export type WorkOrderType = 'mass_production' | 'research';
 
 export interface WorkOrderQuery extends PageQuery {
@@ -13,16 +12,11 @@ export interface WorkOrderQuery extends PageQuery {
 }
 
 export interface WorkOrderFinalOutput {
-  /** 当前批准清单中的计划内产出；额外产出不抵扣计划缺口。 */
+  /** 任务下最终确认产出合计，库存后续补差不回写。 */
   availableQuantity: string;
-  extraQuantity: string;
-  scrapQuantity: string;
-  totalQuantity: string;
   plannedShortfallQuantity: string;
   finalizedBatchCount: number;
-  closingBatchCount: number;
-  pendingAvailableQuantity: string;
-  pendingExtraQuantity: string;
+  confirmedOutputCount: number;
 }
 
 export interface WorkOrderOption {
@@ -33,10 +27,8 @@ export interface WorkOrderOption {
   productCode: string;
   productName: string;
   plannedQuantity: string;
-  /** 有效任务计划合计，排除 cancelled/terminated。 */
+  /** 有效任务计划合计，排除 cancelled。 */
   assignedQuantity: string;
-  /** 已终止任务原计划，仅供展示，不占额度。 */
-  terminatedPlannedQuantity: string;
   finalOutput: WorkOrderFinalOutput;
   /** 剩余可分配数量 = 计划数量 - 有效任务已分配数量。 */
   remainingQuantity: string;
@@ -65,8 +57,6 @@ export interface WorkOrderItem {
   planEndDate: string | null;
   /** 有效任务计划合计，排除 cancelled/terminated。 */
   assignedQuantity: string;
-  /** 已终止任务的原计划合计，仅展示，不占分配额度。 */
-  terminatedPlannedQuantity: string;
   status: WorkOrderStatus;
   releasedAt: string | null;
   cancelReason: string | null;

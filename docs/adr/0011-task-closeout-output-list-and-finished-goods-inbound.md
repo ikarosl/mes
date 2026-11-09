@@ -1,6 +1,8 @@
 # ADR-0011：任务统一结案、产出清单与成品入库
 
-状态：Accepted。本文保留跨模块职责及选择依据。当前完整规则见 [Production 结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)、[Quality 成品检验](../../apps/api/src/modules/quality/docs/finished-inspections.md)及[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。数量与统一事实的后续选择见 [ADR-0015](0015-unified-quality-quantity-semantics.md)，负责人审批和批准清单边界保留；每类一次入库、类别独占批次和已入类别锁量由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 取代。
+> 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
+
+状态：Accepted。本文保留跨模块职责及选择依据。当前完整规则见 [Production 结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)、[实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)及[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。数量与统一事实的后续选择见 [ADR-0015](0015-unified-quality-quantity-semantics.md)，负责人审批和批准清单边界保留；每类一次入库、类别独占批次和已入类别锁量由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 取代。
 
 ## 背景与适用范围
 
@@ -17,18 +19,18 @@
 
 ## 草稿、线下检验与数量
 
-| 环节 | 唯一职责 |
-| --- | --- |
+| 环节       | 唯一职责                                                           |
+| ---------- | ------------------------------------------------------------------ |
 | 产线管理员 | 保存草稿，依据实测修正计划内、计划外及实际报废，核对物料与收尾事实 |
-| Quality | 独立保存不可变检查事实、明确结论及凭据，不改产出处置单 |
-| 工单负责人 | 审核特定清单版本及其证据，不在审批节点直接改数量 |
-| 仓管 | 对照最新批准依据核对实物并确认实际接收 |
+| Quality    | 独立保存不可变检查事实、明确结论及凭据，不改产出处置单             |
+| 工单负责人 | 审核特定清单版本及其证据，不在审批节点直接改数量                   |
+| 仓管       | 对照最新批准依据核对实物并确认实际接收                             |
 
 固定职责顺序为：执行结束 → 产出草稿 → 独立质检 → 管理员核对 → 负责人批准 → 实物交接与入库。质检和批准均不自动产生库存。
 
 每任务一份产出处置单，草稿可修改，送审后冻结证据；数量或依据变化须撤回／驳回后修正重提。原申报数量、版本只是当时快照，不锁定实际检查数；在既有适用放行依据下修正申报或分类不要求重复检验。新增送检实物、重新纳入不合格品或结论变化须新增当前轮检验依据，保留前驱，不叠加历次检查事实，不建立局部范围树。
 
-成品全检、抽检、零产出核实的 G/F 输入、凭据和结论统一见[Quality 数量规则](../../apps/api/src/modules/quality/docs/finished-inspections.md#数量输入与放行)。ADR-0015 的成品 C/R/S 建议公式现由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 取代；仅 Production 定稿引用 `full+released` 时按原检验轮固定已入基准加 G 给出非阻断差额提示，仍须适用检验明确放行。计划内不超过任务计划；计划外和新增报废不按计划量封顶，不要求三者之和等于计划。成品由产线核对、负责人审批，职责不变。
+成品全检、抽检、零产出核实的 G/F 输入、凭据和结论统一见[实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)。ADR-0015 的成品 C/R/S 建议公式现由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 取代；仅 Production 定稿引用 `full+released` 时按原检验轮固定已入基准加 G 给出非阻断差额提示，仍须适用检验明确放行。计划内不超过任务计划；计划外和新增报废不按计划量封顶，不要求三者之和等于计划。成品由产线核对、负责人审批，职责不变。
 
 报废独立于质检不合格、少申报和原材料损耗；历史已确认工序报废只读引用，新增只记尚未记录的实际报废，避免重复。计划缺口按计划量减计划内可用产出，报废不计入达标。最终报废不补料、不补产、不写库存。半成品、待判库存、已入库质量冲销与完整在线质量仍不在本决策范围。
 

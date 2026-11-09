@@ -23,8 +23,6 @@ const value = {
   itemBatchId: '7',
   batchCode: 'LOT-1',
   scrapScene: 'production_consumed' as const,
-  purpose: 'production_record' as const,
-  closeoutId: null,
   scrapQuantity: '1.0000',
   unit: '件',
   reasonType: '搬运损坏',

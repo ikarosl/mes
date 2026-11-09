@@ -348,9 +348,7 @@ const submitSteps = async (steps: StepRow[]): Promise<void> => {
       steps.map((step) => ({
         processStepId: step.processStepId,
         stepOrder: step.stepOrder,
-        defaultOwnerId: step.defaultOwnerId || null,
         sopFileId: step.sopFileId || null,
-        needInspection: step.needInspection,
         status: step.status,
         remark: step.remark || null,
       })),

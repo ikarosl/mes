@@ -1,6 +1,6 @@
 # Inventory
 
-负责公共出入库单据、库存批次、唯一库存账本、余额投影和现有物料盘点。Production、Procurement 核验各自来源后调用库存能力；Inventory 不决定需求、质量或批准产出资格。
+负责公共出入库单据、库存批次、唯一库存账本、余额投影和现有物料盘点。Production、Procurement 核验各自来源后调用库存能力；Inventory 不决定需求、质量或终检产出资格。
 
 ## 数据所有权与来源职责
 
@@ -12,7 +12,7 @@
 
 ## 入库与库存边界
 
-[库存场景](docs/database/inventory-ledger-and-inbound.md#六场景来源)区分采购入库、批准成品入库、生产退料、其他入库、生产领料和其他出库；来源履约与库存补差不能混用。
+[库存场景](docs/database/inventory-ledger-and-inbound.md#六场景来源)区分采购入库、终检成品入库、生产退料、其他入库、生产领料和其他出库；来源履约与库存补差不能混用。
 
 ## 验证与数据库约定
 

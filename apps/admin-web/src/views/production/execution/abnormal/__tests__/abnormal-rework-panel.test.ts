@@ -1,10 +1,2 @@
-import { describe, it } from 'vitest';
-
-// TODO(abnormal-rework): 保留异常复核与在途提交保护；正式测试获准并迁移独立弹窗、来源及锁版夹具后恢复。
-
-describe('AbnormalReworkPanel', () => {
-  it.todo('shows persisted reason or remark after abnormal disposition review');
-  it.todo(
-    'opens an existing draft in review, enters editing explicitly, and waits for confirmation',
-  );
-});
+// TODO(production-tracking-ui-concurrency): 验证编辑与确认分开且未知结果保留在途意图；高重要性覆盖。
+// 旧返工审批面板已退役，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡顺序流转、随盘异常与末道终检的新契约恢复覆盖。

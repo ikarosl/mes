@@ -1,6 +1,2 @@
-import { it } from 'vitest';
-
-// TODO(material-supply-demand): 高重要性：精确版本供需投影、分页与需求隔离。
-// 用户明确启动正式测试后，以现行公共单据构造合法库存来源并恢复夹具。
-it.todo('aggregates supply and demand independently for each material variant');
-it.todo('paginates version supply demand and keeps keyword matches and demand drill-down isolated');
+// TODO(material-supply-demand): 验证精确版本供需隔离、分页及需求追溯；高重要性覆盖。
+// 旧结构夹具已失效，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前需求及库存投影恢复MySQL覆盖。

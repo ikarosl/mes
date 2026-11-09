@@ -316,10 +316,10 @@ describe('MysqlWorkOrderRepository data ownership', () => {
   });
 
   // TODO(test-migration): 高重要性：工单产出与额度；正式测试获准后按批准清单恢复。
-  it.todo('completes only after all active batches finish the exact planned quantity');
+  // TODO(production-test-recovery): completes only after all active batches finish the exact planned quantity；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：工单产出与额度；正式测试获准后按批准清单恢复。
-  it.todo('returns unfinished batch details instead of completing the work order');
+  // TODO(production-test-recovery): returns unfinished batch details instead of completing the work order；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('requires an early-close reason and rejects unfinished batches', async () => {
     const repositoryForReason = new MysqlWorkOrderRepository({
@@ -428,10 +428,10 @@ describe('MysqlWorkOrderRepository work-order options', () => {
   });
 
   // TODO(test-migration): 高重要性：工单产出与额度；正式测试获准后按批准清单恢复。
-  it.todo('maps the product snapshot and remaining quantity to WorkOrderOption');
+  // TODO(production-test-recovery): maps the product snapshot and remaining quantity to WorkOrderOption；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：工单产出与额度；正式测试获准后按批准清单恢复。
-  it.todo('sums planned quantity only from non-cancelled batches of the same work order');
+  // TODO(production-test-recovery): sums planned quantity only from non-cancelled batches of the same work order；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('returns the complete candidate set without a keyword window or a hidden limit', async () => {
     const query = vi.fn().mockResolvedValue([[], []]);

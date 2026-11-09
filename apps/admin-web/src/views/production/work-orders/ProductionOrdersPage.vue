@@ -131,72 +131,29 @@
           align="right"
         >
           <template #header>
-            <el-tooltip content="已取消、已终止任务的计划数量不占用分配额度；收尾中的任务仍占用。"
+            <el-tooltip content="非取消任务的计划量计入已分配，人工结束不释放原计划额度。"
               ><span>已分配</span></el-tooltip
             >
           </template>
           <template #default="{ row }">
             {{ formatQuantity(row.assignedQuantity) }}
-            <div
-              v-if="Number(row.terminatedPlannedQuantity) > 0"
-              class="order-assignment-note"
-            >
-              <span>已终止计划 {{ formatQuantity(row.terminatedPlannedQuantity) }}</span>
-              <span>不占额度</span>
-            </div>
           </template>
         </el-table-column>
         <el-table-column
-          label="审定产出（计划内 / 外 / 报废）"
-          min-width="230"
+          label="实际最终产出"
+          min-width="210"
+          ><template #default="{ row }"
+            ><div class="order-output-summary">
+              <strong>{{ formatQuantity(row.finalOutput?.availableQuantity ?? 0) }}</strong
+              ><span>{{ row.finalOutput?.confirmedOutputCount ?? 0 }} 次终检确认</span
+              ><span>{{
+                plannedOutputGapText(
+                  row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity,
+                )
+              }}</span>
+            </div></template
+          ></el-table-column
         >
-          <template #default="{ row }">
-            <div class="order-output-summary">
-              <div class="order-output-summary__total">
-                <span>可用合计</span>
-                <strong>{{ formatQuantity(approvedUsableQuantity(row.finalOutput)) }}</strong>
-              </div>
-              <div class="order-output-summary__breakdown">
-                <span>{{ formatQuantity(row.finalOutput?.availableQuantity) }}</span>
-                <span>/</span>
-                <span>{{ formatQuantity(row.finalOutput?.extraQuantity) }}</span>
-                <span>/</span>
-                <span>{{ formatQuantity(row.finalOutput?.scrapQuantity) }}</span>
-              </div>
-              <div class="order-output-meta">
-                <span
-                  v-if="row.finalOutput?.closingBatchCount"
-                  class="order-output-meta__item"
-                >
-                  <span class="order-output-meta__label">待结案</span>
-                  <span>{{ row.finalOutput.closingBatchCount }} 批</span>
-                </span>
-                <span class="order-output-meta__item">
-                  <span class="order-output-meta__label">已批准</span>
-                  <span>{{ row.finalOutput?.finalizedBatchCount ?? 0 }} 批</span>
-                </span>
-                <span class="order-output-meta__item order-output-meta__item--wide">
-                  <span class="order-output-meta__label">计划内</span>
-                  <span>{{
-                    plannedOutputGapText(
-                      row.finalOutput?.plannedShortfallQuantity ?? row.plannedQuantity,
-                    )
-                  }}</span>
-                </span>
-                <span
-                  v-if="row.finalOutput?.closingBatchCount"
-                  class="order-output-meta__item order-output-meta__item--wide"
-                >
-                  <el-tooltip content="待结案任务的计划内产出草稿，尚未计入审定产出。">
-                    <span class="order-output-meta__label">草稿计划内</span>
-                  </el-tooltip>
-                  <span>{{ formatQuantity(row.finalOutput.pendingAvailableQuantity) }}</span>
-                  <span class="order-output-meta__label">未计入</span>
-                </span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
         <el-table-column
           label="负责人"
           width="110"
@@ -363,7 +320,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
-import { approvedUsableQuantity, plannedOutputGapText } from '../shared/production-output-quantity';
+import { plannedOutputGapText } from '../shared/production-output-quantity';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';

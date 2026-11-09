@@ -13,7 +13,7 @@ import type {
 export interface DemandGenerationSource {
   generationGroupKey: string;
   generationGroupType: DemandGenerationGroupType;
-  supplementNo: string | null;
+  manualAdditionNo: string | null;
   /** 生成动作的说明；当前用于人工追加原因。 */
   generationReason?: string | null;
 }
@@ -57,7 +57,6 @@ export interface ProductionMaterialDemandItem extends DemandGenerationSource {
   outboundQuantity: string;
   remainingQuantity: string;
   demandType: DemandType;
-  supplementId: string | null;
   createdAt: string;
   businessStatus: DemandBusinessStatus;
   fulfilledById: string | null;

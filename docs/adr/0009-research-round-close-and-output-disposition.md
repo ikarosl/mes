@@ -1,5 +1,7 @@
 # ADR-0009：研发轮次结案、产出处置与物料余量
 
+> 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
+
 状态：Accepted。结案职责由 [ADR-0011](0011-task-closeout-output-list-and-finished-goods-inbound.md)细化，任务用料及无工序研发由 [ADR-0014](0014-task-material-policy-and-output-inspection.md)细化。当前完整流程见 [Production 业务流程 §19.1](../../apps/api/src/modules/production/docs/business-workflow.md#191-研发轮次结束与产出处置)，状态、事实及命令见[结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)。
 
 ## 背景

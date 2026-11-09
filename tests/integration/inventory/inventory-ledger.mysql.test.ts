@@ -1,8 +1,2 @@
-import { it } from 'vitest';
-
-// TODO(inventory-ledger): 最高恢复优先级：库存账本不可变，拒绝直接 UPDATE／DELETE。
-// 用户明确启动正式测试后，通过现行公共单据构造合法流水恢复。
-// TODO(inventory-ledger): 同阶段补回余额投影、批次状态、负库存拒绝及盘点审计失败回滚。
-it.todo(
-  'rejects inventory transaction update and delete outside the dedicated fixture cleanup connection',
-);
+// TODO(inventory-ledger): 验证库存账本不可变、余额投影、负库存拒绝、批次状态及审计失败回滚；高重要性覆盖。
+// 旧公共库存来源夹具失效，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按现行公共单据与库存来源恢复真实MySQL覆盖。

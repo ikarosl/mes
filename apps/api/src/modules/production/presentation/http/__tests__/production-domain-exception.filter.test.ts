@@ -21,16 +21,13 @@ const invoke = (exception: ProductionDomainError) => {
 };
 
 describe('ProductionDomainExceptionFilter', () => {
+  // TODO(production-tracking-error-boundary): 验证人员资格、并发冲突及SOP读取失败的安全错误信封；高重要性，旧派工及报工错误路径已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡权限、并发及历史文件读取边界恢复覆盖。
   it.each([
     ['NOT_FOUND', 404],
     ['CONFLICT', 409],
     ['CONCURRENT_MODIFICATION', 409],
     ['INVALID_INPUT', 400],
     ['INVALID_STATE', 400],
-    ['STEP_ASSIGNMENT_CONFLICT', 409],
-    ['STEP_START_NOT_ALLOWED', 409],
-    ['NOT_STEP_ASSIGNEE', 403],
-    ['SOP_SNAPSHOT_UNAVAILABLE', 503],
   ] as const)('maps %s to the expected HTTP envelope', (code, expectedStatus) => {
     const { json, status, setHeader } = invoke(new ProductionDomainError(code, '生产业务错误'));
 
@@ -49,10 +46,8 @@ describe('ProductionDomainExceptionFilter', () => {
   });
 
   it('preserves structured dependency details for actionable clients', () => {
-    const details = { dependentRecordType: 'rework', dependentRecordId: '9' };
-    const { json } = invoke(
-      new ProductionDomainError('STEP_REPORT_DEPENDENCY_CONFLICT', '报工存在下游依赖', details),
-    );
+    const details = { dependentRecordType: 'production_tracking_card', dependentRecordId: '9' };
+    const { json } = invoke(new ProductionDomainError('CONFLICT', '报工存在下游依赖', details));
 
     expect(json).toHaveBeenCalledWith(expect.objectContaining({ details }));
   });

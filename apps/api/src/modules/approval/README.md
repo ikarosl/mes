@@ -1,13 +1,13 @@
 # Approval
 
-接入 Product 的 BOM 场景 `product.bom.approve`，以及 Production 的 `production.demand.correct`、`production.batch.closeout`。流程配置、申请、节点、待办和处理记录属于 Approval；Product 保有 BOM、送审冻结与永久锁定事实；Production 保有需求更正、逐项收尾和产出处置。工单审批尚未接入；站内消息通过独立 Notification 公开能力发布。
+接入 Product 的 BOM 场景 `product.bom.approve`，以及 Production 的需求更正场景 `production.demand.correct`。流程配置、申请、节点、待办和处理记录属于 Approval；Product 保有 BOM、送审冻结与永久锁定事实；Production 保有需求更正。生产追踪卡的末道终检和任务结束不进入审批。工单审批尚未接入；站内消息通过独立 Notification 公开能力发布。
 
-批次结案的最后节点使用“业务关联人员 → 工单负责人”。流程保存来源规则，送审由 Production 在锁内解析具体负责人并保留工单来源证据，Approval 将其固化到本次节点；同一流程可处理不同负责人的工单。规则见[业务人员分派](docs/subject-integration.md#业务关联人员)。统一结案与产出清单已接入 Production，成品质检及放行由 Quality 所有；用户验收和正式测试仍见[路线图](../../../../../docs/roadmap.md)。
+当前两个场景只采用角色或指定用户分派，不声明业务关联人员来源。通用人员规则见[业务人员分派](docs/subject-integration.md#业务关联人员)；用户验收和正式测试见[路线图](../../../../../docs/roadmap.md)。
 
 ## 配置与操作
 
-1. 管理员为对应业务场景配置顺序节点，每级选择启用角色、指定用户或场景支持的业务关联人员，保存并发布；结案的最后节点必须为工单负责人，前面可配置管理节点，不强制两级。
-2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正；批次收尾中处理全部事项、保存产出后提交。待办与本人申请分别按服务端授权范围读取。
+1. 管理员为对应业务场景配置顺序节点，每级选择启用角色或指定用户，保存并发布。
+2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正。待办与本人申请分别按服务端授权范围读取。
 3. 当前节点的任一合格用户明确通过后进入下一级；末级通过与所属业务生效同事务。
 4. 任一级驳回结束申请；仅申请人可撤回待审申请。在审改内容须先撤回或驳回，修改后从第一级新建申请，旧证据保留；撤回与最终批准在同一业务根锁下互斥。
 5. 节点无人可审时保留当前节点并显示提示；角色新增合格成员或原人员资格恢复后，自然进入其待办，无需重新分派。指定用户节点不会自动转给其他用户，申请人可撤回后按新流程重新提交。
@@ -18,19 +18,19 @@
 
 接口前缀 `/api/approval`；通用协议见[API 规范](../../../../../docs/api-conventions.md)。
 
-| 方法与路径 | 权限与含义 |
-| --- | --- |
-| `GET /scenes`、`GET /role-options`、`GET /user-options`、`GET /scenes/:sceneCode/flow` | `approval:configure`；场景、启用角色及当前具备审批资格的用户候选 |
-| `PUT /scenes/:sceneCode/flow/draft` | `approval:configure`；完整有序节点；以草稿 ID 和版本防止覆盖，首次两者为空；人员分派规则见[数据库](docs/database.md#33-approval_flow_versions) |
-| `POST /scenes/:sceneCode/flow/publish` | `approval:configure`；核对草稿 ID 和版本，发布后内容不可改 |
-| `GET /instances`、`GET /instances/:id` | 审批查看、处理、配置、BOM 管理、生产需求更正或批次收尾任一权限；普通用户按下方范围过滤 |
-| `POST /bom/:productId/submit` | `product:products:manage-bom`；提交产品聚合版本 |
-| `POST /instances/:id/approve`、`.../reject` | `approval:decide`；提交申请 `version` 和当前 `stepId`，驳回原因必填 |
-| `POST /instances/:id/withdraw` | 与申请详情相同入口权限，额外严格校验申请人本人 |
+| 方法与路径                                                                             | 权限与含义                                                                                                                                     |
+| -------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /scenes`、`GET /role-options`、`GET /user-options`、`GET /scenes/:sceneCode/flow` | `approval:configure`；场景、启用角色及当前具备审批资格的用户候选                                                                               |
+| `PUT /scenes/:sceneCode/flow/draft`                                                    | `approval:configure`；完整有序节点；以草稿 ID 和版本防止覆盖，首次两者为空；人员分派规则见[数据库](docs/database.md#33-approval_flow_versions) |
+| `POST /scenes/:sceneCode/flow/publish`                                                 | `approval:configure`；核对草稿 ID 和版本，发布后内容不可改                                                                                     |
+| `GET /instances`、`GET /instances/:id`                                                 | 审批查看、处理、配置、BOM 管理或生产需求更正任一权限；普通用户按下方范围过滤                                                                   |
+| `POST /bom/:productId/submit`                                                          | `product:products:manage-bom`；提交产品聚合版本                                                                                                |
+| `POST /instances/:id/approve`、`.../reject`                                            | `approval:decide`；提交申请 `version` 和当前 `stepId`，驳回原因必填                                                                            |
+| `POST /instances/:id/withdraw`                                                         | 与申请详情相同入口权限，额外严格校验申请人本人                                                                                                 |
 
 列表 scope 为 `todo/mine/all`，API 未传 scope 时默认 todo；管理页默认显式请求 all，包含所有状态。todo 在后端分页和计数前按申请未结束、节点当前活动及登录用户实时资格过滤；mine 包含本人发起的全部历史；普通用户的 all 包含本人发起、本人实际作出通过或驳回决定，以及本人当前可处理的申请。仅曾是候选人或通知收件人不保留历史全文访问权，新加入角色也不会获得已结束申请的历史权限。列表与详情使用同一授权范围，均须满足接口入口权限。`approval:configure` 可读全部申请；`approval:view` 本身不授予全局读取。
 
-前端只传 scope、状态和普通分页筛选，不提供授权角色或用户列表。详情通过 `currentStepId`、`canApprove` 和 `canWithdraw` 表达当前操作；各节点分别展示角色/指定用户或业务来源规则、`resolvedAssigneeUserId/Name`、当前 `eligibleUsers` 和历史真实决定。所有决定都校验申请版本、当前节点与实时资格，非末级审批同样递增版本，迟到请求不得误批下一节点。不提供重新分派接口或权限。通用批准／驳回／撤回仍不启用 HTTP Idempotency-Key，不自动重试决定请求；Production 两个业务送审入口使用各自的幂等命令，申请创建、绑定、审计和通知同事务。
+前端只传 scope、状态和普通分页筛选，不提供授权角色或用户列表。详情通过 `currentStepId`、`canApprove` 和 `canWithdraw` 表达当前操作；各节点分别展示角色/指定用户或业务来源规则、`resolvedAssigneeUserId/Name`、当前 `eligibleUsers` 和历史真实决定。所有决定都校验申请版本、当前节点与实时资格，非末级审批同样递增版本，迟到请求不得误批下一节点。不提供重新分派接口或权限。通用批准／驳回／撤回仍不启用 HTTP Idempotency-Key，不自动重试决定请求；Production 需求更正送审使用独立幂等命令，申请创建、绑定、审计和通知同事务。
 
 ## 模块与事务边界
 
@@ -54,5 +54,3 @@
 - withdrawn 动作后：通知撤回命令在锁内、取消节点前实时解析的当前合格人员，不使用旧消息收件集合推断当前待办。
 
 不排除本人，不向未来节点提前发送，不因角色新增成员补写历史收件。既有通知不随业务完成删除；历史收件不授予全文或处理权限。通知发布、业务动作、所属模块写入及成功审计整体提交，只有新消息在最外层提交后异步调度默认空钩子。发布规则及失败隔离由 [Notification](../notification/README.md) 所有。
-
-产出清单提交人通过 `production:tasks:manage-output` 访问本人相关审批详情及撤回入口；接口仍检查实例可见范围和申请人资格，该权限不授予审批决定能力。

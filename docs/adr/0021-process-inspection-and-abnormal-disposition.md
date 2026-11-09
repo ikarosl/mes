@@ -1,5 +1,7 @@
 # ADR-0021：工序专检与异常处置承接
 
+> 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
+
 状态：Accepted。用户确认按任务工序记录现场专检，复用现有异常处置表承接不合格量，并将累计已承接数量内化到专检单。取代范围仅为 [Production 生产执行](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)中暂不实施工序独立检查的范围限制；不取代 CP-01 的独立报工、执行状态与数量上限，不改变来料、成品质检及库存规则。实施、验收和正式测试分别由[路线图](../roadmap.md)登记。
 
 ## 决定与理由

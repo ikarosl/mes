@@ -8,7 +8,7 @@
 
 语义类型到前缀的唯一映射由 [BUSINESS_NUMBER_PREFIX](../../../packages/constants/src/business-number.ts) 维护。前缀取中文业务名称的大写拼音首字母，由开发者人工维护，保持稳定且互不重复，不提供动态配置或前缀格式／长度校验。文档以业务名称或稳定编号类型描述取号规则并引用本章，不复制具体前缀值；编号示例使用前缀占位。
 
-供应商退回按 `supplier_return` 取号，生产报工含返工报工统一按 `step_report` 取号。物料和成品新库批共用 `inventory_batch` 类型与日序列；来源、权限和身份仍由结构化字段判断，不解析编号决定业务行为。
+供应商退回按 `supplier_return` 取号，追踪卡按 `production_tracking_card` 取号；逐站到站与交接通过卡及工序 ID 关联，不再建立独立报工单号。物料和成品新库批共用 `inventory_batch` 类型与日序列；来源、权限和身份仍由结构化字段判断，不解析编号决定业务行为。
 
 主数据版本编码、单据行号、修订号、审批动作序号、供应商批号和技术 UUID 不进入日序号。编号只由服务端生成；任务、盘点和新库存批次输入不接受手填编号。
 
@@ -18,18 +18,18 @@
 
 职责：按编号类型和北京自然日保存最后已分配序号，为不同业务共用的原子取号提供锁定点。它只负责编号分配，不保存业务单据或决定业务状态。
 
-| 字段 | 类型 | 可空／默认 | 含义 |
-| --- | --- | --- | --- |
-| `number_kind` | `VARCHAR(64)` | 非空，无默认 | 稳定编号类型 |
-| `number_date` | `DATE` | 非空，无默认 | 分配编号时的北京自然日 |
-| `last_sequence` | `BIGINT UNSIGNED` | 非空，无默认 | 最后已分配序号 |
-| `created_at` | `DATETIME(3)` | 非空，默认 `CURRENT_TIMESTAMP(3)` | 当日类型计数首次创建时间 |
-| `updated_at` | `DATETIME(3)` | 非空，默认及更新时 `CURRENT_TIMESTAMP(3)` | 最近一次计数更新时间 |
+| 字段            | 类型              | 可空／默认                                | 含义                     |
+| --------------- | ----------------- | ----------------------------------------- | ------------------------ |
+| `number_kind`   | `VARCHAR(64)`     | 非空，无默认                              | 稳定编号类型             |
+| `number_date`   | `DATE`            | 非空，无默认                              | 分配编号时的北京自然日   |
+| `last_sequence` | `BIGINT UNSIGNED` | 非空，无默认                              | 最后已分配序号           |
+| `created_at`    | `DATETIME(3)`     | 非空，默认 `CURRENT_TIMESTAMP(3)`         | 当日类型计数首次创建时间 |
+| `updated_at`    | `DATETIME(3)`     | 非空，默认及更新时 `CURRENT_TIMESTAMP(3)` | 最近一次计数更新时间     |
 
 使用 InnoDB、`utf8mb4_0900_ai_ci`；复合主键为 `(number_kind,number_date)`，没有额外索引或外键。`chk_business_number_sequence_positive` 限制 `last_sequence > 0`；`chk_business_number_kind` 的当前值域为：
 
 ```text
-work_order, production_batch, purchase_order, purchase_receipt,
+production_tracking_card, work_order, production_batch, purchase_order, purchase_receipt,
 incoming_inspection_order, supplier_return, purchase_inbound, finished_inbound,
 other_inbound, other_outbound, inventory_batch, stock_check,
 production_material_outbound, production_material_return, material_loss,
@@ -37,7 +37,7 @@ manual_material_demand, rework, step_report, abnormal_disposition,
 scrap_supplement_plan, material_supplement, approval_instance
 ```
 
-核验来源：[平台编号建表基线](../../../packages/database/migrations/202611020104-baseline-platform-numbering-tables.up.sql)。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。运行时只使用 `business_number_daily_sequence`。
+核验来源：[平台编号建表基线](../../../packages/database/migrations/202611020104-baseline-platform-numbering-tables.up.sql)及[追踪卡编号增量](../../../packages/database/migrations/202611090050-tracking-business-number-kind.up.sql)。数据库 CHECK 保留的旧执行编号字面值不属于当前应用取号目录，也不开放相应业务入口；当前可取号类型只由共享映射限定，不为收窄应用目录改写已执行 migration。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。运行时只使用 `business_number_daily_sequence`。
 
 ## 事务与日期
 

@@ -25,7 +25,7 @@ const candidate = {
   unit: '件',
   generationGroupKey: 'NORMAL:b1',
   generationGroupType: 'normal' as const,
-  supplementNo: null,
+  manualAdditionNo: null,
 };
 
 const testPlugins = () => [

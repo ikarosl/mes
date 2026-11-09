@@ -76,7 +76,7 @@ WHERE p.bom_status='draft' AND p.bom_locked_at IS NULL AND p.is_deleted=0 AND NO
 
 INSERT INTO process_steps (step_code, step_name, status, created_by, updated_by)
 SELECT sample.step_code, sample.step_name, 1, @demo_actor_id, @demo_actor_id
-FROM (SELECT 'gx-001' step_code, '装配' step_name UNION ALL SELECT 'gx-002', '粘接') sample
+FROM (SELECT 'gx-001' step_code, '装配' step_name UNION ALL SELECT 'gx-002', '粘接' UNION ALL SELECT 'gx-003', '终检') sample
 WHERE NOT EXISTS (SELECT 1 FROM process_steps ps WHERE ps.step_code = sample.step_code);
 
 -- Routes have no applicable-product field or BOM relationship.
@@ -87,18 +87,17 @@ SET @route_id = (SELECT id FROM process_routes WHERE route_code = 'r-001' AND ve
 
 INSERT INTO process_route_steps (
   route_id, process_step_id, step_order, step_code_snapshot, step_name_snapshot,
-  default_owner_id, need_inspection, status, created_by, updated_by
+  status, created_by, updated_by
 )
 SELECT @route_id, ps.id, sample.step_order, ps.step_code, ps.step_name,
-  u.id, 0, 1, @demo_actor_id, @demo_actor_id
+  1, @demo_actor_id, @demo_actor_id
 FROM (
-  SELECT 'gx-001' step_code, 1 step_order, 'operator-002' username UNION ALL
-  SELECT 'gx-002', 2, 'operator-001'
+  SELECT 'gx-001' step_code, 1 step_order UNION ALL
+  SELECT 'gx-002', 2 UNION ALL SELECT 'gx-003', 3
 ) sample JOIN process_steps ps ON ps.step_code = sample.step_code
-JOIN users u ON u.username = sample.username
 WHERE EXISTS (SELECT 1 FROM process_routes WHERE id = @route_id AND status = 'draft')
   AND NOT EXISTS (SELECT 1 FROM process_route_steps rs WHERE rs.route_id = @route_id AND rs.step_order = sample.step_order);
 
 UPDATE process_routes SET status = 'enabled', updated_by = @demo_actor_id
 WHERE id = @route_id AND status = 'draft'
-  AND (SELECT COUNT(*) FROM process_route_steps WHERE route_id = @route_id AND status = 1 AND is_deleted = 0) = 2;
+  AND (SELECT COUNT(*) FROM process_route_steps WHERE route_id = @route_id AND status = 1 AND is_deleted = 0) = 3;

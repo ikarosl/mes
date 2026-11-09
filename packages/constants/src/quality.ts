@@ -4,11 +4,9 @@ export const QUALITY_INBOUND_CASE_START_TYPES = [
   'reinspection',
   'receipt_correction',
 ] as const;
-export const QUALITY_INSPECTION_METHODS = ['full', 'sampling', 'zero_confirmation'] as const;
 export const QUALITY_INSPECTION_METHOD_LABELS = {
   full: '全检',
   sampling: '抽检',
-  zero_confirmation: '零数量核实',
 } as const;
 export const QUALITY_RELEASE_DECISIONS = [
   'released',
@@ -45,47 +43,4 @@ export const QUALITY_INCOMING_INSPECTION_RECEIPT_ASSOCIATION_LABELS = {
   unassigned: '未关联到货',
   assigned: '已关联到货',
   all: '全部到货',
-} as const;
-export const FINISHED_INSPECTION_STAGES = [
-  'awaiting_draft',
-  'awaiting_start',
-  'inspecting',
-  'needs_reinspection',
-  'not_released',
-  'ready_for_finalization',
-  'reviewing',
-  'approved',
-  'blocked',
-] as const;
-export const FINISHED_INSPECTION_STAGE_LABELS = {
-  awaiting_draft: '待保存产出草稿',
-  awaiting_start: '待检验',
-  inspecting: '检验中',
-  needs_reinspection: '待复检',
-  not_released: '质检不放行',
-  ready_for_finalization: '待核对产出清单',
-  reviewing: '清单审批中',
-  approved: '已定稿',
-  blocked: '当前不可办理',
-} as const;
-export const FINISHED_INSPECTION_NEXT_ACTION_LABELS = {
-  save_draft: '保存产出草稿',
-  start_inspection: '发起检验',
-  record_inspection: '填写结果',
-  start_reinspection: '开始复检',
-  review_output: '核对产出清单',
-  view_approval: '查看审批',
-  view_history: '查看记录',
-} as const;
-
-export const PRODUCTION_OUTPUT_INSPECTION_METHODS = QUALITY_INSPECTION_METHODS;
-export const PRODUCTION_OUTPUT_INSPECTION_METHOD_LABELS = QUALITY_INSPECTION_METHOD_LABELS;
-export const PRODUCTION_OUTPUT_RELEASE_DECISIONS = QUALITY_RELEASE_DECISIONS;
-export const PRODUCTION_OUTPUT_RELEASE_DECISION_LABELS = QUALITY_RELEASE_DECISION_LABELS;
-
-export const PROCESS_INSPECTION_METHODS = ['full', 'sampling'] as const;
-export const PROCESS_INSPECTION_STATUS_LABELS = { active: '有效', reversed: '已冲销' } as const;
-export const PROCESS_INSPECTION_RECORD_TYPE_LABELS = {
-  normal: '检查结果',
-  reversal: '冲销记录',
 } as const;

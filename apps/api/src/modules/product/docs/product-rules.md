@@ -9,7 +9,7 @@
 3. 只有已启用的自制成品可以配置 `product_materials`；基础物料不配置 BOM。
 4. BOM 投入对象只能是已启用的基础物料；BOM 是 Production 批量任务生成需求基础的唯一来源；研发手工需求不依赖 BOM。本模块只维护 BOM，不生成需求，也不回写任何历史需求。
 5. `material_variants` 是物料库存的精确身份。版本编码由服务端按基础物料编码和版本号生成，创建后不可改；Production 的新需求、补料和生产出库使用启用版本，采购及对应入库允许停用但未删除的版本，基础物料和分类仍须有效。
-6. 工艺路线只表达工序顺序、负责人、SOP 与规则快照，不绑定产品或 BOM 行；批量物料需求按本任务完整 BOM 基础配置并锁版，研发直接手工提需。
+6. 工艺路线表达工序顺序和 SOP 快照，不绑定产品、BOM 行或默认登录负责人；现场登记人员在扫码时选取。批量物料需求按本任务完整 BOM 基础配置并锁版，研发直接手工提需。
 7. 路线创建时固定为 `draft`。只有草稿可以编辑路线内容与步骤；首次启用后，即使后来停用也不可原地修改，调整必须新建版本。
 8. 启用路线前必须至少包含一个启用步骤。保存步骤时后端从 `process_steps` 和 `technical_files` 复制工序与 SOP 快照。
 9. 成品不配置默认路线。批量任务创建前必须手动选择路线，并在创建事务内重新核验路线为 `enabled` 且未删除，冻结路线、步骤和 SOP 快照；缺失路线时拒绝创建。研发任务无需路线，不生成工序。路线停用或归档不受成品引用限制，也不改写历史任务快照。
@@ -18,7 +18,7 @@
 
 分类类型创建后不可修改。
 
-所有路线的所有工序均须报工，不提供报工开关；路线步骤契约和表结构不保存是否报工字段。
+路线中的启用步骤按冻结顺序流转，不提供报工开关。需要过程检查时直接配置检查工序，与加工工序采用相同到站和交接动作，不保存独立“是否检验”开关。最后一个启用步骤承担终检产出确认，配置时应以成品检验安排该节点；该职责取决于路线位置，不按名称匹配。执行与终检规则由 [Production](../../production/docs/database/execution-traceability-quality.md) 所有。
 
 ## 成品与精确物料版本规格书
 
@@ -104,15 +104,15 @@ BOM 保存完整替换明细，须携带读取时的成品聚合版本；锁成�
 
 Product 自有候选按下表声明 any-of，路径省略 `/api/product`。生产任务内嵌的研发手工提需使用 Production 的用途物料候选，再使用本模块启用版本读取，不要求主数据管理页权限。其他入出库对象通过 Inventory 的独立候选入口读取，不复用本表扩大来源业务资格。
 
-| 只读候选接口 | 合法消费者 | 任一匹配的视图／宿主权限 |
-| --- | --- | --- |
-| `/categories/options` | 成品、基础物料及分类配置 | `product:products:view`、`product:materials:view`、`product:categories:view` |
-| `/products/options` | 成品、工艺路线、生产工单及任务 | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view` |
-| `/materials/options` | 成品 BOM、基础物料与版本配置、生产用料及入库候选 | `product:products:view`、`product:materials:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`warehouse:inbound:view` |
-| `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view` |
-| `/process-steps/options` | 工序及工艺路线配置 | `product:processes:view`、`product:routes:view` |
-| `/process-routes/options` | 工艺路线及生产工单／任务 | `product:routes:view`、`production:orders:view`、`production:tasks:view` |
-| `/users/options` | 工艺路线及生产任务的负责人候选 | `product:routes:view`、`production:tasks:view` |
+| 只读候选接口                                 | 合法消费者                                               | 任一匹配的视图／宿主权限                                                                                                                                                       |
+| -------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/categories/options`                        | 成品、基础物料及分类配置                                 | `product:products:view`、`product:materials:view`、`product:categories:view`                                                                                                   |
+| `/products/options`                          | 成品、工艺路线、生产工单及任务                           | `product:products:view`、`product:routes:view`、`production:orders:view`、`production:tasks:view`                                                                              |
+| `/materials/options`                         | 成品 BOM、基础物料与版本配置、生产用料及入库候选         | `product:products:view`、`product:materials:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`warehouse:inbound:view` |
+| `/material-variants/by-material/:materialId` | 成品 BOM、版本配置、生产用料、任务内嵌手工提需及入库候选 | `product:products:view`、`product:material-variants:view`、`production:materials:view`、`production:material-demands:view`、`production:tasks:view`、`warehouse:inbound:view`  |
+| `/process-steps/options`                     | 工序及工艺路线配置                                       | `product:processes:view`、`product:routes:view`                                                                                                                                |
+| `/process-routes/options`                    | 工艺路线及生产工单／任务                                 | `product:routes:view`、`production:orders:view`、`production:tasks:view`                                                                                                       |
+| `/users/options`                             | 工艺路线及生产任务的负责人候选                           | `product:routes:view`、`production:tasks:view`                                                                                                                                 |
 
 目录来源、分组及逐接口授权规则由 [Identity](../../identity/docs/database.md#14-permissions)维护；候选读取不授予主数据编辑、采购、生产或库存写入资格。跨模块候选仍由其所有者维护，Product 不记录 Production 接口清单。
 

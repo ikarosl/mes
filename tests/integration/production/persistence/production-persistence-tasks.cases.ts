@@ -1,3 +1,2 @@
-// TODO(production-persistence): 高重要性：任务路线快照、人工提需与任务级版本冻结。
-// 用户明确启动正式测试后按现行契约恢复；场景索引见 production-persistence.mysql.test.ts。
-export {};
+// TODO(production-persistence-tasks): 验证路线快照、人工提需及任务级精确版本冻结；高重要性覆盖。
+// 旧持久化夹具失效，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前任务与追踪卡身份恢复MySQL覆盖。

@@ -10,7 +10,6 @@ import type {
   InventorySourceType,
   InventoryTransactionType,
   DemandType,
-  MaterialLossPurpose,
 } from './statuses.js';
 
 export interface ReturnOrderQuery extends PageQuery {
@@ -156,8 +155,6 @@ export interface MaterialLossItem {
   itemBatchId: string;
   batchCode: string;
   scrapScene: 'production_consumed';
-  purpose: MaterialLossPurpose;
-  closeoutId: string | null;
   scrapQuantity: string;
   unit: string;
   reasonType: string;
@@ -306,10 +303,6 @@ export interface InventoryMaterialDemandTraceItem {
   demandQuantity: string;
   remainingDemandQuantity: string;
   unit: string;
-  parentDemandId: string | null;
-  supplementId: string | null;
-  supplementNo: string | null;
-  abnormalDispositionNo: string | null;
   createdAt: string;
 }
 
@@ -343,9 +336,7 @@ export interface InventoryBatchItem {
     inboundQuantity: string;
     inventoryTransactionId: string;
     sourceType: InventorySourceType;
-    outputRevisionId: string | null;
-    outputRevisionNo: number | null;
-    productionOutputAllocationId: string | null;
+    productionOutputId: string | null;
     productionBatchId: string | null;
     workOrderId: string | null;
     procurementReceiptLineId: string | null;

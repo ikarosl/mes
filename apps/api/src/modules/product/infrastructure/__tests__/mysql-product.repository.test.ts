@@ -391,7 +391,6 @@ describe('MySQL product adapters workflow transactions', () => {
           processStepId: '7',
           stepOrder: 1,
           sopFileId: '6',
-          needInspection: false,
         },
       ],
       commandContextWithoutIp,

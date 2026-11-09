@@ -1,5 +1,7 @@
 # ADR-0016：入库授权与库存批次分离
 
+> 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
+
 状态：Accepted。用户已确认并授权实施；其中成品 C/R/S 数量建议的旧表述由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。实施与验收状态见[路线图](../roadmap.md#分次入库与共用批次待验收)；本决策不将设计批准等同于功能验收或正式测试通过。
 
 本文取代范围中保留的逐行供应商规则，由 [ADR-0026](0026-purchase-order-supplier-and-amounts.md) 的采购主单唯一供应商取代；来源授权与目标批次分离、后续跨供应商实际入库及历史事实边界保持。
@@ -34,7 +36,7 @@
 
 Production 拥有成品办理轮次、批准版和授权；Procurement 拥有物料来源及授权；Quality 拥有检查办理和不可变结果；Inventory 拥有实际入库、库批和唯一流水。来源先锁内核验资格，Inventory 核验目标身份并原子记账，成功审计及幂等结果同事务；完整锁序见[库存协作协议](../inventory-extraction-design.md)。
 
-当前字段由各模块所有者维护：[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)、[来料正式分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)、[成品质检](../../apps/api/src/modules/quality/docs/finished-inspections.md)、[库存](../../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)。结构切换只追加成对 migration，开发库由统一入口重建，不猜测旧基准、不兼容双写。
+当前字段由各模块所有者维护：[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)、[来料正式分配](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)、[实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)、[库存](../../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md)。结构切换只追加成对 migration，开发库由统一入口重建，不猜测旧基准、不兼容双写。
 
 ## 取代范围
 

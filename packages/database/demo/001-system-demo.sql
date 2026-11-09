@@ -1,11 +1,11 @@
 -- Acceptance roles use explicit codes; page hierarchy never expands backend grants.
 INSERT INTO roles (name, code, description, status, deleted_at)
 VALUES
-  ('生产操作工', 'operator', '演示：执行本人负责工序的开始、完成、重开与报工', 1, NULL),
+  ('生产操作工', 'operator', '演示：现场扫码到站、随盘异常登记与处理', 1, NULL),
   ('生产管理员', 'production', '演示：维护产品资料和生产任务；库存操作由仓管办理', 1, NULL),
   ('仓管', 'warehouse', '演示：采购到货、库存查询、出入库、退料、领料损耗与盘点', 1, NULL),
   ('采购员', 'procurement', '演示：维护供应商和采购单，不办理到货、质检或库存记账', 1, NULL),
-  ('质检员', 'quality', '演示：来料检验与复核、成品质检和工序专检，不办理库存记账', 1, NULL)
+  ('质检员', 'quality', '演示：来料检验与复核，追踪卡末站最终产出确认', 1, NULL)
 ON DUPLICATE KEY UPDATE
   name = VALUES(name),
   description = VALUES(description),
@@ -63,9 +63,9 @@ FROM roles r
 JOIN permissions p ON p.code IN (
   'dashboard:view',
   'production:view',
-  'production:worker-tasks:view',
-  'production:steps:start',
-  'production:steps:report'
+  'production:workbench:view',
+  'production:workbench:operate',
+  'production:tracking:view'
 )
 WHERE r.code = 'operator';
 
@@ -116,28 +116,20 @@ JOIN permissions p ON p.code IN (
   'production:orders:update',
   'production:orders:transition',
   'production:tasks:view',
-  'production:execution-records:view',
   'production:batches:create',
   'production:batches:update',
   'production:batches:transition',
-  'production:tasks:terminate',
-  'production:tasks:manage-output',
   'production:materials:view',
   'production:materials:allocate',
   'production:materials:correct-demand',
   'production:material-demands:view',
   'production:material-demands:configure',
   'production:material-demands:add-manual',
-  'production:steps:manage-execution',
-  'production:steps:manage-abnormal',
-  'quality:view',
-  'quality:process-inspections:view',
-  'production:steps:assign',
-  'production:rework:execute',
-  'production:worker-tasks:view',
-  'production:steps:start',
-  'production:steps:report',
-  'production:trace:view'
+  'production:workbench:view',
+  'production:workbench:operate',
+  'production:tracking:view',
+  'production:tracking:manage',
+  'production:tracking:confirm-output'
 )
 WHERE r.code = 'production';
 
@@ -156,7 +148,6 @@ JOIN permissions p ON p.code IN (
   'warehouse:receipts:void',
   'warehouse:inbound:view',
   'warehouse:inbound:confirm-purchase',
-  'warehouse:inbound:confirm-finished',
   'warehouse:other-inbounds:view',
   'warehouse:other-inbounds:create',
   'warehouse:other-inbounds:update',
@@ -215,9 +206,10 @@ JOIN permissions p ON p.code IN (
   'quality:inbound-inspections:manage',
   'quality:inbound-inspections:review',
   'quality:inbound-inspections:inspect',
-  'quality:finished-inspections:view',
-  'quality:finished-inspections:record',
-  'quality:process-inspections:view',
-  'quality:process-inspections:record'
+  'production:view',
+  'production:workbench:view',
+  'production:workbench:operate',
+  'production:tracking:view',
+  'production:tracking:confirm-output'
 )
 WHERE r.code = 'quality';

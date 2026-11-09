@@ -8,25 +8,25 @@
 
 `departments/users/roles/permissions` 共用时间列 T：
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
-| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
-| `deleted_at` | `DATETIME NULL` | 删除时间，空表示未删除 |
+| 字段         | 类型、空值与默认值                                                        | 含义                   |
+| ------------ | ------------------------------------------------------------------------- | ---------------------- |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 创建时间               |
+| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间           |
+| `deleted_at` | `DATETIME NULL`                                                           | 删除时间，空表示未删除 |
 
 ## 1.1 `departments`
 
 维护组织部门及父子关系，用户通过 `department_id` 归属部门，不把组织层级当作权限继承。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `parent_id` | `BIGINT UNSIGNED NULL` | 父部门；顶级为空 |
-| `name` | `VARCHAR(64) NOT NULL` | 部门名称 |
-| `code` | `VARCHAR(64) NOT NULL` | 唯一部门编码 |
-| `sort_order` | `INT NOT NULL DEFAULT 0` | 排序 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| 时间列 T | 见上表 | 创建、修改和软删除时间 |
+| 字段         | 类型、空值与默认值                        | 含义                   |
+| ------------ | ----------------------------------------- | ---------------------- |
+| `id`         | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                   |
+| `parent_id`  | `BIGINT UNSIGNED NULL`                    | 父部门；顶级为空       |
+| `name`       | `VARCHAR(64) NOT NULL`                    | 部门名称               |
+| `code`       | `VARCHAR(64) NOT NULL`                    | 唯一部门编码           |
+| `sort_order` | `INT NOT NULL DEFAULT 0`                  | 排序                   |
+| `status`     | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`     |
+| 时间列 T     | 见上表                                    | 创建、修改和软删除时间 |
 
 主键 `id`；唯一键 `uk_departments_code(code)`；索引 `idx_departments_parent(parent_id)`；外键 `parent_id → departments.id`。当前无状态值域 CHECK。
 
@@ -34,18 +34,18 @@
 
 维护登录账号、凭证、显示身份和部门归属；角色授权另存 `user_roles`，不把角色固定在账号主表。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `department_id` | `BIGINT UNSIGNED NULL` | 所属部门 |
-| `username` | `VARCHAR(64) NOT NULL` | 唯一登录名 |
-| `password_hash` | `VARCHAR(255) NOT NULL` | 密码哈希，不保存明文 |
-| `display_name` | `VARCHAR(64) NOT NULL` | 显示姓名 |
-| `email` | `VARCHAR(128) NULL` | 邮箱 |
-| `mobile` | `VARCHAR(32) NULL` | 手机号 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| `last_login_at` | `DATETIME NULL` | 最近登录时间 |
-| 时间列 T | 见上表 | 创建、修改和软删除时间 |
+| 字段            | 类型、空值与默认值                        | 含义                   |
+| --------------- | ----------------------------------------- | ---------------------- |
+| `id`            | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                   |
+| `department_id` | `BIGINT UNSIGNED NULL`                    | 所属部门               |
+| `username`      | `VARCHAR(64) NOT NULL`                    | 唯一登录名             |
+| `password_hash` | `VARCHAR(255) NOT NULL`                   | 密码哈希，不保存明文   |
+| `display_name`  | `VARCHAR(64) NOT NULL`                    | 显示姓名               |
+| `email`         | `VARCHAR(128) NULL`                       | 邮箱                   |
+| `mobile`        | `VARCHAR(32) NULL`                        | 手机号                 |
+| `status`        | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`     |
+| `last_login_at` | `DATETIME NULL`                           | 最近登录时间           |
+| 时间列 T        | 见上表                                    | 创建、修改和软删除时间 |
 
 主键 `id`；唯一键 `uk_users_username(username)`；索引 `idx_users_department(department_id)`、`idx_users_status_deleted(status,deleted_at)`；外键 `department_id → departments.id`。当前无状态值域 CHECK。
 
@@ -53,14 +53,14 @@
 
 保存可分配的角色身份；用户成员与权限集合分别由两张关联表表达，同一角色可供多个账号使用。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `name` | `VARCHAR(64) NOT NULL` | 角色名称 |
-| `code` | `VARCHAR(64) NOT NULL` | 唯一角色编码 |
-| `description` | `VARCHAR(255) NULL` | 说明 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| 时间列 T | 见上表 | 创建、修改和软删除时间 |
+| 字段          | 类型、空值与默认值                        | 含义                   |
+| ------------- | ----------------------------------------- | ---------------------- |
+| `id`          | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                   |
+| `name`        | `VARCHAR(64) NOT NULL`                    | 角色名称               |
+| `code`        | `VARCHAR(64) NOT NULL`                    | 唯一角色编码           |
+| `description` | `VARCHAR(255) NULL`                       | 说明                   |
+| `status`      | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`     |
+| 时间列 T      | 见上表                                    | 创建、修改和软删除时间 |
 
 主键 `id`；唯一键 `uk_roles_code(code)`；索引 `idx_roles_status_deleted(status,deleted_at)`。当前无状态值域 CHECK。
 
@@ -68,19 +68,19 @@
 
 职责：发布菜单分组、页面／宿主读取和独立业务动作的权限目录。业务权限编码通常使用 `module:resource:action`，模块分组使用 `module:view`；权限归属表示办理职责，不改变 HTTP 路径、业务模块或表所有权。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `parent_id` | `BIGINT UNSIGNED NULL` | 父权限目录节点 |
-| `name` | `VARCHAR(64) NOT NULL` | 展示名称 |
-| `code` | `VARCHAR(128) NOT NULL` | 永久唯一权限编码 |
-| `type` | `VARCHAR(32) NOT NULL` | `menu/page/button/api` |
-| `route_path` | `VARCHAR(255) NULL` | 前端路由，不是 API 地址 |
-| `api_method` | `VARCHAR(16) NULL` | HTTP 方法说明 |
-| `api_path` | `VARCHAR(255) NULL` | 接口路径说明 |
-| `sort_order` | `INT NOT NULL DEFAULT 0` | 目录排序 |
-| `status` | `TINYINT NOT NULL DEFAULT 1` | 启用 `1`／停用 `0` |
-| 时间列 T | 见上表 | 创建、修改和软删除时间 |
+| 字段         | 类型、空值与默认值                        | 含义                    |
+| ------------ | ----------------------------------------- | ----------------------- |
+| `id`         | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                    |
+| `parent_id`  | `BIGINT UNSIGNED NULL`                    | 父权限目录节点          |
+| `name`       | `VARCHAR(64) NOT NULL`                    | 展示名称                |
+| `code`       | `VARCHAR(128) NOT NULL`                   | 永久唯一权限编码        |
+| `type`       | `VARCHAR(32) NOT NULL`                    | `menu/page/button/api`  |
+| `route_path` | `VARCHAR(255) NULL`                       | 前端路由，不是 API 地址 |
+| `api_method` | `VARCHAR(16) NULL`                        | HTTP 方法说明           |
+| `api_path`   | `VARCHAR(255) NULL`                       | 接口路径说明            |
+| `sort_order` | `INT NOT NULL DEFAULT 0`                  | 目录排序                |
+| `status`     | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`      |
+| 时间列 T     | 见上表                                    | 创建、修改和软删除时间  |
 
 主键 `id`；唯一键 `uk_permissions_code(code)`；索引 `idx_permissions_parent(parent_id)`、`idx_permissions_status_deleted(status,deleted_at)`；外键 `parent_id → permissions.id`。`chk_permissions_type` 限定 `type IN ('menu','page','button','api')`，当前无 `status` 值域 CHECK。父级只表达目录关系，授权含义见下文。
 
@@ -110,10 +110,10 @@
 
 保存账号与角色的多对多成员关系；角色及其权限不复制到每个用户。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `user_id` | `BIGINT UNSIGNED NOT NULL` | 用户 |
-| `role_id` | `BIGINT UNSIGNED NOT NULL` | 所属角色 |
+| 字段         | 类型、空值与默认值                            | 含义     |
+| ------------ | --------------------------------------------- | -------- |
+| `user_id`    | `BIGINT UNSIGNED NOT NULL`                    | 用户     |
+| `role_id`    | `BIGINT UNSIGNED NOT NULL`                    | 所属角色 |
 | `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 分配时间 |
 
 复合主键 `(user_id,role_id)`；索引 `idx_user_roles_role(role_id)`；外键 `user_id → users.id`、`role_id → roles.id` 均为 `ON DELETE CASCADE`，只级联清理关联行。
@@ -122,11 +122,11 @@
 
 保存角色实际获授的目录权限；目录父子关系不代替这里的授权记录。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `role_id` | `BIGINT UNSIGNED NOT NULL` | 获授角色 |
-| `permission_id` | `BIGINT UNSIGNED NOT NULL` | 权限目录项 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 分配时间 |
+| 字段            | 类型、空值与默认值                            | 含义       |
+| --------------- | --------------------------------------------- | ---------- |
+| `role_id`       | `BIGINT UNSIGNED NOT NULL`                    | 获授角色   |
+| `permission_id` | `BIGINT UNSIGNED NOT NULL`                    | 权限目录项 |
+| `created_at`    | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 分配时间   |
 
 复合主键 `(role_id,permission_id)`；索引 `idx_role_permissions_permission(permission_id)`；外键 `role_id → roles.id`、`permission_id → permissions.id` 均为 `ON DELETE CASCADE`。
 
@@ -134,15 +134,15 @@
 
 职责：保存刷新令牌族的服务端状态，只保存 `jti`，不保存明文 Token。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `user_id` | `BIGINT UNSIGNED NOT NULL` | 所属账号 |
-| `jti` | `CHAR(36) NOT NULL` | 唯一令牌标识 |
-| `expires_at` | `DATETIME NOT NULL` | 过期时间 |
-| `revoked_at` | `DATETIME NULL` | 撤销时间 |
-| `replaced_by_jti` | `CHAR(36) NULL` | 轮换后的令牌标识；非外键 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
+| 字段              | 类型、空值与默认值                            | 含义                     |
+| ----------------- | --------------------------------------------- | ------------------------ |
+| `id`              | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT`     | 主键                     |
+| `user_id`         | `BIGINT UNSIGNED NOT NULL`                    | 所属账号                 |
+| `jti`             | `CHAR(36) NOT NULL`                           | 唯一令牌标识             |
+| `expires_at`      | `DATETIME NOT NULL`                           | 过期时间                 |
+| `revoked_at`      | `DATETIME NULL`                               | 撤销时间                 |
+| `replaced_by_jti` | `CHAR(36) NULL`                               | 轮换后的令牌标识；非外键 |
+| `created_at`      | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间                 |
 
 主键 `id`；唯一键 `uk_refresh_tokens_jti(jti)`；索引 `idx_refresh_tokens_user_active(user_id,revoked_at,expires_at)`；外键 `user_id → users.id ON DELETE CASCADE`。轮换保留前后标识，过期与主动撤销分别记录。
 
@@ -150,16 +150,16 @@
 
 职责：保存受控业务场景的当前候选角色集合根；场景与资格语义由[业务人员候选](user-candidates.md)所有。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键 |
-| `scene_code` | `VARCHAR(100) NOT NULL` | 场景稳定自然键 |
-| `version` | `INT NOT NULL DEFAULT 0` | 编辑并发版本；API 首次保存为 `1` |
-| `created_by` / `updated_by` / `deleted_by` | `BIGINT UNSIGNED NULL` | 创建、修改、删除人，各自引用 `users.id` |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
-| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
-| `is_deleted` | `TINYINT NOT NULL DEFAULT 0` | 软删除标志 |
-| `deleted_at` | `DATETIME NULL` | 删除时间 |
+| 字段                                       | 类型、空值与默认值                                                        | 含义                                    |
+| ------------------------------------------ | ------------------------------------------------------------------------- | --------------------------------------- |
+| `id`                                       | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT`                                 | 主键                                    |
+| `scene_code`                               | `VARCHAR(100) NOT NULL`                                                   | 场景稳定自然键                          |
+| `version`                                  | `INT NOT NULL DEFAULT 0`                                                  | 编辑并发版本；API 首次保存为 `1`        |
+| `created_by` / `updated_by` / `deleted_by` | `BIGINT UNSIGNED NULL`                                                    | 创建、修改、删除人，各自引用 `users.id` |
+| `created_at`                               | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 创建时间                                |
+| `updated_at`                               | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间                            |
+| `is_deleted`                               | `TINYINT NOT NULL DEFAULT 0`                                              | 软删除标志                              |
+| `deleted_at`                               | `DATETIME NULL`                                                           | 删除时间                                |
 
 主键 `id`；唯一键 `uk_user_candidate_configs_scene(scene_code)`。`chk_user_candidate_configs_version` 保证 `version >= 0`；`chk_user_candidate_configs_deleted` 要求未删除时删除人／时间均空，删除时标志为 `1` 且二者均非空。三个操作者外键均指向 `users.id`。场景代码可扩展，不设置封闭值域 CHECK。
 
@@ -169,12 +169,34 @@
 
 保存一个场景选中的角色集合；按当前角色成员求候选，不固化用户名单。
 
-| 字段 | 类型、空值与默认值 | 含义 |
-| --- | --- | --- |
-| `config_id` | `BIGINT UNSIGNED NOT NULL` | 配置根 |
-| `role_id` | `BIGINT UNSIGNED NOT NULL` | 候选角色 |
+| 字段         | 类型、空值与默认值                            | 含义         |
+| ------------ | --------------------------------------------- | ------------ |
+| `config_id`  | `BIGINT UNSIGNED NOT NULL`                    | 配置根       |
+| `role_id`    | `BIGINT UNSIGNED NOT NULL`                    | 候选角色     |
 | `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 关联建立时间 |
 
 复合主键 `(config_id,role_id)`；索引 `idx_user_candidate_config_roles_role(role_id,config_id)`；外键 `config_id → user_candidate_configs.id ON DELETE CASCADE`、`role_id → roles.id`（限制删除）。
 
 被候选配置引用的角色不得删除；软删除同样在写事务内检查引用，不能只靠物理外键。关联不保存用户名单或另一份角色条件，前后集合由审计追溯。
+
+## 1.10 `personnel`
+
+保存现场登记人员，不包含密码、登录资格或角色权限，也不要求关联 `users`。同一人员归入 `production`（产线人员）或 `quality`（质检人员）；分组支持工作台筛选，终检产出确认要求启用的质检人员。登录账号仍通过 RBAC 授权并作为审计操作者，业务事实另存所选人员的身份及姓名快照，不把选人解释为该人员已登录。
+
+| 字段                                     | 类型、空值与默认值                                                        | 含义                             |
+| ---------------------------------------- | ------------------------------------------------------------------------- | -------------------------------- |
+| `id`                                     | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT`                                 | 主键                             |
+| `code`                                   | `VARCHAR(64) NOT NULL`                                                    | 永久唯一人员编号，创建后不可修改 |
+| `name`                                   | `VARCHAR(64) NOT NULL`                                                    | 姓名                             |
+| `personnel_group`                        | `VARCHAR(20) NOT NULL`                                                    | `production`／`quality`          |
+| `status`                                 | `VARCHAR(20) NOT NULL DEFAULT 'active'`                                   | `active`／`inactive`             |
+| `version`                                | `INT NOT NULL DEFAULT 0`                                                  | 编辑乐观锁                       |
+| `created_by`／`updated_by`／`deleted_by` | `BIGINT UNSIGNED NULL`                                                    | 操作者，引用 `users.id`          |
+| `created_at`                             | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 创建时间                         |
+| `updated_at`                             | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 更新时间                         |
+| `is_deleted`                             | `TINYINT NOT NULL DEFAULT 0`                                              | 删除标记；当前仅开放停用         |
+| `deleted_at`                             | `DATETIME NULL`                                                           | 删除时间                         |
+
+主键 `id`；唯一键 `uk_personnel_code(code)`；查询索引 `idx_personnel_group_status(personnel_group,status,is_deleted,id)`。CHECK 限制分组、状态、非负版本和删除审计一致性。停用不删除历史引用，修改姓名或分组不回写历史业务快照。结构由 `202611090005-personnel-directory` 维护。
+
+`PersonnelService.requireActive(id, group?)` 是跨模块公开资格能力，必须在调用方事务中执行，以共享锁复核当前人员及可选分组；终检与停用并发时按锁顺序生效。`GET /identity/personnel/options` 返回全部启用人员，不截断，消费页面为现场人员、员工工作台、工序追踪及研发任务产出确认，采用其视图权限 any-of。维护页面分页查询，创建／编辑使用独立 `system:personnel:manage` 权限，编辑须携带版本，成功审计同事务。

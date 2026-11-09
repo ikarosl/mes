@@ -22,12 +22,8 @@ const validDetail: ProductionBatchDetail = {
   startedById: null,
   startedByName: null,
   status: 'pending',
-  closeoutMode: null,
-  closeoutVersion: null,
-  finalOutput: null,
-  currentOutputRevisionId: null,
-  executionCompletedAt: null,
-  executionCompletedBy: null,
+  finalOutput: { availableQuantity: '0', confirmedOutputCount: 0 },
+  finishReason: null,
   ownerId: '5',
   ownerName: '张三',
   completedAt: null,
@@ -54,9 +50,7 @@ describe('productionBatchResultCodec', () => {
   });
 
   // TODO(test-migration): 高重要性：幂等快照校验；正式测试获准后按任务概览和独立工序契约恢复。
-  it.todo(
-    'canonical 快照语义：decode(JSON.parse(JSON.stringify(encode(全字段富化响应)))) 成功且形状符合对外契约（本 codec 保形，deep 相等原样本）',
-  );
+  // TODO(production-test-recovery): canonical 快照语义：decode(JSON.parse(JSON.stringify(encode(全字段富化响应)))) 成功且形状符合对外契约（本 codec 保形，deep 相等原样本）；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('缺少 version 时拒绝', () => {
     const { version, ...rest } = validDetail;
@@ -73,13 +67,13 @@ describe('productionBatchResultCodec', () => {
   });
 
   // TODO(test-migration): 高重要性：幂等快照校验；正式测试获准后按任务概览和独立工序契约恢复。
-  it.todo('stepRecords 不是数组时拒绝');
+  // TODO(production-test-recovery): stepRecords 不是数组时拒绝；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：幂等快照校验；正式测试获准后按任务概览和独立工序契约恢复。
-  it.todo('工序记录缺少字段时拒绝');
+  // TODO(production-test-recovery): 工序记录缺少字段时拒绝；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(test-migration): 高重要性：幂等快照校验；正式测试获准后按任务概览和独立工序契约恢复。
-  it.todo('工序状态非法时拒绝');
+  // TODO(production-test-recovery): 工序状态非法时拒绝；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('存在未知字段时拒绝', () => {
     expect(() => productionBatchResultCodec.decode({ ...validDetail, extra: 'x' })).toThrow();

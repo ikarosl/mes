@@ -42,9 +42,7 @@ export interface ProcessRouteStepSnapshot {
   stepCode: string;
   stepName: string;
   description: string | null;
-  defaultOwnerId: string | null;
   sop: { id: string; fileName: string; objectKey: string; versionNo: string } | null;
-  needInspection: boolean;
 }
 
 export interface ProcessRouteSnapshot {

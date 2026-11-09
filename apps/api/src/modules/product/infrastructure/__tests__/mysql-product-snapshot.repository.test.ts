@@ -101,14 +101,12 @@ describe('MysqlProductSnapshotRepository', () => {
             step_code_snapshot: 'CUT',
             step_name_snapshot: 'Cut',
             description_snapshot: null,
-            default_owner_id: 5,
             sop_file_id: 6,
             sop_file_name_snapshot: 'cut.pdf',
             sop_object_key_snapshot: 'sop/cut.pdf',
             sop_version_no_snapshot: 'V2',
             sop_status: 1,
             sop_is_deleted: 0,
-            need_inspection: 0,
           },
         ],
         [],
@@ -119,7 +117,6 @@ describe('MysqlProductSnapshotRepository', () => {
       steps: [
         {
           routeStepId: '41',
-          defaultOwnerId: '5',
           sop: { id: '6', objectKey: 'sop/cut.pdf', versionNo: 'V2' },
         },
       ],
@@ -130,10 +127,10 @@ describe('MysqlProductSnapshotRepository', () => {
   });
 
   // TODO(test-migration): 高重要性：路线快照事务；正式测试获准后按当前公开命令恢复。
-  it.todo('joins the batch-creation transaction and locks the selected route configuration');
+  // TODO(product-route-snapshot): joins the batch-creation transaction and locks the selected route configuration；高重要性，旧路线快照夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前公开路线与BOM资格恢复。
 
   // TODO(test-migration): 高重要性：BOM 批准资格；正式测试获准后补齐显式路线快照夹具。
-  it.todo('allows a production task only when the BOM approval is final and locked');
+  // TODO(product-route-snapshot): allows a production task only when the BOM approval is final and locked；高重要性，旧路线快照夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前公开路线与BOM资格恢复。
 
   it('rejects a production task before reading BOM lines when approval is not final', async () => {
     const connection = transactionConnection();

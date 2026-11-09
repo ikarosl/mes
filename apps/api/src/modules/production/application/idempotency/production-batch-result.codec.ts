@@ -1,9 +1,5 @@
 import { z } from 'zod';
-import {
-  WORK_ORDER_TYPES,
-  PRODUCTION_BATCH_STATUSES,
-  PRODUCTION_CLOSEOUT_MODES,
-} from '@company/constants';
+import { WORK_ORDER_TYPES, PRODUCTION_BATCH_STATUSES } from '@company/constants';
 import type { ProductionBatchDetail } from '@company/contracts';
 import type {
   IdempotencyResultCodec,
@@ -49,20 +45,13 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
     startedByName: nullableString,
 
     status: z.enum(PRODUCTION_BATCH_STATUSES),
-    closeoutMode: z.enum(PRODUCTION_CLOSEOUT_MODES).nullable(),
-    closeoutVersion: z.number().int().nonnegative().nullable(),
-    currentOutputRevisionId: nullableString,
     finalOutput: z
       .object({
-        revisionNo: z.number().int().positive(),
         availableQuantity: z.string(),
-        extraQuantity: z.string(),
-        scrapQuantity: z.string(),
+        confirmedOutputCount: z.number().int().nonnegative(),
       })
-      .strict()
-      .nullable(),
-    executionCompletedAt: nullableString,
-    executionCompletedBy: nullableString,
+      .strict(),
+    finishReason: nullableString,
     ownerId: nullableString,
     ownerName: nullableString,
     completedAt: nullableString,

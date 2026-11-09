@@ -238,7 +238,7 @@ import MaterialDemandGroupSection from './MaterialDemandGroupSection.vue';
 interface DemandGenerationGroupView {
   generationGroupKey: string;
   generationGroupType: DemandGenerationGroupType;
-  supplementNo: string | null;
+  manualAdditionNo: string | null;
   createdAt: string;
   demands: ProductionMaterialDemandItem[];
 }
@@ -279,7 +279,7 @@ const demandGroups = computed<DemandGenerationGroupView[]>(() => {
     groups.set(demand.generationGroupKey, {
       generationGroupKey: demand.generationGroupKey,
       generationGroupType: demand.generationGroupType,
-      supplementNo: demand.supplementNo,
+      manualAdditionNo: demand.manualAdditionNo,
       createdAt: demand.createdAt,
       demands: [demand],
     });
@@ -423,7 +423,7 @@ const confirmRelease = async (row: ProductionMaterialAllocationItem) => {
 const allocationLabel = (status: AllocationStatus) => ALLOCATION_STATUS_LABELS[status];
 const generationGroupLabel = (group: DemandGenerationGroupView): string => {
   const label = DEMAND_GENERATION_GROUP_TYPE_LABELS[group.generationGroupType];
-  return group.supplementNo ? `${label} ${group.supplementNo}` : label;
+  return group.manualAdditionNo ? `${label} ${group.manualAdditionNo}` : label;
 };
 const demandRowClassName = ({ row }: { row: ProductionMaterialDemandItem }): string =>
   row.demandId === selectedDemandId.value ? 'selected-demand-row' : '';

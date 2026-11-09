@@ -15,12 +15,8 @@ const stepItem = {
   stepCode: 'CUT',
   stepName: '切割',
   description: null,
-  defaultOwnerId: null,
-  defaultOwnerName: null,
   sopFileId: null,
   sopFileName: null,
-  needInspection: false,
-  needRecord: true,
   status: 1,
   remark: null,
 };

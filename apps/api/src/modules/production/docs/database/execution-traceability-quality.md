@@ -1,779 +1,371 @@
-# 生产报工、追溯与质量边界
+# 追踪卡、工序交接与最终产出
 
-> [返回 Production 数据库设计](README.md)。
+Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报工、随盘异常和最终确认产出由本模块唯一拥有；实际库存只由 [Inventory](../../../inventory/docs/database.md) 记账。工单及任务生命周期见[工单与任务](work-orders-and-batches.md)和[任务开始与结束](production-termination.md)。
 
-公共字段、数量与审计遵守[数据库约定](../../../../../../../docs/database-conventions.md)。报工事实的正常、异常两项可分别为零，合计必须为正且不超过单条数量上限。
+## 执行身份与顺序
 
-本章将“分批报工事实、异常整体处置、最小返工和报废补料”固化为当前可实施设计。报工来源以一次有效异常报工为最小审批对象，专检来源以一次正式处理为最小处置对象；每张处置单不再拆分数量，返工以来源处置量整体执行，完成时在同一事务内分别追加非零正常恢复与再次异常事实；报废补料由管理员从当前批次完整 BOM 基础中选择启用的精确物料版本并人工填量，同一审批事务生成工序报废、补产授权、补料单和追加需求。工序专检支持独立现场记录及产线处理，自动质量放行和返工报工的部分完成不在当前范围；线下质检留存、正常或提前结束的实际产出审批遵守[结案设计](production-termination.md)，不改变本章的工序报工数量规则。
+批量任务创建时冻结所选路线的工序顺序、编码、名称及 SOP。工序定义本身不再拥有派工、开工、完工或数量状态，每张卡分别流转。中间的检验工序与普通工序采用相同扫码操作；路线最后一道工序统一承担最终产出确认，不设置另一套成品检验轮次。
 
-> CP-01 按已确认口径整改：报工承担执行记录与差异追溯，各道独立使用统一首工上限，执行状态由明确动作维护。下文统一维护目标规则，代码集成及验证状态见[路线图](../../../../../../../docs/roadmap.md#cp-01报工数量解耦与管理员批量冲销整改)；文档同步不表示用户验收或正式测试通过。
+扫码输入是卡号、目标工序和现场登记人员。人员来自 Identity 的独立现场人员目录，可以属于 production 或 quality 分组；分组用于工作台筛选，不等于登录账号或 RBAC 角色。扫码、异常和处理事实保存所选人员 ID、编码、姓名快照，并独立保存实际登录操作者。最终产出确认另按下文要求质量分组人员。
 
-## 4.1 `batch_step_records`
+任务必须先由有权限的账号明确开始。卡首次只能扫路线首站，只形成到站事实，不计报工。下一站扫码须恰好是冻结路线的下一道工序，在同一事务中完成前站交接报工并登记本站到站；前站报工数量取交接时的当前盘量，归属前站原登记人员，不归属本次扫码人员。已到过的工序再次扫码不重记到站、不重记数量、不换登记人员。未经过的工序不得跳站，不能用工序名称替代冻结工序 ID。
 
-职责：作为生产批次内每道路线工序的执行节点，保存路线快照、派工、开工、完工和现场覆盖信息。它是可变的执行状态载体，不保存累计报工数量；每次报工事实由 `batch_step_reports` 独立记录。
+每站到站身份永久保留；交接完成时间、操作者和数量只允许由空值写入一次。任务级报工总量不作为最终产出，工作台逐站汇总已完成交接事实。
 
-工序默认报工单位随任务创建冻结。未指定现场实际 SOP 时沿用默认快照；工序备注描述执行节点，不作为单次报工原因。
+## 盘量更正与作废
 
-约束：
+建卡数量为正整数。最终确认前可按卡版本更正盘量，必须填写原因并追加更正前量、新量、操作人和时间。更正影响后续交接和最终确认的盘量核对依据，已完成站点的报工快照保持原值，不能静默覆盖。
 
-- 每个任务的路线步骤只生成一个执行节点；报工通过组合引用保证同任务、同工序。
-- 默认／实际负责人及实际 SOP 文件的引用在原记录被物理删除时置空，已冻结快照保留。
-- 完工时开工、完工时间齐全，且完工不得早于开工。
+未用卡和已用卡均可填写原因作废；已用卡保留到站、报工、异常和更正历史。作废停止后续流转，不冲销此前交接事实。已确认最终产出的卡不能再改量或作废，包括已确认零产出的卡；后续库存补差由 Inventory 的独立业务处理，不回写原盘最终产出。
 
-创建生产批次时按路线步骤生成记录并复制默认快照（SOP、负责人、工序信息、必须检验标志），所有记录均以 `pending` 创建，且 `responsible_user_id` 为空。`default_responsible_user_id_snapshot` 只用于在管理员派工界面预选负责人，不代表已经派工；管理员明确确认后才把所选用户写入 `responsible_user_id` 并把该工序转为 `assigned`。后续修改工序或路线不得回写已生成记录。现场可仅覆盖已生成步骤的实际 SOP 与实际负责人，不能增删或重排工序；实际 SOP 变更必须同步冻结文件名、对象键与版本号快照，并以工序记录 `version` 乐观锁更新。
+## 随盘异常
 
-`batch_step_records.status` 只表达工序执行进度，不表达异常审批进度。工序可以保持 `doing`，同时具有待处理异常；页面上的“存在待处理异常”“返工处理中”等标志必须从 `batch_step_abnormal_dispositions` 和返工数据派生，不得复用执行状态。状态值不包含 `abnormal`；如升级前真实数据仍存在该值，migration 必须在首个永久 DDL 前失败，由部署人员先根据实际进度更正为执行状态，不得由 migration 猜测。
+同一异常模型覆盖普通工序、中间检查、随机抽检和终检发现。登记包含卡、涉及工序、说明、普通或暂停级别、所选现场人员和实际操作者。省略涉及工序时采用当前站；显式指定的工序必须是本卡已经到站或经过的冻结工序，支持终检发现前道问题。尚未到站的卡可以登记不带工序的一般异常。
 
-收尾时未完成工序使用 `terminated`，以 `closeout_id/terminated_by/terminated_at/termination_reason` 保存终止依据，组合 FK 校验与收尾批次一致；终止须有完整事实且正常完成时间为空，其他状态这些字段为空。处理前状态留在不可变收尾行动中，原负责人和报工不改写。任务进入结案后员工只读，不再允许派工和实际开工／返工执行；管理员无在审申请时可按本章办理限定的历史更正。具体字段及操作见[收尾设计](production-termination.md)。
+普通异常不阻止继续扫码；任何未处理的暂停异常阻止向下一站流转。处理以追加记录表达，每次保留处理说明、人员、操作者、时间以及是否完成处理；允许多次追加，最后一次明确完成才把异常转为 resolved，不修改原始发现。异常版本保护并发处理，处理同时推进卡版本。已处理异常不再追加或恢复。
 
-**`batch_step_records` 字段定义**
+卡最终确认前必须处理全部未完成异常，不区分普通或暂停。异常不会自动创建返工单、产品报废、补产授权、物料需求或审批；实际需要更多物料时按[需求规则](demand-allocation-and-outbound.md)另行提需。
 
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 生产批次 ID |
-| `route_step_id` | `BIGINT UNSIGNED NOT NULL` | 路线步骤 ID |
-| `step_order_snapshot` | `INT NOT NULL` | 工序顺序快照 |
-| `step_code_snapshot` | `VARCHAR(100) NOT NULL` | 工序编码快照 |
-| `step_name_snapshot` | `VARCHAR(100) NOT NULL` | 工序名称快照 |
-| `sop_file_id_snapshot` | `BIGINT UNSIGNED NULL` | 路线默认 SOP 文件 ID 快照，可为空 |
-| `sop_file_name_snapshot` | `VARCHAR(255) NULL` | 路线默认 SOP 文件名快照 |
-| `sop_object_key_snapshot` | `VARCHAR(500) NULL` | 路线默认 SOP 对象键快照 |
-| `sop_version_no_snapshot` | `VARCHAR(64) NULL` | 路线默认 SOP 版本号快照 |
-| `default_responsible_user_id_snapshot` | `BIGINT UNSIGNED NULL` | 路线默认负责人快照，可为空；仅作为派工建议 |
-| `actual_sop_file_id` | `BIGINT UNSIGNED NULL` | 现场实际 SOP 文件 ID；为空时使用默认快照 |
-| `actual_sop_file_name_snapshot` | `VARCHAR(255) NULL` | 现场实际 SOP 文件名快照 |
-| `actual_sop_object_key_snapshot` | `VARCHAR(500) NULL` | 现场实际 SOP 对象键快照 |
-| `actual_sop_version_no_snapshot` | `VARCHAR(64) NULL` | 现场实际 SOP 版本号快照 |
-| `responsible_user_id` | `BIGINT UNSIGNED NULL` | 管理员确认派工后的现场实际负责人；待派工时为空 |
-| `need_inspection_snapshot` | `TINYINT NOT NULL DEFAULT 0` | 创建时冻结的必须检验标志，默认 `0` |
-| `status` | `VARCHAR(30) NOT NULL DEFAULT 'pending'` | 工序执行状态：`pending`、`assigned`、`doing`、`completed`、`terminated` |
-| `started_at` | `DATETIME NULL` | 开工时间 |
-| `completed_at` | `DATETIME NULL` | 完工时间 |
-| `unit_snapshot` | `VARCHAR(20) NOT NULL` | 本工序默认报工单位快照 |
-| `remark` | `TEXT NULL` | 工序执行备注，不是单次报工备注 |
-| `version` | `INT NOT NULL DEFAULT 0` | 乐观锁版本号，默认 `0` |
-| `created_by` | `BIGINT UNSIGNED NULL` | 创建人 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
-| `updated_by` | `BIGINT UNSIGNED NULL` | 最近修改人 |
-| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
-| `closeout_id` | `BIGINT UNSIGNED NULL` | 逐项终止所依据的同任务收尾根 |
-| `terminated_by` | `BIGINT UNSIGNED NULL` | 逐项终止的实际处理人 |
-| `terminated_at` | `DATETIME NULL` | 逐项终止时间 |
-| `termination_reason` | `TEXT NULL` | 逐项终止说明 |
+## 末站最终确认与入库
 
-**`batch_step_records` 键、索引与检查约束**
+末站扫码仍只登记到站并完成前站交接，不自动确认产出。质量人员显式填写最终可用数量，盘量供核对，不作为最终产出事实；允许零量，正数量不得超过当前盘量，实际盘量错误须先留痕更正。每张卡只有一次最终确认。
 
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_batch_step_records_batch FOREIGN KEY (production_batch_id) REFERENCES production_batches(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_records_route_step FOREIGN KEY (route_step_id) REFERENCES process_route_steps(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_records_responsible FOREIGN KEY (responsible_user_id) REFERENCES users(id) ON DELETE SET NULL` |
-| 外键 | `CONSTRAINT fk_batch_step_records_sop FOREIGN KEY (sop_file_id_snapshot) REFERENCES technical_files(id) ON DELETE SET NULL` |
-| 外键 | `CONSTRAINT fk_batch_step_records_created_by FOREIGN KEY (created_by) REFERENCES users(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_records_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_records_default_responsible FOREIGN KEY (default_responsible_user_id_snapshot) REFERENCES users(id) ON DELETE SET NULL` |
-| 外键 | `CONSTRAINT fk_batch_step_records_actual_sop FOREIGN KEY (actual_sop_file_id) REFERENCES technical_files(id) ON DELETE SET NULL` |
-| 外键 | `CONSTRAINT fk_step_closeout FOREIGN KEY (closeout_id,production_batch_id) REFERENCES production_batch_closeout(id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_step_terminator FOREIGN KEY (terminated_by) REFERENCES users(id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_records_route_step (production_batch_id, route_step_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_records_id_batch (id, production_batch_id)` |
-| 索引 | `KEY idx_batch_step_records_responsible_status (responsible_user_id, status)` |
-| 索引 | `KEY idx_batch_step_records_default_responsible (default_responsible_user_id_snapshot)` |
-| 索引 | `KEY idx_batch_step_records_actual_sop (actual_sop_file_id)` |
-| CHECK | `CONSTRAINT chk_batch_step_records_order CHECK (step_order_snapshot > 0)` |
-| CHECK | `CONSTRAINT chk_batch_step_records_completed CHECK (status <> 'completed' OR (started_at IS NOT NULL AND completed_at IS NOT NULL AND completed_at >= started_at))` |
-| CHECK | `CONSTRAINT chk_batch_step_records_version CHECK (version >= 0)` |
-| CHECK | `CONSTRAINT chk_batch_step_records_flags CHECK (need_inspection_snapshot IN (0, 1))` |
-| CHECK | `CONSTRAINT chk_batch_step_records_status CHECK (status IN ('pending','assigned','doing','completed','terminated'))` |
-| CHECK | `CONSTRAINT chk_step_termination CHECK ( (status='terminated' AND closeout_id IS NOT NULL AND terminated_by IS NOT NULL AND terminated_at IS NOT NULL AND termination_reason IS NOT NULL AND CHAR_LENGTH(TRIM(termination_reason))>0 AND completed_at IS NULL) OR (status<>'terminated' AND closeout_id IS NULL AND terminated_by IS NULL AND terminated_at IS NULL AND termination_reason IS NULL) )` |
+确认命令在卡版本锁内复核任务仍在执行、卡位于冻结末站、全部异常已处理，并通过 Identity 公开能力核验所选人员当前启用且属于 quality。登录账号还必须独立具备最终确认权限，人员分组不授予业务权限。
 
-### 4.1.1 派工与执行状态机
+确认事实写入 `production_tracking_output`；末站完成事实、卡 completed 状态、成功审计和正数实际入库在同一数据库事务提交。正数量通过 Inventory 公开 `confirmTrackingOutput` 建立成品入库及独立新库批，使用统一 finished_product 来源；零数量保留产出确认事实但不生成库存单、库批或流水。任一写入或审计失败全部回滚。产出不可变，工单及任务的实际产出仅汇总本表，不读取旧审批清单或库存后续调整。
 
-| 状态 | 业务含义 | 进入条件 |
-| --- | --- | --- |
-| `pending` | 等待管理员确认当前办理人 | 创建任务，或尚未开工且无报工历史时撤回派工 |
-| `assigned` | 已派工，尚未开始 | 明确派工；不开放撤销误开工退回此状态 |
-| `doing` | 当前工序作业进行中 | 明确开始，或执行期间明确重开 |
-| `completed` | 当前工序作业已明确结束 | 当前办理人或管理员明确完成，不按数量推断 |
-| `terminated` | 随任务提前结束而停止执行 | 收尾逐项终止，保留原报工和终止说明 |
+研发任务不建追踪卡、路线或到站记录，在任务级按相同质量人员和显式数量规则确认一次最终产出；`tracking_card_id` 为空，生成列对同任务的研发输出建立唯一约束。研发不受盘量上限约束。
 
-普通状态转换为 `pending -> assigned -> doing -> completed`，执行期间允许 `completed -> doing` 明确重开；收尾可将 `pending/assigned/doing` 逐项终止。报工、冲销、替代更正、返工完成及补产授权生效均不隐式改变工序状态。
+## HTTP、权限与并发边界
 
-- 派工、撤回与改派使用明确命令；当前负责人不是批次负责人或路线默认负责人。执行中改派、结案冻结及撤回条件统一见下方“派工边界”。
-- 管理员先明确任务开工；各道工序开始只检查任务执行中、当前派工和自身状态，不依赖领料或前道实际报工。工序动作不推进任务／工单，任务开工存证见[工单与任务](work-orders-and-batches.md#管理员任务开工与物料阶段)。
-- 普通新增报工只允许任务执行中的 `doing` 工序，完成后须明确重开才能继续新增。已有报工的冲销及更正按独立资格办理，不要求先重开；完整门禁见下方[执行、结案与纠错权限](#执行结案与纠错权限已确认)。
-- 完成与重开分别记录实际操作者、记录时间和状态前后值。报工时间不代替开完工时间，也不开放任意目标状态更新。
-- 任务物料状态与工序执行状态独立；`material_assigned` 不会将工序自动派工。
+请求和响应结构以 [tracking-card.ts](../../../../../../../packages/contracts/src/production/tracking-card.ts) 及 [class DTO](../../presentation/http/dto/production-tracking.dto.ts) 为准。所有新写命令要求 Idempotency-Key，完整语义 path 和规范化 body 参与指纹，成功结果完整重放；scope 由[模块契约](../../application/idempotency/production-idempotency-scopes.contract.ts)唯一维护，沿用平台至少保证窗口。同键重放不重复审计、产出或库存。
 
-#### 4.1.2 工序完工规则
+| 接口                                                                                                                  | 权限与合法消费者                                                |
+| --------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------- |
+| GET tracking-cards、tracking-cards/:cardId                                                                            | tracking:view 或 workbench:view；卡列表、追踪详情和工作台       |
+| GET batches/:batchId/tracking-workbench                                                                               | tasks:view、tracking:view 或 workbench:view；任务内工作台和卡页 |
+| GET tracking-reports                                                                                                  | tracking:view 或 workbench:view；逐站交接历史                   |
+| POST batches/:batchId/tracking-cards、PATCH tracking-cards/:cardId/quantity、POST tracking-cards/:cardId/actions/void | tracking:manage；建卡、留痕更正和作废                           |
+| POST tracking-cards/scan、卡下 abnormalities 和 abnormality handlings                                                 | workbench:operate；现场到站、异常发现及处理                     |
+| POST tracking-cards/:cardId/actions/confirm-output、batches/:batchId/actions/confirm-research-output                  | tracking:confirm-output；质量人员显式确认最终产出               |
+| GET batches/:batchId/step-records/:recordId/sop                                                                       | tasks:view、tracking:view 或 workbench:view；冻结 SOP 下载      |
 
-完成表示该道作业已经结束，正常目标和报工百分比仅辅助核对。即使报工比例低于 100% 也可以明确完成；任务正常结束核对全部工序明确完成，物料待办在收尾处理。研发无路线工序，继续使用任务级开始／结束，不伪造免报工节点。
+上表权限均带 production 前缀，多项为 any-of。卡列表的 keyword 搜索卡号、任务号、工单号、成品编码或名称；精确筛选包括任务、卡状态、当前工序及是否具有指定状态的异常。交接历史按完成时间、ID 倒序分页，可按任务、工序和登记人员筛选。列表筛选不授予任何命令资格。
 
-### 工序命令与 SOP 权限
+命令按工单 → 任务 → 卡 → 现场人员资格及相关事实 → Inventory 所需库存对象锁定，共享同池事务。实际命令重新校验状态和版本，扫码用每卡每站唯一约束和卡根锁防重；不能依赖浏览器缓存。展示读取仅访问本模块表，不通过人员当前姓名覆盖历史快照。标签由管理端从真实卡号生成，不把条码解析为新的业务身份。
 
-派工、撤回、改派、开始、完成及重开均以任务／工序双重上下文定位并提交工序 `version`；派工／改派明确 `responsibleUserId`，重开填写原因。状态命令使用原状态校验与乐观锁，禁止发送 `Idempotency-Key`；完成／重开请求结果未知时先刷新核对，不能假定重复请求会重放旧结果。派工权限为 `production:steps:assign`；员工开始／完成／重开复用 `production:steps:start`，另核当前任务阶段和办理人；管理员代办使用 `production:steps:manage-execution`。不开放状态历史更正或撤销误开工写命令。报工命令的幂等规则独立维护。
+## 数据库逐表设计
 
-SOP 内容从任务工序的默认或现场实际快照解析文件名、对象键及版本，不能读取当前工序配置替代历史快照。管理端采用 `production:tasks:view`；员工端采用 `production:worker-tasks:view`，且查询强制 `responsible_user_id` 为当前用户。其他消费页面须有匹配自身查看权限的端点并复用同一快照服务，不得扩大员工接口数据范围。
+本章是冻结工序与追踪卡六表的唯一结构所有者。数量、ID、时间和审计列遵守[数据库公共规则](../../../../../../../docs/database-conventions.md)。迁移新增表为 `202611090010-production-tracking-workbench`，旧执行退役及不可变触发器为 `202611090040-retire-production-execution`；两者均追加，旧基线不改写。结构升级不转换旧报工或产出事实，实验库必须在退役旧表前保持无生产任务；降级恢复配套迁移前备份，不自动 down 丢弃事实。
 
-### `batch_step_execution_actions`
+## batch_step_records
 
-职责：不可变的工序执行动作事实，由明确开始、完成及重开追加；工序详情直接分页读取，不从全局审计还原。既有状态历史更正事实保留只读，不代表当前仍开放该命令。
+仅保存创建批量任务时冻结的路线工序及SOP快照。每张卡独立流转，本表不承担派工、工序状态或数量。
 
-当前只记录 start、complete、reopen；correct_history 及 undo_start/complete/reopen 更正类型仅保留既有历史读取，当前不写更正类型。重开必须说明原因，普通开始／完成不填写原因。行动保存前后状态、开工／完工时间和动作后的工序版本。
+一任务同一路线步骤唯一，id+production_batch_id供追踪事实组合引用。actual_sop_*仅表示创建时显式覆盖；下载优先该快照，否则使用默认SOP快照。当前主数据变化不回写历史。
 
-同一工序版本只记一次状态变更，动作与工序、任务保持同源。数据库保护动作转换、原因、更正类型及时间先后，事实不可改写或删除。工序变更、动作事实和成功审计同事务提交；失败不留履历。旧工序没有动作事实时只显示已保存的当前状态，不猜造历史。既有逐项终止直接组合收尾行动事实显示，不在本表复制终止记录。
+### 字段
 
-**`batch_step_execution_actions` 字段定义**
+| 字段                             | SQL定义                                                                   | 含义                                                 |
+| -------------------------------- | ------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `id`                             | `bigint unsigned NOT NULL AUTO_INCREMENT`                                 | 主键，自增                                           |
+| `production_batch_id`            | `bigint unsigned NOT NULL`                                                | 生产批次 ID                                          |
+| `route_step_id`                  | `bigint unsigned NOT NULL`                                                | 路线步骤 ID                                          |
+| `step_order_snapshot`            | `int NOT NULL`                                                            | 工序顺序快照                                         |
+| `step_code_snapshot`             | `varchar(100) NOT NULL`                                                   | 工序编码快照                                         |
+| `step_name_snapshot`             | `varchar(100) NOT NULL`                                                   | 工序名称快照                                         |
+| `sop_file_id_snapshot`           | `bigint unsigned DEFAULT NULL`                                            | 路线默认 SOP 文件 ID 快照，可为空                    |
+| `sop_file_name_snapshot`         | `varchar(255) DEFAULT NULL`                                               | 路线默认 SOP 文件名快照                              |
+| `sop_object_key_snapshot`        | `varchar(500) DEFAULT NULL`                                               | 路线默认 SOP 对象键快照                              |
+| `sop_version_no_snapshot`        | `varchar(64) DEFAULT NULL`                                                | 路线默认 SOP 版本号快照                              |
+| `actual_sop_file_id`             | `bigint unsigned DEFAULT NULL`                                            | 创建任务时显式覆盖的 SOP 文件 ID；为空时使用默认快照 |
+| `actual_sop_file_name_snapshot`  | `varchar(255) DEFAULT NULL`                                               | 创建任务时覆盖的 SOP 文件名快照                      |
+| `actual_sop_object_key_snapshot` | `varchar(500) DEFAULT NULL`                                               | 创建任务时覆盖的 SOP 对象键快照                      |
+| `actual_sop_version_no_snapshot` | `varchar(64) DEFAULT NULL`                                                | 创建任务时覆盖的 SOP 版本号快照                      |
+| `unit_snapshot`                  | `varchar(20) NOT NULL`                                                    | 该任务逐站交接数量的单位快照                         |
+| `remark`                         | `text`                                                                    | 冻结工序备注，不是单盘交接事实                       |
+| `version`                        | `int NOT NULL DEFAULT '0'`                                                | 乐观锁版本号，默认 `0`                               |
+| `created_by`                     | `bigint unsigned DEFAULT NULL`                                            | 创建人                                               |
+| `created_at`                     | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 创建时间                                             |
+| `updated_by`                     | `bigint unsigned DEFAULT NULL`                                            | 最近修改人                                           |
+| `updated_at`                     | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间                                         |
 
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY` | 主键，自增 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 所属任务；与工序组成同源外键 |
-| `batch_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 所属工序；与任务组成同源外键 |
-| `action_type` | `VARCHAR(30) NOT NULL` | 当前写入 `start/complete/reopen`；`correct_history` 仅保留既有历史读取 |
-| `correction_type` | `VARCHAR(30) NULL` | 当前写入为空；既有历史更正保留 `undo_start/complete/reopen` |
-| `before_status` | `VARCHAR(30) NOT NULL` | 动作前的工序状态 |
-| `after_status` | `VARCHAR(30) NOT NULL` | 动作后的工序状态 |
-| `before_started_at` | `DATETIME NULL` | 动作前的开工时间，可空 |
-| `after_started_at` | `DATETIME NULL` | 动作后的开工时间，可空 |
-| `before_completed_at` | `DATETIME NULL` | 动作前的完工时间，可空 |
-| `after_completed_at` | `DATETIME NULL` | 动作后的完工时间，可空 |
-| `reason` | `VARCHAR(1000) NULL` | 重开必填；普通开始／完成为空；既有历史更正原因只读保留 |
-| `step_version` | `INT NOT NULL` | 动作后的工序版本，大于零 |
-| `created_by` | `BIGINT UNSIGNED NOT NULL` | 实际操作者 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 行动实际记录时间 |
+### 约束与索引
 
-**`batch_step_execution_actions` 键、索引与检查约束**
-
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_step_execution_action_source FOREIGN KEY (batch_step_record_id,production_batch_id) REFERENCES batch_step_records(id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_step_execution_action_actor FOREIGN KEY (created_by) REFERENCES users(id)` |
-| 唯一键 | `UNIQUE KEY uk_step_execution_action_version (batch_step_record_id,step_version)` |
-| 索引 | `KEY idx_step_execution_action_history (batch_step_record_id,created_at,id)` |
-| 索引 | `KEY idx_step_execution_action_batch (production_batch_id,created_at,id)` |
-| CHECK | `CONSTRAINT chk_step_execution_action_type CHECK (action_type IN ('start','complete','reopen','correct_history'))` |
-| CHECK | `CONSTRAINT chk_step_execution_action_status CHECK ( before_status IN ('pending','assigned','doing','completed','terminated') AND after_status IN ('pending','assigned','doing','completed','terminated') )` |
-| CHECK | `CONSTRAINT chk_step_execution_action_version CHECK (step_version>0)` |
-| CHECK | `CONSTRAINT chk_step_execution_action_reason CHECK ( (action_type IN ('start','complete') AND reason IS NULL) OR (action_type IN ('reopen','correct_history') AND reason IS NOT NULL AND CHAR_LENGTH(TRIM(reason))>0) )` |
-| CHECK | `CONSTRAINT chk_step_execution_action_correction CHECK ( (action_type<>'correct_history' AND correction_type IS NULL) OR (action_type='correct_history' AND correction_type IS NOT NULL AND correction_type IN ('undo_start','complete','reopen')) )` |
-| CHECK | `CONSTRAINT chk_step_execution_action_times CHECK ( (before_completed_at IS NULL OR (before_started_at IS NOT NULL AND before_completed_at>=before_started_at)) AND (after_completed_at IS NULL OR (after_started_at IS NOT NULL AND after_completed_at>=after_started_at)) )` |
-| CHECK | `CONSTRAINT chk_step_execution_action_transition CHECK ( (action_type='start' AND before_status='assigned' AND after_status='doing' AND before_started_at IS NULL AND after_started_at IS NOT NULL AND after_completed_at IS NULL) OR ((action_type='complete' OR (action_type='correct_history' AND correction_type='complete')) AND before_status='doing' AND after_status='completed' AND before_started_at IS NOT NULL AND after_started_at IS NOT NULL AND after_started_at=before_started_at AND after_completed_at IS NOT NULL) OR ((action_type='reopen' OR (action_type='correct_history' AND correction_type='reopen')) AND before_status='completed' AND after_status='doing' AND before_started_at IS NOT NULL AND after_started_at IS NOT NULL AND after_started_at=before_started_at AND after_completed_at IS NULL) OR (action_type='correct_history' AND correction_type='undo_start' AND before_status IN ('doing','completed') AND before_started_at IS NOT NULL AND after_status='assigned' AND after_started_at IS NULL AND after_completed_at IS NULL) )` |
-
-**`batch_step_execution_actions` 数据库触发器**
-
-| 触发器 | 时机 | 保护或维护范围 |
-| --- | --- | --- |
-| [trg_step_execution_action_no_update](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE UPDATE` | 工序状态行动不可改写 |
-| [trg_step_execution_action_no_delete](../../../../../../../packages/database/migrations/202611020311-baseline-production-triggers.up.sql) | `BEFORE DELETE` | 工序状态行动不可删除 |
-
-## 4.2 `batch_step_reports`
-
-职责：记录每一次报工事实。同一工序允许分多次报工；已落库事实不得更新或删除，错误报工通过一条等量冲销事实撤回。有权操作者更正必须在一个命令和一个数据库事务内同时写入“原记录冲销 + 更正后的新记录”。
-
-正常数量是工序自检口径，不等于质检合格；异常也不自动等于报废。每笔报工冻结当时单位及本次报工、冲销或更正说明。数量分类由服务端沿返工来源决定：普通生产计数与专检处置结果分开，客户端不能指定。
-
-数据库约束：
-
-- 报工、冲销及替代来源必须属于同一任务、同一工序，由组合引用保护
-- 一条事实最多被冲销一次
-- 一条事实最多被一条更正事实替代
-- `normal_quantity + abnormal_quantity = reported_quantity`
-- `normal` 的 `reversal_of_report_id` 必须为空；`reversal` 必须引用原事实且不得再填写 `replaces_report_id`
-
-报工事实只追加属于应用写入约定，当前没有拒绝该表 UPDATE/DELETE 的专用触发器。应用还要求异常量为正时明确填写 current_step／previous_step；下列 CHECK 对可空来源可能得到 UNKNOWN，不能替代该非空校验。
-
-**`batch_step_reports` 字段定义**
-
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
-| `report_no` | `VARCHAR(100) NOT NULL` | 报工事实编号，唯一 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 生产批次 ID |
-| `batch_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 工序执行节点 ID |
-| `quantity_scope` | `VARCHAR(20) NOT NULL DEFAULT 'production'` | `production` 普通生产计数、`inspection` 专检处置返工结果；服务端从返工来源推导，客户端不能指定 |
-| `report_type` | `VARCHAR(20) NOT NULL DEFAULT 'normal'` | `normal` 正向报工事实、`reversal` 冲销事实；不表示正常品/异常品分类 |
-| `reversal_of_report_id` | `BIGINT UNSIGNED NULL` | 冲销的原报工 ID；普通报工为空 |
-| `replaces_report_id` | `BIGINT UNSIGNED NULL` | 更正后的普通报工所替代的原报工 ID；非更正报工为空 |
-| `reported_quantity` | `INT NOT NULL` | 本事实的报工总数，必须大于 `0` |
-| `normal_quantity` | `INT NOT NULL` | 本事实中工序层面的正常数量，不等同于质检合格数量 |
-| `abnormal_quantity` | `INT NOT NULL` | 本事实中工序层面的异常数量；异常不自动等同于报废 |
-| `abnormal_origin` | `VARCHAR(30) NULL` | 有异常时必填：`current_step` 当前工序异常、`previous_step` 前置异常 |
-| `unit_snapshot` | `VARCHAR(20) NOT NULL` | 本次报工单位快照 |
-| `remark` | `TEXT NULL` | 本次报工、冲销或更正原因 |
-| `created_by` | `BIGINT UNSIGNED NOT NULL` | 实际提交该事实的用户 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 事实创建时间 |
-
-**`batch_step_reports` 键、索引与检查约束**
-
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_batch_step_reports_step FOREIGN KEY (batch_step_record_id, production_batch_id) REFERENCES batch_step_records(id, production_batch_id)` |
-| 外键 | `CONSTRAINT fk_batch_step_reports_reversal FOREIGN KEY ( reversal_of_report_id, batch_step_record_id, production_batch_id ) REFERENCES batch_step_reports(id, batch_step_record_id, production_batch_id)` |
-| 外键 | `CONSTRAINT fk_batch_step_reports_replacement FOREIGN KEY ( replaces_report_id, batch_step_record_id, production_batch_id ) REFERENCES batch_step_reports(id, batch_step_record_id, production_batch_id)` |
-| 外键 | `CONSTRAINT fk_batch_step_reports_created_by FOREIGN KEY (created_by) REFERENCES users(id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_reports_no (report_no)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_reports_reversal (reversal_of_report_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_reports_replacement (replaces_report_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_reports_reference (id, batch_step_record_id, production_batch_id)` |
-| 索引 | `KEY idx_batch_step_reports_step_created (batch_step_record_id, created_at, id)` |
-| 索引 | `KEY idx_batch_step_reports_batch_created (production_batch_id, created_at, id)` |
-| CHECK | `CONSTRAINT chk_batch_step_reports_type CHECK (report_type IN ('normal', 'reversal'))` |
-| CHECK | `CONSTRAINT chk_batch_step_reports_source CHECK ( (report_type = 'normal' AND reversal_of_report_id IS NULL) OR (report_type = 'reversal' AND reversal_of_report_id IS NOT NULL AND replaces_report_id IS NULL) )` |
-| CHECK | `CONSTRAINT chk_batch_step_reports_quantity CHECK ( reported_quantity > 0 AND normal_quantity >= 0 AND abnormal_quantity >= 0 AND normal_quantity + abnormal_quantity = reported_quantity )` |
-| CHECK | `CONSTRAINT chk_batch_step_reports_abnormal_origin CHECK ( (abnormal_quantity = 0 AND abnormal_origin IS NULL) OR ( abnormal_quantity > 0 AND abnormal_origin IN ('current_step', 'previous_step') ) )` |
-| CHECK | `CONSTRAINT chk_batch_step_reports_quantities_integer CHECK ( reported_quantity = TRUNCATE(reported_quantity, 0) AND normal_quantity = TRUNCATE(normal_quantity, 0) AND abnormal_quantity = TRUNCATE(abnormal_quantity, 0) )` |
-| CHECK | `CONSTRAINT chk_integer_storage_batch_step_reports CHECK ( reported_quantity BETWEEN 0 AND 99999999 AND normal_quantity BETWEEN 0 AND 99999999 AND abnormal_quantity BETWEEN 0 AND 99999999 )` |
-| CHECK | `CONSTRAINT chk_step_report_quantity_scope CHECK(quantity_scope IN('production','inspection'))` |
-
-### 4.2.1 有效数量
-
-冲销行保存与原事实完全相同的三个绝对数量，查询时按类型决定正负号。下式仅纳入 `quantity_scope=production`；专检及其多轮返工结果独立追溯，不计入普通生产数量。下式中的 `normal` 指 `report_type = 'normal'` 的正向报工事实，包含直接正常、直接异常、混合及返工完成报工，不表示正常品：
-
-```text
-effective_reported = SUM(normal.reported_quantity) - SUM(reversal.reported_quantity)
-effective_normal   = SUM(normal.normal_quantity)   - SUM(reversal.normal_quantity)
-effective_abnormal = SUM(normal.abnormal_quantity) - SUM(reversal.abnormal_quantity)
+```sql
+PRIMARY KEY (`id`);
+UNIQUE KEY `uk_batch_step_records_route_step` (`production_batch_id`,`route_step_id`);
+UNIQUE KEY `uk_batch_step_records_id_batch` (`id`,`production_batch_id`);
+KEY `fk_batch_step_records_route_step` (`route_step_id`);
+KEY `fk_batch_step_records_sop` (`sop_file_id_snapshot`);
+KEY `fk_batch_step_records_created_by` (`created_by`);
+KEY `fk_batch_step_records_updated_by` (`updated_by`);
+KEY `idx_batch_step_records_actual_sop` (`actual_sop_file_id`);
+CONSTRAINT `fk_batch_step_records_actual_sop` FOREIGN KEY (`actual_sop_file_id`) REFERENCES `technical_files` (`id`) ON DELETE SET NULL;
+CONSTRAINT `fk_batch_step_records_batch` FOREIGN KEY (`production_batch_id`) REFERENCES `production_batches` (`id`);
+CONSTRAINT `fk_batch_step_records_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_batch_step_records_route_step` FOREIGN KEY (`route_step_id`) REFERENCES `process_route_steps` (`id`);
+CONSTRAINT `fk_batch_step_records_sop` FOREIGN KEY (`sop_file_id_snapshot`) REFERENCES `technical_files` (`id`) ON DELETE SET NULL;
+CONSTRAINT `fk_batch_step_records_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
+CONSTRAINT `chk_batch_step_records_order` CHECK ((`step_order_snapshot` > 0));
+CONSTRAINT `chk_batch_step_records_version` CHECK ((`version` >= 0));
 ```
 
-以上是生产计数范围内包含直接报工和返工完成的全部净量。直接正常／异常净量分别记为 `DN/DA`，返工完成正常／再次异常净量分别记为 `RN/RA`；每项均按所属正向事实减去对应冲销计算。直接净量须排除 `rework_records.completed_normal_report_id`、`completed_abnormal_report_id` 指向的两类结果报工及以任一结果为原单的冲销，不能仅按报工类型或数量判断来源：
+## production_tracking_card
 
-```text
-D  = DN + DA                  // 直接报工净量
-N  = DN + RN = effective_normal
-A  = DA + RA = effective_abnormal
-E  = D + RN + RA = effective_reported
-RN = N - DN                   // 跨轮返工恢复正常净量
+表示任务下一盘实物的稳定执行身份，维护当前盘量、当前位置、四种状态和作废信息；历史事实另行追加。
+
+卡号永久唯一；复合来源键供到站、异常和最终产出引用。完成产出的卡不可再修改；已用卡不可删除。当前指针和盘量由卡根锁串行推进，状态、数量和版本由CHECK及命令共同保护。
+
+### 字段
+
+| 字段                      | SQL定义                                                                   | 含义                                                        |
+| ------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`                                 | 主键，数据库自增                                            |
+| `production_batch_id`     | `bigint unsigned NOT NULL`                                                | 所属生产任务；与其他来源ID通过组合外键保持同源              |
+| `card_no`                 | `varchar(100) NOT NULL`                                                   | 不可修改、永久唯一的服务端追踪卡号                          |
+| `quantity`                | `int NOT NULL`                                                            | 该卡当前盘量或本次更正后的盘量，正整数                      |
+| `status`                  | `varchar(20) NOT NULL DEFAULT 'unused'`                                   | 本表的封闭业务状态，值域由下方CHECK限定，转换由应用命令校验 |
+| `current_step_record_id`  | `bigint unsigned DEFAULT NULL`                                            | 当前到站工序，未到站为空；不替代不可变到站历史              |
+| `personnel_id`            | `bigint unsigned NOT NULL`                                                | 登记时选择的现场人员ID，不是登录账号                        |
+| `personnel_code_snapshot` | `varchar(100) NOT NULL`                                                   | 登记时现场人员编码快照                                      |
+| `personnel_name_snapshot` | `varchar(100) NOT NULL`                                                   | 登记时现场人员姓名快照                                      |
+| `remark`                  | `text`                                                                    | 原始备注，与后续处理或作废说明分别保存                      |
+| `void_reason`             | `text`                                                                    | 作废原因；仅voided状态存在                                  |
+| `voided_by`               | `bigint unsigned DEFAULT NULL`                                            | 执行作废命令的登录账号                                      |
+| `voided_at`               | `datetime DEFAULT NULL`                                                   | 作废时间                                                    |
+| `version`                 | `int NOT NULL DEFAULT '0'`                                                | 可变业务单据的乐观版本号，每次合法命令递增                  |
+| `created_by`              | `bigint unsigned NOT NULL`                                                | 实际登录操作者，引用users.id                                |
+| `created_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 事实或单据创建时间，北京时间                                |
+| `updated_by`              | `bigint unsigned NOT NULL`                                                | 最近一次合法命令的登录操作者                                |
+| `updated_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间，北京时间，由数据库维护                        |
+
+### 约束与索引
+
+```sql
+PRIMARY KEY (`id`);
+UNIQUE KEY `uk_tracking_card_no` (`card_no`);
+UNIQUE KEY `uk_tracking_card_batch` (`id`,`production_batch_id`);
+KEY `idx_tracking_card_batch_status` (`production_batch_id`,`status`,`created_at`,`id`);
+KEY `fk_tracking_card_step` (`current_step_record_id`,`production_batch_id`);
+KEY `fk_tracking_card_personnel` (`personnel_id`);
+KEY `fk_tracking_card_created_by` (`created_by`);
+KEY `fk_tracking_card_updated_by` (`updated_by`);
+KEY `fk_tracking_card_voided_by` (`voided_by`);
+CONSTRAINT `fk_tracking_card_batch` FOREIGN KEY (`production_batch_id`) REFERENCES `production_batches` (`id`);
+CONSTRAINT `fk_tracking_card_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_card_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
+CONSTRAINT `fk_tracking_card_step` FOREIGN KEY (`current_step_record_id`, `production_batch_id`) REFERENCES `batch_step_records` (`id`, `production_batch_id`);
+CONSTRAINT `fk_tracking_card_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_card_voided_by` FOREIGN KEY (`voided_by`) REFERENCES `users` (`id`);
+CONSTRAINT `chk_tracking_card_quantity` CHECK ((`quantity` between 1 and 99999999));
+CONSTRAINT `chk_tracking_card_status` CHECK ((`status` in ('unused','in_progress','completed','voided')));
+CONSTRAINT `chk_tracking_card_version` CHECK ((`version` >= 0));
+CONSTRAINT `chk_tracking_card_void` CHECK ((((`status` = 'voided') and (`void_reason` is not null) and (`voided_by` is not null) and (`voided_at` is not null)) or ((`status` <> 'voided') and (`void_reason` is null) and (`voided_by` is null) and (`voided_at` is null))));
 ```
 
-工序“已报”与统一上限比较时使用 `D`，见[统一首工上限](#统一首工上限已确认)。异常处置摘要的累计直接异常使用 `DA`；`A` 还包含各轮返工再次异常的登记净量，不能当作待处理数量或唯一异常对象数量。返工恢复不自动扣除来源异常事实，待处理量必须按处置／返工当前状态另行读取。
+数据库触发器：trg_tracking_card_output_guard、trg_tracking_card_used_no_delete。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。
 
-`batch_step_records` 不缓存这些汇总。列表、详情和校验必须从 `batch_step_reports` 聚合；如以后为性能增加汇总视图，它也只能是只读派生数据。
+## production_tracking_visit
 
-基础工序记录返回模型把全部净量 `effective_reported` 映射到 `outputQuantity`、把 `effective_normal` 映射到 `normalQuantity`。生产执行投影另以 `effectiveDirectReportedQuantity`、`effectiveDirectNormalQuantity`、`effectiveDirectAbnormalQuantity` 返回 `D/DN/DA`，以 `effectiveNormalQuantity` 返回 `N`；不能把全部净量当作直接投入。正常量不表示“正常数量已经质检合格”。数量直接从报工事实派生；契约、读取映射与批次创建幂等结果 codec 同步使用明确名称，不提供原 `qualifiedQuantity` 别名或双字段兼容。
+保存每卡每站的一次到站及至多一次交接完成。登记人员为到站时所选人员，后续扫码只补完工事实，不替换人员。
 
-### 4.2.2 普通报工、冲销和更正
+uk_tracking_visit_card_step防重复扫码。任务和工序组合外键保证同源；CHECK限制到站未完成和已完成字段组合。完成从空写入一次；完成数量与盘量后续更正相互独立。报告索引用于任务／工序和人员的时间分页。
 
-- 普通报工只插入 `normal` 事实，不得覆盖同工序的历史行。
-- 员工任务页把普通报工拆成“正常报工”和“异常报工”两个独立业务意图。普通报工创建命令必须保证 `normal_quantity` 与 `abnormal_quantity` 恰好只有一个大于 `0`：正常报工固定异常量为 `0`，异常报工固定正常量为 `0` 并要求填写 `abnormal_origin`。同一批现场结果包含正常和异常数量时，应连续提交两条独立事实，不得在一次普通报工中混报。
-- 冻结路线首工序不存在前置工序，异常报工只能选择 `current_step`；前端不得展示 `previous_step` 选项，后端必须根据同批次冻结工序顺序再次校验并拒绝绕过前端的请求。不得只按 `step_order_snapshot = 1` 判断首工序，应以该批次按 `step_order_snapshot,id` 排序后的首条工序为准，否则会留下无法确定前置补料计算范围的异常事实。
-- 当前普通报工、正常报工替代及返工完成子事实均只表达一种数量。返工完成请求仍按整单提交正常与再次异常结果，由同一事务拆分，完整关联见返工章节；不得把返工子事实当普通新增报工。
-- 通用单条／批量冲销仅适用于仍有效、无具体业务依赖的纯正常普通报工；异常报工使用下述待处置驳回规则，返工结果与混合记录不能通过通用入口操作。冲销数量、正常数量、异常数量和单位必须与原事实一致；禁止部分冲销、冲销冲销行或重复冲销。
-- 通用更正仅接收 `normalQuantity`、`reason` 和 `version`，原单必须为仍有效、无具体业务依赖的纯正常普通报工；禁止通过更正改成异常或混合类型。数量为替代记录的完整正整数数量，不是差额；零量取消应使用全量冲销。异常报工不提供数量更正，待处置时由管理员驳回并退回重报，已批准处置及返工结果继续保护。
-- 更正不是先冲销后由客户端另发一次普通报工。单个更正命令必须同时插入冲销行和新的纯正常行；新行以 `replaces_report_id` 指向被更正的原行。任一校验、审计或结果保存失败时全部回滚。
-- 已完成工序在任务执行期间禁止普通新增正常／异常报工，明确重开后才可继续新增；已有报工的冲销与更正保留原资格，数量变动不改变执行状态。员工与管理员的资格、结案历史纠错范围和审批冻结统一见下方权限边界。
-- `report_no` 是业务事实编号，不代替 HTTP 幂等键。客户端原始 `Idempotency-Key` 只进入平台幂等记录，绝不能写入本表。
+### 字段
 
-#### 报工只读分类、关系与详情
+| 字段                      | SQL定义                                       | 含义                                                 |
+| ------------------------- | --------------------------------------------- | ---------------------------------------------------- |
+| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                                     |
+| `tracking_card_id`        | `bigint unsigned NOT NULL`                    | 所属追踪卡，批量事实使用该ID；研发最终产出允许为空   |
+| `production_batch_id`     | `bigint unsigned NOT NULL`                    | 所属生产任务；与其他来源ID通过组合外键保持同源       |
+| `batch_step_record_id`    | `bigint unsigned NOT NULL`                    | 涉及的任务冻结工序，组合外键保证属于同一任务         |
+| `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号                 |
+| `personnel_code_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员编码快照                               |
+| `personnel_name_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员姓名快照                               |
+| `arrived_by`              | `bigint unsigned NOT NULL`                    | 登记该次到站的实际登录账号                           |
+| `arrived_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 首次到站时间，之后不覆盖                             |
+| `completed_by`            | `bigint unsigned DEFAULT NULL`                | 完成交接或末站确认的实际登录账号，未完成为空         |
+| `completed_at`            | `datetime DEFAULT NULL`                       | 交接或末站完成时间，未完成为空                       |
+| `reported_quantity`       | `int DEFAULT NULL`                            | 完成该站时的当前盘量快照，未完成为空，后续改量不回写 |
 
-报工列表和单条详情使用独立 `BatchStepReportView`／`BatchStepReportDetail`，写命令、命令结果及严格幂等快照仍使用基础 `BatchStepReportItem`。数量字段继续返回事实中的非负绝对数量；管理端只在展示冲销行时取负号，不能把展示数量送回写接口或再次冲销汇总。展示分类 `sourceKind` 先识别冲销，再按 `rework_records.completed_normal_report_id`、`completed_abnormal_report_id` 识别返工完成，最后区分直接正常、直接异常及历史混合事实。两类返工子报工均为 `rework_completion`，恢复正常与残余异常由返工单的明确结果引用区分；不能用 `report_type=normal`、当前数量或说明文字推断返工来源。
+### 约束与索引
 
-分页列表按页批量投影真实冲销原报工、更正原报工、已形成的冲销和替代报工引用，引用同时携带报工 ID、真实 `report_no`、任务及工序身份，不依赖关联记录是否在当前页。已有异常处置、替代、返工来源、返工完成及报废依赖使用同一事实来源展示；有独立编号的记录返回真实业务编号，报废事实没有独立编号时只保留事实 ID，禁止自行拼造。基础更正资格和具体依赖保护继续由原业务规则计算，展示关系不授予写入资格。
-
-`GET /api/production/batches/:batchId/step-records/:recordId/reports/:reportId` 提供授权只读详情，与报工分页共用下方[读取权限](#http-读取权限与消费者)。只有员工查看权限时，查询必须核验当前工序负责人是当前用户；历史报工人或来源负责人快照本身不扩大报工读取范围；员工不提供独立返工列表或办理入口。任务、工序与报工必须严格同源。
-
-详情的 `processingChain` 只组合当前报工的来源返工片段和本身异常处置片段：来源报工 → 异常处置 → 返工单 → 正常恢复／残余异常报工。`completedNormalReport`、`completedAbnormalReport` 分别返回真实结果引用，数量为零的一侧为空；残余异常结果保留它自己生成的新处置片段，可沿真实报工引用逐笔导航。未批准返工、未完成返工或报废分支不生成虚假的返工／结果节点。专检首轮没有来源报工，`reworkOrigin` 保留真实返工单及异常处置 ID，`processingChain` 不伪造来源报工节点。返工读取使用独立 `ReworkRecordView` 返回两类完成单号与数量、计数范围及可空来源报工编号；基础返工命令结果见[返工模型](#45-rework_records当前最小返工)。这些投影只组合 Production 已有事实，不创建可写汇总或另一个业务状态。
-
-#### CP-01 报工整改边界
-
-##### 调整方向总览
-
-数量解耦、统一上限、保留工序执行状态、执行阶段员工状态／报工纠错、结案后管理员历史更正、管理员批量冲销及执行中改派均已确认。工序状态与报工数量占比并列展示，不按数量自动完工或重开；改派只切换当前办理人，不表达交接过程。以下集中维护整改目标，实施和验收清单见[路线图](../../../../../../../docs/roadmap.md#cp-01报工数量解耦与管理员批量冲销整改)。
-
-1. 相邻工序数量差异只提示，各道独立遵守计划量加有效补产授权的统一上限。
-2. 保留派工、开工、完成与终止的执行含义；完成使用明确动作，数量变化不自动完工或重开。
-3. 同时展示工序状态和“已报／上限”百分比，报工比例不代替真实作业进度、质量或在制品余额。
-4. 任务执行期间员工可办理本人工序报工与纠错，工序完成即停止普通新增报工，明确重开后才恢复新增资格；已有事实纠错资格在管理员结束任务进入结案时收回。
-5. 管理员提供同任务跨工序批量冲销；保留具体业务引用保护、预览、逐条事实和整体事务。
-6. 结案中／批准后的普通正常报工历史纠错仅限管理员，在审双方冻结；不开放状态历史更正或撤销误开工，已有状态历史保持只读。报工更正不恢复执行资格，原审批快照与库存事实保持独立。
-7. 报工和执行状态动作的正常追溯使用 Production 自有业务事实，全局操作日志只作审计兜底；报工操作者不被解释为实际加工人或当时的派工负责人。
-8. 管理员在任务执行期间可以改派当前办理人，不重置工序状态、数量或历史报工，不自动改派返工单；无需交接表。任务进入结案后停止改派，历史更正不恢复该资格。
-
-**记录与依赖规则：**
-
-- 报工承担执行记录和差异追溯，汇总不作为可靠的在制品余额或相邻工序的实物放行凭证。同一道工序继续支持多次报工、净量汇总、全量冲销及同事务冲销／替代更正，原事实和操作人、时间、原因均保留。
-- 相邻工序之间的报工数量差异只提示，不以“前道实际正常量不足”限制后道报工，也不因上游冲销／更正后低于下游累计而拒绝。A／B 原来各报 5，A 更正为 4 时允许保留 4／5 的差异；系统不自动减少 B 的真实报工，管理员核实 B 也有误时另行更正。
-- 各道工序统一采用首工投入上限兜底，公式见下一小节；它来自计划和有效补产授权，不随首工实际报工被冲销而降低。不按补产截止工序为后道另设较小的投入硬上限。
-- 任务仍在执行中时，日常报工、冲销与更正权限下放到本人负责工序的员工，每次操作保留真实操作者、时间及原／新事实。管理员结束执行或提前停止、任务进入结案后，员工报工写入资格立即收回，历史纠错仅管理员可办理；具体阶段及审批冻结见下节。管理员保留代办及同任务跨工序批量冲销能力，不以页面权限代替后端数据范围校验。
-- 数量差异与具体来源依赖分别处理。当前已存在异常处置、返工、报废、补料或其他直接业务引用的报工，仍不能通过通用冲销／更正绕过对应业务规则；没有合法解除入口的依赖应明确阻断。仅有相邻工序累计数量关系不构成这种引用。报工纠错不自动冲销领料、批准产出或库存事实。
-
-##### 统一首工上限（已确认）
-
-`Q` 为任务计划量；`S[j]` 为额度截止工序位于第 j 道、关联补料单已 `fulfilled` 的不可变补产授权数量之和。只有对应补料履约才计入，待审、待料或部分领料不生效。每道工序 i 的兜底与剩余可报数量为：
-
-```text
-U                      = Q + SUM(S[j], 全路线)
-direct_report_limit[i]  = U
-available_report[i]     = MAX(0, U - effective_direct_reported[i])
+```sql
+PRIMARY KEY (`id`);
+UNIQUE KEY `uk_tracking_visit_card_step` (`tracking_card_id`,`batch_step_record_id`);
+KEY `idx_tracking_visit_report` (`production_batch_id`,`batch_step_record_id`,`completed_at`,`id`);
+KEY `idx_tracking_visit_personnel` (`personnel_id`,`completed_at`,`id`);
+KEY `fk_tracking_visit_card` (`tracking_card_id`,`production_batch_id`);
+KEY `fk_tracking_visit_step` (`batch_step_record_id`,`production_batch_id`);
+KEY `fk_tracking_visit_arrived_by` (`arrived_by`);
+KEY `fk_tracking_visit_completed_by` (`completed_by`);
+CONSTRAINT `fk_tracking_visit_arrived_by` FOREIGN KEY (`arrived_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_visit_card` FOREIGN KEY (`tracking_card_id`, `production_batch_id`) REFERENCES `production_tracking_card` (`id`, `production_batch_id`);
+CONSTRAINT `fk_tracking_visit_completed_by` FOREIGN KEY (`completed_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_visit_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
+CONSTRAINT `fk_tracking_visit_step` FOREIGN KEY (`batch_step_record_id`, `production_batch_id`) REFERENCES `batch_step_records` (`id`, `production_batch_id`);
+CONSTRAINT `chk_tracking_visit_completion` CHECK ((((`completed_at` is null) and (`completed_by` is null) and (`reported_quantity` is null)) or ((`completed_at` is not null) and (`completed_by` is not null) and (`reported_quantity` between 1 and 99999999))));
 ```
 
-例如计划 5、路线 A→B→C，B 工序补产 1 的授权已生效，A／B／C 的普通报工上限均为 6。各道采用相同兜底，避免将记录资格重新绑定到工序之间的投入传播。
+数据库触发器：trg_tracking_visit_no_delete、trg_tracking_visit_complete_once。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。
 
-- 上限按每道工序自己的 `effective_direct_reported` 净累计校验，不把整条路线报工相加共用一个可消耗池；直接正常和异常都计入，返工完成不重复计入。冲销在事实聚合中扣回一次，不能再额外加一份额度。
-- 首工上限不是首工实际已报量。上游由 5 更正为 4 不会把 `U` 改成 4，也不要求下游同步更正或等待前道补录。
-- `supplementSources`、已激活投入增量和待激活投入增量均覆盖全路线；后道也能看到造成统一上限变化的前道来源。仅建议正常目标及其 `activatedSupplementTargetQuantity` 按当前工序之后的授权计算，不能混用两种范围。
-- 上限为 6 不表示每道工序都必须完成正常量 6，不能把 `U` 直接复制为 `required_normal`。统一口径允许后道在批次上限内超出路径建议量；路径、目标与实际报工的偏差用于核对提示，不暗中恢复更小的投入硬门禁。正常目标及结束状态的联动遵守下节规则。
-- 普通新增或替代更正不得使本工序直接报工净量超过 `U`；真实超授权产出仍需通过明确的授权方案处理，不能通过重复返工或改动上游历史取得额外额度。本项不新增任意手填额度入口。
+## production_tracking_quantity_change
 
-##### 执行记录额度分布（已确认）
+每次改量追加更正前量、新量、原因、账号和时间，保留实际盘量更正依据。
 
-执行记录及员工本人工序的数量摘要与执行状态分别表达；数量分布不表示工序进度，也不新增可写汇总字段。本分布只分类 `quantity_scope=production` 的直接根及其后继处置。正常量 `N` 包含该范围内直接正常和返工恢复；已报废 `S` 只取该范围内同源报废事实；处理中 `P` 只取有效异常分支当前的待审核、待返工和返工中数量；明确终止处置或取消未完成返工后尚未恢复的数量记为 `T`，独立展示为“已终止未恢复”：
+仅追加，不更新或删除。数量正整数且必须改变；卡量更新、历史、版本和审计同事务提交，CHECK不能替代这一原子性。
 
-```text
-D = 直接正常净量 + 直接异常净量
-P = 待审核数量 + 待返工数量 + 返工中数量
-剩余额度 = U - D
-N + S + P + T + 剩余额度 = U   // 仅来源链完整且分类可信时成立
+### 字段
+
+| 字段                | SQL定义                                       | 含义                                               |
+| ------------------- | --------------------------------------------- | -------------------------------------------------- |
+| `id`                | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                                   |
+| `tracking_card_id`  | `bigint unsigned NOT NULL`                    | 所属追踪卡，批量事实使用该ID；研发最终产出允许为空 |
+| `previous_quantity` | `int NOT NULL`                                | 更正前的盘量快照                                   |
+| `quantity`          | `int NOT NULL`                                | 该卡当前盘量或本次更正后的盘量，正整数             |
+| `reason`            | `text NOT NULL`                               | 必须保留的更正原因                                 |
+| `created_by`        | `bigint unsigned NOT NULL`                    | 实际登录操作者，引用users.id                       |
+| `created_at`        | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 事实或单据创建时间，北京时间                       |
+
+### 约束与索引
+
+```sql
+PRIMARY KEY (`id`);
+KEY `idx_tracking_quantity_card` (`tracking_card_id`,`id`);
+KEY `fk_tracking_quantity_actor` (`created_by`);
+CONSTRAINT `fk_tracking_quantity_actor` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_quantity_card` FOREIGN KEY (`tracking_card_id`) REFERENCES `production_tracking_card` (`id`);
+CONSTRAINT `chk_tracking_quantity_next` CHECK (((`quantity` between 1 and 99999999) and (`quantity` <> `previous_quantity`)));
+CONSTRAINT `chk_tracking_quantity_previous` CHECK ((`previous_quantity` between 1 and 99999999));
 ```
 
-- 执行记录及员工任务分页读取分别采用单个 `REPEATABLE READ` 只读事务及一致性快照。`BatchStepExecutionRecordItem.quotaDistribution` 和 `ProductionWorkerTaskItem.quotaDistribution` 复用相同的事实分类策略，并与各自同工序的 `N/U/available` 从同一次快照返回；处理阶段的最小来源引用也来自同一快照，不能拼接另一次返工列表请求或某页报工明细反推分布。`isReliable=true` 要求来源链完整、分类互斥及上述等式成立，不能仅凭总数碰巧相等认定可信。
-- 员工任务仍按当前本人负责工序服务端分页，分类的报工、处置、返工、报废四类事实仅为当前页已授权工序批量读取，不按工序、批次或返工深度追加查询。页内批次的路线汇总只批量读取一次，以保留原前道差等数量投影，不返回其他工序的事实或来源引用；不新增全量员工查询入口，不改变读取权限。报工弹窗直接使用所属读取上下文中的分类，命令请求、基础数量结果及幂等快照不增加分类字段。
-- 分类从仍有效且计入生产数量的直接报工根沿整单返工来源逐轮读取，专检处置和所有 `inspection` 后继均不进入 `N/S/P/T`。已完成返工的整单量退出 `P`，按明确引用核对正常与异常两个子结果的同源、纯数量类型及合计；正常恢复子报工计入 `N` 并结束该分支，异常子报工沿其新处置继续分类。两子结果都不作为新的直接根，不重复累计旧轮次的异常量。报废必须存在同源、同量真实事实，不能只看处置的 `approved` 状态；待审核和未完成返工也不能用 `D-N-S` 补平。
-- 合法驳回与来源全量同值冲销同时生效，该来源不再占用 `D`。有效来源仍被历史标为 `rejected/cancelled`、返工完成事实被冲销或更正、缺失或跨归属引用、重复／循环、数量或单位不符均返回 `isReliable=false`、分类量 `null` 及具体原因；页面显示待核对并保留原报工事实，不把未知量当零或重新解释处置结果。当前命令继续拒绝返工完成或混合来源的整笔驳回，历史保护规则不变。
-- 有明确 `terminated` 处置或 `cancelled` 未完成返工的有效来源可归入 `T`，不归入处理中或已报废；有 `T` 时单独显示真实终止残量。正常量不表示质检合格，分布也不是库存或可靠在制品余额。
-- 页面“报工上限 101 = 计划 100 + 已报废补产 1”中的已报废补产只包含关联补料已履约的有效授权，生效定义仍见[统一首工上限](#统一首工上限已确认)。待履约授权另列待生效报废补产，不能把全部已报废数量 `S` 直接加入上限。路径建议正常目标及其目标差保留原只读公式和其他消费方，执行记录页及报工弹窗不展示，前道差收纳为核对信息。
-- 额度分布不触发完工，也不阻止明确完成；新增授权、冲销及返工结果只刷新数量，不自动改变工序状态。“剩余额度”仍是原可报数量投影，普通新增及更正写命令继续沿原统一上限、资格和具体依赖校验。
-- 首末报工时间仅表示事实登记时间，不能据此回填实际开完工时间。“尚无报工历史”和“冲销后净量为零”也不能互相替代。
-
-##### 执行、结案与纠错权限（已确认）
-
-工序完成表示该道作业结束，同时停止员工和管理员的普通新增正常／异常报工；任务仍执行中时，已有报工的冲销／更正继续按独立资格办理。管理员结束任务执行／提前停止并进入 `closing`，立即收回全部员工写入资格，不等待最终批准为 `completed/terminated`。员工当前工序归属、任务阶段和审批冻结仍需独立校验。
-
-权限目录中的“工序报工”（`production:steps:report`）用于员工办理本人负责工序的日常报工、冲销和更正；“工序执行与报工管理”（`production:steps:manage-execution`）用于现场执行参数维护、管理员代办、结束任务执行、跨工序批量冲销及允许的普通正常报工历史纠错。执行期间普通报工、冲销和更正接受两项权限的任意一项，员工仍须满足当前工序归属。权限目录由 [Identity](../../../identity/docs/database.md#14-permissions)维护。权限边界如下。
-
-| 阶段 | 工序负责人／员工 | 具备相应管理权限的管理员 |
-| --- | --- | --- |
-| 任务仍在执行，工序 `doing` | 剩余额度大于零时可新增本人负责工序的报工；可按资格冲销／更正已有事实或明确完成工序 | 可以代办，保留实际操作者 |
-| 工序已完成，任务仍在执行 | 禁止普通新增报工，明确重开后才可新增；已有事实可冲销／更正 | 同样禁止普通新增，可代办重开、纠错及批量冲销 |
-| 任务进入结案，当前无在审申请 | 全部只读，不得修改状态或报工 | 状态历史只读；可冲销／更正无具体依赖的普通正常报工，新增须先撤回结束 |
-| 初次结案或后续产出更正在审批 | 不得改动状态或报工 | 同样冻结；先由申请人撤回或有权审批人驳回，再办理更正 |
-| 任务已批准结案，当前无在审申请 | 全部只读，原工序负责人不取得例外 | 状态历史只读；可办理无具体依赖的普通正常报工历史新增、冲销／更正 |
-
-- 工序负责人显式开始／完成本人负责工序，任务仍执行中时可因误点完工或真实继续加工而明确重开，管理员可以代办。动作记录实际操作者与时间，不开放任意状态更新；任务执行结束／提前停止由管理员办理，最终结案沿用既有负责人审批。
-- 普通新增报工同时要求任务仍执行、工序为 `doing`、原权限及当前归属有效、无审批冻结，且统一上限扣除当前直接报工净量后的 `availableReportQuantity` 大于零。员工和管理员读取投影均据此返回 `canReport/reportBlockedReason`，写命令在同一业务根锁内重算；额度为零明确禁用并提示核对既有报工或补产授权，不能因状态仍为 `doing` 而继续新增。新增授权仅刷新额度，已完成工序仍须明确重开。既有报工冲销／更正资格不受新增剩余量为零的限制，替代后的净量继续校验统一上限和具体依赖；结案中管理员保留已有事实纠错，历史新增须撤回结束；已批准任务的纯正常历史新增仍按专用资格办理。
-- 正常目标只作进度及差异提示，达到目标不自动结束，新增报工／冲销／更正不自动重开。未达目标可以明确完成，但仍保留统一投入上限和具体业务依赖；工序完成不代表质量合格或任务已经结案。后道开工不依赖前道实际报工量，继续保留派工及任务执行中资格。
-- 返工完成继续按来源整笔数量、返工执行状态和返工办理权限校验，不以普通工序正常目标作硬上限，也不重复消耗普通投入或自动修改普通工序状态。补料齐套、出库及需求更正批准只按既有规则激活补产授权并刷新数量投影，不自动重开普通工序；实际继续加工由当前工序负责人明确重开。
-- 未决异常／返工继续显示并按自身规则处理，不因工序完成而一并结束。任务正常执行结束只核对工序明确完成；物料履约、未决事项核对与最终产出审批继续按其所属规则办理。
-- 正常执行结束以各工序明确完成作为进度核对依据，不要求各道报工比例达到 100%；管理员可代办工序完成。提前停止沿用未完成工序逐项终止及其收尾事实，不把终止标成正常完成，任务与工单由管理员任务开工命令推进。
-- 员工状态与报工写入口必须在事务内核验任务仍可执行及本人工序归属；不能只隐藏员工端按钮。任务结束与员工操作并发时按共同业务根串行校验，旧页面不能在结束后继续提交。进入结案后，审批撤回、驳回或管理员纠错均不恢复员工写入资格；只有独立“撤回结束”命令恢复任务办理阶段。
-- 管理员通过专用历史纠错命令冲销／更正纯正常普通报工；历史新增仅在已批准 `completed/terminated` 时允许，未批准 `closing` 须先撤回结束后补报，仍校验统一上限、有效事实、权限、版本及依赖。新增异常、正常改异常、返工完成事实（即使结果全正常）及已有异常处置／报废／补料引用继续受保护，不借历史纠错生成新执行任务。当前不开放结案后异常补录与处置，真正新增生产另建任务。
-- 不开放管理员状态历史更正及撤销误开工命令；既有动作事实、原因、操作者和前后时间只读保留。当前状态只能通过正常执行动作及已有逐项收尾终止推进，不以历史补录改变状态或恢复生产资格。
-- 历史纠错保留真实操作者、录入时间和原因，不能回填 `created_at` 冒充当时录入；当前不额外采集实际作业发生时间。任务、工序、原批准产出、检验及库存事实不随报工纠错改变。结案前未实际开始的工序不因历史纠错而伪造开完工履历。
-- 已有批准版后的产出更正沿用原 `snapshot.check` 保留审批依据；任务级核对和审批快照不读取任一道工序代表整项任务的报工数量，也不生成批准时数量与当前数量的差额比较。各工序真实报工继续在执行及追溯上下文读取；纯报工历史纠错不自动重审产出，产出本身有错才走现有产出更正。
-
-##### 工序状态误操作（已确认）
-
-报工数量填错直接走冲销／原子更正，不要求先重开；工序状态点错通过以下明确动作纠正，不以修改报工量间接改变状态：
-
-- 本人负责工序的“重新打开”同时覆盖实际继续加工和误点完工，任务仍执行中时从 `completed` 回到 `doing`，管理员可代办。明确记录原因、操作者及时间，保留此前完工历史，不改报工事实、不联动上下游状态；进入结案后员工不可借此恢复写入资格。
-- 不开放撤销误开工或将已开始工序退回未开工的接口。任务“撤回结束”仅恢复进入收尾前的办理阶段，保留原开工信息和工序事实；未开工任务恢复原准备阶段，不伪造开工。
-- 状态动作与管理员结束任务共用业务根锁和版本校验；再次完工或重开不能覆盖此前操作历史，也不能将正常／异常数量变化重新变成自动完工或自动重开的触发器。
-
-##### 派工边界（已确认）
-
-- 保留管理员明确派工和开工前撤回；任务执行期间，即使工序已开工、已完成或已有报工，也允许管理员通过专用改派命令切换当前办理人。新负责人须符合既有身份及受派资格，改派不改变工序状态、开完工时间、净报工或补产授权。
-- 新负责人取得当前工序的员工操作资格，原负责人失去该工序写入权限。报工、完成、重开与改派共用工序版本及兼容锁序；旧负责人从旧页面提交时后端按当前归属拒绝，不能以曾经派工或曾经报工绕过。
-- 已有报工继续保留原 `created_by/created_at`，新负责人更正旧报工时由原子更正链同时表达原事实及本次实际更正人。管理员代报的实际提交人是管理员，不推断实际加工人；当前负责人也不用于回填历史报工人。
-- 返工由具备返工办理权限的生产管理人员办理，普通工序改派不改变已有返工的来源快照，也不授予或撤销返工办理权。任务进入结案后不再派工、撤回或改派，管理员报工历史纠错不授予这一例外。
-- 当前改派不表达完整的负责人交接过程，也不承诺查询每个历史时点的责任归属；不新增交接事实表。执行中改派是当前办理权的变更，不等于追溯链缺失后以 `operation_logs` 拼装交接业务。
-
-##### 工序业务动作追溯
-
-工序当前状态和负责人、报工提交人、执行动作分别读取各自事实；不能由当前负责人推测历史加工人，也不以全局审计拼装交接过程。
-
-开始、完成与重开的来源、原子性及旧履历规则见[执行动作事实](#batch_step_execution_actions)。收尾终止沿 `production_batch_closeout_action` 追溯，不复制为另一条终止事实；报工与返工仍读各自记录。
-
-##### 审批流程复用边界
-
-- 复用 [Approval 的撤回、驳回与重新送审](../../../approval/README.md#配置与操作)：申请人本人撤回，或当前有权审批人驳回，修改后从首节点建立新申请，旧申请和证据保留；管理员身份本身不授予撤回他人申请的权限。
-- 审批结束后清除本次在审关联、回到待定稿，不恢复执行或旧库存授权；产出证据及重新送审见[结案设计](production-termination.md)。
-- 状态／报工写入侧：正常状态动作、管理员报工历史纠错及批量入口在与送审／批准兼容的业务根锁下检查 `pending_approval_id`，在审一律拒绝，撤回／驳回后仍须重新校验阶段、办理资格及具体依赖。初次结案和已批准清单的后续更正在审都适用，不能只检查批次是否 `closing`。
-- 审批撤回不会恢复执行阶段资格；管理员历史纠错使用独立入口。最终批准的快照一致性检查不能替代写前冻结检查。
-
-##### 管理员批量冲销（已确认）
-
-同一任务跨工序多选、预览影响及具体阻断、填写原因、逐条全量冲销、全部成功或全部回滚，并保留直接业务依赖保护。全链路级联撤销不属于本项，任务各阶段的可操作资格遵守上述执行权限及审批冻结规则；用户验收及正式测试见路线图：
-
-- 一次选择同一生产任务下、多道工序的多条有效纯正常普通报工，逐条全量冲销。需要把单条 5 改为 4 时仍使用原子更正入口，不能将批量冲销后再补录描述为原子更正；批量替代更正另行确定，不混入本期冲销命令。
-- 提交前预览明确的报工 ID、工序、原数量、各工序冲销前后净量、数量差异及不可冲销原因。统一填写本次原因；管理员可以明确移除阻断项后重新预览，系统不得静默跳过或自动增选上下游记录，不提供隐含“全部筛选结果”的选择。
-- 后端独立鉴权，单次明确选择 1–100 条报工，校验非空及重复 ID、任务／工序归属、有效性、工序版本和具体依赖。批量不是绕过异常处置、返工完成或既有更正链的强制入口；返回每个阻断项及可定位依据。
-- 预览返回 `previewToken`，覆盖任务阶段与版本、工序数量及版本、授权和具体依赖。提交必须携带同一令牌并在事务内重算比较；变化时整体拒绝并要求重新核对，不能把执行期预览静默当作结案历史纠错提交。幂等成功重放仍返回原事务结果。
-- 正式提交在同一事务重新检查预览依据，按与任务结束／审批兼容的业务根、工序稳定顺序及报工 ID 顺序锁定；同一道选中多条时统一计算最终净量并更新版本，不按净量重新计算状态，不能循环提交单条 HTTP 请求或使自身版本递增造成中途失败。全部成功或全部回滚，不默认部分成功。
-- 每条追加原事实的等量冲销，受影响工序版本更新、成功审计和批量幂等结果同事务提交；数量冲销不自动重开工序或任务。批量端点独立接入幂等执行器，同键同内容重放原结果；单条现行自然防重不等于批量已经具备结果重放能力。
-- 本次操作与逐笔原／冲销事实通过结果及审计可关联；批量冲销复用 `batch_step_reports` 和管理报工权限，不新增报工表、可写累计或影子账本。专有状态动作表及权限目录调整由成对 migration `202610090001` 提供。
-
-### 4.2.3 数量与并发约束
-
-统一上限、直接报工净量和提示差异的公式见上方“统一首工上限”与“执行记录额度分布”。`required_normal[i] = Q + SUM(S[j], j > i)` 仅保留路线建议正常目标；不作为写入上限、完工条件或上游冲销下限。
-
-- `batch_step_records` 和任务表不新增可写上限／进度列。上限由计划与不可变补产授权关联已履约补料单实时推导；物料需求数量不参与产品补产量相加，不从客户端接受授权额度。
-- 正常与异常直接报工都消耗本工序上限；生产来源返工完成计入成果汇总但不重复计入直接报工；专检来源及其后继返工结果不计入这些汇总。冲销事实负向聚合一次，异常退回重报也不另加第二份额度。
-- 计划 5，B 报废补产 1 且已履约时，A/B/C 上限均为 6；B 无须等待 A 形成第六个正常报工才可记录。A 更正到 4、B 保留 5 时仅提示差异。数量和补料变化均不改变工序状态。
-- 报工写事务按工单、任务、结案根、工序 `step_order_snapshot,id`、报工 ID 的顺序锁定；锁后当前读核验版本、审批冻结、当前办理人、统一上限及具体依赖。管理员批量同工序多条只更新一次版本，不以客户端预览替代提交校验。
-- 补料确认仍原子提交履约、库存事实、出库状态及审计；需求更正批准解除剩余可激活授权但不产生库存流水。两者仅刷新数量投影，不重开工序。不可变授权行不更新，原质量和具体引用保护继续有效。
-- 数量只表达现场自检与登记，不代表最终质检合格或可靠在制品余额。数据库负责结构和引用完整性，跨事实数量、全量同值冲销、资格与具体依赖由业务事务校验。
-
-### 执行查询与分页
-
-工序摘要统一返回上限、直接正常／异常净量、累计成果、数量差异、报工历史条数及首末登记时间；不内嵌全部报工历史。任务工序子资源 `GET /production/batches/:id/step-records` 返回派工、改派、撤回及 SOP 资格和具体原因，任务概览不携带工序集合或资格。查询与人员解析边界见[任务查询](work-orders-and-batches.md#任务查询与命令响应)，写命令仍锁内重新核验。
-
-报工记录、工序状态历史与员工工序均使用服务端分页。报工历史读取沿工序当前归属限制员工范围，管理／追溯页面使用各自查看权限；状态时间线组合执行动作与既有收尾终止事实。员工仅办理普通工序，不提供本人返工查询接口、专用契约或工作台；管理员在已有异常处置流程读取和办理返工，员工数量摘要只从本人工序投影读取生产计数范围内的返工成果。前端进度不从某一页记录相加，跨页批量仅保存用户明确选中的记录。
-
-`GET /api/production/worker-tasks` 使用 `ProductionWorkerTaskQuery` 和公共分页参数，只读取当前员工负责、任务未取消的 `assigned/doing/completed/terminated` 工序，包含已结案历史；权限仍为 `production:worker-tasks:view`。可选 `status` 只接受上述可见工序状态，省略表示全部；`batchNo`、`workOrderNo` 分别对任务单号和工单号作字面文本部分匹配，`%`、`_` 不作通配符。三个条件按 AND 组合，在统计总数和分页前应用；列表与数量摘要沿同一次只读快照返回。固定按任务 `id DESC`、工序 `step_order_snapshot ASC`、工序 `id ASC` 排序，任务阶段和工序状态不参与排序；开始、完成或重开不改变同一结果集合的顺序，状态变化后不再满足筛选的工序移出结果。
-#### HTTP 读取权限与消费者
-
-生产报工记录页 `/production/execution-records` 独立使用 `production:execution-records:view`，与生产任务页 `production:tasks:view` 分别作为 `production:view` 的直接页面子项。目录层级不使两项权限互相授予，模块分组也不替代任一页面权限。只读页面权限不授予工序执行、报工、异常处置、返工、任务状态或产出清单写入资格；具体命令仍分别校验现有动作权限、任务阶段、版本和数据归属。
-
-以下路径均相对于 `/production`；多项权限为精确 any-of，共享读取保留既有消费者：
-
-| GET 路径 | 消费者及权限 |
-| --- | --- |
-| `/execution-batches`、`/batches/:batchId/execution-records` | 生产报工记录页专用；`production:execution-records:view` |
-| `/batches/:batchId/execution-completion-check`、`/batches/:batchId/execution-start-check` | 报工页与任务页的执行核对；`production:execution-records:view` 或 `production:tasks:view` |
-| `/batches/:batchId/reworks` | 生产异常返工明细；`production:execution-records:view` 或 `production:tasks:view` |
-| `/batches/:batchId/step-records/:recordId/reports`、`/batches/:batchId/step-records/:recordId/reports/:reportId`、`/batches/:batchId/step-records/:recordId/scrap-records` | 报工、任务、追溯与本人工序的历史／关联事实；`production:execution-records:view`、`production:tasks:view`、`production:trace:view` 或 `production:worker-tasks:view`。仅有员工查看权限时，仍须为工序当前负责人 |
-| `/batches/:batchId/step-records/:recordId/execution-actions` | 报工、任务、追溯及管理员执行动作历史；`production:execution-records:view`、`production:tasks:view`、`production:trace:view` 或既有 `production:steps:manage-execution` |
-| `/batches/:batchId/step-records/:recordId/process-inspections`、`/batches/:batchId/step-records/:recordId/process-inspections/:inspectionId`、`/batches/:batchId/step-records/:recordId/inspection-dispositions` | 生产侧专检依据与处理历史；`production:execution-records:view` 或 `production:tasks:view`，不要求 Quality 页面权限 |
-| `/batches/:batchId/output`、`/batches/:batchId/termination-check`、`/batches/:batchId/closeout`、`/batches/:batchId/closeout/withdraw-check` | 报工页与任务页共用的产出、收尾及撤回核对弹窗；`production:execution-records:view` 或 `production:tasks:view`，业务规则见[结案设计](production-termination.md) |
-
-全量报工历史读取能力只由报工记录、任务或追溯查看权限计算，不因新的页面查看权限升级管理员执行或员工报工能力。员工专用工序、SOP 和状态历史接口继续使用本人查看权限及当前归属校验；报工页没有 SOP 内容读取消费者。报废补料候选及方案属于异常办理依据，继续要求 `production:steps:manage-abnormal`，不由页面查看权限替代。
-
-#### 当前最小返工来源规则与升级预留
-
-- 直接异常数量不增加正常完成量，但必须计入直接报工净量 `D` 并占用[统一首工上限](#统一首工上限已确认)；连续提交直接异常报工不得绕过数量上限。
-- 每张返工单一次完成，由同一事务最多生成两条正向结果报工：正数正常恢复和正数残余异常各一条，零量侧不建事实。`rework_records` 的两个完成引用分别唯一指向子结果；合计必须等于来源异常数量，因此同一返工来源不能重复消费。
-- 最小返工不支持分批或部分完成。残余异常子报工照常生成新的异常处置单，可进入下一轮返工或报废补料；正常恢复子报工不生成异常处置，两类结果都保留原返工单来源与通用纠错保护。
-- 半自动补料不增加生产批次计划量；批准时生成等量路线补产授权，全部补料需求完成确认领料后才允许执行，并从首工序向额度截止工序逐道传播。页面必须分别展示补料物流进度、补产起点、受影响路径、各工序新增正常目标和剩余可报量，不得把人工填写的物料数量展示成产品补产数量，也不得在来源工序直接显示“可补报”。
-- 当前补产额度以唯一的工序报废补产授权为事实，足以闭合整笔报废补产；当前不记录某次补报逐笔消费哪张授权。后续若需要部分执行、指定来源消费、返工分批产出或逐笔补产消费，必须追加独立消费事实和版本化接口，不得改变已落库报工事实。
-
-### 4.2.4 事务、幂等与审计
-
-创建、更正报工及返工完成要求 HTTP 幂等，启用范围和结果见[应用契约](../../application/idempotency/production-idempotency-scopes.contract.ts)，执行机制遵守[平台契约](../../../../../docs/idempotency.md)。一次命令中的原报工冲销、替代／返工子事实、工序版本与结果不能拆开提交。
-
-返工完成的[结果快照](../../application/idempotency/production-rework-result.codec.ts)须保留返工、实际正常／异常子报工及异常处置身份；重放不会追加另一侧结果。两侧的同源、数量及零量规则见[返工模型](#45-rework_records当前最小返工)。
-
-历史迁移 `202608100001-batch-step-reports` 仅把可证明一致的旧累计量转换为 `LEGACY-SR-{stepId}` 事实：要求原总量等于正常加异常、返工量为零，正数报工有真实操作者，否则在永久 DDL 前拒绝。旧 `qualified_quantity` 按当时口径转为正常报工，不追认为质量结论。
-
-## 4.3 工序专检与生产处理
-
-工序专检由 Quality 按“任务＋工序执行节点”保存现场合格／不合格事实，支持多次全检和抽检，不关联某笔报工。检查范围、不可变结果冲销及替代、更正下限由 [Quality 专检设计](../../../quality/docs/process-inspections.md)维护。`normal_quantity` 保持自检正常含义，专检不自动修改报工、不把未检实物认定为合格，也不设下工序放行门禁；路线 `need_inspection_snapshot` 仍只作提示。
-
-产线从生产执行记录的具体工序进入“专检处理”，核对检查范围、实检时间、结果说明、凭据和当前待处理数量后办理，并在同一入口查看历史处理。质检页面负责登记、更正和冲销，不提供生产处理操作。页面的“已处理”表示已建立异常处置单的数量，不表示返工、报废或问题解决已经完成；实际进度使用异常处置和返工状态展示。生产办理直接使用以下接口，不依赖 Quality 页面的读取权限：
-
-| 方法与路径 | 读取边界与权限 |
-| --- | --- |
-| `GET /production/batches/:batchId/step-records/:recordId/process-inspections` | 当前工序有效且待处理量大于零的检查分页；权限见[读取权限与消费者](#http-读取权限与消费者) |
-| `GET /production/batches/:batchId/step-records/:recordId/process-inspections/:inspectionId` | 当前工序单次检查详情；同上。处理完或已冲销的检查仍可核对，来源不符返回不存在 |
-| `GET /production/batches/:batchId/step-records/:recordId/inspection-dispositions` | 当前工序全部专检来源的生产处理历史分页；同上，任务工序归属不符返回不存在 |
-
-读取先核验任务工序归属，再调用 `QualityProcessInspectionQuery`，不直接读取 Quality 表。列表返回 `PageResult<ProcessInspectionEntry>`，仅接受标准分页参数，筛选在分页前完成，按检查创建时间及 ID 倒序排列；详情返回相同条目类型，包括当前结果、处理量、待处理量、办理资格提示和版本。列表的数量及条目由 Quality 独立只读一致快照取得。当前只读来源、状态及余额仅用于展示，提交时仍由处理命令锁内重核。
-
-生产处理历史读取 `batch_step_abnormal_dispositions.source_type=process_inspection` 的全部状态，不依赖当前专检待处理量、有效结果或任务执行资格。返回 `PageResult<ProcessInspectionDispositionHistoryItem>`，使用标准分页并按处置创建时间、ID 倒序；归属核验、总数、页内处置及关联返工共享独立只读一致快照。每行是真实处置单，返回其编号、本次处理数量与单位、`created_by/created_at` 对应的实际处理人和时间、固定的专检单与当时结果 ID，以及当前处置、复核和返工信息。用户名称通过 Identity 公开能力批量补齐；不将当前工序负责人或检验人视作处理人，不用质检当前结果替代历史依据。
-
-历史的 `remark` 是当前处置说明，后续批准返工、报废或其他处置动作可能更新，不能标成首次处理时的填写说明。`rework` 复用 `ReworkRecordView` 展示真实返工状态及已完成的正常／残余异常结果；尚未完成的返工不得仅因处置获批就显示处理完成。返工后继异常的 `source_type=report` 不重复列为新的专检处理，后续处置沿生产异常及返工记录追溯。没有待处理检查时，历史仍独立分页可见。
-
-产线在现场确认未登记过的实际问题后，通过 `POST /production/batches/:batchId/step-records/:recordId/inspection-dispositions` 处理一部分当前不合格量。请求携带专检单 ID、当前结果 ID、专检版本、正整数数量和说明，要求 `production:steps:manage-abnormal` 及 HTTP 幂等键。后端先锁工单、任务、结案根和路线工序，再通过 Quality 公开命令锁专检并检查当前结果、版本及剩余量；同一事务增加专检根 `accepted_quantity`、创建现有异常处置单、递增工序版本、写成功审计和幂等结果。仅执行中任务的已开工／已完成工序可新增或处理专检。既有专检允许在任务执行结束、结案及批准产出后更正或冲销，仍锁同一生产根、核验任务已开工且未取消，并由 Quality 保护已处理下限；历史检验纠错不恢复执行、不修改产出审批或库存事实。
-
-不新增生产处理事实表。`batch_step_abnormal_dispositions` 的专检来源行就是处理明细，保存本次处理数量和当时结果 ID。当前待处理量为 Quality 当前有效不合格量减去累计已处理量；后续质检更正不移动已有处置的来源结果。处置批准、完成或收尾终止均不释放已处理量，暂不提供已处理撤回。填写错误的未处理部分由质检人员通过冲销＋替代更正；专检及其返工结果不得走异常报工驳回。
-
-专检处理只引入问题处理来源，不新增普通直接投入，不减原正常报工。批准返工沿用既有返工单，正数正常恢复及残余异常仍追加现有不可变报工事实，两侧 `quantity_scope=inspection`，后继异常返工继续继承；所有普通报工数量和额度分布排除这条来源分支。返工记录、报工历史及异常待办仍保留完整事实，来源说明须明确“不计普通报工汇总”。报工历史条数和首末登记时间包含专检返工结果，与实际历史分页一致；执行页异常列表包含专检处理及其后继残余异常，额度分类过滤不作用于待办列表。专检报废沿用真实报废、补料和补产授权，满足补料履约后进入既有补产上限；专检报废不被伪装成普通已投入的额度归属。
-
-已处理的待处置、未完成返工及补料继续参与既有收尾核对。专检不替代成品检验、批准产出或库存记账；执行结束与最终产出核对仍分开，数量差异由产线实物核实，不反写报工。实际再次检查同一问题应沿既有问题处理记录确认结果，不能把相同不合格实物重复登记为新增待办；独立复检业务模型及质量放行仍不在本期范围。
-
-## 4.4 `batch_step_abnormal_dispositions`
-
-职责：作为异常报工或专检处理的生产处置单。一条 `batch_step_reports` 普通报工只要 `abnormal_quantity > 0`，就在同一报工事务中自动创建一条处置单；同一道工序可以因多次异常报工产生多条处置单。工序执行状态继续保存在 `batch_step_records.status`，不得增加汇总异常状态替代本表。
-
-报工来源保持一次异常报工整体处置，不拆分部分返工或部分报废，数量来自不可变报工事实。专检来源允许对同一专检单分次处理，每次处理形成一张处置单并保存 `inspection_quantity`；一张处置单仍整体选择返工或报废。两种来源互斥。
-
-数据库约束：
-
-- 一次异常报工只整体处置一次
-- 报工来源必须属于同一任务、同一工序
-- 专检来源须同时保存专检单、处理当时的正向结果、本次处理量及工序单位，且不填报工来源；报工来源从原报工取得数量和单位，不填专检字段。专检单与结果必须同任务、同工序、同来源。
-- `pending_review` 必须满足 `disposition_type/reviewed_by/reviewed_at` 均为空
-- `approved` 必须满足 `disposition_type/reviewed_by/reviewed_at` 均非空
-- `rejected/cancelled` 必须满足 `disposition_type` 为空且 `reviewed_by/reviewed_at` 非空；`rejected` 命令必须同时追加来源报工冲销，`cancelled` 状态本身不改变来源事实；来源事实是否有效始终只由冲销链决定
-
-业务规则：
-
-- 报工来源创建处置单前，必须确认来源是仍有效的 `normal` 报工且 `abnormal_quantity > 0`；冲销行和纯正常报工不得创建处置单。专检来源只通过上述正式处理命令建立，不直接读取或改写 Quality 表。
-- 普通状态转换为 `pending_review -> approved/rejected/cancelled`。`approved` 表示异常属实并选择返工或报废；`rejected` 只用于管理员确认整笔员工异常报工的数量或异常来源填写错误，并通过下述“驳回并退回重报”命令进入；`cancelled` 只用于来源报工已被其他合法冲销链终止后的处置单收口。终态处置单不得恢复为 `pending_review`。
-- 审批使用 `version` 乐观锁。批准为 `rework` 时，在同一事务创建一条以本处置单为来源的 `rework_records`；批准为 `scrap` 时，审批请求必须按批次 BOM 基础选择至少一条启用的精确物料版本并填写数量，在同一事务创建 `batch_step_scrap_records`、`batch_step_scrap_reproduction_authorization`、`production_material_supplement` 和 `scrap_supplement` 需求。两个处置目标均对来源处置单建立唯一约束。
-- 管理端批准报废前必须经过“编辑需求 -> 暂存需求 -> 复核并确定报废生成”三段交互。暂存写入 `production_scrap_supplement_plan/_line` 服务端草稿，不创建正式 `production_item_demand`、不改变处置状态，也不允许分配或出库；管理员可以重新打开或返回继续编辑。只有最终点击“确定报废并生成”才执行上一条所述的同事务写入，并把方案转为 `confirmed`。草稿保存以乐观锁保护整体更新，重新打开时读取服务端草稿。
-- 员工普通报工必须把正常和异常分成不同请求；每张异常报工只能选择一个 `abnormal_origin`。同一来源下更细的异常类别当前由上报人整笔判断并写入说明，系统尚无结构化异常类型字典；混入不同来源、数量填错或整笔误报时，管理员必须驳回整笔，不允许部分处置。
-- 管理端不得提供“只把处置单改成 `rejected`”的空驳回，也不得物理删除来源报工。“驳回并退回重报”必须填写原因；后端在一个事务内锁定来源员工异常报工与处置单，追加原报工的全量同值冲销，把原处置单转为 `rejected`，递增工序版本并写成功审计。该命令不追加正常报工、替代报工、报废事实或补产授权；员工随后按正确数量和异常来源重新提交，形成可追溯的新报工及新待处置单。
-- “驳回并退回重报”只适用于 `normal_quantity = 0` 的员工直接异常报工。返工完成子事实或正常/异常混合事实必须拒绝该命令，通用更正同样不能绕过；返工结果纠错及已批准处置撤销没有已开放入口，留待独立业务设计。存在已批准返工、报废、补料、出库或其他不可逆下游依赖时同样拒绝，不引导用户使用不存在的更正功能。
-- 修复迁移只为历史上已经标记为 `rejected`、仍有效、`normal_quantity = 0`、不是更正替代事实且不属于返工完成的直接异常报工追加确定性的全量冲销。历史混合及更正链事实不做猜测性回填。
-- 追加 migration 会为未被冲销的历史有效异常报工生成 `LEGACY-BSAD-{reportId}` 待审批处置单；已被全量冲销的异常报工不会生成待办。
-- 报工冲销或更正必须检查本表及其下游具体业务引用；依赖保护见 [CP-01 报工整改边界](#cp-01-报工整改边界)，不能把相邻工序累计数量关系当作本表的直接引用。
-- 页面上的待审批数和异常标志从本表查询派生，不写回 `batch_step_records`。未来需要同一次异常报工拆分多种处置时，应追加处置明细表并版本化调整当前唯一整体处置规则，不得修改原报工事实。
-
-**`batch_step_abnormal_dispositions` 字段定义**
-
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
-| `disposition_no` | `VARCHAR(100) NOT NULL` | 异常处置单号，唯一 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 生产批次 ID |
-| `batch_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 工序执行节点 ID |
-| `source_type` | `VARCHAR(30) NOT NULL DEFAULT 'report'` | `report` 或 `process_inspection` |
-| `batch_step_report_id` | `BIGINT UNSIGNED NULL` | 可空；报工来源必填，一条报工最多一张异常处置单 |
-| `process_inspection_id` | `BIGINT UNSIGNED NULL` | 专检来源必填，稳定专检单 ID |
-| `process_inspection_record_id` | `BIGINT UNSIGNED NULL` | 专检来源必填，处理当时的正向结果事实 ID |
-| `inspection_quantity` | `INT NULL` | 专检来源必填，本次处理的正整数数量 |
-| `unit_snapshot` | `VARCHAR(20) NULL` | 专检来源必填，工序单位快照；报工来源从原报工取得 |
-| `review_status` | `VARCHAR(30) NOT NULL DEFAULT 'pending_review'` | `pending_review`、`approved`、`rejected`、`cancelled`、`terminated` |
-| `disposition_type` | `VARCHAR(20) NULL` | 批准后的处置：`rework`、`scrap`；审批前为空 |
-| `reviewed_by` | `BIGINT UNSIGNED NULL` | 审批人；待审批时为空 |
-| `reviewed_at` | `DATETIME NULL` | 审批时间；待审批时为空 |
-| `remark` | `TEXT NULL` | 申请、审批、驳回或取消说明 |
-| `version` | `INT NOT NULL DEFAULT 0` | 乐观锁版本号，默认 `0` |
-| `created_by` | `BIGINT UNSIGNED NOT NULL` | 创建人 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
-| `updated_by` | `BIGINT UNSIGNED NOT NULL` | 最近修改人 |
-| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
-
-**`batch_step_abnormal_dispositions` 键、索引与检查约束**
-
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_batch_step_abnormal_dispositions_reviewer FOREIGN KEY (reviewed_by) REFERENCES users(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_abnormal_dispositions_created_by FOREIGN KEY (created_by) REFERENCES users(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_abnormal_dispositions_updated_by FOREIGN KEY (updated_by) REFERENCES users(id)` |
-| 外键 | `CONSTRAINT fk_abnormal_disposition_step FOREIGN KEY(batch_step_record_id,production_batch_id) REFERENCES batch_step_records(id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_batch_step_abnormal_dispositions_report FOREIGN KEY(batch_step_report_id,batch_step_record_id,production_batch_id) REFERENCES batch_step_reports(id,batch_step_record_id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_abnormal_disposition_inspection FOREIGN KEY(process_inspection_id,production_batch_id,batch_step_record_id) REFERENCES quality_process_inspection(id,production_batch_id,batch_step_record_id)` |
-| 外键 | `CONSTRAINT fk_abnormal_disposition_inspection_record FOREIGN KEY(process_inspection_record_id,process_inspection_id) REFERENCES quality_process_inspection_record(id,inspection_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_abnormal_dispositions_no (disposition_no)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_abnormal_dispositions_report (batch_step_report_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_abnormal_dispositions_source ( id, production_batch_id, batch_step_record_id, batch_step_report_id )` |
-| 唯一键 | `UNIQUE KEY uk_abnormal_disposition_step(id,production_batch_id,batch_step_record_id)` |
-| 索引 | `KEY idx_batch_step_abnormal_dispositions_step_review ( batch_step_record_id, review_status, created_at )` |
-| 索引 | `KEY idx_batch_step_abnormal_dispositions_batch_review ( production_batch_id, review_status, created_at )` |
-| 索引 | `KEY idx_abnormal_disposition_step_source(batch_step_record_id,production_batch_id)` |
-| 索引 | `KEY idx_abnormal_disposition_inspection(process_inspection_id,production_batch_id,batch_step_record_id)` |
-| 索引 | `KEY idx_abnormal_disposition_inspection_record(process_inspection_record_id,process_inspection_id)` |
-| CHECK | `CONSTRAINT chk_batch_step_abnormal_dispositions_type CHECK ( disposition_type IS NULL OR disposition_type IN ('rework', 'scrap') )` |
-| CHECK | `CONSTRAINT chk_batch_step_abnormal_dispositions_version CHECK (version >= 0)` |
-| CHECK | `CONSTRAINT chk_batch_step_abnormal_dispositions_review_status CHECK (review_status IN ('pending_review','approved','rejected','cancelled','terminated'))` |
-| CHECK | `CONSTRAINT chk_batch_step_abnormal_dispositions_state CHECK ( (review_status='pending_review' AND disposition_type IS NULL AND reviewed_by IS NULL AND reviewed_at IS NULL) OR (review_status='approved' AND disposition_type IS NOT NULL AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL) OR (review_status IN ('rejected','cancelled','terminated') AND disposition_type IS NULL AND reviewed_by IS NOT NULL AND reviewed_at IS NOT NULL) )` |
-| CHECK | `CONSTRAINT chk_abnormal_disposition_source CHECK( (source_type='report' AND batch_step_report_id IS NOT NULL AND process_inspection_id IS NULL AND process_inspection_record_id IS NULL AND inspection_quantity IS NULL AND unit_snapshot IS NULL) OR (source_type='process_inspection' AND batch_step_report_id IS NULL AND process_inspection_id IS NOT NULL AND process_inspection_record_id IS NOT NULL AND inspection_quantity BETWEEN 1 AND 99999999 AND inspection_quantity IS NOT NULL AND unit_snapshot IS NOT NULL AND CHAR_LENGTH(TRIM(unit_snapshot))>0) )` |
-
-### 4.4.1 工序报废与补产授权
-
-#### `batch_step_scrap_records`
-
-设计类型：不可变业务事实表。
-
-职责：保存管理员把一张异常处置单整体批准为报废后形成的工序报废事实。报废数量是来源处置量在批准时的快照；已落库事实不得更新或删除。
-
-报废数量等于来源处置的完整数量，单位沿用该处置；报工来源保留原报工，专检来源通过处置追溯，不伪造报工引用。
-
-数据库约束：
-
-- 一张异常处置单最多形成一条报废事实。
-- 报废与处置必须同任务、同工序；报工来源还须匹配原报工，专检来源不伪造报工引用。
-
-报废事实只追加属于应用写入约定，当前没有拒绝该表 UPDATE/DELETE 的专用触发器。
-
-**`batch_step_scrap_records` 字段定义**
-
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
-| `abnormal_disposition_id` | `BIGINT UNSIGNED NOT NULL` | 来源异常处置单 ID，唯一 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 生产批次 ID |
-| `batch_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 异常上报所在工序执行节点 ID |
-| `source_report_id` | `BIGINT UNSIGNED NULL` | 可空；报工来源保存异常报工 ID，专检来源通过处置单追溯 |
-| `scrap_quantity` | `INT NOT NULL` | 报废产品数量，等于该处置单的完整处置数量且大于 `0` |
-| `unit_snapshot` | `VARCHAR(20) NOT NULL` | 来源处置单位快照 |
-| `created_by` | `BIGINT UNSIGNED NOT NULL` | 批准并创建报废事实的管理员 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 报废事实创建时间 |
-
-**`batch_step_scrap_records` 键、索引与检查约束**
-
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_batch_step_scrap_records_created_by FOREIGN KEY (created_by) REFERENCES users(id)` |
-| 外键 | `CONSTRAINT fk_batch_step_scrap_records_disposition_source FOREIGN KEY(abnormal_disposition_id,production_batch_id,batch_step_record_id,source_report_id) REFERENCES batch_step_abnormal_dispositions(id,production_batch_id,batch_step_record_id,batch_step_report_id)` |
-| 外键 | `CONSTRAINT fk_step_scrap_disposition_step FOREIGN KEY(abnormal_disposition_id,production_batch_id,batch_step_record_id) REFERENCES batch_step_abnormal_dispositions(id,production_batch_id,batch_step_record_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_scrap_records_disposition (abnormal_disposition_id)` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_scrap_records_batch_step_reference ( id, production_batch_id, batch_step_record_id )` |
-| 唯一键 | `UNIQUE KEY uk_batch_step_scrap_records_source ( id, production_batch_id, batch_step_record_id, source_report_id )` |
-| 索引 | `KEY idx_batch_step_scrap_records_batch_step ( production_batch_id, batch_step_record_id, created_at )` |
-| CHECK | `CONSTRAINT chk_batch_step_scrap_records_quantity CHECK (scrap_quantity > 0)` |
-| CHECK | `CONSTRAINT chk_batch_step_scrap_records_quantity_integer CHECK (scrap_quantity = TRUNCATE(scrap_quantity, 0))` |
-| CHECK | `CONSTRAINT chk_integer_storage_batch_step_scrap_records CHECK ( scrap_quantity BETWEEN 0 AND 99999999 )` |
-
-#### 工序报废只读明细
-
-`GET /production/batches/:batchId/step-records/:recordId/scrap-records` 返回报废事实分页，总数和当前页共享一致性快照。它读取真实报废事实、严格同任务同工序的处置及可空来源报工，返回真实来源报工／异常处置单号、报废数量和单位、来源说明、审批说明、事实创建人和时间，以及存在的真实补产授权与补料引用；没有关联时返回 `null`，没有报废业务编号时不得拼造。专检来源返回专检单及结果 ID，来源报工对象为 `null`，不得伪造报工编号。
-
-该接口与报工历史共用[读取权限](#http-读取权限与消费者)；仅有员工查看权限时仍须是工序当前负责人。读取必须严格匹配路径任务／工序和事实来源，不扩大报工或异常写权限；即使分布待核对，也允许授权用户读取真实报废明细。
-
-#### `batch_step_scrap_reproduction_authorization`
-
-设计类型：不可变业务事实表。
-
-职责：保存一条工序报废事实对应的产品补产授权，明确补产产品数量、固定从哪一道工序重新投入和额度传播到哪一道工序。补料候选由批次完整 BOM 基础和启用物料版本决定，不按工序计算截止范围。授权在管理员批准报废时与报废事实、补料单和补料需求同事务创建；物流进度不得回写本表。
-
-补产数量在批准时固定为报废数量，入口固定为本任务首工序，额度传播至异常上报工序。
-
-数据库约束：
-
-- 一条报废事实只能形成一条补产授权。
-- 一张补料物流单只能服务一条补产授权。
-- 授权的任务、额度截止工序与报废事实同源，补料单和入口工序也须属于该任务。
-
-授权不保存可变状态；批准与创建事实的不可改写由应用维护，当前没有拒绝该表 UPDATE/DELETE 的专用触发器。
-
-应用规则：
-
-- `authorized_quantity` 必须等于 `batch_step_scrap_records.scrap_quantity`；数据库只保证两者同源，数值相等由批准事务校验。
-- `supplement_id` 必须指向 `source_type = 'step_scrap_reproduction'` 且与当前报废事实同源的补料单；领料损耗不创建补料单，也不关联产品补产授权。
-- `entry_step_record_id` 必须是路线首工序；物料版本选择与路线工序范围无关。
-- 本表没有“待生效/已生效”状态。`source_type = 'step_scrap_reproduction'` 的关联补料单进入 `fulfilled` 后，授权进入路线额度公式；此后发生领料损耗只追加 `item_scrap(production_consumed)` 损坏事实，原授权数量和产品可报上限不变，需要物料时管理员另行手工提需。普通退料不产生损耗或产品授权。
-
-**`batch_step_scrap_reproduction_authorization` 字段定义**
-
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 所属生产批次 ID |
-| `scrap_record_id` | `BIGINT UNSIGNED NOT NULL` | 唯一来源工序报废事实 ID |
-| `supplement_id` | `BIGINT UNSIGNED NOT NULL` | 唯一关联补料物流单 ID |
-| `entry_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 补产重新投入工序；当前固定为生产批次路线首工序 |
-| `quota_end_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 补产额度传播截止工序；固定为异常上报工序 |
-| `authorized_quantity` | `INT NOT NULL` | 产品补产授权数量；批准时等于报废数量且必须大于 `0` |
-| `authorized_by` | `BIGINT UNSIGNED NOT NULL` | 批准补产的管理员 ID |
-| `authorized_at` | `DATETIME NOT NULL` | 管理员批准补产的时间 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 授权事实创建时间 |
-
-**`batch_step_scrap_reproduction_authorization` 键、索引与检查约束**
-
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_scrap_reproduction_authorization_scrap FOREIGN KEY ( scrap_record_id, production_batch_id, quota_end_step_record_id ) REFERENCES batch_step_scrap_records ( id, production_batch_id, batch_step_record_id )` |
-| 外键 | `CONSTRAINT fk_scrap_reproduction_authorization_supplement FOREIGN KEY ( supplement_id, production_batch_id ) REFERENCES production_material_supplement (id, production_batch_id)` |
-| 外键 | `CONSTRAINT fk_scrap_reproduction_authorization_entry_step FOREIGN KEY ( entry_step_record_id, production_batch_id ) REFERENCES batch_step_records (id, production_batch_id)` |
-| 外键 | `CONSTRAINT fk_scrap_reproduction_authorization_authorized_by FOREIGN KEY (authorized_by) REFERENCES users(id)` |
-| 唯一键 | `UNIQUE KEY uk_scrap_reproduction_authorization_scrap (scrap_record_id)` |
-| 唯一键 | `UNIQUE KEY uk_scrap_reproduction_authorization_supplement (supplement_id)` |
-| 索引 | `KEY idx_scrap_reproduction_authorization_batch ( production_batch_id, quota_end_step_record_id, authorized_at )` |
-| CHECK | `CONSTRAINT chk_scrap_reproduction_authorization_quantity CHECK (authorized_quantity > 0)` |
-| CHECK | `CONSTRAINT chk_scrap_reproduction_authorization_quantity_integer CHECK (authorized_quantity = TRUNCATE(authorized_quantity, 0))` |
-| CHECK | `CONSTRAINT chk_integer_storage_batch_step_scrap_reproduction_authorization CHECK ( authorized_quantity BETWEEN 0 AND 99999999 )` |
-
-## 4.5 `rework_records`（当前最小返工）
-
-职责：承载一张已批准返工的异常处置单。返工由生产管理人员办理，固定归属来源工序并沿用处置来源单位，数量等于该处置单完整处置数量，不拆分来源异常单、不改路线；一次整单完成中的正常与异常结果分别形成事实。来源工序负责人只作批准时快照，不表示返工派工对象。
-
-返工冻结来源异常数量及单位。保存的负责人是批准时来源工序负责人，只供追溯，不授予返工办理资格；报工来源保留原报工，专检来源沿处置追溯。完成时分别引用正常恢复和残余异常事实，零量一侧不建事实。
-
-约束与事务规则：
-
-- 一张处置单只产生一张返工单，每条完成结果只被一张返工单引用；处置、工序与子结果必须同任务、同工序；报工来源还须匹配原报工，专检来源没有该引用。两个完成引用都非空时必须不同；`pending/doing/cancelled` 均为空，`completed` 至少一侧非空。
-- 批准返工只接受 `pending_review`，且来源处置数量大于 `0`、来源工序存在负责人；报工来源还须原普通报工仍有效；处置单更新为 `approved/rework` 与返工单创建、成功审计同事务。
-- 持久化状态机为 `pending -> doing -> completed`；开始和完成由具备 `production:rework:execute` 的生产管理人员办理并使用 `version` 乐观锁，不要求操作者等于来源工序负责人快照。员工查看、普通报工和工序执行权限不包含返工办理权；权限授予以能力为准，不硬编码管理员角色名称。任务提前结束时，收尾逐项处理可将未完成返工 `pending/doing -> cancelled`，保留来源和处理记录。普通生产中不提供独立返工取消入口，不能把收尾能力当作任意取消授权。
-- 单个完成命令提交 `normalQuantity` 和 `abnormalQuantity`，两者非负且合计必须精确等于 `rework_quantity`。同一事务仅为正数侧追加 `batch_step_reports.normal` 事实：正常恢复侧 `normal_quantity>0,abnormal_quantity=0,abnormal_origin=NULL`，残余异常侧 `normal_quantity=0,abnormal_quantity>0,abnormal_origin=current_step`；新待处置单只引用残余异常子报工。随后更新工序版本但保持工序状态，将两个实际结果 ID 写入对应完成引用，并提交成功审计及严格幂等结果；任一环节失败全部回滚。
-- `responsible_user_id` 及契约 `responsibleUserId/responsibleUserName` 保留批准时来源工序负责人信息，历史值不改写，展示须标明快照身份；它不代表实际返修或结果登记人。实际结果登记人由两类报工事实的 `created_by/created_at` 记录，开始／完成成功审计与业务同事务。
-- `ReworkRecordItem` 返回 `completedNormalReportId`、`completedAbnormalReportId`，`CompleteReworkResult` 返回 `normalReport`、`abnormalReport` 和 `abnormalDisposition`；不存在的结果侧及处置为真正的 `null`，不返回旧 `completedReportId/report` 兼容字段。返工结果携带 `quantityScope`，命令结果与历史查询一致；专检源 `sourceReportId/sourceReportNo` 为真正的 `null`。返工结果以两类事实数量表达，不维护 `pending/passed/failed` 的独立结果编码。只读 View 的两类结果编号与对应数量也按实际子事实返回，零量侧为空。
-- 返工完成按来源整笔数量校验，不以普通正常目标或首工投入上限再次封顶，不改变普通工序状态。它只恢复来源异常对象，不增加补产授权或物料需求，也不计入 `effective_direct_reported`。专检源及其后继返工的 `inspection` 结果同时排除普通正常／异常／总量汇总，服务端从源处置或源报工推导，客户端不得指定。写事务仍按共同业务根和工序顺序锁定，并保护返工事实唯一来源。
-- 两类返工结果都是返工单的下游依赖，纯正常恢复侧也不能通过通用报工冲销／更正入口调整，残余异常不能通用驳回重报。结果错误或需要部分完成时必须新增专用返工修正设计，当前没有该修正入口。
-- 正常与异常完成引用只指向实际产生的结果，不合成历史混合事实。旧开发库按[初始化基线](../../../../../../../packages/database/docs/90-migration-order.md#初始化基线)重建，停写和回退边界见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md)。
-
-**`rework_records` 字段定义**
-
-| 字段 | SQL 定义 | 业务含义 |
-| --- | --- | --- |
-| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键，自增 |
-| `rework_no` | `VARCHAR(100) NOT NULL` | 返工单号，唯一 |
-| `abnormal_disposition_id` | `BIGINT UNSIGNED NOT NULL` | 来源异常处置单，唯一 |
-| `production_batch_id` | `BIGINT UNSIGNED NOT NULL` | 生产批次 ID |
-| `batch_step_record_id` | `BIGINT UNSIGNED NOT NULL` | 返回执行的来源工序 |
-| `source_report_id` | `BIGINT UNSIGNED NULL` | 可空；报工来源关联异常报工，专检来源通过处置单追溯 |
-| `responsible_user_id` | `BIGINT UNSIGNED NOT NULL` | 批准时的来源工序负责人快照，不作为返工办理资格 |
-| `rework_quantity` | `INT NOT NULL` | 来源异常数量快照，必须大于 `0` |
-| `unit_snapshot` | `VARCHAR(20) NOT NULL` | 来源处置单位快照 |
-| `status` | `VARCHAR(30) NOT NULL DEFAULT 'pending'` | `pending`、`doing`、`completed`、`cancelled` |
-| `completed_normal_report_id` | `BIGINT UNSIGNED NULL` | 返工完成时生成的正数纯正常恢复事实，唯一；完成前或该侧为零时为空 |
-| `completed_abnormal_report_id` | `BIGINT UNSIGNED NULL` | 返工完成时生成的正数纯残余异常事实，唯一；完成前或该侧为零时为空 |
-| `started_at` | `DATETIME NULL` | 返工开始时间 |
-| `completed_at` | `DATETIME NULL` | 返工完成时间 |
-| `version` | `INT NOT NULL DEFAULT 0` | 乐观锁版本 |
-| `remark` | `TEXT NULL` | 审批、开始、完成或取消说明 |
-| `created_by` | `BIGINT UNSIGNED NOT NULL` | 创建人 |
-| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 创建时间 |
-| `updated_by` | `BIGINT UNSIGNED NOT NULL` | 最近修改人 |
-| `updated_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间 |
-
-**`rework_records` 键、索引与检查约束**
-
-| 类别 | 定义 |
-| --- | --- |
-| 主键 | `PRIMARY KEY (id)` |
-| 外键 | `CONSTRAINT fk_rework_records_step FOREIGN KEY ( batch_step_record_id, production_batch_id ) REFERENCES batch_step_records (id, production_batch_id)` |
-| 外键 | `CONSTRAINT fk_rework_records_responsible_user FOREIGN KEY (responsible_user_id) REFERENCES users (id)` |
-| 外键 | `CONSTRAINT fk_rework_records_created_by FOREIGN KEY (created_by) REFERENCES users (id)` |
-| 外键 | `CONSTRAINT fk_rework_records_updated_by FOREIGN KEY (updated_by) REFERENCES users (id)` |
-| 外键 | `CONSTRAINT fk_rework_records_completed_normal_report FOREIGN KEY ( completed_normal_report_id,batch_step_record_id,production_batch_id ) REFERENCES batch_step_reports (id,batch_step_record_id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_rework_records_completed_abnormal_report FOREIGN KEY ( completed_abnormal_report_id,batch_step_record_id,production_batch_id ) REFERENCES batch_step_reports (id,batch_step_record_id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_rework_records_disposition_source FOREIGN KEY(abnormal_disposition_id,production_batch_id,batch_step_record_id,source_report_id) REFERENCES batch_step_abnormal_dispositions(id,production_batch_id,batch_step_record_id,batch_step_report_id)` |
-| 外键 | `CONSTRAINT fk_rework_records_source_report FOREIGN KEY(source_report_id,batch_step_record_id,production_batch_id) REFERENCES batch_step_reports(id,batch_step_record_id,production_batch_id)` |
-| 外键 | `CONSTRAINT fk_rework_disposition_step FOREIGN KEY(abnormal_disposition_id,production_batch_id,batch_step_record_id) REFERENCES batch_step_abnormal_dispositions(id,production_batch_id,batch_step_record_id)` |
-| 唯一键 | `UNIQUE KEY uk_rework_records_no (rework_no)` |
-| 唯一键 | `UNIQUE KEY uk_rework_records_disposition (abnormal_disposition_id)` |
-| 唯一键 | `UNIQUE KEY uk_rework_records_completed_normal_report (completed_normal_report_id)` |
-| 唯一键 | `UNIQUE KEY uk_rework_records_completed_abnormal_report (completed_abnormal_report_id)` |
-| 索引 | `KEY idx_rework_records_assignee_status (responsible_user_id, status, created_at)` |
-| 索引 | `KEY idx_rework_records_batch_status (production_batch_id, status, created_at)` |
-| 索引 | `KEY idx_rework_records_completed_normal_source (completed_normal_report_id,batch_step_record_id,production_batch_id)` |
-| 索引 | `KEY idx_rework_records_completed_abnormal_source (completed_abnormal_report_id,batch_step_record_id,production_batch_id)` |
-| CHECK | `CONSTRAINT chk_rework_records_quantity CHECK (rework_quantity > 0)` |
-| CHECK | `CONSTRAINT chk_rework_records_status CHECK ( status IN ('pending', 'doing', 'completed', 'cancelled') )` |
-| CHECK | `CONSTRAINT chk_rework_records_version CHECK (version >= 0)` |
-| CHECK | `CONSTRAINT chk_rework_records_quantity_integer CHECK (rework_quantity = TRUNCATE(rework_quantity, 0))` |
-| CHECK | `CONSTRAINT chk_integer_storage_rework_records CHECK ( rework_quantity BETWEEN 0 AND 99999999 )` |
-| CHECK | `CONSTRAINT chk_rework_records_result_distinct CHECK ( completed_normal_report_id IS NULL OR completed_abnormal_report_id IS NULL OR completed_normal_report_id<>completed_abnormal_report_id )` |
-| CHECK | `CONSTRAINT chk_rework_records_state CHECK ( (status='pending' AND started_at IS NULL AND completed_at IS NULL AND completed_normal_report_id IS NULL AND completed_abnormal_report_id IS NULL) OR (status='doing' AND started_at IS NOT NULL AND completed_at IS NULL AND completed_normal_report_id IS NULL AND completed_abnormal_report_id IS NULL) OR (status='completed' AND started_at IS NOT NULL AND completed_at IS NOT NULL AND (completed_normal_report_id IS NOT NULL OR completed_abnormal_report_id IS NOT NULL)) OR (status='cancelled' AND completed_at IS NULL AND completed_normal_report_id IS NULL AND completed_abnormal_report_id IS NULL) )` |
-
-## 4.6 成品流转与后续质量放行边界
-
-当前两类成品入库依据任务的有效批准清单办理，复用入库单和 `inventory_transaction`，见[成品入库](finished-goods-inbound.md)。不新建 `finished_flow_records`；完整质量放行或流转里程碑仍需后续设计，即使增加也不得成为第二库存事实来源。
-
-## 4.7 当前追溯主链
-
-```text
-products
-  -> work_orders
-  -> production_batches
-  -> batch_step_records
-  -> batch_step_reports
-  -> batch_step_abnormal_dispositions
-     ├─ rework -> rework_records -> batch_step_reports
-     └─ scrap  -> batch_step_scrap_records -> production_material_supplement
+数据库触发器：trg_tracking_quantity_no_update、trg_tracking_quantity_no_delete。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。
+
+## production_tracking_abnormality
+
+统一保存随盘发现、涉及工序、普通或暂停级别、原始说明和处理状态。原始发现与处理履历分表，避免处理覆盖发现。
+
+卡和涉及工序以同任务组合外键保证归属。涉及站必须由应用核验本卡已到站；省略时取当前站。解决状态和时间成组，版本保护处理并发；卡根锁保护扫码、异常和最终确认之间的竞态。
+
+### 字段
+
+| 字段                      | SQL定义                                                                   | 含义                                                        |
+| ------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`                                 | 主键，数据库自增                                            |
+| `tracking_card_id`        | `bigint unsigned NOT NULL`                                                | 所属追踪卡，批量事实使用该ID；研发最终产出允许为空          |
+| `production_batch_id`     | `bigint unsigned NOT NULL`                                                | 所属生产任务；与其他来源ID通过组合外键保持同源              |
+| `batch_step_record_id`    | `bigint unsigned DEFAULT NULL`                                            | 涉及的任务冻结工序，组合外键保证属于同一任务                |
+| `severity`                | `varchar(20) NOT NULL`                                                    | normal普通异常或pause暂停流转                               |
+| `status`                  | `varchar(20) NOT NULL DEFAULT 'open'`                                     | 本表的封闭业务状态，值域由下方CHECK限定，转换由应用命令校验 |
+| `description`             | `text NOT NULL`                                                           | 原始异常发现说明，不由处理记录覆盖                          |
+| `personnel_id`            | `bigint unsigned NOT NULL`                                                | 登记时选择的现场人员ID，不是登录账号                        |
+| `personnel_code_snapshot` | `varchar(100) NOT NULL`                                                   | 登记时现场人员编码快照                                      |
+| `personnel_name_snapshot` | `varchar(100) NOT NULL`                                                   | 登记时现场人员姓名快照                                      |
+| `resolved_at`             | `datetime DEFAULT NULL`                                                   | 明确完成处理的时间，open状态为空                            |
+| `version`                 | `int NOT NULL DEFAULT '0'`                                                | 可变业务单据的乐观版本号，每次合法命令递增                  |
+| `created_by`              | `bigint unsigned NOT NULL`                                                | 实际登录操作者，引用users.id                                |
+| `created_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 事实或单据创建时间，北京时间                                |
+| `updated_by`              | `bigint unsigned NOT NULL`                                                | 最近一次合法命令的登录操作者                                |
+| `updated_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间，北京时间，由数据库维护                        |
+
+### 约束与索引
+
+```sql
+PRIMARY KEY (`id`);
+KEY `idx_tracking_abnormality_card_status` (`tracking_card_id`,`status`,`id`);
+KEY `fk_tracking_abnormality_card` (`tracking_card_id`,`production_batch_id`);
+KEY `fk_tracking_abnormality_step` (`batch_step_record_id`,`production_batch_id`);
+KEY `fk_tracking_abnormality_personnel` (`personnel_id`);
+KEY `fk_tracking_abnormality_created_by` (`created_by`);
+KEY `fk_tracking_abnormality_updated_by` (`updated_by`);
+CONSTRAINT `fk_tracking_abnormality_card` FOREIGN KEY (`tracking_card_id`, `production_batch_id`) REFERENCES `production_tracking_card` (`id`, `production_batch_id`);
+CONSTRAINT `fk_tracking_abnormality_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_abnormality_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
+CONSTRAINT `fk_tracking_abnormality_step` FOREIGN KEY (`batch_step_record_id`, `production_batch_id`) REFERENCES `batch_step_records` (`id`, `production_batch_id`);
+CONSTRAINT `fk_tracking_abnormality_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
+CONSTRAINT `chk_tracking_abnormality_resolution` CHECK ((((`status` = 'open') and (`resolved_at` is null)) or ((`status` = 'resolved') and (`resolved_at` is not null))));
+CONSTRAINT `chk_tracking_abnormality_severity` CHECK ((`severity` in ('normal','pause')));
+CONSTRAINT `chk_tracking_abnormality_status` CHECK ((`status` in ('open','resolved')));
+CONSTRAINT `chk_tracking_abnormality_version` CHECK ((`version` >= 0));
 ```
 
-追溯主链包含报工创建、更正、异常审批、最小返工和报废补料事实。工序专检以 `quality_process_inspection -> batch_step_abnormal_dispositions` 接入同一处置链；最终质量放行和成品流转里程碑另行设计。追溯查询可以使用受约束的冗余字段和快照，但任何库存数量只能从 `inventory_transaction` 汇总，任何生产需求只能从 `production_item_demand` 读取。
+## production_tracking_abnormality_handling
 
-Production 只读追溯查询支持按工单号、生产批次号、物料编码和库存批次号定位生产批次，并读取工单/批次概览、`production_item_demand`、`production_item_allocation`、`outbound_order/outbound_detail`、对应的 `production_material_outbound` 库存流水、`batch_step_records`、`batch_step_reports` 普通/冲销/替代链及有效聚合、`batch_step_abnormal_dispositions` 待处置记录。该投影不创建第二事实表，不返回质量、返工、报废、退料或成品流向占位数据。
+追加某异常的一次处理说明、人员快照和是否完成处理。多次处理保留顺序和各自责任人员。
 
-追溯按工单分组分页，按真实来源查询正负流水；展示读取遵守[跨模块查询登记](../../../../../../../docs/architecture.md#展示查询的跨模块读取)，不授予领料、采购或补料资格。
+仅追加，不更新或删除。追加resolve事实与原异常转态、异常和卡版本、成功审计同事务提交；resolved异常不再接受处理。
 
-批次收尾时未完成工序由管理员逐项置为 `terminated`，行动保留原状态；父批次 `closing/terminated` 阻止后续执行；待处理异常使用 `terminated` 记录结束人和时间且无处置类型，未完成返工取消，未履约补料使用 `cancelled` 且履约人/时间为空。已报工和已授权事实保留；不补料的终止产出报废独立见[批次结束设计](production-termination.md)。
+### 字段
 
-正常任务结束要求各工序明确完成，不因工序报工数量、活动需求或未履约补料阻断；剩余事项在结案送审前处理。关闭需求不能伪装履约，补产额度仍需关联补料履约后生效。
+| 字段                      | SQL定义                                       | 含义                                   |
+| ------------------------- | --------------------------------------------- | -------------------------------------- |
+| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                       |
+| `abnormality_id`          | `bigint unsigned NOT NULL`                    | 所属原始异常；处理记录追加于此ID       |
+| `content`                 | `text NOT NULL`                               | 本次处理说明，不覆盖原始发现或之前处理 |
+| `resolves_abnormality`    | `tinyint(1) NOT NULL`                         | 本次是否明确完成异常处理，0/1          |
+| `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号   |
+| `personnel_code_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员编码快照                 |
+| `personnel_name_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员姓名快照                 |
+| `created_by`              | `bigint unsigned NOT NULL`                    | 实际登录操作者，引用users.id           |
+| `created_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 事实或单据创建时间，北京时间           |
 
-### 生产追溯查询
+### 约束与索引
 
-`GET /production/trace/batches/:id` 的物料入库来源按所用库存批次的正数、available 流水展示，`sourceLabel` 取真实 `transaction_type`，无外购单不能一律解释为 initial_stock。这是批次入库历史，不表示其中每笔数量全部被当前任务消费。
+```sql
+PRIMARY KEY (`id`);
+KEY `idx_tracking_handling_abnormality` (`abnormality_id`,`id`);
+KEY `fk_tracking_handling_personnel` (`personnel_id`);
+KEY `fk_tracking_handling_actor` (`created_by`);
+CONSTRAINT `fk_tracking_handling_abnormality` FOREIGN KEY (`abnormality_id`) REFERENCES `production_tracking_abnormality` (`id`);
+CONSTRAINT `fk_tracking_handling_actor` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_handling_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
+CONSTRAINT `chk_tracking_handling_resolves` CHECK ((`resolves_abnormality` in (0,1)));
+```
 
-`sourceDocumentNo` 沿 `inventory_transaction.reference_type=inbound_detail` 解析已完成公共入库单，包含采购、生产退料与其他入库；无对应单据的初始库存等来源为 null，类型仍取真实流水。`confirmedAt` 优先对应单据确认时间，无单据时使用流水时间。供应方仅取采购入库对应明细的确认时供应商名称，不从合单的其他明细、退料或人工其他单推断供应商；前端使用共享流水字典。共同库批仍只追溯来源集合，不分摊某条领料精确消费哪次入库。供应商名称和批次来源规则见 [Inventory](../../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)。
+数据库触发器：trg_tracking_handling_no_update、trg_tracking_handling_no_delete。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。
+
+## production_tracking_output
+
+唯一不可变最终可用产出事实。批量每卡一笔，研发每任务一笔；quantity允许0，正数与Inventory实际入库同事务。
+
+卡唯一键限制每盘一次；research_batch_id生成列及唯一键限制无卡的研发任务一次。组合外键保证任务、工单、成品及卡归属一致。quality资格、末站、异常清零及批量quantity不超盘量由应用锁内核验。Inventory使用本表ID追溯，后续库存调整不能改写本表。
+
+### 字段
+
+| 字段                      | SQL定义                                                                                                                        | 含义                                                                         |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
+| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`                                                                                      | 主键，数据库自增                                                             |
+| `production_batch_id`     | `bigint unsigned NOT NULL`                                                                                                     | 所属生产任务；与其他来源ID通过组合外键保持同源                               |
+| `tracking_card_id`        | `bigint unsigned DEFAULT NULL`                                                                                                 | 所属追踪卡，批量事实使用该ID；研发最终产出允许为空                           |
+| `research_batch_id`       | `bigint unsigned GENERATED ALWAYS AS ((case when (`tracking_card_id`is null) then`production_batch_id` else NULL end)) STORED` | tracking_card_id为空时生成所属任务ID，否则为空；唯一键约束研发每任务最多一次 |
+| `work_order_id`           | `bigint unsigned NOT NULL`                                                                                                     | 所属任务的工单ID，组合外键保证与任务及成品同源                               |
+| `product_id`              | `bigint unsigned NOT NULL`                                                                                                     | 最终产出的成品ID，固定沿所属任务和工单，不接受自由拼接                       |
+| `quantity`                | `int NOT NULL`                                                                                                                 | 显式确认的最终可用产出，允许0，不是交接报工累计                              |
+| `personnel_id`            | `bigint unsigned NOT NULL`                                                                                                     | 登记时选择的现场人员ID，不是登录账号                                         |
+| `personnel_code_snapshot` | `varchar(100) NOT NULL`                                                                                                        | 登记时现场人员编码快照                                                       |
+| `personnel_name_snapshot` | `varchar(100) NOT NULL`                                                                                                        | 登记时现场人员姓名快照                                                       |
+| `confirmed_by`            | `bigint unsigned NOT NULL`                                                                                                     | 执行最终产出确认的登录账号                                                   |
+| `confirmed_at`            | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP`                                                                                  | 最终确认时间，不可改写                                                       |
+| `remark`                  | `text`                                                                                                                         | 原始备注，与后续处理或作废说明分别保存                                       |
+
+### 约束与索引
+
+```sql
+PRIMARY KEY (`id`);
+UNIQUE KEY `uk_tracking_output_card` (`tracking_card_id`);
+UNIQUE KEY `uk_tracking_output_research` (`research_batch_id`);
+KEY `idx_tracking_output_work_order` (`work_order_id`,`confirmed_at`,`id`);
+KEY `idx_tracking_output_batch` (`production_batch_id`,`confirmed_at`,`id`);
+KEY `fk_tracking_output_batch` (`production_batch_id`,`work_order_id`,`product_id`);
+KEY `fk_tracking_output_card` (`tracking_card_id`,`production_batch_id`);
+KEY `fk_tracking_output_personnel` (`personnel_id`);
+KEY `fk_tracking_output_actor` (`confirmed_by`);
+CONSTRAINT `fk_tracking_output_actor` FOREIGN KEY (`confirmed_by`) REFERENCES `users` (`id`);
+CONSTRAINT `fk_tracking_output_batch` FOREIGN KEY (`production_batch_id`, `work_order_id`, `product_id`) REFERENCES `production_batches` (`id`, `work_order_id`, `product_id`);
+CONSTRAINT `fk_tracking_output_card` FOREIGN KEY (`tracking_card_id`, `production_batch_id`) REFERENCES `production_tracking_card` (`id`, `production_batch_id`);
+CONSTRAINT `fk_tracking_output_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
+CONSTRAINT `chk_tracking_output_quantity` CHECK ((`quantity` between 0 and 99999999));
+```
+
+数据库触发器：trg_tracking_output_no_update、trg_tracking_output_no_delete。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。

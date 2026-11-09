@@ -8,22 +8,22 @@
 
 ## 1. 现行表与业务规则
 
-| 当前表所有者 | 表 | 逐表结构与业务规则 |
-| --- | --- | --- |
-| Inventory | `item_batch` | [库存批次](database/inventory-ledger-and-inbound.md#6-item_batch)，包含物料/成品互斥身份 |
-| Inventory | `inventory_transaction` | [不可变库存流水](database/inventory-ledger-and-inbound.md#7-inventory_transaction)，含六场景原始流水唯一与生成来源有类型外键 |
-| Inventory | `inventory_batch_balance` | [批次余额](database/inventory-ledger-and-inbound.md#71-inventory_batch_balance)，成品 `product_id` 分支与物料 `item_id` 分支互斥 |
-| Inventory | `inventory_material_variant_balance` | [精确版本余额](database/inventory-ledger-and-inbound.md#73-inventory_material_variant_balance)，只覆盖物料 |
-| Inventory | `inbound_order`、`inbound_detail` | [公共入库主从](database/inventory-ledger-and-inbound.md#34-入库表)，采购、批准成品、生产退料和其他入库 |
-| Inventory | `outbound_order`、`outbound_detail` | [公共出库主从](database/inventory-ledger-and-inbound.md#36-出库表)，生产领料和其他出库；整表不能按来源拆写权 |
-| Inventory | `stock_check_order`、`stock_check_detail` | [盘点主从表](database/stock-check.md)，仅现有物料库存批次／库存状态 |
-| Inventory，仅历史登记 | `inventory_item_balance` | 已删除投影；保留登记以检查不可修改的历史迁移，不恢复该表 |
+| 当前表所有者          | 表                                        | 逐表结构与业务规则                                                                                                               |
+| --------------------- | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| Inventory             | `item_batch`                              | [库存批次](database/inventory-ledger-and-inbound.md#6-item_batch)，包含物料/成品互斥身份                                         |
+| Inventory             | `inventory_transaction`                   | [不可变库存流水](database/inventory-ledger-and-inbound.md#7-inventory_transaction)，含六场景原始流水唯一与生成来源有类型外键     |
+| Inventory             | `inventory_batch_balance`                 | [批次余额](database/inventory-ledger-and-inbound.md#71-inventory_batch_balance)，成品 `product_id` 分支与物料 `item_id` 分支互斥 |
+| Inventory             | `inventory_material_variant_balance`      | [精确版本余额](database/inventory-ledger-and-inbound.md#73-inventory_material_variant_balance)，只覆盖物料                       |
+| Inventory             | `inbound_order`、`inbound_detail`         | [公共入库主从](database/inventory-ledger-and-inbound.md#34-入库表)，采购、终检成品、生产退料和其他入库                           |
+| Inventory             | `outbound_order`、`outbound_detail`       | [公共出库主从](database/inventory-ledger-and-inbound.md#36-出库表)，生产领料和其他出库；整表不能按来源拆写权                     |
+| Inventory             | `stock_check_order`、`stock_check_detail` | [盘点主从表](database/stock-check.md)，仅现有物料库存批次／库存状态                                                              |
+| Inventory，仅历史登记 | `inventory_item_balance`                  | 已删除投影；保留登记以检查不可修改的历史迁移，不恢复该表                                                                         |
 
-`production_item_allocation`、生产需求、`item_scrap`、生产结案及批准产出仍归 Production。生产退料使用公共入库主从；Production 编排领退料来源、额度和需求履约，经 Inventory 窄能力写入／锁定实际单据。采购到货不是库存批次，采购实收与 Quality 结论不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-design.md)。
+`production_item_allocation`、生产需求、`item_scrap`、终检产出仍归 Production。生产退料使用公共入库主从；Production 编排领退料来源、额度和需求履约，经 Inventory 窄能力写入／锁定实际单据。采购到货不是库存批次，采购实收与 Quality 结论不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-design.md)。
 
 ## 2. 身份与约束
 
-物料／成品互斥身份、实际入库目标、来源组合引用及不可变守卫见[库存账本](database/inventory-ledger-and-inbound.md)。批准类别和来源属于实际明细，库存批次不保存唯一供应商、任务或批准版。
+物料／成品互斥身份、实际入库目标、来源组合引用及不可变守卫见[库存账本](database/inventory-ledger-and-inbound.md)。终检产出和采购来源属于实际明细，库存批次不保存唯一供应商、任务或批准版。
 
 ## 3. 事实、投影与锁
 
@@ -31,7 +31,7 @@
 
 ## 4. 采购来源引用
 
-实际入库明细保存确认时到货、实收修订、检验与授权依据，历史不随后续更正重挂。组合引用见[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)，调用及历史读取见[公开能力](public-contracts.md#采购和批准成品实际入库)。
+实际入库明细保存确认时到货、实收修订、检验与授权依据，历史不随后续更正重挂。组合引用见[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)，调用及历史读取见[公开能力](public-contracts.md#采购和终检成品实际入库)。
 
 ## 5. 迁移策略
 

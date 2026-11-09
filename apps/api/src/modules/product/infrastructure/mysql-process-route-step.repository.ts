@@ -29,17 +29,15 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         step_code_snapshot: string;
         step_name_snapshot: string;
         description_snapshot: string | null;
-        default_owner_id: number | null;
         sop_file_id: number | null;
         sop_file_name_snapshot: string | null;
-        need_inspection: number;
         status: number;
         remark: string | null;
       })[]
     >(
       `SELECT rs.id,rs.process_step_id,rs.step_order,rs.step_code_snapshot,rs.step_name_snapshot,rs.description_snapshot,
-                    rs.default_owner_id,rs.sop_file_id,rs.sop_file_name_snapshot,
-                    rs.need_inspection,rs.status,rs.remark
+                    rs.sop_file_id,rs.sop_file_name_snapshot,
+                    rs.status,rs.remark
              FROM process_route_steps rs
              WHERE rs.route_id=? AND rs.is_deleted=0 ORDER BY rs.step_order`,
       [routeId],
@@ -51,11 +49,8 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
       stepCode: row.step_code_snapshot,
       stepName: row.step_name_snapshot,
       description: row.description_snapshot,
-      defaultOwnerId: row.default_owner_id === null ? null : String(row.default_owner_id),
-      defaultOwnerName: null,
       sopFileId: row.sop_file_id === null ? null : String(row.sop_file_id),
       sopFileName: row.sop_file_name_snapshot,
-      needInspection: Boolean(row.need_inspection),
       status: row.status,
       remark: row.remark,
     }));
@@ -123,11 +118,11 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
       );
       for (const item of snapshots) {
         await connection.execute(
-          `INSERT INTO process_route_steps (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,description_snapshot,default_owner_id,sop_file_id,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,need_inspection,status,remark,created_by,updated_by)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+          `INSERT INTO process_route_steps (route_id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,description_snapshot,sop_file_id,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,status,remark,created_by,updated_by)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON DUPLICATE KEY UPDATE process_step_id=VALUES(process_step_id),step_code_snapshot=VALUES(step_code_snapshot),step_name_snapshot=VALUES(step_name_snapshot),
-             description_snapshot=VALUES(description_snapshot),default_owner_id=VALUES(default_owner_id),sop_file_id=VALUES(sop_file_id),
-             sop_file_name_snapshot=VALUES(sop_file_name_snapshot),sop_object_key_snapshot=VALUES(sop_object_key_snapshot),sop_version_no_snapshot=VALUES(sop_version_no_snapshot),need_inspection=VALUES(need_inspection),
+             description_snapshot=VALUES(description_snapshot),sop_file_id=VALUES(sop_file_id),
+             sop_file_name_snapshot=VALUES(sop_file_name_snapshot),sop_object_key_snapshot=VALUES(sop_object_key_snapshot),sop_version_no_snapshot=VALUES(sop_version_no_snapshot),
              status=VALUES(status),remark=VALUES(remark),updated_by=VALUES(updated_by),is_deleted=0,deleted_by=NULL,deleted_at=NULL`,
           [
             routeId,
@@ -136,12 +131,10 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
             item.stepCode,
             item.stepName,
             item.description,
-            item.defaultOwnerId || null,
             item.sopFileId,
             item.sopFileName,
             item.sopObjectKey,
             item.sopVersionNo,
-            Number(item.needInspection),
             item.status ?? 1,
             item.remark ?? null,
             audit.actorId,

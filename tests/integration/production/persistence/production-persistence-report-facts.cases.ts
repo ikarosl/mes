@@ -1,3 +1,2 @@
-// TODO(production-persistence): 高重要性：报工事实不可变、冲销唯一及异常处置约束。
-// 用户明确启动正式测试后按现行报工结构恢复；场景索引见 production-persistence.mysql.test.ts。
-export {};
+// TODO(production-tracking-facts): 验证事实不可变、来源唯一及异常数量约束；高重要性覆盖。
+// 旧报工与异常审批事实模型已退役，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡流转、随盘异常及一次终检事实恢复覆盖。

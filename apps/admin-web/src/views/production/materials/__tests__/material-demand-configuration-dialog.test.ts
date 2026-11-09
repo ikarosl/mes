@@ -126,14 +126,10 @@ describe('MaterialDemandConfigurationDialog', () => {
   });
 
   // TODO(material-demand-configuration): 保留 BOM 整单读取与批量锁版校验；正式测试获准并适配批量单版本模型后恢复。
-  it.todo(
-    'loads all BOM rows on open, locks mass-production versions, and leaves research versions unselected',
-  );
+  // TODO(production-test-recovery): loads all BOM rows on open, locks mass-production versions, and leaves research versions unselected；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   // TODO(material-demand-configuration): 保留数量完整性与整单提交校验；正式测试获准并按当前用料模型迁移后恢复。
-  it.todo(
-    'requires complete research quantities, keeps versions unique, and submits the split payload',
-  );
+  // TODO(production-test-recovery): requires complete research quantities, keeps versions unique, and submits the split payload；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
   it('does not save after a critical BOM load failure', async () => {
     const failure = new Error('load failed');

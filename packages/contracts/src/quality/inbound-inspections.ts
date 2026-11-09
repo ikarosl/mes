@@ -3,7 +3,7 @@ import type { QualityInspectionMethod, QualityReleaseDecision } from './inspecti
 export type QualityInboundCaseType =
   'initial' | 'reinspection' | 'inspection_correction' | 'receipt_correction';
 export type QualityInboundCaseStatus = 'reviewing' | 'completed' | 'superseded';
-export type QualityInboundInspectionMethod = Exclude<QualityInspectionMethod, 'zero_confirmation'>;
+export type QualityInboundInspectionMethod = QualityInspectionMethod;
 
 export interface QualityInboundInspectionInput {
   inspectionMethod: QualityInboundInspectionMethod;

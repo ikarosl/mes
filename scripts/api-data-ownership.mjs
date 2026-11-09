@@ -66,6 +66,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'user_roles',
     'role_permissions',
     'refresh_tokens',
+    'personnel',
     'user_candidate_configs',
     'user_candidate_config_roles',
   ]),
@@ -86,6 +87,12 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'work_orders',
     'work_order_daily_sequence', // Retired; historical migration ownership.
     'work_order_material_versions',
+    'production_tracking_card',
+    'production_tracking_visit',
+    'production_tracking_quantity_change',
+    'production_tracking_abnormality',
+    'production_tracking_abnormality_handling',
+    'production_tracking_output',
     'production_batches',
     'production_batch_termination', // Retired; historical migrations retain ownership.
     'production_output_inspection', // Retired name; Quality owns the renamed finished inspection table.
@@ -124,51 +131,6 @@ export const API_DATA_OWNERSHIP = Object.freeze({
 
 /** 展示查询的正式只读依赖；不授予业务校验、跨模块写入或深层 import 权限。 */
 export const API_DISPLAY_READ_ACCESS = Object.freeze([
-  {
-    directory: 'apps/api/src/modules/quality/infrastructure/queries/',
-    tables: {
-      production_batch_closeout: [
-        'id',
-        'production_batch_id',
-        'version',
-        'pending_approval_id',
-        'current_revision_id',
-        'current_round_id',
-        'correction_reason',
-        'available_quantity',
-        'extra_quantity',
-        'additional_scrap_quantity',
-        'updated_at',
-      ],
-      production_output_round: [
-        'id',
-        'status',
-        'round_no',
-        'trigger_type',
-        'reason',
-        'baseline_planned_received',
-        'baseline_extra_received',
-        'starting_declared_remaining',
-      ],
-      production_batches: ['id', 'batch_no', 'work_order_id', 'planned_quantity', 'status'],
-      work_orders: [
-        'id',
-        'work_order_no',
-        'product_code_snapshot',
-        'product_name_snapshot',
-        'status',
-      ],
-      batch_step_records: [
-        'id',
-        'production_batch_id',
-        'step_order_snapshot',
-        'step_code_snapshot',
-        'step_name_snapshot',
-        'unit_snapshot',
-        'status',
-      ],
-    },
-  },
   {
     directory: 'apps/api/src/modules/procurement/infrastructure/queries/',
     tables: {
@@ -355,7 +317,7 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'batch_id',
         'item_code_snapshot',
         'supplier_name_snapshot',
-        'production_output_allocation_id',
+        'production_output_id',
         'inbound_number',
         'unit_snapshot',
         'stock_status',

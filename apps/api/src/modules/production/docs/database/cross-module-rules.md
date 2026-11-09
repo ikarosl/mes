@@ -1,35 +1,17 @@
-# 跨模块协作规则
+﻿# 跨模块协作规则
 
-> [返回 Production 数据库设计](README.md)。本篇维护 Production 与外部事实的关系，以及尚未实施的协作边界；模块内部规则由对应专题维护。
+Production 拥有工单、任务、物料需求与分配、冻结工序、追踪卡、随盘异常和最终产出。跨模块只能导入目标 public.ts；展示读取仍按[架构登记](../../../../../../../docs/architecture.md)执行。
 
-## 3.11 跨模块引用说明
+| 所有者      | Production 使用的公开能力与边界                                                                                                      |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Product     | 有效成品、已批准并锁定 BOM、物料精确版本、路线及 SOP；任务创建冻结路线与技术文件，历史引用不授予当前写入资格                         |
+| Identity    | 工单／任务负责人仍是账号场景候选；现场人员目录独立于登录账号，扫码人员快照与实际 actor 分别记录；最终确认必须是当前启用 quality 人员 |
+| Inventory   | 领退料公共单据、库批与唯一库存账本；Production 核验需求和分配来源，通过公开命令同事务办理；最终确认正数产出直接入库，零数不记库存    |
+| Approval    | 仅承接保留的正式需求更正与关闭；追踪卡异常、逐站交接和最终产出不进入审批                                                             |
+| Procurement | 通过 ProductionProcurementQuery 查询和复核按需采购来源，不回写生产需求或替代真实领料履约                                             |
 
-| 所有者 | Production 使用的事实／能力 | 规则来源 |
-| --- | --- | --- |
-| Product | 成品、BOM、物料版本、路线及技术文件；历史身份不授予新生产用途资格 | [产品规则](../../../product/docs/product-rules.md) |
-| Identity | 人员身份与实时资格；人员身份不自动授予业务权限 | [身份模块](../../../identity/README.md) |
-| Inventory | Production 核验来源、推进履约，Inventory 写实际领退料、成品入库及库存事实 | [公开能力](../../../inventory/docs/public-contracts.md) |
-| Quality | 不可变检查及专检处理额度；检查不替代生产产出或自动修改报工 | [统一检验模型](../../../quality/docs/unified-inspection-model.md) |
-| Approval | Production 提供受审证据、业务校验和具体负责人，Approval 管理流程与决定 | [场景接入](../../../approval/docs/subject-integration.md) |
+Production 不依赖 Quality 的生产专检或成品检查能力；来料质量流程继续由 Quality 与 Procurement 所有。路线中的检验节点按普通扫码站流转，最终可用数量是 Production 明确确认的产出事实。
 
-跨模块访问与展示读取遵守[项目架构](../../../../../../../docs/architecture.md)，来源和库存的原子性、完整锁序及预留读取例外由[库存协作协议](../../../../../../../docs/inventory-extraction-design.md)维护。生产需求、执行及结案的具体资格见[所属专题](README.md)。
+需求唯一事实为 production_item_demand，库存唯一事实为 inventory_transaction；任何汇总都只读。额外用料独立人工提需，不从异常自动生成返工、报废补产或补料授权。已领物料损耗不再次扣库存，真实余料沿原分配退回；[各自额度](return-scrap-and-stocktake.md)不可与产品数量混算。
 
-## 报废与损耗边界
-
-| 场景 | 数量影响与所有者 |
-| --- | --- |
-| 工序产品报废 | [执行专题](execution-traceability-quality.md#441-工序报废与补产授权)保存报废和产品补产授权；[需求专题](demand-allocation-and-outbound.md#batch_step_scrap_records-与半自动补料)维护物料补料与履约 |
-| 结案新增产品报废 | [结案](production-termination.md)与历史工序报废去重，不补料、不补产、不写库存 |
-| 已领物料损耗 | [退料与损耗](return-scrap-and-stocktake.md)占用可退额度，不再次扣库存；额外用料另提需求 |
-| 仓库库存报废 | 未开放，不能从上述入口顺带实现 |
-
-原材料损耗与产品报废不能合计，物料补料数量也不是产品补产数量。
-
-## 库存状态转换（尚未实施）
-
-以下是未来接口边界，不能据此开放待检入库或质量状态转换：
-
-- 状态变化以同事务等量反向流水表达，物料、版本、批次与单位一致；待检转可用分别记待检负数和可用正数。
-- 两条流水共用 `transaction_group_key`，各自有唯一幂等键；分组键用于成对核查，不替代单条防重。
-- 来源必须指向未来已定稿的质量放行事实，不能预设旧草案 `inspection_records` 或提前创建 `finished_flow_records`。
-- 质量结论、人员和报告归质量模型，库存仅表达数量及状态；即使增加流转里程碑也不能成为第二库存账本。
+写命令依次锁工单、任务及所需 Production 根和事实，再通过人员／产品／库存公开能力取得各自资格锁，复用同池事务。Inventory 反向读取当前有效预留仅限窄公开查询，完整锁序和 NOWAIT 重试见[库存协作](../../../../../../../docs/inventory-extraction-design.md)。成功审计由平台事务 Writer 同事务写入。

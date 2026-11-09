@@ -12,14 +12,11 @@ import type {
   ProductionBatchItem,
   ProductionBatchQuery,
   ProductionBatchStartRecord,
-  ProductionBatchStepRecords,
-  ProductionStepCommandResult,
-  UpdateBatchStepExecutionPayload,
   UpdateProductionBatchPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../../common/audit/transactional-audit-writer.js';
-import { toBeijingISOString, toDateOnlyString } from '../../../../common/time/date-time.js';
+import { toDateOnlyString } from '../../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
 import type { ProcessRouteSnapshot } from '../../../product/public.js';
 import { InventoryProductionDocumentCommand } from '../../../inventory/public.js';
@@ -30,12 +27,7 @@ import type {
 import { requireBatchTransition } from '../../domain/production-status.policy.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import { integerQuantity } from '../../domain/integer-quantity.js';
-import {
-  selectBatchOverview,
-  selectBatchStartRecord,
-  selectBatchStepRecords,
-} from './mysql-production-batch.read.js';
-import { readProductionSnapshot } from '../shared/mysql-production-read-snapshot.js';
+import { selectBatchOverview, selectBatchStartRecord } from './mysql-production-batch.read.js';
 import { mysqlProductionDemandPlanWriter } from '../demand/mysql-production-demand-plan.writer.js';
 import { mapBatches } from './mysql-production-batch-display.mapper.js';
 import {
@@ -45,7 +37,6 @@ import {
   findBatch,
 } from './mysql-production-batch.persistence.js';
 import { ensureNoDuplicate } from '../shared/mysql-production-db.js';
-import { findStepRecord, stepAudit } from '../execution/mysql-production-step.persistence.js';
 import { findWorkOrder } from './mysql-work-order.persistence.js';
 
 import {
@@ -107,10 +98,6 @@ export class MysqlProductionBatchRepository {
 
   async get(id: string): Promise<ProductionBatchDetail> {
     return selectBatchOverview(this.pool, id);
-  }
-
-  getStepRecords(id: string): Promise<ProductionBatchStepRecords> {
-    return readProductionSnapshot(this.pool, (db) => selectBatchStepRecords(db, id));
   }
 
   getStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
@@ -198,7 +185,7 @@ export class MysqlProductionBatchRepository {
       for (const step of route?.steps ?? []) {
         const override = overrides.get(step.routeStepId);
         await connection.execute(
-          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,default_responsible_user_id_snapshot,responsible_user_id,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,need_inspection_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
           [
             result.insertId,
             step.routeStepId,
@@ -209,13 +196,10 @@ export class MysqlProductionBatchRepository {
             step.sop?.fileName ?? null,
             step.sop?.objectKey ?? null,
             step.sop?.versionNo ?? null,
-            step.defaultOwnerId ?? null,
-            null,
             override?.actualSop?.id ?? null,
             override?.actualSop?.fileName ?? null,
             override?.actualSop?.objectKey ?? null,
             override?.actualSop?.versionNo ?? null,
-            Number(step.needInspection),
             order.unit_snapshot,
             audit.actorId,
             audit.actorId,
@@ -377,78 +361,20 @@ export class MysqlProductionBatchRepository {
         reason,
         expectedBatchVersion: version,
       });
+      const [voidedCards] = await connection.execute<ResultSetHeader>(
+        `UPDATE production_tracking_card SET status='voided',void_reason=?,voided_by=?,voided_at=NOW(),version=version+1,updated_by=? WHERE production_batch_id=? AND status='unused'`,
+        [reason, audit.actorId, audit.actorId, id],
+      );
       await this.audit(connection, audit, 'production-batch.cancel', id, batchAudit(before), {
         status: 'cancelled',
         reason,
         cancelledPendingOutboundIds: pendingOutboundIds,
         cancelledAllocationCount: cancellationState.allocationIds.length,
         cancelledDemandCount: cancellationState.demandIds.length,
+        voidedUnusedCardCount: voidedCards.affectedRows,
         version: version + 1,
       });
       return selectBatchOverview(connection, id);
-    });
-  }
-
-  async updateStepExecution(
-    batchId: string,
-    recordId: string,
-    payload: UpdateBatchStepExecutionPayload,
-    actualSop:
-      { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
-    audit: CommandContext,
-  ): Promise<ProductionStepCommandResult> {
-    return withTransaction(this.pool, async (connection) => {
-      const batch = await findBatch(connection, batchId, true);
-      if (
-        batch.status === 'cancelled' ||
-        batch.status === 'completed' ||
-        batch.status === 'terminated' ||
-        batch.status === 'closing'
-      )
-        throw new ProductionDomainError('INVALID_STATE', '已取消或已完成批次不能调整工序执行参数');
-      const before = await findStepRecord(connection, batchId, recordId, true);
-      if (before.status !== 'pending' && before.status !== 'assigned')
-        throw new ProductionDomainError('INVALID_STATE', '工序开始后不能调整实际 SOP');
-      const [result] = await connection.execute<ResultSetHeader>(
-        `UPDATE batch_step_records SET actual_sop_file_id=?,actual_sop_file_name_snapshot=?,actual_sop_object_key_snapshot=?,actual_sop_version_no_snapshot=?,version=version+1,updated_by=? WHERE id=? AND production_batch_id=? AND version=?`,
-        [
-          actualSop === undefined ? before.actual_sop_file_id : (actualSop?.id ?? null),
-          actualSop === undefined
-            ? before.actual_sop_file_name_snapshot
-            : (actualSop?.fileName ?? null),
-          actualSop === undefined
-            ? before.actual_sop_object_key_snapshot
-            : (actualSop?.objectKey ?? null),
-          actualSop === undefined
-            ? before.actual_sop_version_no_snapshot
-            : (actualSop?.versionNo ?? null),
-          audit.actorId,
-          recordId,
-          batchId,
-          payload.version,
-        ],
-      );
-      this.assertVersion(result, '工序执行参数已被其他操作修改，请刷新后重试');
-      await this.audit(
-        connection,
-        audit,
-        'production-batch-step.execution.update',
-        recordId,
-        stepAudit(before),
-        payload,
-      );
-      return {
-        productionBatchId: batchId,
-        batchStatus: batch.status,
-        batchVersion: batch.version,
-        stepRecordId: recordId,
-        stepStatus: before.status,
-        responsibleUserId:
-          before.responsible_user_id === null ? null : String(before.responsible_user_id),
-        startedAt: before.started_at === null ? null : toBeijingISOString(before.started_at),
-        completedAt: before.completed_at === null ? null : toBeijingISOString(before.completed_at),
-        version: payload.version + 1,
-      };
     });
   }
 

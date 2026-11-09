@@ -2,7 +2,6 @@ import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   IsArray,
-  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -185,11 +184,7 @@ export class ProcessRouteStepDto {
   @IsInt() @Min(1) stepOrder!: number;
   @ValidateIf((_, value) => value !== null && value !== undefined && value !== '')
   @IsNumberString()
-  defaultOwnerId?: string | null;
-  @ValidateIf((_, value) => value !== null && value !== undefined && value !== '')
-  @IsNumberString()
   sopFileId?: string | null;
-  @IsBoolean() needInspection!: boolean;
   @IsOptional() @IsIn([0, 1]) status?: number;
   @IsOptional() @IsString() @MaxLength(255) remark?: string | null;
 }

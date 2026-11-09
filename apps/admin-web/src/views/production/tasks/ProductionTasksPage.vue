@@ -5,293 +5,196 @@
         class="query-form"
         :inline="true"
         :model="query"
-      >
-        <el-form-item label="关键字">
-          <el-input
+        ><el-form-item label="关键字"
+          ><el-input
             v-model="query.keyword"
             clearable
-            placeholder="批次号/工单号/产品"
-          />
-        </el-form-item>
-        <el-form-item label="负责人">
-          <el-select
-            v-model="query.ownerId"
-            clearable
-            filterable
-            placeholder="全部"
-            @visible-change="(v: boolean) => v && userSource.refresh()"
-          >
-            <el-option
-              v-for="choice in userChoices"
-              :key="choice.value"
-              :label="choice.option?.displayName ?? `${choice.value}（已失效）`"
-              :value="choice.value"
-              :disabled="choice.isUnavailable"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="状态">
-          <el-select
+            placeholder="任务号 / 工单号 / 产品"
+            @keyup.enter="searchTasks" /></el-form-item
+        ><el-form-item label="状态"
+          ><el-select
             v-model="query.status"
-            placeholder="全部"
             clearable
-          >
-            <el-option
-              label="全部"
-              value=""
-            />
-            <el-option
+            placeholder="全部"
+            ><el-option
               v-for="item in BATCH_STATUS_META"
               :key="item.value"
               :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item class="query-actions">
-          <el-button
+              :value="item.value" /></el-select></el-form-item
+        ><el-form-item
+          ><el-button
             type="primary"
             :loading="loading"
             @click="searchTasks"
             >查询</el-button
-          >
-          <el-button @click="resetQuery">重置</el-button>
-        </el-form-item>
-      </el-form>
+          ><el-button @click="resetQuery">重置</el-button></el-form-item
+        ></el-form
+      >
     </section>
-
     <section class="table-panel">
-      <TableToolbar>
-        <template #actions>
-          <el-button
+      <TableToolbar
+        ><template #actions
+          ><el-button
             type="primary"
             :icon="Plus"
             @click="openCreate"
             >新增任务</el-button
-          >
-        </template>
-        <template #tools>
-          <el-tooltip
-            content="刷新"
-            placement="top"
-          >
-            <el-button
-              :icon="Refresh"
-              text
-              circle
-              :loading="loading"
-              @click="loadTasks"
-            />
-          </el-tooltip>
-        </template>
-      </TableToolbar>
-
+          ></template
+        ><template #tools
+          ><el-button
+            :icon="Refresh"
+            text
+            :loading="loading"
+            @click="loadTasks"
+            >刷新</el-button
+          ></template
+        ></TableToolbar
+      >
       <el-table
         v-loading="loading"
         :data="batches"
         row-key="id"
-        :row-class-name="batchRowClass"
         class="tasks-table"
       >
         <el-table-column
           label="任务 / 工单"
-          min-width="180"
+          min-width="185"
+          ><template #default="{ row }"
+            ><strong>{{ row.batchNo }}</strong>
+            <div class="sub-text">{{ row.workOrderNo }}</div></template
+          ></el-table-column
         >
-          <template #default="{ row }">
-            <div class="batch-no">{{ row.batchNo }}</div>
-            <div class="sub-text">{{ row.workOrderNo || '未关联工单' }}</div>
-          </template>
-        </el-table-column>
         <el-table-column
           label="产品"
-          min-width="190"
-        >
-          <template #default="{ row }">
-            <div class="product-name">{{ row.productName }}</div>
+          min-width="180"
+          ><template #default="{ row }"
+            ><strong>{{ row.productName }}</strong>
             <div class="product-meta">
-              <span class="sub-text">{{ row.productCode }}</span>
-              <el-tag
-                size="small"
+              <span class="sub-text">{{ row.productCode }}</span
+              ><el-tag
                 :type="taskTypeTagType(row.orderType)"
-                effect="light"
+                size="small"
                 >{{ taskTypeLabel(row) }}</el-tag
               >
-            </div>
-          </template>
-        </el-table-column>
+            </div></template
+          ></el-table-column
+        >
         <el-table-column
           label="计划数量"
-          width="100"
+          width="105"
           align="right"
+          ><template #default="{ row }">{{
+            formatQuantity(row.plannedQuantity)
+          }}</template></el-table-column
         >
-          <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
-        </el-table-column>
         <el-table-column
-          label="当前批准产出"
+          label="实际最终产出"
           min-width="135"
-        >
-          <template #header>
-            <el-tooltip
-              content="当前有效批准清单的可用量为计划内加计划外，不含报废，不代表报工量或实际入库量。完整清单见任务详情。"
-            >
-              <span>当前批准产出</span>
-            </el-tooltip>
-          </template>
-          <template #default="{ row }"
+          align="right"
+          ><template #default="{ row }"
             ><BatchApprovedOutput
               :output="row.finalOutput"
-              compact
-          /></template>
-        </el-table-column>
+              compact /></template
+        ></el-table-column>
         <el-table-column
-          label="任务状态"
-          min-width="190"
+          label="状态"
+          min-width="130"
+          ><template #default="{ row }"
+            ><el-tag :type="batchStatusMeta(row.status).type">{{
+              batchStatusMeta(row.status).label
+            }}</el-tag></template
+          ></el-table-column
         >
-          <template #default="{ row }">
-            <el-tag
-              :type="batchStatusMeta(row.status).type"
-              effect="light"
-              >{{ batchStatusMeta(row.status).label }}</el-tag
-            >
-            <div class="phase-hint">{{ taskNextAction(row).label }}</div>
-          </template>
-        </el-table-column>
         <el-table-column
-          label="交期"
+          label="计划交期"
           width="130"
+          ><template #default="{ row }">{{
+            formatDateForDisplay(row.planEndDate, '未设置')
+          }}</template></el-table-column
         >
-          <template #default="{ row }">
-            <div>{{ formatDateForDisplay(row.planEndDate, '未设置') }}</div>
-            <span
-              v-if="row.planEndDate"
-              :class="['deadline-badge', `deadline-${batchDeadline(row).tone}`]"
-              >{{ batchDeadline(row).label }}</span
-            >
-          </template>
-        </el-table-column>
         <el-table-column
+          prop="ownerName"
           label="负责人"
-          min-width="110"
-        >
-          <template #default="{ row }">{{ row.ownerName || '未指定' }}</template>
-        </el-table-column>
+          min-width="105"
+        />
         <el-table-column
           label="操作"
-          width="290"
+          width="295"
           fixed="right"
-        >
-          <template #default="{ row }">
-            <div class="task-actions">
+          ><template #default="{ row }"
+            ><div class="task-actions">
               <el-button
                 link
                 type="primary"
                 @click="openDetail(row)"
                 >详情</el-button
-              >
-              <el-button
-                v-if="row.orderType === 'mass_production'"
+              ><el-button
+                v-if="
+                  row.orderType === 'mass_production' &&
+                  canAccessRoute({ name: 'production-tracking' })
+                "
                 link
                 type="primary"
-                @click="openSteps(row)"
-                >工序管理</el-button
-              >
-              <el-button
-                v-if="row.status === 'pending'"
+                @click="openTracking(row)"
+                >工序追踪</el-button
+              ><el-button
+                v-if="canStartBatch(row)"
                 link
                 type="primary"
-                @click="openMaterialDemandConfiguration(row)"
-                >配置需求</el-button
-              >
-              <el-button
-                v-else-if="canStartBatch(row)"
-                link
-                type="primary"
-                @click="openExecutionStart(row)"
+                @click="openLifecycle(row, 'start')"
                 >任务开工</el-button
-              >
-              <el-button
-                v-else-if="row.orderType === 'research' && row.status === 'doing'"
+              ><el-button
+                v-else-if="row.status === 'doing'"
                 link
                 type="warning"
-                @click="openResearchExecution(row)"
-                >结束本轮研发</el-button
-              >
-              <el-button
-                v-else-if="['closing', 'completed', 'terminated'].includes(row.status)"
-                link
-                :type="batchCloseoutActionType(row.status)"
-                @click="openCloseout(row)"
-                >{{ batchCloseoutActionLabel(row.status, row.closeoutMode) }}</el-button
-              >
-              <el-dropdown trigger="click">
-                <el-button
+                @click="openLifecycle(row, 'finish')"
+                >结束任务</el-button
+              ><el-dropdown trigger="click"
+                ><el-button
                   link
                   type="primary"
-                  >更多<el-icon class="more-icon"><ArrowDown /></el-icon
-                ></el-button>
-                <template #dropdown>
-                  <el-dropdown-menu class="task-more-menu">
-                    <el-dropdown-item @click="openMaterialDemandOverview(row)"
+                  >更多<el-icon><ArrowDown /></el-icon></el-button
+                ><template #dropdown
+                  ><el-dropdown-menu
+                    ><el-dropdown-item
+                      v-if="
+                        row.orderType === 'research' &&
+                        row.status === 'doing' &&
+                        !row.finalOutput.confirmedOutputCount
+                      "
+                      @click="openLifecycle(row, 'research-output')"
+                      >登记研发产出</el-dropdown-item
+                    ><el-dropdown-item
+                      v-if="row.status === 'pending'"
+                      @click="openMaterialDemandConfiguration(row)"
+                      >配置物料需求</el-dropdown-item
+                    ><el-dropdown-item @click="openMaterialDemandOverview(row)"
                       >物料需求</el-dropdown-item
-                    >
-                    <el-dropdown-item
+                    ><el-dropdown-item
                       v-if="canHandleMaterials(row)"
                       @click="openMaterialAllocation(row)"
                       >分配物料</el-dropdown-item
-                    >
-                    <el-dropdown-item
+                    ><el-dropdown-item
                       v-if="canHandleMaterials(row)"
                       @click="openMaterialOutbound(row)"
                       >领料出库</el-dropdown-item
-                    >
-                    <el-dropdown-item
+                    ><el-dropdown-item
                       v-if="canEditBatch(row)"
                       divided
                       @click="openEdit(row)"
                       >编辑任务</el-dropdown-item
-                    >
-                    <el-dropdown-item
-                      v-if="row.status === 'pending'"
-                      @click="openExecutionStart(row)"
-                      >任务开工</el-dropdown-item
-                    >
-                    <el-dropdown-item
-                      v-if="
-                        ['material_partially_outbound', 'material_outbound', 'doing'].includes(
-                          row.status,
-                        )
-                      "
-                      divided
-                      class="task-action-warning"
-                      @click="openCloseout(row)"
-                      >提前结束</el-dropdown-item
-                    >
-                    <el-dropdown-item
-                      v-if="row.status === 'closing'"
-                      divided
-                      class="task-action-warning"
-                      @click="openCloseoutWithdrawal(row)"
-                      >撤回结束</el-dropdown-item
-                    >
-                    <el-dropdown-item
-                      v-if="
-                        !['completed', 'cancelled', 'terminated', 'closing'].includes(row.status)
-                      "
-                      divided
-                      class="task-action-danger"
-                      :disabled="isRowPending(row.id)"
+                    ><el-dropdown-item
+                      v-if="canStartBatch(row)"
                       @click="openBatchCancellation(row)"
                       >取消任务</el-dropdown-item
-                    >
-                  </el-dropdown-menu>
-                </template>
-              </el-dropdown>
-            </div>
-          </template>
-        </el-table-column>
-      </el-table>
-
-      <PaginationFooter
+                    ></el-dropdown-menu
+                  ></template
+                ></el-dropdown
+              >
+            </div></template
+          ></el-table-column
+        > </el-table
+      ><PaginationFooter
         :total="total"
         :current-page="currentPage"
         :page-size="pageSize"
@@ -299,17 +202,16 @@
         @page-change="handlePageChange"
       />
     </section>
-
-    <!-- 新增/编辑任务弹窗 -->
     <TaskFormDialog
       ref="taskFormDialogRef"
       :visible="taskDialogVisible"
       :editing-task-id="editingTaskId"
       :submitting="submitting"
+      :intent-status="taskIntentStatus"
+      @retry="retryTask"
       @update:visible="handleTaskDialogClose"
       @save="submitTask"
     />
-
     <TaskDetailDialog
       :visible="detailDialogVisible"
       :batch="activeBatch"
@@ -318,15 +220,12 @@
       @update:visible="handleDetailVisibility"
       @refresh="refreshTaskDetail"
     />
-
-    <ProductionTaskStepsDialog
-      ref="stepsDialog"
-      v-model:visible="stepsVisible"
-      :batch-id="stepsBatchId"
-      :batch-label="stepsBatchLabel"
+    <TaskLifecycleDialog
+      v-model:visible="lifecycleVisible"
+      :batch="lifecycleBatch"
+      :mode="lifecycleMode"
       @changed="taskPhaseChanged"
     />
-
     <MaterialDemandConfigurationDialog
       :visible="materialDemandConfigurationVisible"
       :batch="materialDemandBatch"
@@ -352,34 +251,6 @@
       :batch="materialDemandBatch"
       @update:visible="manualMaterialDemandVisible = $event"
       @added="handleManualMaterialDemandAdded"
-    />
-
-    <ResearchExecutionDialog
-      v-model:visible="researchExecutionVisible"
-      :batch="batches.find((row) => row.id === researchExecutionBatch?.id) ?? null"
-      @changed="researchExecutionChanged"
-    />
-    <ProductionExecutionStartDialog
-      ref="executionStartDialog"
-      v-model:visible="executionStartVisible"
-      :batch-id="executionStartBatch?.id ?? null"
-      :batch-label="
-        executionStartBatch
-          ? `${executionStartBatch.batchNo} · ${executionStartBatch.productName}`
-          : ''
-      "
-      @changed="taskPhaseChanged"
-    />
-    <ProductionCloseoutWithdrawalDialog
-      ref="closeoutWithdrawalDialog"
-      v-model:visible="closeoutWithdrawalVisible"
-      :batch-id="closeoutWithdrawalBatch?.id ?? null"
-      :batch-label="
-        closeoutWithdrawalBatch
-          ? `${closeoutWithdrawalBatch.batchNo} · ${closeoutWithdrawalBatch.productName}`
-          : ''
-      "
-      @changed="taskPhaseChanged"
     />
 
     <MaterialDemandAllocationDialog
@@ -408,22 +279,6 @@
       @submit="handleMaterialOutbound"
     />
 
-    <ProductionBatchTerminationDialog
-      ref="terminationDialog"
-      v-model:visible="terminationVisible"
-      :batch-id="terminationBatchId"
-      @terminated="closeoutChanged"
-      @open-output="openOutput"
-      @open-withdrawal="openOutputWithdrawal"
-    />
-    <ProductionOutputDialog
-      ref="outputDialog"
-      v-model:visible="outputVisible"
-      :batch-id="outputBatchId"
-      @changed="loadTasks"
-      @open-closeout="openCloseoutItems"
-      @open-withdrawal="openOutputWithdrawal"
-    />
     <ProductionBatchCancelDialog
       :visible="batchCancelDialogVisible"
       :batch="cancellingBatch"
@@ -436,14 +291,10 @@
 </template>
 
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue';
-import TableToolbar from '../../../components/TableToolbar.vue';
-import PaginationFooter from '../../../components/PaginationFooter.vue';
 import type {
-  CreateProductionBatchPayload,
-  ProductionBatchDetail,
   ProductionBatchCancellationCheck,
   ProductionBatchItem,
   CreateMaterialAllocationsPayload,
@@ -452,112 +303,37 @@ import type {
   ProductionMaterialDemandItem,
 } from '@company/contracts';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
+import TableToolbar from '../../../components/TableToolbar.vue';
+import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
-import { normalizeCreateBatchPayload } from '@company/utils';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { productionMaterialDemandsApi } from '../../../api/production/material-demands';
 import { productionTasksApi } from '../../../api/production/tasks';
+import { useRowPending } from '../../../composables/use-row-pending';
 import { formatDateForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
-import { useRowPending } from '../../../composables/use-row-pending';
 import { formatQuantity } from '../../../utils/quantity';
 import { BATCH_STATUS_META, batchStatusMeta } from '../shared/production-status';
+import { taskTypeTagType } from '../shared/production-task-presentation';
 import { useProductionBatchesList } from './use-production-batches-list';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
-import { useUserOptions } from '../../../composables/options/useUserOptions';
-import { buildLiveOptions } from '../../../utils/live-options';
+import { useProductionTaskEditor } from './use-production-task-editor';
 import TaskFormDialog from './TaskFormDialog.vue';
-import type { TaskFormValue } from './task-form';
 import TaskDetailDialog from './TaskDetailDialog.vue';
+import TaskLifecycleDialog, { type TaskLifecycleMode } from './TaskLifecycleDialog.vue';
 import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
-import ProductionTaskStepsDialog from './ProductionTaskStepsDialog.vue';
+import ProductionBatchCancelDialog from './ProductionBatchCancelDialog.vue';
 import MaterialDemandAllocationDialog from '../materials/MaterialDemandAllocationDialog.vue';
 import MaterialOutboundDialog from '../materials/MaterialOutboundDialog.vue';
 import { useProductionMaterials } from '../materials/use-production-materials';
-import {
-  batchCloseoutActionLabel,
-  batchCloseoutActionType,
-  deadlinePresentation,
-  taskNextActionPresentation,
-  taskTypeTagType,
-} from '../shared/production-task-presentation';
-import ProductionBatchTerminationDialog from '../closeout/ProductionBatchTerminationDialog.vue';
-import ProductionOutputDialog from '../closeout/ProductionOutputDialog.vue';
-import ProductionBatchCancelDialog from './ProductionBatchCancelDialog.vue';
 import MaterialDemandConfigurationDialog from '../materials/MaterialDemandConfigurationDialog.vue';
 import MaterialDemandOverviewDialog from '../materials/MaterialDemandOverviewDialog.vue';
 import ManualMaterialDemandDialog from '../materials/ManualMaterialDemandDialog.vue';
-import ResearchExecutionDialog from '../execution/ResearchExecutionDialog.vue';
-import ProductionExecutionStartDialog from '../execution/ProductionExecutionStartDialog.vue';
-import ProductionCloseoutWithdrawalDialog from '../closeout/ProductionCloseoutWithdrawalDialog.vue';
 
 defineOptions({ name: 'ProductionTasksPage' });
-
-const researchExecutionVisible = ref(false);
-const researchExecutionBatch = ref<ProductionBatchItem | null>(null);
-const openResearchExecution = (batch: ProductionBatchItem) => {
-  researchExecutionBatch.value = batch;
-  researchExecutionVisible.value = true;
-};
-const researchExecutionChanged = async (batchId: string, completed: boolean) => {
-  await taskPhaseChanged(batchId);
-  if (completed) openOutput(batchId);
-};
-const executionStartVisible = ref(false);
-const executionStartBatch = ref<ProductionBatchItem | null>(null);
-const executionStartDialog = ref<InstanceType<typeof ProductionExecutionStartDialog> | null>(null);
-const closeoutWithdrawalVisible = ref(false);
-const closeoutWithdrawalBatch = ref<ProductionBatchItem | null>(null);
-const closeoutWithdrawalDialog = ref<InstanceType<
-  typeof ProductionCloseoutWithdrawalDialog
-> | null>(null);
-const terminationDialog = ref<InstanceType<typeof ProductionBatchTerminationDialog> | null>(null);
-const openExecutionStart = async (batch: ProductionBatchItem): Promise<void> => {
-  if (executionStartVisible.value && !(await executionStartDialog.value?.close())) return;
-  await nextTick();
-  executionStartBatch.value = { ...batch };
-  executionStartVisible.value = true;
-};
-const openCloseoutWithdrawal = async (batch: ProductionBatchItem): Promise<void> => {
-  if (closeoutWithdrawalVisible.value && !(await closeoutWithdrawalDialog.value?.close())) return;
-  await nextTick();
-  closeoutWithdrawalBatch.value = { ...batch };
-  closeoutWithdrawalVisible.value = true;
-};
-const openOutputWithdrawal = async (batchId: string): Promise<void> => {
-  try {
-    const batch =
-      batches.value.find((row) => row.id === batchId) ??
-      (await productionTasksApi.getBatch(batchId));
-    await openCloseoutWithdrawal(batch);
-  } catch (error) {
-    EMessage.error(error, '撤回任务详情查询失败');
-  }
-};
-const closeoutChanged = async (): Promise<void> => {
-  if (terminationBatchId.value) await taskPhaseChanged(terminationBatchId.value);
-};
-async function taskPhaseChanged(batchId: string): Promise<void> {
-  const updates: Promise<unknown>[] = [loadTasks()];
-  if (detailBatchId.value === batchId && detailDialogVisible.value)
-    updates.push(refreshTaskDetail());
-  if (materials.batchId.value === batchId)
-    updates.push(materials.loadDemands(), materials.loadOutbounds());
-  if (materialDemandBatch.value?.id === batchId && materialDemandOverviewVisible.value)
-    updates.push(loadMaterialDemandOverview());
-  if (outputVisible.value && outputBatchId.value === batchId)
-    updates.push(outputDialog.value?.refresh() ?? Promise.resolve());
-  if (terminationVisible.value && terminationBatchId.value === batchId)
-    updates.push(terminationDialog.value?.refresh() ?? Promise.resolve());
-  const results = await Promise.allSettled(updates);
-  for (const result of results)
-    if (result.status === 'rejected')
-      EMessage.error(result.reason, '任务已变更，部分详情刷新失败，请重新核对');
-}
-
-const route = useRoute();
-const router = useRouter();
-
+const route = useRoute(),
+  router = useRouter();
+const { canAccessRoute } = useRouteAccess();
 const {
   batches,
   loading,
@@ -572,312 +348,78 @@ const {
   handlePageSizeChange,
   handlePageChange,
 } = useProductionBatchesList();
-
-/** 页面级负责人候选仅供任务筛选；存量 options 待后续专项替换。 */
-const userSource = useUserOptions();
-
-/** 负责人筛选下拉实时选项：已选负责人在候选被移除时显示「ID（已失效）」并禁用 */
-const userChoices = computed(() =>
-  buildLiveOptions(
-    userSource.options.value,
-    query.ownerId ? [query.ownerId] : [],
-    (user) => user.id,
-  ),
-);
-
-const batchDeadline = (row: ProductionBatchItem) =>
-  deadlinePresentation(
-    row.planEndDate,
-    row.status === 'completed' || row.status === 'cancelled' || row.status === 'terminated',
-  );
-const batchRowClass = ({ row }: { row: ProductionBatchItem }): string =>
-  batchDeadline(row).overdueDays > 0 ? 'deadline-overdue-row' : '';
-const taskNextAction = (row: ProductionBatchItem) => taskNextActionPresentation(row);
-const taskTypeLabel = (row: ProductionBatchItem) => WORK_ORDER_TYPE_LABELS[row.orderType];
-
-/** 行内写操作守卫（关闭剩余需求、取消任务），同一行只允许一个在途。 */
-const { isRowPending, beginRow, endRow } = useRowPending();
-
-/** 创建生产批次任务的幂等意图（试点端点）：页面局部持有，弹窗打开/关闭时清除旧意图 */
-const createBatchIntent = useIdempotentIntent();
-
-/* ====== 弹窗状态 ====== */
-const outputVisible = ref(false),
-  outputBatchId = ref<string | null>(null);
-const outputDialog = ref<InstanceType<typeof ProductionOutputDialog> | null>(null);
-let locatingOutput = false;
-const openOutput = async (batchId: string): Promise<boolean> => {
-  if (outputVisible.value && outputBatchId.value === batchId) return true;
-  if (locatingOutput || outputDialog.value?.navigationLocked) return false;
-  locatingOutput = true;
-  try {
-    if (outputVisible.value && outputDialog.value && !(await outputDialog.value.close()))
-      return false;
-    await nextTick();
-    outputBatchId.value = batchId;
-    outputVisible.value = true;
-    return true;
-  } finally {
-    locatingOutput = false;
-  }
-};
-let acceptedOutput = '';
-let locatingRouteOutput = false;
-async function locateOutput(): Promise<void> {
-  if (route.name !== 'production-tasks' || locatingRouteOutput) return;
-  const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
-  if (!id) acceptedOutput = '';
-  if (!/^[1-9]\d*$/.test(id)) return;
-  if (acceptedOutput === id) return;
-  locatingRouteOutput = true;
-  try {
-    await nextTick();
-    const opened = await openOutput(id);
-    if (route.name !== 'production-tasks' || route.query.batchId !== id) return;
-    if (opened) acceptedOutput = id;
-    else {
-      const query = { ...route.query };
-      delete query.batchId;
-      const retainedBatchId = outputVisible.value ? outputBatchId.value : acceptedOutput;
-      await router.replace({
-        query: { ...query, ...(retainedBatchId ? { batchId: retainedBatchId } : {}) },
-      });
-    }
-  } finally {
-    locatingRouteOutput = false;
-    if (route.name === 'production-tasks' && route.query.batchId !== id) void locateOutput();
-  }
+const {
+  taskDialogVisible,
+  detailDialogVisible,
+  editingTaskId,
+  submitting,
+  activeBatch,
+  detailBatchId,
+  detailLoading,
+  detailError,
+  taskFormDialogRef,
+  openCreate,
+  handleTaskDialogClose,
+  openEdit,
+  submitTask,
+  refreshTaskDetail,
+  handleDetailVisibility,
+  openDetail,
+  canLocateDetail,
+  taskIntentStatus,
+  retryTask,
+} = useProductionTaskEditor(loadTasks);
+const { beginRow, endRow } = useRowPending();
+const taskTypeLabel = (row: ProductionBatchItem): string => WORK_ORDER_TYPE_LABELS[row.orderType];
+const lifecycleVisible = ref(false),
+  lifecycleBatch = ref<ProductionBatchItem | null>(null),
+  lifecycleMode = ref<TaskLifecycleMode>('start');
+function openLifecycle(batch: ProductionBatchItem, mode: TaskLifecycleMode): void {
+  if (lifecycleVisible.value) return;
+  lifecycleBatch.value = { ...batch };
+  lifecycleMode.value = mode;
+  lifecycleVisible.value = true;
 }
-watch(
-  () => [route.name, route.query.batchId],
-  () => {
-    void locateOutput();
-  },
-  { immediate: true },
-);
-const openCloseoutItems = (batchId: string) => {
-  terminationBatchId.value = batchId;
-  terminationVisible.value = true;
-};
-function openCloseout(batch: ProductionBatchItem) {
-  if (
-    batch.status === 'completed' ||
-    batch.status === 'terminated' ||
-    (batch.status === 'closing' && batch.closeoutMode === 'normal')
-  )
-    openOutput(batch.id);
-  else {
-    terminationBatchId.value = batch.id;
-    terminationVisible.value = true;
-  }
+async function openTracking(batch: ProductionBatchItem): Promise<void> {
+  await router.push({ name: 'production-tracking', query: { batchId: batch.id } });
 }
-const terminationVisible = ref(false);
-const terminationBatchId = ref<string | null>(null);
-const taskDialogVisible = ref(false);
-const detailDialogVisible = ref(false);
-const editingTaskId = ref<string | null>(null);
-const editingTaskVersion = ref<number | null>(null);
-const editRead = useLatestReadRequest(() => undefined);
-const submitting = ref(false);
-const activeBatch = ref<ProductionBatchDetail | null>(null);
-const detailBatchId = ref<string | null>(null);
-const detailLoading = ref(false);
-const detailError = ref('');
-const detailRead = useLatestReadRequest(() => {
-  detailLoading.value = false;
-});
-const stepsVisible = ref(false);
-const stepsBatchId = ref<string | null>(null);
-const stepsBatchLabel = ref('');
-const stepsDialog = ref<InstanceType<typeof ProductionTaskStepsDialog> | null>(null);
-const materialAllocationVisible = ref(false);
-const materialDemandConfigurationVisible = ref(false);
-const materialDemandOverviewVisible = ref(false);
+async function taskPhaseChanged(batchId: string): Promise<void> {
+  const updates: Promise<unknown>[] = [loadTasks()];
+  if (detailBatchId.value === batchId && detailDialogVisible.value)
+    updates.push(refreshTaskDetail());
+  if (materials.batchId.value === batchId)
+    updates.push(materials.loadDemands(), materials.loadOutbounds());
+  if (materialDemandBatch.value?.id === batchId && materialDemandOverviewVisible.value)
+    updates.push(loadMaterialDemandOverview());
+  const results = await Promise.allSettled(updates);
+  for (const result of results)
+    if (result.status === 'rejected')
+      EMessage.error(result.reason, '任务已变更，部分详情刷新失败，请重新核对');
+}
+const materialAllocationVisible = ref(false),
+  materialDemandConfigurationVisible = ref(false),
+  materialDemandOverviewVisible = ref(false),
+  manualMaterialDemandVisible = ref(false),
+  materialOutboundVisible = ref(false);
 const materialDemandOverviewDialog = ref<InstanceType<typeof MaterialDemandOverviewDialog> | null>(
   null,
 );
-const manualMaterialDemandVisible = ref(false);
-const materialDemandBatch = ref<ProductionBatchItem | null>(null);
-const materialOverviewDemands = ref<ProductionMaterialDemandItem[]>([]);
-const materialOverviewLoading = ref(false);
-const materialOverviewError = ref('');
+const materialDemandBatch = ref<ProductionBatchItem | null>(null),
+  materialOverviewDemands = ref<ProductionMaterialDemandItem[]>([]),
+  materialOverviewLoading = ref(false),
+  materialOverviewError = ref('');
 const materialOverviewRead = useLatestReadRequest(() => {
   materialOverviewLoading.value = false;
 });
 watch(materialDemandOverviewVisible, (visible) => {
   if (!visible) materialOverviewRead.invalidate();
 });
-const materialOutboundVisible = ref(false);
-const batchCancelDialogVisible = ref(false);
-const batchCancelSubmitting = ref(false);
-const cancellingBatch = ref<ProductionBatchItem | null>(null);
-const batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
+const batchCancelDialogVisible = ref(false),
+  batchCancelSubmitting = ref(false),
+  cancellingBatch = ref<ProductionBatchItem | null>(null),
+  batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
 const materials = useProductionMaterials();
 const visibleMaterialDemands = computed(() => materials.demands.value);
-const taskFormDialogRef = ref<{
-  setForm: (row: ProductionBatchDetail) => void;
-  resetForm: () => void;
-}>();
-
-/* ====== 任务 CRUD ====== */
-const openCreate = (): void => {
-  editRead.invalidate();
-  editingTaskId.value = null;
-  editingTaskVersion.value = null;
-  taskFormDialogRef.value?.resetForm();
-  createBatchIntent.reset();
-  taskDialogVisible.value = true;
-};
-
-const batchCreationIntentMessage = (state: string): string => {
-  if (state === 'blocked')
-    return '暂时无法确认批次是否已创建，当前不能继续提交。请先核对批次列表并联系管理员；关闭后重新办理可能重复创建，确认关闭？';
-  if (state === 'expired')
-    return '本次提交已超过可重试时限。请先核对批次列表；关闭后重新办理可能重复创建，确认关闭？';
-  return '暂时无法确认批次是否已创建。关闭后无法继续重试本次提交，重新办理可能重复创建；请先核对批次列表，确认关闭？';
-};
-
-/**
- * 任务弹窗关闭守卫：意图结果未知（网络模糊失败/提交在途/结果损坏/超时）时不得静默丢弃 K1，
- * 否则重新提交可能生成第二个自动编号批次。必须提示后由用户显式确认才 reset（放弃）。
- * idle 状态直接关闭；程序化关闭（提交成功后置 visible=false）不会触发 update:visible，走不到这里。
- */
-const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
-  if (visible) {
-    taskDialogVisible.value = true;
-    return;
-  }
-  if (submitting.value) return;
-  editRead.invalidate();
-  const state = createBatchIntent.getStatus();
-  if (state === 'idle') {
-    taskDialogVisible.value = false;
-    createBatchIntent.reset();
-    return;
-  }
-  const message = batchCreationIntentMessage(state);
-  try {
-    await ElMessageBox.confirm(message, '关闭确认', {
-      confirmButtonText: '仍要关闭',
-      cancelButtonText: '继续保留',
-      type: 'warning',
-    });
-    taskDialogVisible.value = false;
-    createBatchIntent.reset();
-  } catch {
-    // 用户选择保留：不关闭弹窗、不丢弃意图，K1 继续保留以便安全重试
-  }
-};
-
-const openEdit = async (row: ProductionBatchItem): Promise<void> => {
-  if (taskDialogVisible.value || !editRead.isActive()) return;
-  const request = editRead.begin(() => !taskDialogVisible.value);
-  try {
-    const detail = await productionTasksApi.getBatch(row.id, {
-      signal: request.signal,
-      skipErrorHandling: true,
-    });
-    if (!request.isCurrent()) return;
-    if (detail.id !== row.id) throw new Error('任务详情与当前目标不一致，请重试');
-    editingTaskId.value = detail.id;
-    editingTaskVersion.value = detail.version;
-    taskFormDialogRef.value?.setForm(detail);
-    taskDialogVisible.value = true;
-  } catch (error) {
-    if (request.isCurrent()) EMessage.error(error, '任务编辑信息查询失败');
-  }
-};
-
-const submitTask = async (data: TaskFormValue): Promise<void> => {
-  submitting.value = true;
-  try {
-    const editId = editingTaskId.value;
-    if (editId) {
-      const version = editingTaskVersion.value;
-      if (version === null) throw new Error('任务编辑依据缺失，请关闭后重新打开');
-      await productionTasksApi.updateBatch(editId, {
-        ownerId: data.ownerId,
-        planStartDate: data.planStartDate || null,
-        planEndDate: data.planEndDate || null,
-        remark: data.remark || null,
-        version,
-      });
-      EMessage.success('任务已更新');
-    } else {
-      const payload: CreateProductionBatchPayload = {
-        routeId: data.routeId || null,
-        plannedQuantity: data.plannedQuantity,
-        ownerId: data.ownerId,
-        planStartDate: data.planStartDate,
-        planEndDate: data.planEndDate,
-        remark: data.remark || null,
-      };
-      const workOrderId = data.workOrderId;
-      const normalizedPayload = normalizeCreateBatchPayload(payload);
-      await createBatchIntent.execute(
-        {
-          intentType: 'production.batch.create',
-          params: { workOrderId },
-          query: {},
-          body: normalizedPayload,
-        },
-        (key) => productionTasksApi.createOrderBatch(workOrderId, normalizedPayload, key),
-      );
-      EMessage.success('任务已新增');
-    }
-    taskDialogVisible.value = false;
-    await loadTasks();
-  } catch (error) {
-    EMessage.error(error, '任务保存失败');
-  } finally {
-    submitting.value = false;
-  }
-};
-
-/* ====== 只读详情与独立工序管理 ====== */
-async function refreshTaskDetail(): Promise<void> {
-  const id = detailBatchId.value;
-  if (!id || !detailDialogVisible.value || !detailRead.isActive()) return;
-  const request = detailRead.begin(() => detailDialogVisible.value && detailBatchId.value === id);
-  detailLoading.value = true;
-  detailError.value = '';
-  try {
-    const detail = await productionTasksApi.getBatch(id, {
-      signal: request.signal,
-      skipErrorHandling: true,
-    });
-    if (!request.isCurrent()) return;
-    if (detail.id !== id) throw new Error('任务详情与当前目标不一致，请重新刷新');
-    activeBatch.value = detail;
-  } catch (error) {
-    if (!request.isCurrent()) return;
-    activeBatch.value = null;
-    detailError.value = error instanceof Error ? error.message : '任务详情查询失败，请重试';
-  } finally {
-    if (request.isCurrent()) detailLoading.value = false;
-  }
-}
-const handleDetailVisibility = (visible: boolean): void => {
-  detailDialogVisible.value = visible;
-  if (!visible) detailRead.invalidate();
-};
-const openDetail = async (row: ProductionBatchItem): Promise<void> => {
-  detailRead.invalidate();
-  detailBatchId.value = row.id;
-  activeBatch.value = null;
-  detailError.value = '';
-  detailDialogVisible.value = true;
-  await refreshTaskDetail();
-};
-const openSteps = async (row: ProductionBatchItem): Promise<void> => {
-  if (stepsVisible.value && stepsBatchId.value === row.id) return;
-  if (stepsVisible.value && !(await stepsDialog.value?.close())) return;
-  await nextTick();
-  stepsBatchId.value = row.id;
-  stepsBatchLabel.value = `${row.batchNo} · ${row.productName}`;
-  stepsVisible.value = true;
-};
-
 const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
   if (!(await prepareMaterialBatch(row.id))) return;
   materials.setBatch(row.id);
@@ -1014,7 +556,6 @@ const materialErrorFallback = (error: unknown, fallback: string): string => {
   return messages[code] ?? fallback;
 };
 
-/* ====== 取消生产任务 ====== */
 const openBatchCancellation = async (row: ProductionBatchItem): Promise<void> => {
   if (!beginRow(row.id)) return;
   try {
@@ -1049,7 +590,6 @@ const confirmBatchCancellation = async (reason: string): Promise<void> => {
   }
 };
 
-/* ====== 工具函数 ====== */
 const canHandleMaterials = (row: ProductionBatchItem): boolean =>
   [
     'material_pending',
@@ -1122,6 +662,20 @@ const handleManualMaterialDemandAdded = async (): Promise<void> => {
   await Promise.all([loadMaterialDemandOverview(), loadTasks()]);
 };
 
+let consumedLocation = '';
+function locateTask(): void {
+  if (
+    route.name !== 'production-tasks' ||
+    !canLocateDetail() ||
+    typeof route.query.batchId !== 'string' ||
+    route.query.batchId === consumedLocation
+  )
+    return;
+  consumedLocation = route.query.batchId;
+  void openDetail({ id: consumedLocation });
+}
+watch(() => [route.name, route.query.batchId], locateTask, { immediate: true });
+onActivated(locateTask);
 onMounted(() => {
   const keyword = route.query.keyword;
   if (typeof keyword === 'string') query.keyword = keyword;

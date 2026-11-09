@@ -1,13 +1,11 @@
 export const APPROVAL_SCENE_CODES = {
   bom: 'product.bom.approve',
   demandCorrection: 'production.demand.correct',
-  batchCloseout: 'production.batch.closeout',
 } as const;
 
 export const APPROVAL_SCENE_LABELS: Readonly<Record<string, string>> = {
   [APPROVAL_SCENE_CODES.bom]: 'BOM 审批',
   [APPROVAL_SCENE_CODES.demandCorrection]: '需求更正与关闭',
-  [APPROVAL_SCENE_CODES.batchCloseout]: '生产任务结案',
 };
 export const APPROVAL_INSTANCE_STATUSES = ['pending', 'approved', 'rejected', 'withdrawn'] as const;
 export const APPROVAL_LIST_SCOPES = ['todo', 'mine', 'all'] as const;
@@ -26,7 +24,6 @@ export const APPROVAL_STEP_STATUS_LABELS = {
   cancelled: '已结束',
 } as const;
 export const APPROVAL_ASSIGNEE_TYPES = ['role', 'user', 'business'] as const;
-export const APPROVAL_ASSIGNEE_SOURCES = { workOrderOwner: 'production.work_order_owner' } as const;
 export const APPROVAL_ASSIGNEE_TYPE = { role: 'role', user: 'user', business: 'business' } as const;
 export const APPROVAL_ASSIGNEE_TYPE_LABELS = {
   role: '角色',

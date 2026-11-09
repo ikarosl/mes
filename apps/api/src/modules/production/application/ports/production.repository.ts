@@ -7,8 +7,6 @@ import type {
   ProductionBatchItem,
   ProductionBatchQuery,
   ProductionBatchStartRecord,
-  ProductionBatchStepRecords,
-  ProductionStepCommandResult,
   UpdateProductionBatchPayload,
   WorkOrderDetail,
   WorkOrderItem,
@@ -85,7 +83,6 @@ export abstract class ProductionRepository {
   ): Promise<WorkOrderDetail>;
   abstract listBatches(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>>;
   abstract getBatch(id: string): Promise<ProductionBatchDetail>;
-  abstract getBatchStepRecords(id: string): Promise<ProductionBatchStepRecords>;
   abstract getBatchStartRecord(id: string): Promise<ProductionBatchStartRecord | null>;
   abstract getBatchCancellationCheck(id: string): Promise<ProductionBatchCancellationCheck>;
   abstract withBatchCreationTransaction<T>(
@@ -114,14 +111,6 @@ export abstract class ProductionRepository {
     reason: string,
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
-  abstract updateBatchStepExecution(
-    batchId: string,
-    recordId: string,
-    payload: import('@company/contracts').UpdateBatchStepExecutionPayload,
-    actualSop:
-      { id: string; fileName: string; objectKey: string; versionNo: string } | null | undefined,
-    audit: CommandContext,
-  ): Promise<ProductionStepCommandResult>;
   abstract getBatchProductId(batchId: string): Promise<string>;
   abstract getWorkOrderProductId(workOrderId: string): Promise<string>;
 }

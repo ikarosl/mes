@@ -21,7 +21,6 @@ export interface MaterialDemandManagementVariant {
 export interface MaterialDemandManagementDemand {
   demandId: string;
   demandType: DemandType;
-  parentDemandId: string | null;
   materialVariantId: string;
   materialVariantCode: string;
   demandQuantity: string;

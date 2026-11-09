@@ -35,6 +35,7 @@ const navigationGroups: readonly NavigationGroup[] = [
     title: '系统管理',
     items: [
       { routeNames: ['system-users'] },
+      { routeNames: ['system-personnel'] },
       { routeNames: ['system-roles'] },
       { routeNames: ['system-user-candidates'] },
       { routeNames: ['system-permissions'] },
@@ -68,19 +69,14 @@ const navigationGroups: readonly NavigationGroup[] = [
     items: [
       { routeNames: ['production-orders'] },
       { routeNames: ['production-tasks'] },
-      { routeNames: ['production-worker-tasks'] },
-      { routeNames: ['production-execution-records'] },
-      { routeNames: ['production-trace'] },
+      { routeNames: ['production-workbench'] },
+      { routeNames: ['production-tracking'] },
     ],
   },
   {
     key: 'quality',
     title: '质量管理',
-    items: [
-      { routeNames: ['quality-process-inspections'] },
-      { routeNames: ['quality-finished-inspections'] },
-      { routeNames: ['quality-inbound-inspections'] },
-    ],
+    items: [{ routeNames: ['quality-inbound-inspections'] }],
   },
   {
     key: 'warehouse',

@@ -37,7 +37,7 @@ type SourceRow = RowDataPacket & {
   batch_id: number;
   inbound_id: number;
   inbound_detail_id: number;
-  production_output_allocation_id: number | null;
+  production_output_id: number | null;
   production_batch_id: number | null;
   work_order_id: number | null;
   procurement_receipt_line_id: number | null;
@@ -50,8 +50,6 @@ type SourceRow = RowDataPacket & {
   inbound_number: string;
   transaction_id: number;
   source_type: InventoryBatchItem['sourceType'];
-  output_revision_id: number | null;
-  output_revision_no: number | null;
 };
 type TransactionRow = RowDataPacket & {
   id: number;
@@ -97,10 +95,9 @@ export async function listInventoryBatches(
     );
   if (query.sourceType) {
     const sourceBatchIdsSql = `SELECT d.batch_id ${completedInboundSourceSql}
-      LEFT JOIN production_output_allocation a ON a.id=d.production_output_allocation_id
-      WHERE COALESCE(a.category,o.source_type)=? OR o.source_type=?`;
+      WHERE o.source_type=?`;
     where.push(`ib.id IN (${sourceBatchIdsSql})`);
-    params.push(query.sourceType, query.sourceType);
+    params.push(query.sourceType);
   }
   if (query.keyword) {
     const sourceKeywordBatchIdsSql = `SELECT d.batch_id ${completedInboundSourceSql}
@@ -201,10 +198,8 @@ async function loadInventories(
     [...ids, ...ids],
   );
   const [sources] = await db.query<SourceRow[]>(
-    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,d.supplier_name_snapshot provider,o.inbound_at,d.inbound_number,it.id transaction_id,COALESCE(a.category,o.source_type) source_type,r.id output_revision_id,r.revision_no output_revision_no,d.production_output_allocation_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
+    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,d.supplier_name_snapshot provider,o.inbound_at,d.inbound_number,it.id transaction_id,o.source_type,d.production_output_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
      ${completedInboundSourceSql}
-     LEFT JOIN production_output_allocation a ON a.id=d.production_output_allocation_id
-     LEFT JOIN production_output_revision r ON r.id=a.revision_id
      WHERE d.batch_id IN (${placeholders}) ORDER BY d.batch_id,d.id`,
     ids,
   );
@@ -257,9 +252,7 @@ async function loadInventories(
       inboundQuantity: String(source.inbound_number),
       inventoryTransactionId: String(source.transaction_id),
       sourceType: source.source_type,
-      outputRevisionId: nullableId(source.output_revision_id),
-      outputRevisionNo: source.output_revision_no,
-      productionOutputAllocationId: nullableId(source.production_output_allocation_id),
+      productionOutputId: nullableId(source.production_output_id),
       productionBatchId: nullableId(source.production_batch_id),
       workOrderId: nullableId(source.work_order_id),
       procurementReceiptLineId: nullableId(source.procurement_receipt_line_id),

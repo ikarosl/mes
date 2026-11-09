@@ -27,8 +27,6 @@ type MaterialLossRow = RowDataPacket & {
   scrap_number: string;
   unit_snapshot: string;
   reason_type: string;
-  loss_purpose: MaterialLossItem['purpose'];
-  closeout_id: number | null;
   status: MaterialLossItem['status'];
   confirmed_by: number | null;
   confirmed_at: Date | null;
@@ -46,7 +44,7 @@ const MATERIAL_LOSS_SELECT = `SELECT scrap.id,scrap.scrap_no,scrap.production_ba
   wo.product_name_snapshot product_name,scrap.allocation_id,scrap.demand_id,scrap.item_id,
   scrap.material_variant_id,scrap.batch_id,ib.item_code_snapshot,${currentMaterialNameSql('ib.item_id')} item_name,
   ib.material_variant_code_snapshot,ib.batch_code,
-  scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.loss_purpose,scrap.closeout_id,scrap.status,scrap.confirmed_by,
+  scrap.scrap_number,scrap.unit_snapshot,scrap.reason_type,scrap.status,scrap.confirmed_by,
   scrap.confirmed_at,scrap.created_by,scrap.created_at,scrap.version,scrap.remark,
   scrap.cancel_reason,scrap.cancelled_by,scrap.cancelled_at
  FROM item_scrap scrap
@@ -166,8 +164,6 @@ const mapMaterialLoss = (row: MaterialLossRow): MaterialLossItem => ({
   itemBatchId: String(row.batch_id),
   batchCode: row.batch_code,
   scrapScene: 'production_consumed',
-  purpose: row.loss_purpose,
-  closeoutId: row.closeout_id === null ? null : String(row.closeout_id),
   scrapQuantity: String(row.scrap_number),
   unit: row.unit_snapshot,
   reasonType: row.reason_type,

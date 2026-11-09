@@ -2,10 +2,11 @@ import { reactive, ref } from 'vue';
 import type { ProductionBatchItem, ProductionBatchStatus } from '@company/contracts';
 import { productionTasksApi } from '../../../api/production/tasks';
 import { EMessage } from '../../../utils/message';
+import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 
 /**
  * 页面持有生产批次分页列表；人员、工单及路线候选由各消费入口持有。
- * 列表请求使用 last-request-wins（listRequestToken）：翻页/搜索并发时旧响应直接丢弃。
+ * 列表读取由页面生命周期和请求代际守卫，翻页或换筛选丢弃旧结果。
  */
 export function useProductionBatchesList() {
   const batches = ref<ProductionBatchItem[]>([]);
@@ -13,33 +14,39 @@ export function useProductionBatchesList() {
   const total = ref(0);
   const currentPage = ref(1);
   const pageSize = ref(10);
-  let listRequestToken = 0;
+  const reads = useLatestReadRequest(() => {
+    loading.value = false;
+  });
 
-  const query = reactive<{ keyword: string; ownerId: string; status: string }>({
+  const query = reactive<{ keyword: string; ownerId: string; status: ProductionBatchStatus | '' }>({
     keyword: '',
     ownerId: '',
     status: '',
   });
 
   const loadTasks = async (): Promise<void> => {
+    if (!reads.isActive()) return;
+    const read = reads.begin();
     loading.value = true;
-    const token = ++listRequestToken;
     try {
-      const page = await productionTasksApi.listBatches({
-        page: currentPage.value,
-        pageSize: pageSize.value,
-        keyword: query.keyword.trim() || undefined,
-        ownerId: query.ownerId || undefined,
-        status: (query.status || undefined) as ProductionBatchStatus | undefined,
-      });
-      if (token !== listRequestToken) return; // 已有更新的请求，丢弃迟到响应
+      const page = await productionTasksApi.listBatches(
+        {
+          page: currentPage.value,
+          pageSize: pageSize.value,
+          keyword: query.keyword.trim() || undefined,
+          ownerId: query.ownerId || undefined,
+          status: query.status || undefined,
+        },
+        { signal: read.signal, skipErrorHandling: true },
+      );
+      if (!read.isCurrent()) return; // 已有更新的请求，丢弃迟到响应
       batches.value = page.items;
       total.value = page.total;
     } catch (error) {
-      if (token !== listRequestToken) return;
+      if (!read.isCurrent()) return;
       EMessage.error(error, '生产批次查询失败');
     } finally {
-      if (token === listRequestToken) loading.value = false;
+      if (read.isCurrent()) loading.value = false;
     }
   };
 

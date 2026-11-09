@@ -10,7 +10,7 @@ export type MaterialDemandGroup<T> = MaterialDemandGroupSource & {
 
 export const materialDemandGroupLabel = (source: MaterialDemandGroupSource): string => {
   const label = DEMAND_GENERATION_GROUP_TYPE_LABELS[source.generationGroupType];
-  return source.supplementNo ? `${label} ${source.supplementNo}` : label;
+  return source.manualAdditionNo ? `${label} ${source.manualAdditionNo}` : label;
 };
 
 export const groupMaterialDemandRows = <T extends MaterialDemandGroupSource>(
@@ -26,7 +26,7 @@ export const groupMaterialDemandRows = <T extends MaterialDemandGroupSource>(
     groups.set(row.generationGroupKey, {
       generationGroupKey: row.generationGroupKey,
       generationGroupType: row.generationGroupType,
-      supplementNo: row.supplementNo,
+      manualAdditionNo: row.manualAdditionNo,
       label: materialDemandGroupLabel(row),
       rows: [row],
     });

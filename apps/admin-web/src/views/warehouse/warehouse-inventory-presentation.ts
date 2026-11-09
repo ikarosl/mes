@@ -1,4 +1,3 @@
-import { FINISHED_GOODS_INBOUND_SOURCES } from '@company/constants';
 import type {
   InventoryBatchItem,
   InventoryBatchTransactionItem,
@@ -43,14 +42,10 @@ export const inventoryBatchProductionBatchText = (row: InventoryBatchItem): stri
     '任务',
   );
 
-/** 仅为支持入库单 ID 定位的来源提供跳转，其他来源保留真实单号。 */
+/** 外购入库按单据定位，成品入库历史按真实库存批次定位。 */
 export const inventoryInboundRouteName = (sourceType: InventorySourceType): string | null => {
   if (sourceType === 'purchased') return 'warehouse-inbound';
-  if (
-    sourceType === 'finished_product' ||
-    FINISHED_GOODS_INBOUND_SOURCES.some((source) => source === sourceType)
-  )
-    return 'warehouse-inbound-finished';
+  if (sourceType === 'finished_product') return 'warehouse-inbound-finished';
   return null;
 };
 

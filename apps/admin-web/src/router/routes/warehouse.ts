@@ -52,8 +52,8 @@ export const warehouseRoutes: RouteRecordRaw[] = [
         component: FinishedGoodsInboundPanel,
         props: (route) => ({
           active: true,
-          requestedInboundId:
-            typeof route.query.inboundId === 'string' ? route.query.inboundId : null,
+          requestedInventoryBatchId:
+            typeof route.query.inventoryBatchId === 'string' ? route.query.inventoryBatchId : null,
         }),
         meta: { permission: PERMISSIONS.warehouse.inbound.view },
       },

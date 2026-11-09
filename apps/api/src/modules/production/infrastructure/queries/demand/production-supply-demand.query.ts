@@ -119,16 +119,10 @@ export class ProductionSupplyDemandQueries {
       `SELECT demand.id,demand.item_id,demand.material_variant_id,demand.material_variant_code_snapshot material_variant_code,demand.production_batch_id,batch.batch_no,
          work_order.id work_order_id,work_order.work_order_no,demand.demand_type,
          demand.need_number,demand.remaining_number,demand.unit_snapshot,demand.pending_correction_id,demand.replaces_demand_id,
-         demand.parent_demand_id,demand.supplement_id,supplement.supplement_no,
-         disposition.disposition_no abnormal_disposition_no,demand.created_at
+         demand.created_at
        FROM production_item_demand demand
        JOIN production_batches batch ON batch.id=demand.production_batch_id
        JOIN work_orders work_order ON work_order.id=batch.work_order_id
-       LEFT JOIN production_material_supplement supplement ON supplement.id=demand.supplement_id
-       LEFT JOIN batch_step_scrap_records step_scrap
-         ON step_scrap.id=supplement.step_scrap_record_id
-       LEFT JOIN batch_step_abnormal_dispositions disposition
-         ON disposition.id=step_scrap.abnormal_disposition_id
        WHERE demand.item_id=? AND demand.material_variant_id=? AND demand.business_status='active'
        ORDER BY demand.created_at DESC,demand.id DESC
        LIMIT ? OFFSET ?`,
@@ -191,10 +185,6 @@ type DemandTraceRow = RowDataPacket & {
   need_number: string;
   remaining_number: string | number;
   unit_snapshot: string;
-  parent_demand_id: number | null;
-  supplement_id: number | null;
-  supplement_no: string | null;
-  abnormal_disposition_no: string | null;
   created_at: Date;
 };
 
@@ -213,9 +203,5 @@ const mapDemandTrace = (row: DemandTraceRow): InventoryMaterialDemandTraceItem =
   demandQuantity: String(row.need_number),
   remainingDemandQuantity: String(row.remaining_number),
   unit: row.unit_snapshot,
-  parentDemandId: row.parent_demand_id === null ? null : String(row.parent_demand_id),
-  supplementId: row.supplement_id === null ? null : String(row.supplement_id),
-  supplementNo: row.supplement_no,
-  abnormalDispositionNo: row.abnormal_disposition_no,
   createdAt: toBeijingISOString(row.created_at),
 });

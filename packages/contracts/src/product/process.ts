@@ -73,11 +73,8 @@ export interface ProcessRouteStepItem {
   stepCode: string;
   stepName: string;
   description: string | null;
-  defaultOwnerId: string | null;
-  defaultOwnerName: string | null;
   sopFileId: string | null;
   sopFileName: string | null;
-  needInspection: boolean;
   status: number;
   remark: string | null;
 }
@@ -85,9 +82,7 @@ export interface ProcessRouteStepItem {
 export interface ProcessRouteStepPayload {
   processStepId: string;
   stepOrder: number;
-  defaultOwnerId?: string | null;
   sopFileId?: string | null;
-  needInspection: boolean;
   status?: number;
   remark?: string | null;
 }

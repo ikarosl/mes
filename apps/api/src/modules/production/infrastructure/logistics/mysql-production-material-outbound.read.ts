@@ -185,7 +185,7 @@ export class MysqlProductionMaterialOutboundRead {
         item_code_snapshot: string;
         item_name: string;
         generation_group_key: string;
-        supplement_no: string | null;
+        manual_addition_no: string | null;
       })[]
     >(
       `${ALLOCATION_SELECT.replace(
@@ -236,7 +236,7 @@ export class MysqlProductionMaterialOutboundRead {
           itemName: row.item_name,
           generationGroupKey: row.generation_group_key,
           generationGroupType: row.demand_type,
-          supplementNo: row.supplement_no,
+          manualAdditionNo: row.manual_addition_no,
           itemBatchId: String(row.batch_id),
           batchCode: row.batch_code,
           assignedQuantity: String(row.assigned_number),
@@ -321,7 +321,7 @@ export class MysqlProductionMaterialOutboundRead {
         itemName: detail.item_name,
         generationGroupKey: detail.generation_group_key,
         generationGroupType: detail.generation_group_type,
-        supplementNo: detail.supplement_no,
+        manualAdditionNo: detail.manual_addition_no,
         outboundQuantity: String(detail.outbound_number),
         unit: detail.unit_snapshot,
         inventoryTransactionId:

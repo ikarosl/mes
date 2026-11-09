@@ -18,7 +18,6 @@ import {
 } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionService } from '../../application/production.service.js';
 import {
-  BatchStepRecordParamDto,
   CancelWorkOrderDto,
   CancelProductionBatchDto,
   CloseWorkOrderDto,
@@ -26,7 +25,6 @@ import {
   CreateWorkOrderDto,
   IdParamDto,
   ProductionBatchQueryDto,
-  UpdateBatchStepExecutionDto,
   UpdateProductionBatchDto,
   UpdateWorkOrderDto,
   WorkOrderIdParamDto,
@@ -136,7 +134,11 @@ export class ProductionController {
     return this.service.createBatch(workOrderId, body, audit);
   }
   @Get('batches')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([
+    PERMISSIONS.production.tasks.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.tracking.view,
+  ])
   batches(@Query() query: ProductionBatchQueryDto) {
     return this.service.listBatches({ ...query, keyword: query.keyword?.trim() || undefined });
   }
@@ -149,11 +151,6 @@ export class ProductionController {
   @RequirePermission(PERMISSIONS.production.tasks.view)
   batch(@Param() { id }: IdParamDto) {
     return this.service.getBatch(id);
-  }
-  @Get('batches/:id/step-records')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
-  batchStepRecords(@Param() { id }: IdParamDto) {
-    return this.service.getBatchStepRecords(id);
   }
   @Get('batches/:id/start-record')
   @RequirePermission(PERMISSIONS.production.tasks.view)
@@ -188,15 +185,5 @@ export class ProductionController {
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.cancelBatch(id, body.version, body.reason, audit);
-  }
-  @Patch('batches/:batchId/step-records/:recordId/execution')
-  @RequirePermission(PERMISSIONS.production.steps.manageExecution)
-  @AuditInApplication()
-  updateBatchStepExecution(
-    @Param() { batchId, recordId }: BatchStepRecordParamDto,
-    @Body() body: UpdateBatchStepExecutionDto,
-    @CurrentCommandContext() audit: CommandContext,
-  ) {
-    return this.service.updateBatchStepExecution(batchId, recordId, body, audit);
   }
 }

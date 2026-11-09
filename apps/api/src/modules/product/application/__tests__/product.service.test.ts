@@ -32,7 +32,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
     const input = {
       routeCode: ' R-1 ',
@@ -60,7 +59,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       repository as never,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -105,7 +103,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
 
     expect(() =>
@@ -131,7 +128,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       repository as never,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -171,15 +167,14 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
 
     await expect(
       service.replaceRouteSteps(
         '30',
         [
-          { processStepId: '1', stepOrder: 1, needInspection: false },
-          { processStepId: '2', stepOrder: 3, needInspection: true },
+          { processStepId: '1', stepOrder: 1 },
+          { processStepId: '2', stepOrder: 3 },
         ],
         audit,
       ),
@@ -187,65 +182,7 @@ describe('ProductService workflow safeguards', () => {
     expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
   });
 
-  it('rejects inactive route owners before opening the route transaction', async () => {
-    const repository = { replaceRouteSteps: vi.fn() };
-    const identityDirectory = { listActiveUserOptionsByIds: vi.fn().mockResolvedValue([]) };
-    const service = new ProductService(
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      repository as never,
-      {} as never,
-      identityDirectory as never,
-      {} as never,
-      {} as never,
-    );
-
-    await expect(
-      service.replaceRouteSteps(
-        '30',
-        [
-          {
-            processStepId: '1',
-            stepOrder: 1,
-            defaultOwnerId: '99',
-            needInspection: false,
-          },
-        ],
-        audit,
-      ),
-    ).rejects.toBeInstanceOf(ProductDomainError);
-    expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
-  });
-
-  it('enriches route steps through the Identity public directory', async () => {
-    const repository = {
-      listRouteSteps: vi
-        .fn()
-        .mockResolvedValue([{ id: '1', defaultOwnerId: '7', defaultOwnerName: null }]),
-    };
-    const identityDirectory = {
-      listActiveUserOptionsByIds: vi.fn().mockResolvedValue([{ id: '7', displayName: '张师傅' }]),
-    };
-    const service = new ProductService(
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      {} as never,
-      repository as never,
-      {} as never,
-      identityDirectory as never,
-      {} as never,
-      {} as never,
-    );
-
-    await expect(service.listRouteSteps('30')).resolves.toEqual([
-      { id: '1', defaultOwnerId: '7', defaultOwnerName: '张师傅' },
-    ]);
-  });
+  // TODO(production-personnel-eligibility): 验证登记人员启用状态及所属分组资格；高重要性，Product旧默认登录负责人模型已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按Identity人员目录和Production登记资格恢复覆盖。
 
   // TODO(technical-file-compensation): 验证 SOP 绑定入库失败时只补偿刚上传的对象；高重要性，旧存储入口及 mock 已失效且正式测试暂缓；获正式测试授权后按统一 store 端口恢复。
 
@@ -262,7 +199,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       storage as never,
-      {} as never,
       {} as never,
       {} as never,
     );

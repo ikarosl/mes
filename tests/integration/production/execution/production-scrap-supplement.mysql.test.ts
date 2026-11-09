@@ -1,11 +1,2 @@
-import { it } from 'vitest';
-
-// TODO(production-supplement): 高重要性：报废补料确认、授权生效、事务回滚及状态互斥。
-// 用户明确启动正式测试后，按现行生产执行与公共库存契约重建夹具恢复。
-it.todo(
-  'keeps a scrap supplement non-allocatable until confirmation and activates its quota after outbound',
-);
-it.todo('rolls back every scrap-supplement confirmation write when any in-transaction write fails');
-it.todo('rejects staging and confirmation once the abnormal is approved for rework');
-it.todo('rejects staging and confirmation once the abnormal is rejected');
-it.todo('rejects staging and confirmation once the batch is no longer in production');
+// TODO(production-tracking-quantity): 验证异常处置互斥、数量边界、并发确认与事务失败回滚；高重要性覆盖。
+// 旧报废补产授权主线已退役，正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按随盘异常全解决才允许终检的规则恢复MySQL覆盖。

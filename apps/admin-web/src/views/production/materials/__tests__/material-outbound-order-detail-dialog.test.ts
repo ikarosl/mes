@@ -36,7 +36,7 @@ const pendingOrder: MaterialOutboundItem = {
       itemName: '测试物料',
       generationGroupKey: 'NORMAL:2',
       generationGroupType: 'normal',
-      supplementNo: null,
+      manualAdditionNo: null,
       itemBatchId: '8',
       batchCode: 'IB-001',
       outboundQuantity: '5.0000',

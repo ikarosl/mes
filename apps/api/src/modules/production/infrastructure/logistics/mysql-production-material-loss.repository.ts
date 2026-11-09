@@ -62,7 +62,6 @@ type MaterialLossCommandRow = RowDataPacket & {
   scrap_number: string;
   unit_snapshot: string;
   reason_type: string;
-  loss_purpose: MaterialLossItem['purpose'];
   status: MaterialLossItem['status'];
   version: number;
   remark: string | null;
@@ -127,7 +126,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       await lockWorkOrderForBatch(db, payload.productionBatchId);
       const batch = await findBatch(db, payload.productionBatchId, true);
       if (!['material_partially_outbound', 'material_outbound', 'doing'].includes(batch.status))
-        throw new ProductionDomainError('INVALID_STATE', '任务已停止生产，请通过结案登记物料损坏');
+        throw new ProductionDomainError('INVALID_STATE', '任务已结束，不能新增在产物料损耗');
       await lockIds(db, 'production_item_allocation', [payload.allocationId]);
       const candidates = await this.findMaterialLossCandidates(db, payload.productionBatchId, true);
       const candidate = candidates.find(
@@ -142,8 +141,8 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO item_scrap
          (scrap_no,production_batch_id,demand_id,allocation_id,item_id,material_variant_id,batch_id,scrap_scene,
-          loss_purpose,scrap_number,unit_snapshot,reason_type,status,remark,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,'production_consumed','production_record',?,?,?,'pending',?,?,?)`,
+          scrap_number,unit_snapshot,reason_type,status,remark,created_by,updated_by)
+         VALUES (?,?,?,?,?,?,?,'production_consumed',?,?,?,'pending',?,?,?)`,
         [
           scrapNo,
           payload.productionBatchId,
@@ -174,7 +173,6 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
           allocationId: payload.allocationId,
           scrapQuantity: decimal(payload.scrapQuantity),
           reasonType: payload.reasonType,
-          purpose: 'production_record',
         },
       );
       return readMaterialLossDisplay(db, scrapId);
@@ -191,11 +189,6 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
       await lockWorkOrderForBatch(db, String(identity.production_batch_id));
       await findBatch(db, String(identity.production_batch_id), true);
       const scrap = await this.findMaterialLoss(db, scrapId, true);
-      if (scrap.loss_purpose !== 'production_record')
-        throw new ProductionDomainError(
-          'SCRAP_CONFIRM_NOT_ALLOWED',
-          '结案损坏登记已确认且不补料，不能使用在产损耗确认',
-        );
       if (scrap.status === 'confirmed') return readMaterialLossDisplay(db, scrapId);
       if (scrap.status !== 'pending')
         throw new ProductionDomainError('SCRAP_CONFIRM_NOT_ALLOWED', '仅待确认损耗可以确认');
@@ -233,7 +226,6 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
         {
           status: 'confirmed',
           version: version + 1,
-          purpose: scrap.loss_purpose,
           scrapQuantity: String(scrap.scrap_number),
         },
       );
@@ -249,8 +241,6 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
   ) {
     return withTransaction(this.pool, async (db) => {
       const scrap = await this.findMaterialLoss(db, scrapId, true);
-      if (scrap.loss_purpose !== 'production_record')
-        throw new ProductionDomainError('SCRAP_CANCEL_NOT_ALLOWED', '已确认的结案损坏登记不能取消');
       if (scrap.status === 'cancelled') return readMaterialLossDisplay(db, scrapId);
       if (scrap.status !== 'pending')
         throw new ProductionDomainError('SCRAP_CANCEL_NOT_ALLOWED', '仅待确认损耗可以取消');
@@ -314,7 +304,7 @@ export class MysqlProductionMaterialLossRepository extends ProductionMaterialLos
     }
     const [[row]] = await db.query<MaterialLossCommandRow[]>(
       `SELECT id,scrap_no,production_batch_id,allocation_id,demand_id,item_id,
-        material_variant_id,batch_id,scrap_number,unit_snapshot,reason_type,loss_purpose,status,version,remark
+        material_variant_id,batch_id,scrap_number,unit_snapshot,reason_type,status,version,remark
        FROM item_scrap WHERE id=?`,
       [id],
     );

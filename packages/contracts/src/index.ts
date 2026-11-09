@@ -1,4 +1,5 @@
 export * from './common.js';
+export * from './personnel.js';
 export * from './inventory.js';
 export * from './auth.js';
 export * from './system.js';
@@ -11,5 +12,3 @@ export * from './procurement/index.js';
 export * from './quality/inspection.js';
 export * from './quality/inbound-inspections.js';
 export * from './quality/incoming-inspection-orders.js';
-export * from './quality/finished-inspections.js';
-export * from './quality/process-inspections.js';

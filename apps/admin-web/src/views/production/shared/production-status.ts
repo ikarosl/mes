@@ -1,16 +1,9 @@
-import { formatQuantity } from '../../../utils/quantity';
 import type {
-  BatchStepStatus,
   MaterialDemandProgressStatus,
   ProductionBatchStatus,
   WorkOrderStatus,
 } from '@company/contracts';
-import {
-  BATCH_STEP_STATUS_LABELS,
-  MATERIAL_DEMAND_PROGRESS_LABELS,
-  PRODUCTION_TERMINATED_LABEL,
-  PRODUCTION_CLOSING_LABEL,
-} from '@company/constants';
+import { MATERIAL_DEMAND_PROGRESS_LABELS } from '@company/constants';
 
 export type StatusTagType = 'info' | 'primary' | 'success' | 'warning' | 'danger';
 
@@ -40,17 +33,6 @@ export const BATCH_STATUS_META: StatusMeta<ProductionBatchStatus>[] = [
   { value: 'doing', label: '执行中', type: 'primary' },
   { value: 'completed', label: '已完成', type: 'success' },
   { value: 'cancelled', label: '已取消', type: 'danger' },
-  { value: 'terminated', label: PRODUCTION_TERMINATED_LABEL, type: 'info' },
-  { value: 'closing', label: PRODUCTION_CLOSING_LABEL, type: 'warning' },
-];
-
-/** 工序执行状态元数据 */
-export const STEP_STATUS_META: StatusMeta<BatchStepStatus>[] = [
-  { value: 'pending', label: BATCH_STEP_STATUS_LABELS.pending, type: 'info' },
-  { value: 'assigned', label: BATCH_STEP_STATUS_LABELS.assigned, type: 'primary' },
-  { value: 'doing', label: BATCH_STEP_STATUS_LABELS.doing, type: 'primary' },
-  { value: 'completed', label: BATCH_STEP_STATUS_LABELS.completed, type: 'success' },
-  { value: 'terminated', label: BATCH_STEP_STATUS_LABELS.terminated, type: 'info' },
 ];
 
 export const orderStatusMeta = (status: WorkOrderStatus): StatusMeta<WorkOrderStatus> =>
@@ -58,9 +40,6 @@ export const orderStatusMeta = (status: WorkOrderStatus): StatusMeta<WorkOrderSt
 
 export const batchStatusMeta = (status: ProductionBatchStatus): StatusMeta<ProductionBatchStatus> =>
   BATCH_STATUS_META.find((item) => item.value === status) ?? BATCH_STATUS_META[0];
-
-export const stepStatusMeta = (status: BatchStepStatus): StatusMeta<BatchStepStatus> =>
-  STEP_STATUS_META.find((item) => item.value === status) ?? STEP_STATUS_META[0];
 
 const MATERIAL_DEMAND_PROGRESS_TAG_TYPES: Record<MaterialDemandProgressStatus, StatusTagType> = {
   pending_allocation: 'warning',
@@ -81,22 +60,3 @@ export const materialDemandProgressMeta = (
   label: MATERIAL_DEMAND_PROGRESS_LABELS[status],
   type: MATERIAL_DEMAND_PROGRESS_TAG_TYPES[status],
 });
-
-/** 比例只使用服务端完整的直接报工净量与统一上限，不作为工序状态。 */
-export const reportPercentage = (reported: string, upperLimit: string): number | null => {
-  const numerator = Number(reported);
-  const denominator = Number(upperLimit);
-  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator <= 0) return null;
-  return (numerator / denominator) * 100;
-};
-
-export const formatReportPercentage = (reported: string, upperLimit: string): string => {
-  const percentage = reportPercentage(reported, upperLimit);
-  return percentage === null ? '—' : `${percentage.toFixed(1)}%`;
-};
-
-export const formatQuantityDifference = (value: string | null | undefined): string => {
-  if (value === null || value === undefined) return '—';
-  const amount = Number(value);
-  return `${amount > 0 ? '+' : ''}${formatQuantity(value)}`;
-};

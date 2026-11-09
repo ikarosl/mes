@@ -16,15 +16,7 @@ export const PERMISSIONS = {
     },
   },
   quality: {
-    processInspections: {
-      view: 'quality:process-inspections:view',
-      record: 'quality:process-inspections:record',
-    },
     view: 'quality:view',
-    finishedInspections: {
-      view: 'quality:finished-inspections:view',
-      record: 'quality:finished-inspections:record',
-    },
     inboundInspections: {
       view: 'quality:inbound-inspections:view',
       manage: 'quality:inbound-inspections:manage',
@@ -40,6 +32,10 @@ export const PERMISSIONS = {
   },
   system: {
     view: 'system:view',
+    personnel: {
+      view: 'system:personnel:view',
+      manage: 'system:personnel:manage',
+    },
     users: {
       view: 'system:user:view',
       create: 'system:user:create',
@@ -74,7 +70,6 @@ export const PERMISSIONS = {
       update: 'product:products:update',
       changeStatus: 'product:products:change-status',
       manageBom: 'product:products:manage-bom',
-      setDefaultRoute: 'product:products:set-default-route',
     },
     materials: {
       view: 'product:materials:view',
@@ -117,6 +112,15 @@ export const PERMISSIONS = {
   },
   production: {
     view: 'production:view',
+    workbench: {
+      view: 'production:workbench:view',
+      operate: 'production:workbench:operate',
+    },
+    tracking: {
+      view: 'production:tracking:view',
+      manage: 'production:tracking:manage',
+      confirmOutput: 'production:tracking:confirm-output',
+    },
     orders: {
       view: 'production:orders:view',
       create: 'production:orders:create',
@@ -125,12 +129,7 @@ export const PERMISSIONS = {
     },
     tasks: {
       view: 'production:tasks:view',
-      terminate: 'production:tasks:terminate',
-      manageOutput: 'production:tasks:manage-output',
     },
-    workerTasks: { view: 'production:worker-tasks:view' },
-    executionRecords: { view: 'production:execution-records:view' },
-    trace: { view: 'production:trace:view' },
     materials: {
       view: 'production:materials:view',
       allocate: 'production:materials:allocate',
@@ -146,14 +145,6 @@ export const PERMISSIONS = {
       update: 'production:batches:update',
       transition: 'production:batches:transition',
     },
-    steps: {
-      report: 'production:steps:report',
-      manageExecution: 'production:steps:manage-execution',
-      manageAbnormal: 'production:steps:manage-abnormal',
-      assign: 'production:steps:assign',
-      start: 'production:steps:start',
-    },
-    rework: { execute: 'production:rework:execute' },
   },
   warehouse: {
     receipts: {
@@ -183,7 +174,6 @@ export const PERMISSIONS = {
     inbound: {
       view: 'warehouse:inbound:view',
       confirmPurchase: 'warehouse:inbound:confirm-purchase',
-      confirmFinished: 'warehouse:inbound:confirm-finished',
     },
     outbound: {
       view: 'warehouse:outbound:view',

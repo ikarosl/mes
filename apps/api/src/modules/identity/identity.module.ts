@@ -1,4 +1,8 @@
 import { Module } from '@nestjs/common';
+import { PersonnelController } from './presentation/http/personnel.controller.js';
+import { PersonnelService } from './application/personnel.service.js';
+import { PersonnelRepository } from './application/ports/personnel.repository.js';
+import { MysqlPersonnelRepository } from './infrastructure/mysql-personnel.repository.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { AuthService } from './application/auth.service.js';
 import { IdentityDirectoryService } from './application/identity-directory.service.js';
@@ -23,8 +27,10 @@ import { UserCandidateConfigController } from './presentation/http/user-candidat
 import { AuthGuard } from './presentation/http/auth.guard.js';
 @Module({
   imports: [DatabaseModule],
-  controllers: [AuthController, RbacController, UserCandidateConfigController],
+  controllers: [AuthController, RbacController, UserCandidateConfigController, PersonnelController],
   providers: [
+    PersonnelService,
+    { provide: PersonnelRepository, useClass: MysqlPersonnelRepository },
     { provide: PasswordHasher, useClass: BcryptPasswordHasher },
     { provide: TokenService, useClass: JwtTokenService },
     MysqlAuthRepository,
@@ -42,6 +48,12 @@ import { AuthGuard } from './presentation/http/auth.guard.js';
     UserCandidateService,
     AuthGuard,
   ],
-  exports: [AuthGuard, AuditRepository, IdentityDirectoryService, UserCandidateService],
+  exports: [
+    AuthGuard,
+    AuditRepository,
+    IdentityDirectoryService,
+    UserCandidateService,
+    PersonnelService,
+  ],
 })
 export class IdentityModule {}

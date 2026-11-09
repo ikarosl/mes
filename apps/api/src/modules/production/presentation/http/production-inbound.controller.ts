@@ -36,9 +36,9 @@ export class ProductionInboundController {
   ) {
     return this.service.get(p.inboundId);
   }
-  @Get('inventory-batches') @RequirePermission(PERMISSIONS.warehouse.inventory.view) inventory(
-    @Query() q: InventoryBatchQueryDto,
-  ) {
+  @Get('inventory-batches')
+  @RequirePermission([PERMISSIONS.warehouse.inventory.view, PERMISSIONS.warehouse.inbound.view])
+  inventory(@Query() q: InventoryBatchQueryDto) {
     return this.service.listInventory({
       page: q.page,
       pageSize: q.pageSize,
@@ -50,7 +50,7 @@ export class ProductionInboundController {
     });
   }
   @Get('inventory-batches/:itemBatchId')
-  @RequirePermission(PERMISSIONS.warehouse.inventory.view)
+  @RequirePermission([PERMISSIONS.warehouse.inventory.view, PERMISSIONS.warehouse.inbound.view])
   inventoryDetail(@Param() p: InventoryBatchIdParamDto) {
     return this.service.getInventory(p.itemBatchId);
   }

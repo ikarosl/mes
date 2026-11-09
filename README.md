@@ -4,6 +4,22 @@
 
 从[文档索引](docs/README.md)查找对应模块的当前规则；业务事实、审批和库存分别由各模块所有，根入口不重复维护它们的状态与数量公式。
 
+## 追踪卡实验分支
+
+本分支 `experiment/tracking-card-workbench` 采用[追踪卡工作台方案](docs/adr/0027-tracking-card-workbench-and-terminal-output.md)。仅使用独立空库，不保留或迁移旧生产执行及结案数据。原业务库不要直接执行本分支的初始化或迁移；已有基线文件保持不可变。
+
+在 PowerShell 为本次命令指定独立库，连接及凭据仍从本机 `.env` 读取：
+
+```powershell
+$env:DB_NAME='easy_mes_tracking_experiment_20261109'
+corepack pnpm db:init
+corepack pnpm db:seed:demo
+$env:APP_PORT='3002'
+corepack pnpm exec turbo watch dev:serve --filter=@company/api --env-mode=loose
+```
+
+管理端在另一个终端设置同一 `APP_PORT=3002`，运行 `corepack pnpm exec turbo watch dev:serve --filter=@company/admin-web --env-mode=loose`；以 Vite 输出地址访问。演示种子仍须显式启用，追踪卡场景工具见[演示入口](tools/demo/README.md)。实验范围、当前规则和验收状态分别由 ADR、模块文档和路线图维护。
+
 ## 快速开始（测试环境）
 
 1. 复制 `.env.example` 为 `.env`，设置数据库、S3 对象存储、长度不少于 32 位的 JWT 密钥，以及管理员账号（`ADMIN_PASSWORD` 不少于 6 位）。
@@ -14,7 +30,7 @@
 4. 启动 API：`pnpm dev:api`。
 5. 启动管理端：`pnpm dev:admin`。
 
-已有业务库通过增量 migration 保留数据升级，重置授权边界见 [AGENTS.md](AGENTS.md#数据库与交付约定)。数据库集成测试使用隔离的专用测试库，配置与门禁见[测试策略](docs/testing-strategy.md)。
+常规主线已有业务库通过增量 migration 保留数据升级；本实验分支仅支持上方独立空库，重置授权边界见 [AGENTS.md](AGENTS.md#数据库与交付约定)。数据库集成测试使用隔离的专用测试库，配置与门禁见[测试策略](docs/testing-strategy.md)。
 
 ## 数据库命令
 

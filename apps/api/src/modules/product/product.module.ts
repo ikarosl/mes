@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { loadTechnicalFileStorageConfig } from '../../config/env.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
-import { IdentityModule } from '../identity/public.js';
 import { ApprovalModule } from '../approval/public.js';
 import { ProductService } from './application/product.service.js';
 import { ProductInventoryEligibility } from './application/product-inventory-eligibility.query.js';
@@ -41,7 +40,7 @@ import { ProductController } from './presentation/http/product.controller.js';
 import { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 
 @Module({
-  imports: [DatabaseModule, IdentityModule, ApprovalModule],
+  imports: [DatabaseModule, ApprovalModule],
   controllers: [ProductController],
   providers: [
     ProductService,

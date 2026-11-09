@@ -14,17 +14,15 @@
 
 `InventoryStockCommand` 提供物料批次历史引用、统一父身份及库存批次锁与物料数量。库存流水动作在公共单据 adapter 内执行，Production 不得自行写单据或调用裸流水来替代来源编排；单据与流水关联由登记展示查询读取。
 
-## 采购和批准成品实际入库
+## 采购和终检成品实际入库
 
-`InventoryInboundCommand.confirmPurchaseReceipt` 接收 Procurement 已锁定并核验的到货授权。每条输入含到货／实收修订／检验／allocation、服务端确认时供应商名称、物料精确身份与单位、正整数数量及 target。允许多供应商合成一张采购入库，不保存主单唯一供应商。
+`InventoryInboundCommand.confirmPurchaseReceipt` 接收 Procurement 已锁定并核验的到货授权。每条输入含到货／实收修订／检验／allocation、供应商名称快照、物料精确身份与单位、正整数数量及 target。采购允许多供应商合单，同一新批次键可共批，实际单位和身份仍须一致；目标使用 [InventoryInboundTarget](../../../../../../packages/contracts/src/production/inventory-target.ts)。
 
-`confirmFinishedOutput` 接收 Production 已锁定并核验的当前轮批准授权，每条输入含 allocation、revision、类别、数量及 target。两类可同单多明细、分次执行，单内不混来源；同授权可进多个库批，多授权可共库批。Inventory 复核自有目标、身份、单位、容量与单据一致性，不替来源判断当前轮、批准、质量或剩余额度。
+`confirmTrackingOutput` 接收 Production 在同池事务中锁定并创建的 `production_tracking_output`，输入包括 outputId、任务／工单／成品身份、编码、单位和正数产出。每次终检产出一次性创建一个成品库存批次、一张已完成入库单和一条库存流水；不选择已有批次、不分次消费，也不经过结案审批。零产出由 Production 保存，不调用库存命令。
 
-两类确认结果及成功审计通过真实 `inboundDetailId`、`batchId` 和 `transactionId` 关联来源授权，采购明细另含到货行身份；每条入库明细独立生成持久身份和唯一正流水。
+确认按 pending 主单 → 来源明细 → 库存流水 → completed 主单顺序同事务提交；结果保存真实 inboundId、inboundNo、inboundDetailId、batchId、batchNo、transactionId 和 quantity。来源明细以 outputId 唯一，数据库守卫核对同任务／工单／成品、单位和整笔产出数量。来源业务门禁由 Production 负责，Inventory 只办理其库存事实，不写来源表。HTTP 幂等由终检命令承担，未知提交结果使用原请求恢复。
 
-目标 [`InventoryInboundTarget`](../../../../../../packages/contracts/src/production/inventory-target.ts) 为 `{mode:'new',clientKey}` 或 `{mode:'existing',batchId}`。单内相同 trim 后 clientKey 才共建一次真实批次、按[统一编号规则](../../../../docs/business-numbering.md)取一个库存批号；已有批次精确身份和单位一致且 available。采购／批准成品在同事务按 pending→明细／目标→流水→completed 完成，外部一次确认成单，无持久仓库编辑草稿。采购记 purchase_inbound，批准成品记 production_inbound；成品主单／库批中性 finished_product，类别沿明细产出授权追溯。
-
-`readFinishedTaskAllocationReceipts(batchId,lock)` 返回任务每授权累计真实已入，Production 按类别汇总；`readFinishedAllocationReceipts(ids,lock)` 返回每授权执行量。`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 按到货历史全部修订累计，返回到货行 ID、累计实际已入量及每笔真实入库的 allocationId/quantity，不预设一到货一库批。锁内事实读取只对自有主从及匹配正流水当前读，不锁历史 item_batch；展示批号独立读取。目标排他锁仅在实际写入时按完整集合取得。
+`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 继续按到货历史全部修订累计采购实际已入量，返回每笔真实入库的 allocationId/quantity。采购与终检分别记 purchase_inbound 和 production_inbound，库存均只以 inventory_transaction 为事实来源。
 
 ## 其他入出库与幂等
 
@@ -54,6 +52,6 @@ Inventory 用该事实及自己当前已完成生产领料核对未预留量，�
 
 `InventoryInboundRepository` 提供入库/库存历史查询。库存批次列表、详情和名称关键词使用同一名称来源：物料按公共规则读当前名称；成品优先保留有效入库来源中首条工单的冻结名称，没有工单来源时按 `product_id` 读取 `products.product_name`，不因成品停用或软删除丢失历史展示，也不由名称补造工单或任务。
 
-库批来源集合、来源类别筛选及来源工单／任务关键词只读取已完成主单的未删除 `inbound_detail`，并匹配该明细所属场景的原始正流水：采购 `purchase_inbound`、批准成品 `production_inbound`、生产退料 `material_return_inbound`、其他入库 `other_inbound`；身份、精确版本、批次、单位、库存状态及数量必须一致。类别沿产出授权或实际主单读取，授权、批准版、采购到货及检验只返回该明细的真实关联；其他入库不产生生产／采购来源。批次供应方和工单／任务摘要仅在所有有效来源均有相同值时返回，否则为 `null`；`item_batch.source_type` 保留建批类别，不作为实际来源集合或唯一工单归属。
+库批来源集合、来源类别筛选及来源工单／任务关键词只读取已完成主单的未删除 `inbound_detail`，并匹配该明细所属场景的原始正流水：采购 `purchase_inbound`、终检成品 `production_inbound`、生产退料 `material_return_inbound`、其他入库 `other_inbound`；身份、精确版本、批次、单位、库存状态及数量必须一致。类别沿实际主单读取，成品返回真实 productionOutputId，采购到货及检验沿其明细关联；其他入库不产生生产／采购来源。批次供应方和工单／任务摘要仅在所有有效来源均有相同值时返回，否则为 `null`；`item_batch.source_type` 保留建批类别，不作为实际来源集合或唯一工单归属。
 
 外购物料入库详情的 `procurementSource` 是只读展示投影：到货单号与真实明细 ID 取该明细保存的到货行，不读取或返回到货行号；`receipt.purchaseOrderNo` 是登记原采购单；采购来源沿该明细的 `procurement_allocation_id → procurement_receipt_allocation.receipt_line_id → procurement_receipt_line.purchase_order_line_id` 取真实采购行 ID、采购主单 ID 和单号，不读取或返回采购行号；该来源即到货自身采购行，不因超量补购而转移；`inspection` 仅按该明细保存的 `procurement_inspection_id` 取真实检验记录的 `caseId` 和 `inspectedAt`。旧外购无采购来源或任一关联不完整时整个投影为 `null`，原四个来源 ID 仍逐项返回。查询在登记的 `infrastructure/queries/` 批量只读完成，不参与写入资格校验。共批后的领用只能追溯到库批及其来源集合，不能推断领用精确消耗哪次来源。盘点仍是 Inventory 自有用例，仅处理物料批次。

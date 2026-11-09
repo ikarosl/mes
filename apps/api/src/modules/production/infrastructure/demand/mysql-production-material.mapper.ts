@@ -25,8 +25,7 @@ export type DemandRow = RowDataPacket & {
   remaining_number: string;
   demand_type: ProductionMaterialDemandItem['demandType'];
   generation_group_key: string;
-  supplement_id: number | null;
-  supplement_no: string | null;
+  manual_addition_no: string | null;
   generation_reason: string | null;
   business_status: ProductionMaterialDemandItem['businessStatus'];
   pending_correction_id: number | null;
@@ -37,8 +36,6 @@ export type DemandRow = RowDataPacket & {
   closed_by: number | null;
   closed_at: Date | null;
   correction_approval_id: number | null;
-  closeout_id: number | null;
-  closeout_approval_id: number | null;
   fulfilled_by: number | null;
   fulfilled_at: Date | null;
   version: number;
@@ -67,7 +64,7 @@ export type AllocationRow = RowDataPacket & {
   created_at: Date;
   demand_type: ProductionMaterialDemandItem['demandType'];
   generation_group_key: string;
-  supplement_no: string | null;
+  manual_addition_no: string | null;
   pending_correction_id: number | null;
   demand_business_status: ProductionMaterialDemandItem['businessStatus'];
 };
@@ -125,25 +122,24 @@ export type OutboundDetailRow = RowDataPacket & {
   item_name: string;
   generation_group_key: string;
   generation_group_type: ProductionMaterialDemandItem['generationGroupType'];
-  supplement_no: string | null;
+  manual_addition_no: string | null;
   outbound_number: string;
   unit_snapshot: string;
   inventory_transaction_id: number | null;
 };
 
-export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,d.material_variant_id,d.item_code_snapshot,${currentMaterialNameSql('d.item_id')} item_name,d.material_variant_code_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,d.supplement_id,COALESCE(s.supplement_no,mda.addition_no) supplement_no,mda.reason generation_reason,d.business_status,d.pending_correction_id,d.replaces_demand_id,d.close_cause,d.close_reason,d.closed_by,d.closed_at,
+export const DEMAND_SELECT = `SELECT d.id,d.production_batch_id,d.requirement_basis_id,d.product_material_id,d.item_id,d.material_variant_id,d.item_code_snapshot,${currentMaterialNameSql('d.item_id')} item_name,d.material_variant_code_snapshot,d.unit_snapshot,d.need_number,d.remaining_number,d.demand_type,d.generation_group_key,mda.addition_no manual_addition_no,mda.reason generation_reason,d.business_status,d.pending_correction_id,d.replaces_demand_id,d.close_cause,d.close_reason,d.closed_by,d.closed_at,
   (SELECT successor.id FROM production_item_demand successor WHERE successor.replaces_demand_id=d.id) replacement_demand_id,
-  (SELECT correction.approval_instance_id FROM production_demand_correction correction WHERE correction.id=COALESCE(d.pending_correction_id,d.close_correction_id)) correction_approval_id,d.closeout_id,(SELECT closeout.approval_instance_id FROM production_batch_closeout closeout WHERE closeout.id=d.closeout_id) closeout_approval_id,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
+  (SELECT correction.approval_instance_id FROM production_demand_correction correction WHERE correction.id=COALESCE(d.pending_correction_id,d.close_correction_id)) correction_approval_id,d.fulfilled_by,d.fulfilled_at,d.version,d.created_at,
   COALESCE((SELECT SUM(a.assigned_number) FROM production_item_allocation a WHERE a.demand_id=d.id AND a.allocation_status NOT IN ('released','cancelled')),0) allocated_quantity,
   0 remaining_allocated_quantity,0 outbound_quantity
   FROM production_item_demand d
-  LEFT JOIN production_material_supplement s ON s.id=d.supplement_id
   LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
-export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,a.assigned_number,NULL batch_code,NULL material_variant_code_snapshot,d.demand_type,d.business_status demand_business_status,d.pending_correction_id,d.generation_group_key,COALESCE(s.supplement_no,mda.addition_no) supplement_no,
+export const ALLOCATION_SELECT = `SELECT a.id,a.demand_id,a.production_batch_id,a.item_id,a.material_variant_id,a.batch_id,a.assigned_number,NULL batch_code,NULL material_variant_code_snapshot,d.demand_type,d.business_status demand_business_status,d.pending_correction_id,d.generation_group_key,mda.addition_no manual_addition_no,
   0 outbound_quantity,0 pending_outbound_quantity,
   a.unit_snapshot,a.allocation_status,a.version,a.remark,a.created_at
-  FROM production_item_allocation a JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_material_supplement s ON s.id=d.supplement_id LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
+  FROM production_item_allocation a JOIN production_item_demand d ON d.id=a.demand_id LEFT JOIN production_manual_demand_addition mda ON mda.id=d.manual_addition_id`;
 
 export const mapAllocation = (row: AllocationRow): ProductionMaterialAllocationItem => ({
   allocationId: String(row.id),
@@ -193,9 +189,6 @@ export const mapDemand = (
       closedAt: row.closed_at ? toBeijingISOString(row.closed_at) : null,
       correctionApprovalId:
         row.correction_approval_id == null ? null : String(row.correction_approval_id),
-      closeoutId: row.closeout_id == null ? null : String(row.closeout_id),
-      closeoutApprovalId:
-        row.closeout_approval_id == null ? null : String(row.closeout_approval_id),
     },
     demandId: String(row.id),
     productionBatchId: String(row.production_batch_id),
@@ -224,8 +217,7 @@ export const mapDemand = (
     demandType: row.demand_type,
     generationGroupKey: row.generation_group_key,
     generationGroupType: row.demand_type,
-    supplementId: row.supplement_id === null ? null : String(row.supplement_id),
-    supplementNo: row.supplement_no,
+    manualAdditionNo: row.manual_addition_no,
     generationReason: row.generation_reason,
     createdAt: toBeijingISOString(row.created_at),
     businessStatus: row.business_status,

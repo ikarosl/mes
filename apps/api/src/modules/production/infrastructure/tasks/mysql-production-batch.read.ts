@@ -1,46 +1,14 @@
-import type {
-  ProductionBatchDetail,
-  ProductionBatchStartRecord,
-  ProductionBatchStepRecords,
-  ProductionBatchStepRecordsHeader,
-} from '@company/contracts';
+import type { ProductionBatchDetail, ProductionBatchStartRecord } from '@company/contracts';
 import type { RowDataPacket } from 'mysql2/promise';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
-import { evaluateAssignmentAvailability } from '../../domain/production-execution.policy.js';
-import { calculateRouteStepQuantities } from '../../domain/production-route-quantity.policy.js';
-import {
-  pendingReportingApproval,
-  PROJECTION_STEP_SELECT,
-  toRouteQuantityStep,
-} from '../execution/mysql-production-reporting.persistence.js';
-import type { ProjectionStepRow } from '../execution/mysql-production-reporting.projection.js';
-import { selectRouteSupplementSources } from '../execution/mysql-production-supplement-activation.js';
 import {
   BATCH_OVERVIEW_SELECT,
   mapBatch,
   type BatchOverviewRow,
 } from './mysql-production-batch.persistence.js';
-import {
-  mapStep,
-  STEP_RECORD_SELECT,
-  type StepRow,
-} from '../execution/mysql-production-step.persistence.js';
 import { readStartMaterialSnapshot } from './mysql-production-start-material-snapshot.js';
 import { type Db } from '../shared/mysql-production-db.js';
-
-type BatchStepHeaderRow = RowDataPacket & {
-  id: number;
-  batch_no: string;
-  work_order_no: string;
-  order_type: ProductionBatchStepRecordsHeader['orderType'];
-  product_code_snapshot: string;
-  product_name_snapshot: string;
-  planned_quantity: string;
-  status: ProductionBatchStepRecordsHeader['status'];
-  route_code_snapshot: string | null;
-  route_version_snapshot: string | null;
-};
 
 type BatchStartRecordRow = RowDataPacket & {
   id: number;
@@ -57,8 +25,7 @@ export async function selectBatchOverview(db: Db, id: string): Promise<Productio
     ...mapBatch(row),
     startedById: row.started_by === null ? null : String(row.started_by),
     startedByName: null,
-    executionCompletedBy:
-      row.execution_completed_by === null ? null : String(row.execution_completed_by),
+    finishReason: row.finish_reason,
     completedBy: row.completed_by === null ? null : String(row.completed_by),
     cancelReason: row.cancel_reason,
     cancelledBy: row.cancelled_by === null ? null : String(row.cancelled_by),
@@ -67,77 +34,6 @@ export async function selectBatchOverview(db: Db, id: string): Promise<Productio
     remark: row.remark,
     createdAt: toBeijingISOString(row.created_at),
     updatedAt: toBeijingISOString(row.updated_at),
-  };
-}
-
-export async function selectBatchStepRecords(
-  db: Db,
-  id: string,
-): Promise<ProductionBatchStepRecords> {
-  const [[batch]] = await db.query<BatchStepHeaderRow[]>(
-    `SELECT b.id,b.batch_no,wo.work_order_no,wo.order_type,wo.product_code_snapshot,
-      wo.product_name_snapshot,b.planned_quantity,b.status,b.route_code_snapshot,b.route_version_snapshot
-     FROM production_batches b JOIN work_orders wo ON wo.id=b.work_order_id WHERE b.id=?`,
-    [id],
-  );
-  if (!batch) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
-  const header: ProductionBatchStepRecordsHeader = {
-    id: String(batch.id),
-    batchNo: batch.batch_no,
-    workOrderNo: batch.work_order_no,
-    orderType: batch.order_type,
-    productCode: batch.product_code_snapshot,
-    productName: batch.product_name_snapshot,
-    plannedQuantity: String(batch.planned_quantity),
-    status: batch.status,
-    routeCode: batch.route_code_snapshot,
-    routeVersion: batch.route_version_snapshot,
-  };
-  if (batch.order_type === 'research') return { batch: header, stepRecords: [] };
-
-  const [steps] = await db.query<StepRow[]>(
-    `${STEP_RECORD_SELECT} WHERE sr.production_batch_id=? ORDER BY sr.step_order_snapshot,sr.id`,
-    [id],
-  );
-  const [projections] = await db.query<ProjectionStepRow[]>(PROJECTION_STEP_SELECT, [id]);
-  const projectionById = new Map(projections.map((step) => [String(step.id), step]));
-  const supplements = (await selectRouteSupplementSources(db, [id])).get(id) ?? [];
-  const quantities = calculateRouteStepQuantities(
-    batch.planned_quantity,
-    projections.map(toRouteQuantityStep),
-    supplements,
-  );
-  const pendingApprovalId = await pendingReportingApproval(db, id);
-  return {
-    batch: header,
-    stepRecords: steps.map((step) => {
-      const projection = projectionById.get(String(step.id));
-      const quantity = quantities.get(String(step.id));
-      if (!projection || !quantity) throw new Error('任务工序数量投影缺失');
-      let executionEditBlockedReason: string | null = null;
-      if (pendingApprovalId !== null)
-        executionEditBlockedReason = '结案或产出更正在审批，工序参数被冻结';
-      else if (['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status))
-        executionEditBlockedReason = '任务已结束执行，不能调整实际 SOP';
-      else if (step.status !== 'pending' && step.status !== 'assigned')
-        executionEditBlockedReason = '工序开始后不能调整实际 SOP';
-      return {
-        ...mapStep(step),
-        upperLimitQuantity: quantity.upperLimitQuantity,
-        effectiveDirectReportedQuantity: String(projection.effective_direct_reported),
-        effectiveDirectNormalQuantity: String(projection.effective_direct_normal),
-        effectiveDirectAbnormalQuantity: String(projection.effective_direct_abnormal),
-        ...evaluateAssignmentAvailability({
-          batchStatus: batch.status,
-          stepStatus: step.status,
-          hasReportHistory: Number(projection.report_count) > 0,
-          hasStarted: step.started_at !== null,
-          pendingApprovalId,
-        }),
-        canEditExecution: executionEditBlockedReason === null,
-        executionEditBlockedReason,
-      };
-    }),
   };
 }
 
