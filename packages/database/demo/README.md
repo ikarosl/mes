@@ -52,9 +52,9 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 
 结构迁移若要求空业务库，先按[迁移安全](../docs/migration-safety.md)完成重建和系统初始化，再显式加载 demo；样例加载不能绕过迁移守卫。
 
-演示路线为装配、粘接、终检三站，按卡逐站扫码，末站再显式确认最终可用数量；办理方式见[执行规则](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
+演示路线为装配、粘接、终检三站，按卡逐站扫码，末站由质量人员显式确认并按剩余盘量形成产出；研发仍手填实际产出。办理方式见[执行规则](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
 
-追踪卡完整场景通过[场景工具](../../../tools/demo/README.md#追踪卡工作台样例)经业务API准备，包含正数入库、零产出、改量留痕、暂停异常、未用卡和已用作废。SQL种子本身不生成执行、质量结论或库存事实。
+追踪卡完整场景通过[场景工具](../../../tools/demo/README.md#追踪卡工作台样例)经业务 API 准备，包含影响 3 件按返修 1 件与新增报废 2 件结算、重叠异常引用相同报废而不重扣、未结阻止流转、整盘报废、剩余量入库、独立改量和作废历史。SQL种子本身不生成执行、质量结论或库存事实。
 
 ## 规格书的人工验收准备
 
@@ -96,7 +96,7 @@ SQL demo 不伪造对象存储 locator，成品和精确版本初始规格书可
 
 其他入库可直接用 `demo-stock-multi-v1-A` 的两行正整数数量核对共用新批次及主行备注，再加入 `demo-stock-multi-v1-B` 核对版本隔离。`demo-stock-meter-v1-A` 与前者同名但编码及单位不同，不能因名称相同归到同一组。
 
-成品不再通过计划内外授权共批办理。每盘或研发任务由质量人员显式确认最终产出，正数同事务直接入库并独立建批，零数不记库存。办理顺序见[生产工作流](../../../apps/api/src/modules/production/docs/business-workflow.md)，批量追踪卡样例通过上述场景工具准备。
+成品不再通过计划内外授权共批办理。批量卡由质量人员按剩余盘量确认，研发手填实际产出；正数同事务直接入库并独立建批，整盘报废不生成产出或库存，研发零数不记库存。办理顺序见[生产工作流](../../../apps/api/src/modules/production/docs/business-workflow.md)，批量追踪卡样例通过上述场景工具准备。
 
 ## 到货整单登记作废的人工准备
 

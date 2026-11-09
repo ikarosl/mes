@@ -72,12 +72,13 @@
                   :value="person.id" /></el-select
               ><el-button @click="loadPersonnel">刷新人员</el-button></el-form-item
             ><el-form-item
-              label="可用产出"
+              label="最终可用产出"
               required
               ><el-input-number
                 v-model="quantity"
                 :min="0"
-                :precision="0" /></el-form-item
+                :precision="0"
+                placeholder="据实填写，允许0" /></el-form-item
           ></template>
           <el-form-item
             :label="mode === 'finish' ? '结束原因' : '备注'"
@@ -109,6 +110,7 @@
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import type {
+  ConfirmProductionResearchOutputPayload,
   PersonnelOption,
   ProductionBatchItem,
   ProductionTrackingWorkbench,
@@ -268,29 +270,30 @@ async function submit(): Promise<void> {
   try {
     await intent.execute(
       { intentType: `production.task.${mode}`, params: { batchId: batch.id }, query: {}, body },
-      (key) => {
-        if (mode === 'start')
-          return productionTrackingApi.start(
+      async (key): Promise<void> => {
+        if (mode === 'start') {
+          await productionTrackingApi.start(
             batch.id,
             { version: body.version, reason: body.reason || undefined },
             key,
           );
-        if (mode === 'finish')
-          return productionTrackingApi.finish(
+          return;
+        }
+        if (mode === 'finish') {
+          await productionTrackingApi.finish(
             batch.id,
             { version: body.version, reason: body.reason },
             key,
           );
-        return productionTrackingApi.confirmResearchOutput(
-          batch.id,
-          {
-            version: body.version,
-            personnelId: body.personnelId,
-            availableQuantity: body.availableQuantity,
-            remark: body.reason || null,
-          },
-          key,
-        );
+          return;
+        }
+        const payload: ConfirmProductionResearchOutputPayload = {
+          version: body.version,
+          personnelId: body.personnelId,
+          availableQuantity: body.availableQuantity,
+          remark: body.reason || null,
+        };
+        await productionTrackingApi.confirmResearchOutput(batch.id, payload, key);
       },
     );
     EMessage.success(`${title.value}已完成`);

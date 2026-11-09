@@ -24,6 +24,7 @@ import { ProductionDomainExceptionFilter } from './production-domain-exception.f
 import { BatchStepRecordParamDto } from './dto/production.dto.js';
 import {
   ConfirmProductionTrackingOutputDto,
+  ConfirmProductionResearchOutputDto,
   CorrectProductionTrackingQuantityDto,
   CreateProductionTrackingAbnormalityDto,
   CreateProductionTrackingCardDto,
@@ -149,7 +150,7 @@ export class ProductionTrackingController {
   @AuditInApplication()
   researchOutput(
     @Param() { batchId }: TrackingBatchParamDto,
-    @Body() body: ConfirmProductionTrackingOutputDto,
+    @Body() body: ConfirmProductionResearchOutputDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.confirmResearchOutput(batchId, body, context);

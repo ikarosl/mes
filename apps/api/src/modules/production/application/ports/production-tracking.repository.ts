@@ -1,5 +1,6 @@
 import type {
   ConfirmProductionTrackingOutputPayload,
+  ConfirmProductionResearchOutputPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
@@ -79,7 +80,7 @@ export abstract class ProductionTrackingRepository {
   ): Promise<ProductionTrackingCardDetail>;
   abstract confirmResearchOutput(
     batchId: string,
-    payload: ConfirmProductionTrackingOutputPayload,
+    payload: ConfirmProductionResearchOutputPayload,
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
   ): Promise<ProductionTrackingOutput>;

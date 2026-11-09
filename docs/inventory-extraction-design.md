@@ -37,7 +37,7 @@ inventory_transaction 是唯一库存事实，只追加；余额由触发器在�
 
 ### 终检成品入库
 
-Production 锁定任务和追踪卡，核对当前末站、所有异常已解决、登记人员为启用质检组及尚无产出事实，再生成一次性产出。正数调用 Inventory.confirmTrackingOutput，在同一事务新建成品库存批次、公共入库单／明细和唯一正流水；零数不调用库存。入库明细通过 production_output_id 唯一引用产出，不提供分次消费、仓管再次确认或旧批准版。历史产出与后续库存补差分别保留；调整数量通过其他出入库。公开契约见[Inventory](../apps/api/src/modules/inventory/docs/public-contracts.md)。
+Production 锁定任务和追踪卡，核对当前末站、所有异常已解决、登记人员为启用质检组及尚无产出事实，再按锁定的当前剩余盘量生成一次性产出；客户端不另传批量产出数量。正数调用 Inventory.confirmTrackingOutput，在同一事务新建成品库存批次、公共入库单／明细和唯一正流水。过程报废只扣生产盘量，整盘报废不形成产出或库存；研发无卡，仍由 Production 接受一次实际产出，零数量不调用库存。入库明细通过 production_output_id 唯一引用产出，不提供分次消费、仓管再次确认或旧批准版。历史产出与后续库存补差分别保留；调整数量通过其他出入库。公开契约见[Inventory](../apps/api/src/modules/inventory/docs/public-contracts.md)。
 
 ## 7. 事务与锁序
 

@@ -27,7 +27,9 @@ const handling = z
     ...person,
     id,
     content: z.string(),
-    resolvesAbnormality: z.boolean(),
+    repairedQuantity: quantity,
+    scrappedQuantity: quantity,
+    scrapReferences: z.array(z.object({ handlingId: id, quantity }).strict()),
     createdBy: id,
     createdAt: time,
   })
@@ -38,14 +40,14 @@ const abnormality = z
     id,
     stepRecordId: id.nullable(),
     stepName: z.string().nullable(),
-    severity: z.enum(['normal', 'pause']),
+    affectedQuantity: quantity,
     status: z.enum(['open', 'resolved']),
     description: z.string(),
     createdBy: id,
     createdAt: time,
     resolvedAt: time.nullable(),
     version: z.number().int().nonnegative(),
-    handlings: z.array(handling),
+    handling: handling.nullable(),
   })
   .strict();
 const visit = z
@@ -80,7 +82,7 @@ const card = z
     productName: z.string(),
     quantity,
     unit: z.string(),
-    status: z.enum(['unused', 'in_progress', 'completed', 'voided']),
+    status: z.enum(['unused', 'in_progress', 'completed', 'scrapped', 'voided']),
     currentStepRecordId: id.nullable(),
     currentStepName: z.string().nullable(),
     openAbnormalityCount: z.number().int().nonnegative(),

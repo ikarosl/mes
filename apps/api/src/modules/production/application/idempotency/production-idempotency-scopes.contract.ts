@@ -17,13 +17,13 @@ export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
 export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v6' as const;
 
 export const PRODUCTION_TRACKING_SCOPES = {
-  create: 'production.tracking.create.v1',
-  scan: 'production.tracking.scan.v1',
-  'correct-quantity': 'production.tracking.correct-quantity.v1',
-  void: 'production.tracking.void.v1',
-  'abnormality.create': 'production.tracking.abnormality.create.v1',
-  'abnormality.handle': 'production.tracking.abnormality.handle.v1',
-  'confirm-output': 'production.tracking.confirm-output.v1',
+  create: 'production.tracking.create.v2',
+  scan: 'production.tracking.scan.v2',
+  'correct-quantity': 'production.tracking.correct-quantity.v2',
+  void: 'production.tracking.void.v2',
+  'abnormality.create': 'production.tracking.abnormality.create.v2',
+  'abnormality.handle': 'production.tracking.abnormality.handle.v2',
+  'confirm-output': 'production.tracking.confirm-output.v2',
   'confirm-research-output': 'production.tracking.confirm-research-output.v1',
   'task.start': 'production.tracking.task.start.v1',
   'task.finish': 'production.tracking.task.finish.v1',

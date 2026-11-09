@@ -3,6 +3,7 @@ import { withTransaction } from '@company/database';
 import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
 import type {
   ConfirmProductionTrackingOutputPayload,
+  ConfirmProductionResearchOutputPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
@@ -20,6 +21,7 @@ import { allocateBusinessNumber } from '../../../../infrastructure/numbering/mys
 import { InventoryInboundCommand } from '../../../inventory/public.js';
 import { ProductionTrackingRepository } from '../../application/ports/production-tracking.repository.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
+import { requireTrackingAffectedQuantity } from '../../domain/production-tracking-disposition.policy.js';
 import { writeProductionAudit } from '../shared/mysql-production-audit.js';
 import { findBatch } from '../tasks/mysql-production-batch.persistence.js';
 import { findWorkOrder } from '../tasks/mysql-work-order.persistence.js';
@@ -27,10 +29,14 @@ import {
   listTrackingCards,
   listTrackingReports,
   selectTrackingCard,
-  selectTrackingOutput,
   selectTrackingWorkbench,
 } from './mysql-production-tracking.read.js';
 import { MysqlProductionTrackingTaskRepository } from './mysql-production-tracking-task.repository.js';
+import { settleTrackingAbnormality } from './mysql-production-tracking-disposition.js';
+import {
+  confirmResearchTrackingOutput,
+  insertTrackingOutput,
+} from './mysql-production-tracking-output.js';
 
 type CardRow = RowDataPacket & {
   id: string;
@@ -103,7 +109,8 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
   ) {
     return withTransaction(this.pool, async (db) => {
       const batch = await findBatch(db, batchId, true);
-      this.requireOpenTask(batch.status);
+      if (batch.status !== 'doing')
+        throw new ProductionDomainError('INVALID_STATE', '请先开始任务，再建立追踪卡');
       if (batch.order_type !== 'mass_production')
         throw new ProductionDomainError(
           'INVALID_STATE',
@@ -137,7 +144,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         null,
         { cardNo, ...payload, ...person },
       );
-      return selectTrackingCard(db, id);
+      return selectTrackingCard(db, id, true);
     });
   }
   async scan(
@@ -153,21 +160,25 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       const next = steps.findIndex((step) => step.id === payload.stepRecordId);
       if (next < 0) throw new ProductionDomainError('INVALID_INPUT', '该工序不属于追踪卡所在任务');
       const [existing] = await db.query<RowDataPacket[]>(
-        'SELECT id FROM production_tracking_visit WHERE tracking_card_id=? AND batch_step_record_id=?',
+        'SELECT id FROM production_tracking_visit WHERE tracking_card_id=? AND batch_step_record_id=? FOR UPDATE',
         [cardId, payload.stepRecordId],
       );
+      if (card.status === 'scrapped' || Number(card.quantity) === 0) this.requireMutableCard(card);
       // A repeated physical scan never changes the registered person or counts output again.
       if (existing.length && card.status !== 'voided')
         return {
-          card: await selectTrackingCard(db, cardId),
+          card: await selectTrackingCard(db, cardId, true),
           duplicate: true,
           completedVisitId: null,
         };
       if (batch.status !== 'doing')
         throw new ProductionDomainError('INVALID_STATE', '请先开始任务，再扫码流转');
       this.requireMutableCard(card);
-      if ((await this.openAbnormalityCount(db, cardId, true)) > 0)
-        throw new ProductionDomainError('CONFLICT', '该盘存在暂停异常，处理完成后才能继续流转');
+      if ((await this.openAbnormalityCount(db, cardId)) > 0)
+        throw new ProductionDomainError(
+          'CONFLICT',
+          '该盘存在未处理异常，全部处理完成后才能继续流转',
+        );
       const current =
         card.current_step_record_id === null
           ? -1
@@ -218,7 +229,11 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
           ...person,
         },
       );
-      return { card: await selectTrackingCard(db, cardId), duplicate: false, completedVisitId };
+      return {
+        card: await selectTrackingCard(db, cardId, true),
+        duplicate: false,
+        completedVisitId,
+      };
     });
   }
   async correctQuantity(
@@ -250,7 +265,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         { quantity: String(card.quantity) },
         { quantity: String(payload.quantity), reason: payload.reason },
       );
-      return selectTrackingCard(db, cardId);
+      return selectTrackingCard(db, cardId, true);
     });
   }
   async void(cardId: string, payload: VoidProductionTrackingCardPayload, context: CommandContext) {
@@ -271,7 +286,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         { status: card.status },
         { reason: payload.reason },
       );
-      return selectTrackingCard(db, cardId);
+      return selectTrackingCard(db, cardId, true);
     });
   }
   async createAbnormality(
@@ -285,22 +300,23 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       this.requireMutableCard(card);
       this.requireVersion(card.version, payload.version);
       this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
+      requireTrackingAffectedQuantity(payload.affectedQuantity, Number(card.quantity));
       const stepRecordId = payload.stepRecordId ?? card.current_step_record_id;
       if (stepRecordId !== null) {
         const [visited] = await db.query<RowDataPacket[]>(
-          'SELECT id FROM production_tracking_visit WHERE tracking_card_id=? AND batch_step_record_id=?',
+          'SELECT id FROM production_tracking_visit WHERE tracking_card_id=? AND batch_step_record_id=? FOR UPDATE',
           [cardId, stepRecordId],
         );
         if (!visited.length)
           throw new ProductionDomainError('INVALID_INPUT', '异常涉及工序必须是该盘已经到站的工序');
       }
       await db.execute(
-        `INSERT INTO production_tracking_abnormality (tracking_card_id,production_batch_id,batch_step_record_id,severity,description,personnel_id,personnel_code_snapshot,personnel_name_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO production_tracking_abnormality (tracking_card_id,production_batch_id,batch_step_record_id,affected_quantity,description,personnel_id,personnel_code_snapshot,personnel_name_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?)`,
         [
           cardId,
           card.production_batch_id,
           stepRecordId,
-          payload.severity,
+          payload.affectedQuantity,
           payload.description,
           person.personnelId,
           person.personnelCode,
@@ -322,7 +338,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         null,
         { ...payload, ...person },
       );
-      return selectTrackingCard(db, cardId);
+      return selectTrackingCard(db, cardId, true);
     });
   }
   async handleAbnormality(
@@ -333,47 +349,11 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
     context: CommandContext,
   ) {
     return withTransaction(this.pool, async (db) => {
-      await this.card(db, cardId);
-      const [[abnormality]] = await db.query<
-        (RowDataPacket & { version: number; status: string })[]
-      >(
-        'SELECT version,status FROM production_tracking_abnormality WHERE id=? AND tracking_card_id=? FOR UPDATE',
-        [abnormalityId, cardId],
-      );
-      if (!abnormality) throw new ProductionDomainError('NOT_FOUND', '随盘异常不存在');
-      this.requireVersion(abnormality.version, payload.version);
-      if (abnormality.status === 'resolved')
-        throw new ProductionDomainError('INVALID_STATE', '该异常已处理完成');
-      await db.execute(
-        'INSERT INTO production_tracking_abnormality_handling (abnormality_id,content,resolves_abnormality,personnel_id,personnel_code_snapshot,personnel_name_snapshot,created_by) VALUES (?,?,?,?,?,?,?)',
-        [
-          abnormalityId,
-          payload.content,
-          Number(payload.resolve),
-          person.personnelId,
-          person.personnelCode,
-          person.personnelName,
-          context.actorId,
-        ],
-      );
-      await db.execute(
-        `UPDATE production_tracking_abnormality SET status=?,resolved_at=${payload.resolve ? 'NOW()' : 'NULL'},version=version+1,updated_by=? WHERE id=? AND version=?`,
-        [payload.resolve ? 'resolved' : 'open', context.actorId, abnormalityId, payload.version],
-      );
-      await db.execute(
-        'UPDATE production_tracking_card SET version=version+1,updated_by=? WHERE id=?',
-        [context.actorId, cardId],
-      );
-      await writeProductionAudit(
-        db,
-        context,
-        'production-tracking-abnormality.handle',
-        'production_tracking_abnormality',
-        abnormalityId,
-        { status: abnormality.status },
-        { ...payload, ...person },
-      );
-      return selectTrackingCard(db, cardId);
+      const card = await this.card(db, cardId);
+      this.requireUnfinishedCard(card);
+      this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
+      await settleTrackingAbnormality(db, card, abnormalityId, payload, person, context);
+      return selectTrackingCard(db, cardId, true);
     });
   }
   async confirmOutput(
@@ -395,12 +375,16 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         throw new ProductionDomainError('CONFLICT', '该盘尚未到达末站，不能确认最终产出');
       if ((await this.openAbnormalityCount(db, cardId)) > 0)
         throw new ProductionDomainError('CONFLICT', '请先处理该盘全部异常，再确认最终可用产出');
-      if (payload.availableQuantity > Number(card.quantity))
-        throw new ProductionDomainError(
-          'INVALID_INPUT',
-          '最终可用产出不能超过当前盘量，实际盘量有误请先更正盘量',
-        );
-      await this.insertOutput(db, card.production_batch_id, cardId, payload, person, context);
+      await insertTrackingOutput(
+        db,
+        this.inventory,
+        card.production_batch_id,
+        cardId,
+        Number(card.quantity),
+        payload.remark ?? null,
+        person,
+        context,
+      );
       await db.execute(
         'UPDATE production_tracking_visit SET completed_at=NOW(),completed_by=?,reported_quantity=? WHERE tracking_card_id=? AND batch_step_record_id=? AND completed_at IS NULL',
         [context.actorId, card.quantity, cardId, last.id],
@@ -409,34 +393,18 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         `UPDATE production_tracking_card SET status='completed',version=version+1,updated_by=? WHERE id=? AND version=?`,
         [context.actorId, cardId, payload.version],
       );
-      return selectTrackingCard(db, cardId);
+      return selectTrackingCard(db, cardId, true);
     });
   }
   async confirmResearchOutput(
     batchId: string,
-    payload: ConfirmProductionTrackingOutputPayload,
+    payload: ConfirmProductionResearchOutputPayload,
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
   ) {
-    return withTransaction(this.pool, async (db) => {
-      const batch = await findBatch(db, batchId, true);
-      this.requireVersion(batch.version, payload.version);
-      if (batch.status !== 'doing' || batch.order_type !== 'research')
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '只有执行中的研发任务可以在任务级确认产出',
-        );
-      if (await selectTrackingOutput(db, batchId, null))
-        throw new ProductionDomainError('CONFLICT', '该研发任务已经确认最终产出');
-      await this.insertOutput(db, batchId, null, payload, person, context);
-      await db.execute(
-        'UPDATE production_batches SET version=version+1,updated_by=? WHERE id=? AND version=?',
-        [context.actorId, batchId, payload.version],
-      );
-      const output = await selectTrackingOutput(db, batchId, null);
-      if (!output) throw new Error('最终产出写入后缺失');
-      return output;
-    });
+    return withTransaction(this.pool, (db) =>
+      confirmResearchTrackingOutput(db, this.inventory, batchId, payload, person, context),
+    );
   }
   startTask(batchId: string, version: number, reason: string | null, context: CommandContext) {
     return this.tasks.start(batchId, version, reason, context);
@@ -469,61 +437,6 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       versionNo: row.versionNo,
     };
   }
-  private async insertOutput(
-    db: PoolConnection,
-    batchId: string,
-    cardId: string | null,
-    payload: ConfirmProductionTrackingOutputPayload,
-    person: ProductionTrackingPersonnelSnapshot,
-    context: CommandContext,
-  ): Promise<void> {
-    const batch = await findBatch(db, batchId, true);
-    const order = await findWorkOrder(db, String(batch.work_order_id), true);
-    const [created] = await db.execute<ResultSetHeader>(
-      'INSERT INTO production_tracking_output (production_batch_id,tracking_card_id,work_order_id,product_id,quantity,personnel_id,personnel_code_snapshot,personnel_name_snapshot,confirmed_by,remark) VALUES (?,?,?,?,?,?,?,?,?,?)',
-      [
-        batchId,
-        cardId,
-        batch.work_order_id,
-        batch.product_id,
-        payload.availableQuantity,
-        person.personnelId,
-        person.personnelCode,
-        person.personnelName,
-        context.actorId,
-        payload.remark ?? null,
-      ],
-    );
-    const outputId = String(created.insertId);
-    if (payload.availableQuantity > 0)
-      await this.inventory.confirmTrackingOutput(
-        {
-          outputId,
-          productionBatchId: batchId,
-          workOrderId: String(batch.work_order_id),
-          productId: String(batch.product_id),
-          productCode: batch.product_code_snapshot,
-          unit: order.unit_snapshot,
-          quantity: String(payload.availableQuantity),
-          remark: payload.remark ?? null,
-        },
-        context,
-      );
-    await writeProductionAudit(
-      db,
-      context,
-      'production-tracking-output.confirm',
-      'production_tracking_output',
-      outputId,
-      null,
-      {
-        productionBatchId: batchId,
-        trackingCardId: cardId,
-        quantity: String(payload.availableQuantity),
-        ...person,
-      },
-    );
-  }
   private async card(db: PoolConnection, id: string): Promise<CardRow> {
     const [[row]] = await db.query<CardRow[]>(
       'SELECT CAST(id AS CHAR) id,CAST(production_batch_id AS CHAR) production_batch_id,quantity,status,CAST(current_step_record_id AS CHAR) current_step_record_id,version FROM production_tracking_card WHERE id=? FOR UPDATE',
@@ -539,26 +452,30 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
     );
     return rows;
   }
-  private async openAbnormalityCount(
-    db: PoolConnection,
-    cardId: string,
-    pausedOnly = false,
-  ): Promise<number> {
+  private async openAbnormalityCount(db: PoolConnection, cardId: string): Promise<number> {
     const [rows] = await db.query<RowDataPacket[]>(
-      `SELECT id FROM production_tracking_abnormality WHERE tracking_card_id=? AND status='open'${pausedOnly ? " AND severity='pause'" : ''} FOR UPDATE`,
+      "SELECT id FROM production_tracking_abnormality WHERE tracking_card_id=? AND status='open' FOR UPDATE",
       [cardId],
     );
     return rows.length;
   }
   private requireMutableCard(card: CardRow): void {
-    if (card.status === 'completed' || card.status === 'voided')
+    this.requireUnfinishedCard(card);
+    if (Number(card.quantity) === 0)
       throw new ProductionDomainError(
         'INVALID_STATE',
-        '已确认产出或已作废的追踪卡不能再流转、改量或作废',
+        '当前盘量为零，请先完成剩余异常的关联报废结算',
+      );
+  }
+  private requireUnfinishedCard(card: CardRow): void {
+    if (['completed', 'scrapped', 'voided'].includes(card.status))
+      throw new ProductionDomainError(
+        'INVALID_STATE',
+        '已确认产出、整盘报废或已作废的追踪卡不能继续办理',
       );
   }
   private requireOpenTask(status: string): void {
-    if (['completed', 'terminated', 'cancelled', 'closing'].includes(status))
+    if (['completed', 'cancelled'].includes(status))
       throw new ProductionDomainError('INVALID_STATE', '任务已经结束，不能继续办理追踪卡');
   }
   private requireVersion(actual: number, expected: number): void {

@@ -122,6 +122,8 @@
           }}</el-descriptions-item
           ><el-descriptions-item label="待处理异常"
             >{{ context.summary.openAbnormalityCount }} 条</el-descriptions-item
+          ><el-descriptions-item label="整盘报废"
+            >{{ context.summary.scrappedCardCount }} 盘</el-descriptions-item
           ></el-descriptions
         >
         <div class="step-grid">
@@ -213,7 +215,7 @@
           ></el-table-column
         >
         <el-table-column
-          label="盘量"
+          label="剩余盘量"
           width="100"
           align="right"
           ><template #default="{ row }"
@@ -236,9 +238,10 @@
             }}</el-tag>
             <div
               v-if="row.openAbnormalityCount"
-              :class="['secondary', { danger: row.isPaused }]"
+              class="secondary danger"
             >
-              {{ row.isPaused ? '暂停流转' : '随盘异常' }} · {{ row.openAbnormalityCount }} 条待处理
+              {{ row.status === 'voided' ? '保留未处理异常' : '暂停流转' }} ·
+              {{ row.openAbnormalityCount }} 条
             </div></template
           ></el-table-column
         >
@@ -246,11 +249,7 @@
           label="实际可用产出"
           min-width="130"
           align="right"
-          ><template #default="{ row }">{{
-            row.availableQuantity === null
-              ? '尚未定稿'
-              : `${formatQuantity(row.availableQuantity)} ${row.unit}`
-          }}</template></el-table-column
+          ><template #default="{ row }">{{ trackingOutputLabel(row) }}</template></el-table-column
         >
         <el-table-column
           prop="personnelName"
@@ -401,7 +400,11 @@ import { batchStatusMeta } from '../shared/production-status';
 import TrackingCardEvidence from './TrackingCardEvidence.vue';
 import TrackingCardActionDialog from './TrackingCardActionDialog.vue';
 import TrackingLabelDialog from './TrackingLabelDialog.vue';
-import { trackingCardStatus, type TrackingCardAction } from './tracking-presentation';
+import {
+  trackingCardStatus,
+  trackingOutputLabel,
+  type TrackingCardAction,
+} from './tracking-presentation';
 import { useTrackingTaskSearch } from './use-tracking-task-search';
 
 defineOptions({ name: 'ProductionTrackingPage' });
@@ -604,7 +607,12 @@ function openAction(value: TrackingCardAction, item?: ProductionTrackingAbnormal
   actionVisible.value = true;
 }
 async function cardChanged(card: ProductionTrackingCardDetail): Promise<void> {
-  if (selectedId.value === card.id) selectedCard.value = card;
+  if (selectedId.value === card.id) {
+    detailReads.invalidate();
+    detailError.value = '';
+    selectedCard.value = card;
+  }
+  cards.value = cards.value.map((item) => (item.id === card.id ? card : item));
   await refresh();
 }
 let consumedLocation = '';

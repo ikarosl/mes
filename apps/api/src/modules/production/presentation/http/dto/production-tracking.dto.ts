@@ -1,18 +1,23 @@
 import { Type } from 'class-transformer';
 import {
-  IsBoolean,
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsIn,
   IsInt,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
   Max,
   MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 import type {
   ConfirmProductionTrackingOutputPayload,
+  ConfirmProductionResearchOutputPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
@@ -24,7 +29,6 @@ import type {
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import {
-  PRODUCTION_TRACKING_ABNORMALITY_SEVERITIES,
   PRODUCTION_TRACKING_ABNORMALITY_STATUSES,
   PRODUCTION_TRACKING_CARD_STATUSES,
 } from '@company/constants';
@@ -91,9 +95,12 @@ export class CreateProductionTrackingAbnormalityDto
 {
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) stepRecordId?: string | null;
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
-  @IsIn(PRODUCTION_TRACKING_ABNORMALITY_SEVERITIES)
-  severity!: CreateProductionTrackingAbnormalityPayload['severity'];
+  @Type(() => Number) @IsInt() @Min(1) @Max(99999999) affectedQuantity!: number;
   @IsString() @IsNotEmpty() @MaxLength(5000) description!: string;
+}
+export class ProductionTrackingScrapReferenceDto {
+  @IsString() @Matches(/^[1-9]\d{0,19}$/) handlingId!: string;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99999999) quantity!: number;
 }
 export class HandleProductionTrackingAbnormalityDto
   extends VersionedCommandDto
@@ -101,15 +108,28 @@ export class HandleProductionTrackingAbnormalityDto
 {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
   @IsString() @IsNotEmpty() @MaxLength(5000) content!: string;
-  @IsBoolean() resolve!: boolean;
+  @Type(() => Number) @IsInt() @Min(0) @Max(99999999) repairedQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(0) @Max(99999999) scrappedQuantity!: number;
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ArrayUnique((reference: ProductionTrackingScrapReferenceDto | null) => reference?.handlingId)
+  @IsObject({ each: true })
+  @ValidateNested({ each: true })
+  @Type(() => ProductionTrackingScrapReferenceDto)
+  scrapReferences!: ProductionTrackingScrapReferenceDto[];
 }
 export class ConfirmProductionTrackingOutputDto
   extends VersionedCommandDto
   implements ConfirmProductionTrackingOutputPayload
 {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
-  @Type(() => Number) @IsInt() @Min(0) @Max(99999999) availableQuantity!: number;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+export class ConfirmProductionResearchOutputDto
+  extends ConfirmProductionTrackingOutputDto
+  implements ConfirmProductionResearchOutputPayload
+{
+  @Type(() => Number) @IsInt() @Min(0) @Max(99999999) availableQuantity!: number;
 }
 export class FinishProductionTrackingTaskDto
   extends VersionedCommandDto

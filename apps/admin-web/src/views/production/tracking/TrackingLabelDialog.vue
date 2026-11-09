@@ -37,7 +37,7 @@
             <dt>建卡时间</dt>
             <dd>{{ formatDateTimeForDisplay(card.createdAt) }}</dd>
           </dl>
-          <strong v-if="card.status === 'voided'">已作废</strong>
+          <strong v-if="terminalStatusLabel">{{ terminalStatusLabel }}</strong>
         </div>
       </div>
       <InlineHint
@@ -59,6 +59,7 @@
 <script setup lang="ts">
 import { computed, ref } from 'vue';
 import type { ProductionTrackingCardDetail } from '@company/contracts';
+import { PRODUCTION_TRACKING_CARD_STATUS_LABELS } from '@company/constants';
 import InlineHint from '../../../components/InlineHint.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
@@ -68,6 +69,12 @@ import { code128Svg } from './code128';
 const props = defineProps<{ visible: boolean; card: ProductionTrackingCardDetail | null }>();
 defineEmits<{ (event: 'update:visible', value: boolean): void }>();
 const format = ref('internal');
+const terminalStatusLabel = computed(() => {
+  const status = props.card?.status;
+  return status === 'voided' || status === 'scrapped'
+    ? PRODUCTION_TRACKING_CARD_STATUS_LABELS[status]
+    : '';
+});
 const svg = computed(() => (props.card ? code128Svg(props.card.cardNo) : ''));
 const barcodeUrl = computed(
   () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.value)}`,
@@ -95,7 +102,7 @@ function printLabel(): void {
   }
   const external = format.value === 'external';
   popup.document.write(
-    `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapeHtml(card.cardNo)}</title><style>@page{size:${external ? 'A5' : '70mm 40mm'};margin:${external ? '10mm' : '3mm'}}*{box-sizing:border-box}body{font-family:Arial,'Microsoft YaHei',sans-serif;color:#000;margin:0}main{width:${external ? '100%' : '64mm'};margin:auto}h2{text-align:center;font-size:20px}.caption{display:flex;justify-content:space-between;gap:10px;font-size:12px}svg{display:block;width:100%;height:auto;margin:6px 0}dl{display:grid;grid-template-columns:70px 1fr;gap:10px;font-size:13px}dt,dd{margin:0}dd{overflow-wrap:anywhere}</style></head><body><main>${external ? '<h2>工序追踪卡</h2>' : ''}<div class="caption"><strong>${escapeHtml(card.batchNo)}</strong><strong>${escapeHtml(formatQuantity(card.quantity))} ${escapeHtml(card.unit)}</strong></div>${svg.value}${external ? `<dl><dt>工单</dt><dd>${escapeHtml(card.workOrderNo)}</dd><dt>产品</dt><dd>${escapeHtml(card.productCode)} / ${escapeHtml(card.productName)}</dd><dt>建卡登记人</dt><dd>${escapeHtml(card.personnelName)}</dd><dt>建卡时间</dt><dd>${escapeHtml(formatDateTimeForDisplay(card.createdAt))}</dd></dl>` : ''}${card.status === 'voided' ? '<strong>已作废</strong>' : ''}</main></body></html>`,
+    `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>${escapeHtml(card.cardNo)}</title><style>@page{size:${external ? 'A5' : '70mm 40mm'};margin:${external ? '10mm' : '3mm'}}*{box-sizing:border-box}body{font-family:Arial,'Microsoft YaHei',sans-serif;color:#000;margin:0}main{width:${external ? '100%' : '64mm'};margin:auto}h2{text-align:center;font-size:20px}.caption{display:flex;justify-content:space-between;gap:10px;font-size:12px}svg{display:block;width:100%;height:auto;margin:6px 0}dl{display:grid;grid-template-columns:70px 1fr;gap:10px;font-size:13px}dt,dd{margin:0}dd{overflow-wrap:anywhere}</style></head><body><main>${external ? '<h2>工序追踪卡</h2>' : ''}<div class="caption"><strong>${escapeHtml(card.batchNo)}</strong><strong>${escapeHtml(formatQuantity(card.quantity))} ${escapeHtml(card.unit)}</strong></div>${svg.value}${external ? `<dl><dt>工单</dt><dd>${escapeHtml(card.workOrderNo)}</dd><dt>产品</dt><dd>${escapeHtml(card.productCode)} / ${escapeHtml(card.productName)}</dd><dt>建卡登记人</dt><dd>${escapeHtml(card.personnelName)}</dd><dt>建卡时间</dt><dd>${escapeHtml(formatDateTimeForDisplay(card.createdAt))}</dd></dl>` : ''}${terminalStatusLabel.value ? `<strong>${escapeHtml(terminalStatusLabel.value)}</strong>` : ''}</main></body></html>`,
   );
   popup.document.close();
   popup.focus();

@@ -35,7 +35,7 @@ function configuration() {
   return {
     mode,
     base: endpoint.href.replace(/\/$/, ''),
-    marker: `[demo-tracking-v1:${tag}]`,
+    marker: `[demo-tracking-v2:${tag}]`,
     batchId,
   };
 }
@@ -55,7 +55,7 @@ async function client(config) {
   const session = await response.json();
   if (typeof session.accessToken !== 'string' || !session.accessToken)
     throw new Error('管理员登录未返回访问凭证');
-  return async (path, body, method = body === undefined ? 'GET' : 'POST') => {
+  return async (path, body, method = body === undefined ? 'GET' : 'POST', options = {}) => {
     if (method !== 'GET' && config.mode !== 'prepare') throw new Error('report 模式禁止业务写入');
     const response = await fetch(`${config.base}${path}`, {
       method,
@@ -64,15 +64,20 @@ async function client(config) {
       headers: {
         Authorization: `Bearer ${session.accessToken}`,
         'Content-Type': 'application/json',
-        ...(method === 'GET' ? {} : { 'Idempotency-Key': randomUUID() }),
+        ...(method === 'GET' ? {} : { 'Idempotency-Key': options.idempotencyKey ?? randomUUID() }),
       },
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     });
     const value = await response.json().catch(() => null);
-    if (!response.ok)
+    if (!response.ok) {
+      if (options.expectedCode && value?.code === options.expectedCode)
+        return { status: response.status, code: value.code };
       throw new Error(
         `${method} ${path} 失败：HTTP ${response.status} ${typeof value?.code === 'string' && /^[A-Z_]+$/.test(value.code) ? value.code : 'UNKNOWN'}`,
       );
+    }
+    if (options.expectedCode)
+      throw new Error(`${method} ${path} 应拒绝 ${options.expectedCode}，实际却已成功`);
     if (value === null) throw new Error(`${method} ${path} 未返回 JSON`);
     return value;
   };
@@ -140,15 +145,49 @@ async function prepare(config, request) {
     for (const step of workbench.steps) card = await scan(card, step);
     return card;
   };
-  const confirm = (card, quantity) =>
+  const confirm = (card) =>
     request(`/production/tracking-cards/${card.id}/actions/confirm-output`, {
       version: card.version,
       personnelId: quality.id,
-      availableQuantity: quantity,
-      remark: `${config.marker} 质量人员显式确认最终可用产出`,
+      remark: `${config.marker} 质量人员确认完成，按服务器剩余盘量入库`,
     });
+  const discover = (card, affectedQuantity, description, stepRecordId) =>
+    request(`/production/tracking-cards/${card.id}/abnormalities`, {
+      version: card.version,
+      ...(stepRecordId ? { stepRecordId } : {}),
+      personnelId: quality.id,
+      affectedQuantity,
+      description: `${config.marker} ${description}`,
+    });
+  const disposition = (
+    card,
+    abnormalityId,
+    repairedQuantity,
+    scrappedQuantity,
+    scrapReferences,
+  ) => {
+    const abnormality = card.abnormalities.find((item) => item.id === abnormalityId);
+    if (!abnormality) throw new Error('异常事实缺失');
+    return request(
+      `/production/tracking-cards/${card.id}/abnormalities/${abnormalityId}/handlings`,
+      {
+        version: abnormality.version,
+        personnelId: production.id,
+        content: `${config.marker} 人工核对实物重叠后一次最终结算`,
+        repairedQuantity,
+        scrappedQuantity,
+        scrapReferences,
+      },
+    );
+  };
+  const newestAbnormalityId = (card) => {
+    const abnormality = card.abnormalities.at(-1);
+    if (!abnormality) throw new Error('异常登记未返回事实');
+    return abnormality.id;
+  };
+  const observations = [];
 
-  await confirm(await completeRoute(await create('正常流转及正数入库', 10)), 9);
+  await confirm(await completeRoute(await create('正常流转及按剩余10件入库', 10)));
   let corrected = await completeRoute(await create('交接后改量保留历史', 5));
   corrected = await request(
     `/production/tracking-cards/${corrected.id}/quantity`,
@@ -159,31 +198,65 @@ async function prepare(config, request) {
     },
     'PATCH',
   );
-  corrected = await request(`/production/tracking-cards/${corrected.id}/abnormalities`, {
-    version: corrected.version,
-    stepRecordId: workbench.steps[0].stepRecordId,
-    personnelId: quality.id,
-    severity: 'normal',
-    description: `${config.marker} 终检发现首站外观问题`,
-  });
-  const abnormality = corrected.abnormalities.at(-1);
-  if (!abnormality) throw new Error('异常登记未返回事实');
-  corrected = await request(
-    `/production/tracking-cards/${corrected.id}/abnormalities/${abnormality.id}/handlings`,
-    {
-      version: abnormality.version,
-      personnelId: production.id,
-      content: `${config.marker} 已完成现场处理并复核`,
-      resolve: true,
-    },
+  corrected = await discover(
+    corrected,
+    3,
+    '外观问题影响3件，返修1件、新增报废2件',
+    workbench.steps[0].stepRecordId,
   );
-  await confirm(corrected, 6);
-  const paused = await scan(await create('暂停异常待人工处理', 4), workbench.steps[0]);
-  await request(`/production/tracking-cards/${paused.id}/abnormalities`, {
-    version: paused.version,
+  const sourceAbnormalityId = newestAbnormalityId(corrected);
+  corrected = await discover(corrected, 2, '尺寸问题与外观报废的同2件重叠');
+  const overlapAbnormalityId = newestAbnormalityId(corrected);
+  corrected = await discover(corrected, 2, '第三个问题也由同2件报废实物解释，不累计耗用引用额度');
+  const secondOverlapId = newestAbnormalityId(corrected);
+  const handlingPath = `/production/tracking-cards/${corrected.id}/abnormalities/${sourceAbnormalityId}/handlings`;
+  const handlingBody = {
+    version: corrected.abnormalities.find((item) => item.id === sourceAbnormalityId).version,
     personnelId: production.id,
-    severity: 'pause',
-    description: `${config.marker} 待人工检查，当前暂停流转`,
+    content: `${config.marker} 影响3=返修1+新增报废2`,
+    repairedQuantity: 1,
+    scrappedQuantity: 2,
+    scrapReferences: [],
+  };
+  const idempotencyKey = randomUUID();
+  corrected = await request(handlingPath, handlingBody, 'POST', { idempotencyKey });
+  const replay = await request(handlingPath, handlingBody, 'POST', { idempotencyKey });
+  if (corrected.quantity !== '5' || replay.quantity !== corrected.quantity)
+    throw new Error('一次处理或同键重放的盘量不符合7-2=5');
+  const sourceHandling = corrected.abnormalities.find(
+    (item) => item.id === sourceAbnormalityId,
+  ).handling;
+  if (!sourceHandling) throw new Error('一次结算未返回handling');
+  for (const abnormalityId of [overlapAbnormalityId, secondOverlapId]) {
+    corrected = await disposition(corrected, abnormalityId, 0, 0, [
+      { handlingId: sourceHandling.id, quantity: 2 },
+    ]);
+    if (corrected.quantity !== '5') throw new Error('关联已有报废重复扣减了盘量');
+  }
+  corrected = await confirm(corrected);
+  if (corrected.output?.quantity !== '5') throw new Error('末站确认未按剩余盘量5生成产出');
+  observations.push({
+    scenario: '3=1返修+2新增报废；两个重叠异常分别关联同2件且不再扣量',
+    cardId: corrected.id,
+    outputQuantity: corrected.output.quantity,
+    replayQuantity: replay.quantity,
+  });
+
+  let paused = await scan(await create('未结异常阻止流转待人工处理', 4), workbench.steps[0]);
+  paused = await discover(paused, 2, '待人工检查，所有未结异常均阻止整盘后续流转');
+  observations.push({
+    scenario: '未结异常阻止流转',
+    cardId: paused.id,
+    refusal: await request(
+      '/production/tracking-cards/scan',
+      {
+        cardNo: paused.cardNo,
+        stepRecordId: workbench.steps[1].stepRecordId,
+        personnelId: production.id,
+      },
+      'POST',
+      { expectedCode: 'CONFLICT' },
+    ),
   });
   await create('未使用待打印', 3);
   const voided = await scan(await create('已用卡作废保留事实', 2), workbench.steps[0]);
@@ -191,8 +264,45 @@ async function prepare(config, request) {
     version: voided.version,
     reason: `${config.marker} 现场取消该盘，已有到站事实保留`,
   });
-  await confirm(await completeRoute(await create('零产出确认不记库存', 1)), 0);
-  return report(config, request);
+  let scrapped = await create('整盘报废保留已到站及交接事实', 3);
+  for (const step of workbench.steps.slice(0, 2)) scrapped = await scan(scrapped, step);
+  scrapped = await discover(scrapped, 3, '全部3件实际报废');
+  const fullScrapId = newestAbnormalityId(scrapped);
+  scrapped = await discover(scrapped, 2, '另一异常影响其中2件，待关联已有报废关闭');
+  const fullScrapOverlapId = newestAbnormalityId(scrapped);
+  scrapped = await disposition(scrapped, fullScrapId, 0, 3, []);
+  if (
+    scrapped.quantity !== '0' ||
+    scrapped.status !== 'in_progress' ||
+    scrapped.openAbnormalityCount !== 1
+  )
+    throw new Error('零盘量未结异常未保留继续结算状态');
+  const fullScrapHandling = scrapped.abnormalities.find((item) => item.id === fullScrapId).handling;
+  scrapped = await disposition(scrapped, fullScrapOverlapId, 0, 0, [
+    { handlingId: fullScrapHandling.id, quantity: 2 },
+  ]);
+  if (
+    scrapped.status !== 'scrapped' ||
+    scrapped.output !== null ||
+    scrapped.openAbnormalityCount !== 0
+  )
+    throw new Error('全报废关闭未形成无产出的scrapped终态');
+  observations.push({
+    scenario: '全报废且全部异常已结，历史到站/报工保留且无产出',
+    cardId: scrapped.id,
+    status: scrapped.status,
+    completedVisits: scrapped.visits.filter((visit) => visit.completedAt !== null).length,
+  });
+
+  let zeroPending = await scan(
+    await create('零盘量仍有异常待人工关联报废结算', 3),
+    workbench.steps[0],
+  );
+  zeroPending = await discover(zeroPending, 3, '全部3件实际报废');
+  const zeroSourceId = newestAbnormalityId(zeroPending);
+  zeroPending = await discover(zeroPending, 2, '影响其中2件，保留人工选择已有报废的待处理场景');
+  await disposition(zeroPending, zeroSourceId, 0, 3, []);
+  return { ...(await report(config, request)), preparedObservations: observations };
 }
 
 try {

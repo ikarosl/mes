@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PRODUCTION_TRACKING_SCOPES } from './idempotency/production-idempotency-scopes.contract.js';
 import type {
   ConfirmProductionTrackingOutputPayload,
+  ConfirmProductionResearchOutputPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
@@ -125,7 +126,14 @@ export class ProductionTrackingService {
     payload: HandleProductionTrackingAbnormalityPayload,
     context: IdempotentCommandContext,
   ) {
-    const body = { ...payload, content: this.reason(payload.content) };
+    const body = {
+      ...payload,
+      content: this.reason(payload.content),
+      scrapReferences: payload.scrapReferences.map(({ handlingId, quantity }) => ({
+        handlingId,
+        quantity,
+      })),
+    };
     return this.execute(
       'abnormality.handle',
       { cardId, abnormalityId },
@@ -163,7 +171,7 @@ export class ProductionTrackingService {
   }
   confirmResearchOutput(
     batchId: string,
-    payload: ConfirmProductionTrackingOutputPayload,
+    payload: ConfirmProductionResearchOutputPayload,
     context: IdempotentCommandContext,
   ) {
     const body = { ...payload, remark: payload.remark?.trim() || null };

@@ -11,7 +11,11 @@
     </div>
     <div class="summary-item">
       <el-icon><CircleCheck /></el-icon>
-      <span>已定稿</span>
+      <span
+        >已定稿<small class="scrapped-summary"
+          >整盘报废 {{ context ? context.summary.scrappedCardCount : '—' }} 盘</small
+        ></span
+      >
       <strong>{{ context ? context.summary.completedCardCount : '—' }}<small>盘</small></strong>
     </div>
     <div class="summary-item">
@@ -56,6 +60,12 @@ defineProps<{ context: ProductionTrackingWorkbench | null; loading: boolean }>()
 .summary-item > span {
   color: var(--el-text-color-regular);
   font-size: 14px;
+}
+.summary-item .scrapped-summary {
+  display: block;
+  margin: 4px 0 0;
+  color: var(--el-text-color-regular);
+  font-size: 13px;
 }
 .summary-item strong {
   margin-left: auto;

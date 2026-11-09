@@ -420,7 +420,7 @@ export class MysqlProductionMaterialDemandConfigurationRepository extends Produc
       const orderPolicy = await lockWorkOrderForBatch(db, command.productionBatchId);
       const batch = await findBatch(db, command.productionBatchId, true);
       if (
-        ['cancelled', 'completed', 'terminated', 'closing'].includes(batch.status) ||
+        ['cancelled', 'completed'].includes(batch.status) ||
         (batch.status === 'pending' && orderPolicy.orderType !== 'research')
       )
         throw new ProductionDomainError('INVALID_STATE', '当前任务不能手工提需');

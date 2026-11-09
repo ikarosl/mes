@@ -55,7 +55,7 @@ export interface WorkOrderItem {
   ownerName: string | null;
   planStartDate: string | null;
   planEndDate: string | null;
-  /** 有效任务计划合计，排除 cancelled/terminated。 */
+  /** 有效任务计划合计，排除 cancelled。 */
   assignedQuantity: string;
   status: WorkOrderStatus;
   releasedAt: string | null;

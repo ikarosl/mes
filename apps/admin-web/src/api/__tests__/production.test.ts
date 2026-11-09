@@ -272,18 +272,7 @@ describe('productionApi', () => {
     });
   });
 
-  it('lists execution batch summaries without per-row detail requests', async () => {
-    const { productionExecutionApi } = await import('../production/execution');
-    await productionExecutionApi.listExecutionBatchSummaries({
-      page: 2,
-      pageSize: 20,
-      keyword: 'PB',
-    });
-    expect(request).toHaveBeenCalledWith({
-      url: '/production/execution-batches',
-      params: { page: 2, pageSize: 20, keyword: 'PB' },
-    });
-  });
+  // TODO(production-tracking-query): 验证执行摘要分页且不逐行读取详情；高重要性，旧执行列表API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡工作台查询恢复。
 
   it('gets batch detail', async () => {
     const { productionTasksApi } = await import('../production/tasks');
@@ -311,20 +300,7 @@ describe('productionApi', () => {
     });
   });
 
-  it('updates a generated step execution override with the step version', async () => {
-    const { productionTasksApi } = await import('../production/tasks');
-
-    await productionTasksApi.updateBatchStepExecution('1', '9', {
-      version: 2,
-      actualSopFileId: '7',
-    });
-
-    expect(request).toHaveBeenCalledWith({
-      url: '/production/batches/1/step-records/9/execution',
-      method: 'PATCH',
-      data: { version: 2, actualSopFileId: '7' },
-    });
-  });
+  // TODO(production-tracking-sop): 验证冻结工序SOP来源与版本边界；高重要性，旧任务工序覆盖API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按任务创建快照与历史SOP读取契约恢复。
 
   it('configures explicit material variants with an idempotency key', async () => {
     const { productionMaterialDemandsApi } = await import('../production/material-demands');
@@ -492,178 +468,21 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('uses semantic step assignment routes without idempotency headers', async () => {
-    const { productionTasksApi } = await import('../production/tasks');
-    await productionTasksApi.assignStep('1', '9', '7', 0);
-    await productionTasksApi.unassignStep('1', '9', 1);
-    await productionTasksApi.reassignStep('1', '9', '8', 2);
-    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
-      {
-        url: '/production/batches/1/step-records/9/actions/assign',
-        method: 'POST',
-        data: { responsibleUserId: '7', version: 0 },
-      },
-      {
-        url: '/production/batches/1/step-records/9/actions/unassign',
-        method: 'POST',
-        data: { version: 1 },
-      },
-      {
-        url: '/production/batches/1/step-records/9/actions/reassign',
-        method: 'POST',
-        data: { responsibleUserId: '8', version: 2 },
-      },
-    ]);
-  });
+  // TODO(production-tracking-personnel): 验证现场人员登记与独立写权限；高重要性，旧工序派工API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡扫码人员契约恢复。
 
-  it('uses the employee SOP snapshot download route', async () => {
-    const { productionExecutionApi } = await import('../production/execution');
-    request.mockResolvedValue({ data: new Blob(['sop']) });
+  // TODO(production-tracking-sop): 验证历史SOP下载来源及访问边界；高重要性，旧员工任务SOP API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡工序SOP下载契约恢复。
 
-    await productionExecutionApi.workerTaskSopContent('1', '9');
+  // TODO(production-tracking-execution): 验证现场执行查询和版本保护；高重要性，旧员工任务及工序开工API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按任务明确开始及逐卡扫码契约恢复。
 
-    expect(request.mock.calls.slice(-1).map(([config]) => config)).toEqual([
-      {
-        url: '/production/worker-tasks/batches/1/step-records/9/sop-content',
-        responseType: 'blob',
-        timeout: 0,
-      },
-    ]);
-  });
+  // TODO(production-tracking-finish): 验证任务结束的版本与幂等请求接线；高重要性，旧执行完成与结案版本API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按任务人工结束契约恢复。
 
-  it('lists current employee tasks and starts a step with its version', async () => {
-    const { productionExecutionApi } = await import('../production/execution');
-    await productionExecutionApi.listWorkerTasks({ page: 1, pageSize: 20 });
-    await productionExecutionApi.startStep('1', '9', 3);
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      { url: '/production/worker-tasks', params: { page: 1, pageSize: 20 } },
-      {
-        url: '/production/batches/1/step-records/9/actions/start',
-        method: 'POST',
-        data: { version: 3 },
-      },
-    ]);
-  });
+  // TODO(inventory-trace): 验证库存来源追溯的只读访问与归属边界；高重要性，旧生产追溯API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按现行库存与追踪卡来源契约恢复。
 
-  it('checks and explicitly completes production execution with a versioned idempotent command', async () => {
-    const { productionExecutionApi } = await import('../production/execution');
-    await productionExecutionApi.getExecutionCompletionCheck('1');
-    await productionExecutionApi.completeProductionExecution(
-      '1',
-      { version: 4, closeoutVersion: null },
-      'k2-uuid',
-    );
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      { url: '/production/batches/1/execution-completion-check' },
-      {
-        url: '/production/batches/1/actions/complete-execution',
-        method: 'POST',
-        data: { version: 4, closeoutVersion: null },
-        headers: { 'Idempotency-Key': 'k2-uuid' },
-        skipErrorHandling: true,
-      },
-    ]);
-  });
+  // TODO(production-tracking-facts): 验证数量事实与幂等请求接线且不重复计量；高重要性，旧人工报工及冲销API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按扫码交接与一次性最终产出契约恢复。
 
-  it('uses read-only Production trace endpoints without warehouse API ownership', async () => {
-    const { productionTraceApi } = await import('../production/trace');
-    await productionTraceApi.searchProductionTrace({ keyword: 'IB-1', page: 1, pageSize: 20 });
-    await productionTraceApi.getProductionTrace('7');
-    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
-      {
-        url: '/production/trace',
-        params: { keyword: 'IB-1', page: 1, pageSize: 20 },
-      },
-      { url: '/production/trace/batches/7' },
-    ]);
-  });
+  // TODO(production-tracking-abnormality): 验证异常处置的数量边界与幂等请求接线；高重要性，旧报废补料计划API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按异常一次性结算与独立人工提需契约恢复。
 
-  it('uses idempotency only for report creation and correction, not reversal', async () => {
-    const { productionStepReportsApi } = await import('../production/step-reports');
-    const createBody = { version: 3, normalQuantity: 2, abnormalQuantity: 0, remark: null };
-    await productionStepReportsApi.createStepReport('1', '9', createBody, 'report-key');
-    await productionStepReportsApi.reverseStepReport('1', '9', '12', {
-      version: 4,
-      reason: '录入错误',
-    });
-    const correctBody = { version: 4, normalQuantity: 2, reason: '修正' };
-    await productionStepReportsApi.correctStepReport('1', '9', '12', correctBody, 'correct-key');
-    expect(request.mock.calls.slice(-3).map(([config]) => config)).toEqual([
-      {
-        url: '/production/batches/1/step-records/9/reports',
-        method: 'POST',
-        data: createBody,
-        headers: { 'Idempotency-Key': 'report-key' },
-      },
-      {
-        url: '/production/batches/1/step-records/9/reports/12/actions/reverse',
-        method: 'POST',
-        data: { version: 4, reason: '录入错误' },
-      },
-      {
-        url: '/production/batches/1/step-records/9/reports/12/actions/correct',
-        method: 'POST',
-        data: correctBody,
-        headers: { 'Idempotency-Key': 'correct-key' },
-      },
-    ]);
-  });
-
-  it('loads supplement candidates and walks the draft save and confirm flow with idempotency', async () => {
-    const { productionAbnormalDispositionsApi } =
-      await import('../production/abnormal-dispositions');
-    const saveBody = {
-      planVersion: null,
-      dispositionVersion: 0,
-      details: [
-        {
-          originalDemandId: '5',
-          requirementBasisId: 'basis-5',
-          materialVariantId: 'mv-5',
-          supplementQuantity: 1.25,
-        },
-      ],
-      remark: '补料',
-    };
-    await productionAbnormalDispositionsApi.listSupplementCandidates('8');
-    await productionAbnormalDispositionsApi.getScrapSupplementPlan('8');
-    await productionAbnormalDispositionsApi.saveScrapSupplementPlan('8', saveBody);
-    await productionAbnormalDispositionsApi.confirmScrapSupplementPlan(
-      '8',
-      { version: 0, dispositionVersion: 0 },
-      'supplement-key',
-    );
-    expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
-      {
-        url: '/production/abnormal-dispositions/8/supplement-candidates',
-      },
-      { url: '/production/abnormal-dispositions/8/scrap-supplement-plan' },
-      {
-        url: '/production/abnormal-dispositions/8/scrap-supplement-plan',
-        method: 'PUT',
-        data: saveBody,
-      },
-      {
-        url: '/production/abnormal-dispositions/8/scrap-supplement-plan/actions/confirm',
-        method: 'POST',
-        data: { version: 0, dispositionVersion: 0 },
-        headers: { 'Idempotency-Key': 'supplement-key' },
-      },
-    ]);
-  });
-
-  it('passes through a null scrap supplement plan for a disposition without a draft', async () => {
-    const { productionAbnormalDispositionsApi } =
-      await import('../production/abnormal-dispositions');
-    request.mockResolvedValue({ data: null });
-
-    const plan = await productionAbnormalDispositionsApi.getScrapSupplementPlan('8');
-
-    expect(plan).toBeNull();
-    expect(request).toHaveBeenCalledWith({
-      url: '/production/abnormal-dispositions/8/scrap-supplement-plan',
-    });
-  });
+  // TODO(production-tracking-abnormality): 验证异常未处理事实与已结算事实可区分；高重要性，旧报废补料草稿API已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按单次异常结算查询契约恢复。
 
   it('handles network errors gracefully via toRequestError', async () => {
     const { RequestError } = await import('@company/request');

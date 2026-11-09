@@ -56,7 +56,6 @@ type WorkOrderBatchSummaryRow = RowDataPacket & {
     | 'cancelled'
     | 'material_partially_outbound';
   planned_quantity: string;
-  current_revision_id: number | null;
   approved_available_quantity: string | null;
 };
 
@@ -480,7 +479,7 @@ export class MysqlWorkOrderRepository {
     workOrderId: string,
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
-      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,NULL current_revision_id,
+      `SELECT b.id,b.batch_no,b.status,b.planned_quantity,
         CAST(COALESCE((SELECT SUM(o.quantity) FROM production_tracking_output o WHERE o.production_batch_id=b.id),0) AS CHAR) approved_available_quantity
        FROM production_batches b WHERE b.work_order_id=? ORDER BY b.id FOR UPDATE`,
       [workOrderId],
@@ -553,7 +552,5 @@ const workOrderBatchDetails = (
     plannedQuantity: String(batch.planned_quantity),
     approvedAvailableQuantity:
       batch.approved_available_quantity === null ? null : String(batch.approved_available_quantity),
-    currentOutputRevisionId:
-      batch.current_revision_id === null ? null : String(batch.current_revision_id),
   })),
 });

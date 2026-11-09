@@ -1,6 +1,6 @@
 ﻿# 成品入库协作
 
-成品实际产出由 Production 的[最终确认事实](execution-traceability-quality.md#production_tracking_output)唯一提供。批量每盘确认一次，研发每任务确认一次；正数在同一事务通过 Inventory 公开能力直接入库，零数只保存确认事实。
+成品实际产出由 Production 的[最终确认事实](execution-traceability-quality.md#production_tracking_output)唯一提供。批量卡在末站由质量人员确认一次，数量由锁定的当前剩余盘量生成；全部报废只形成 scrapped 卡终态，无产出或入库。研发每任务手填实际产出确认一次；正数在同一事务通过 Inventory 公开能力直接入库，研发零数只保存确认事实。
 
 不再建立批准产出清单、计划内／外授权分配、成品检查轮次或“批准后待仓管确认”的第二办理阶段。工单计划仍用于计划分配和足量判断，超计划最终产出如实汇总，不拆成另一种库存来源。
 

@@ -1,8 +1,8 @@
 import type { PageQuery, VersionedCommand } from '../common.js';
 import type { ProductionBatchItem } from './batch.js';
 
-export type ProductionTrackingCardStatus = 'unused' | 'in_progress' | 'completed' | 'voided';
-export type ProductionTrackingAbnormalitySeverity = 'normal' | 'pause';
+export type ProductionTrackingCardStatus =
+  'unused' | 'in_progress' | 'completed' | 'scrapped' | 'voided';
 export type ProductionTrackingAbnormalityStatus = 'open' | 'resolved';
 
 export interface ProductionTrackingPersonnelSnapshot {
@@ -73,7 +73,9 @@ export interface ProductionTrackingQuantityChange {
 export interface ProductionTrackingAbnormalityHandling extends ProductionTrackingPersonnelSnapshot {
   id: string;
   content: string;
-  resolvesAbnormality: boolean;
+  repairedQuantity: string;
+  scrappedQuantity: string;
+  scrapReferences: { handlingId: string; quantity: string }[];
   createdBy: string;
   createdAt: string;
 }
@@ -82,14 +84,14 @@ export interface ProductionTrackingAbnormality extends ProductionTrackingPersonn
   id: string;
   stepRecordId: string | null;
   stepName: string | null;
-  severity: ProductionTrackingAbnormalitySeverity;
+  affectedQuantity: string;
   status: ProductionTrackingAbnormalityStatus;
   description: string;
   createdBy: string;
   createdAt: string;
   resolvedAt: string | null;
   version: number;
-  handlings: ProductionTrackingAbnormalityHandling[];
+  handling: ProductionTrackingAbnormalityHandling | null;
 }
 
 export interface ProductionTrackingOutput extends ProductionTrackingPersonnelSnapshot {
@@ -130,6 +132,7 @@ export interface ProductionTrackingWorkbench {
     unusedCardCount: number;
     inProgressCardCount: number;
     completedCardCount: number;
+    scrappedCardCount: number;
     voidedCardCount: number;
     openAbnormalityCount: number;
     availableQuantity: string;
@@ -168,20 +171,25 @@ export interface CreateProductionTrackingAbnormalityPayload extends VersionedCom
   /** 涉及工序，省略时采用当前站；指定值必须是本卡已到站的工序。 */
   stepRecordId?: string | null;
   personnelId: string;
-  severity: ProductionTrackingAbnormalitySeverity;
+  affectedQuantity: number;
   description: string;
 }
 
 export interface HandleProductionTrackingAbnormalityPayload extends VersionedCommand {
   personnelId: string;
   content: string;
-  resolve: boolean;
+  repairedQuantity: number;
+  scrappedQuantity: number;
+  scrapReferences: { handlingId: string; quantity: number }[];
 }
 
 export interface ConfirmProductionTrackingOutputPayload extends VersionedCommand {
   personnelId: string;
-  availableQuantity: number;
   remark?: string | null;
+}
+
+export interface ConfirmProductionResearchOutputPayload extends ConfirmProductionTrackingOutputPayload {
+  availableQuantity: number;
 }
 
 export interface FinishProductionTrackingTaskPayload extends VersionedCommand {

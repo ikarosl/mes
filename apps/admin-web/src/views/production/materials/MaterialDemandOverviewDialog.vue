@@ -303,10 +303,7 @@ const addManual = async (): Promise<void> => {
   if (await closeEditor()) emit('add-manual');
 };
 const canAdd = computed(() =>
-  Boolean(
-    props.batch &&
-    !['pending', 'completed', 'cancelled', 'terminated', 'closing'].includes(props.batch.status),
-  ),
+  Boolean(props.batch && !['pending', 'completed', 'cancelled'].includes(props.batch.status)),
 );
 watch(
   () => props.visible,

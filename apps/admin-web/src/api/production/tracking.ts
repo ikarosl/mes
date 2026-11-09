@@ -1,4 +1,5 @@
 import type {
+  ConfirmProductionResearchOutputPayload,
   ConfirmProductionTrackingOutputPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
@@ -10,6 +11,7 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
+  ProductionTrackingOutput,
   ProductionTrackingReportQuery,
   ProductionTrackingScanResult,
   ProductionTrackingVisit,
@@ -137,9 +139,9 @@ export const productionTrackingApi = {
     }),
   confirmResearchOutput: (
     batchId: string,
-    data: ConfirmProductionTrackingOutputPayload,
+    data: ConfirmProductionResearchOutputPayload,
     key: string,
-  ): Promise<ProductionBatchDetail> =>
+  ): Promise<ProductionTrackingOutput> =>
     request({
       url: `/production/batches/${batchId}/actions/confirm-research-output`,
       method: 'POST',

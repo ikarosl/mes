@@ -18,22 +18,26 @@
       </div>
     </div>
     <el-alert
-      v-if="card.isPaused"
-      title="本盘有待处理的暂停异常，处理完成后才能继续流转。"
+      v-if="card.openAbnormalityCount && !['voided', 'scrapped', 'completed'].includes(card.status)"
+      :title="
+        Number(card.quantity) === 0
+          ? `本盘剩余盘量为0，仍有 ${card.openAbnormalityCount} 条异常待处理；请继续完成异常结算。`
+          : `本盘有 ${card.openAbnormalityCount} 条待处理异常，已暂停整盘流转；全部处理完成后才能继续。`
+      "
       type="error"
       show-icon
       :closable="false"
     />
     <el-alert
-      v-else-if="card.openAbnormalityCount"
-      :title="`本盘有 ${card.openAbnormalityCount} 条待处理异常，可继续流转；终检定稿前须全部处理。`"
-      type="warning"
+      v-if="card.status === 'scrapped'"
+      title="本盘已整盘报废，异常已全部结算，无产出入库；不能继续流转或更改盘量。"
+      type="error"
       show-icon
       :closable="false"
     />
     <el-alert
       v-if="card.status === 'voided'"
-      :title="`作废原因：${card.voidReason || '—'}`"
+      :title="`人工作废原因：${card.voidReason || '—'}${card.openAbnormalityCount ? `；保留 ${card.openAbnormalityCount} 条未处理异常记录，本盘已停止办理。` : ''}`"
       type="info"
       :closable="false"
     />
@@ -41,18 +45,14 @@
       :column="3"
       border
     >
-      <el-descriptions-item label="本盘数量"
+      <el-descriptions-item label="当前剩余盘量"
         ><strong>{{ formatQuantity(card.quantity) }} {{ card.unit }}</strong></el-descriptions-item
       >
       <el-descriptions-item label="当前站点">{{
         card.currentStepName || (card.status === 'unused' ? '等待首站到站' : '—')
       }}</el-descriptions-item>
       <el-descriptions-item label="实际可用产出"
-        ><strong>{{
-          card.availableQuantity === null
-            ? '尚未定稿'
-            : `${formatQuantity(card.availableQuantity)} ${card.unit}`
-        }}</strong></el-descriptions-item
+        ><strong>{{ trackingOutputLabel(card) }}</strong></el-descriptions-item
       >
       <el-descriptions-item label="建卡登记人"
         >{{ card.personnelName }} / {{ card.personnelCode }}</el-descriptions-item
@@ -70,7 +70,7 @@
     </el-descriptions>
     <div class="action-bar">
       <el-button
-        v-if="card.status !== 'voided' && card.status !== 'completed'"
+        v-if="canChangeCard"
         @click="$emit('action', 'abnormality')"
         >登记随盘异常</el-button
       >
@@ -82,12 +82,12 @@
         >终检确认产出并入库</el-button
       >
       <el-button
-        v-if="card.status !== 'voided' && card.status !== 'completed'"
+        v-if="canChangeCard"
         @click="$emit('action', 'quantity')"
         >更正盘量</el-button
       >
       <el-button
-        v-if="card.status !== 'voided' && card.status !== 'completed'"
+        v-if="canChangeCard"
         type="danger"
         plain
         @click="$emit('action', 'void')"
@@ -167,31 +167,67 @@
             <el-tag :type="item.status === 'resolved' ? 'success' : 'warning'">{{
               PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS[item.status]
             }}</el-tag
-            ><el-tag
-              :type="item.severity === 'pause' ? 'danger' : 'info'"
-              effect="plain"
-              >{{ PRODUCTION_TRACKING_ABNORMALITY_SEVERITY_LABELS[item.severity] }}</el-tag
+            ><strong class="affected-quantity"
+              >影响 {{ formatQuantity(item.affectedQuantity) }} {{ card.unit }}</strong
             ><span
               >{{ item.stepName || '未到站' }} · {{ item.personnelName }} ·
               {{ formatDateTimeForDisplay(item.createdAt) }}</span
             ><el-button
-              v-if="item.status === 'open'"
+              v-if="
+                item.status === 'open' && !['completed', 'scrapped', 'voided'].includes(card.status)
+              "
               type="primary"
               link
+              :disabled="loading"
               @click="$emit('action', 'handling', item)"
-              >追加处理 / 解决</el-button
+              >处理并结算</el-button
             >
           </div>
           <p class="description">{{ item.description }}</p>
           <div
-            v-for="handling in item.handlings"
-            :key="handling.id"
+            v-if="item.handling"
             class="handling"
           >
-            <div>{{ handling.content }}</div>
+            <div class="handling-quantities">
+              <span
+                >返修成功
+                <strong
+                  >{{ formatQuantity(item.handling.repairedQuantity) }} {{ card.unit }}</strong
+                ></span
+              >
+              <span
+                >本次新增报废
+                <strong
+                  >{{ formatQuantity(item.handling.scrappedQuantity) }} {{ card.unit }}</strong
+                ></span
+              >
+              <span
+                >关联已报废
+                <strong
+                  >{{
+                    formatQuantity(
+                      item.handling.scrapReferences.reduce(
+                        (total, reference) => total + Number(reference.quantity),
+                        0,
+                      ),
+                    )
+                  }}
+                  {{ card.unit }}</strong
+                >（不重复扣减）</span
+              >
+            </div>
+            <div>{{ item.handling.content }}</div>
+            <div
+              v-for="reference in item.handling.scrapReferences"
+              :key="reference.handlingId"
+              class="reference-evidence"
+            >
+              关联来源问题：{{ scrapReferenceLabel(reference.handlingId) }} ·
+              {{ formatQuantity(reference.quantity) }} {{ card.unit }}
+            </div>
             <span
-              >{{ handling.personnelName }} · {{ formatDateTimeForDisplay(handling.createdAt)
-              }}{{ handling.resolvesAbnormality ? ' · 已解决' : '' }}</span
+              >{{ item.handling.personnelName }} ·
+              {{ formatDateTimeForDisplay(item.handling.createdAt) }} · 已完成结算</span
             >
           </div>
         </article>
@@ -241,13 +277,14 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingStep,
 } from '@company/contracts';
-import {
-  PRODUCTION_TRACKING_ABNORMALITY_SEVERITY_LABELS,
-  PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS,
-} from '@company/constants';
+import { PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS } from '@company/constants';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../../utils/quantity';
-import { trackingCardStatus, type TrackingCardAction } from './tracking-presentation';
+import {
+  trackingCardStatus,
+  trackingOutputLabel,
+  type TrackingCardAction,
+} from './tracking-presentation';
 const props = defineProps<{
   card: ProductionTrackingCardDetail;
   steps: ProductionTrackingStep[];
@@ -268,9 +305,20 @@ watch(
 const canConfirmOutput = computed(
   () =>
     props.card.status === 'in_progress' &&
+    Number(props.card.quantity) > 0 &&
     props.steps.length > 0 &&
     props.card.currentStepRecordId === props.steps[props.steps.length - 1]?.stepRecordId,
 );
+const canChangeCard = computed(
+  () =>
+    !['voided', 'completed', 'scrapped'].includes(props.card.status) &&
+    Number(props.card.quantity) > 0,
+);
+function scrapReferenceLabel(handlingId: string): string {
+  const source = props.card.abnormalities.find((item) => item.handling?.id === handlingId);
+  if (!source?.handling) return '来源处理记录不可读取';
+  return `${source.description} · ${source.handling.personnelName} · ${formatDateTimeForDisplay(source.handling.createdAt)}`;
+}
 </script>
 
 <style scoped>
@@ -305,9 +353,23 @@ const canConfirmOutput = computed(
   border-radius: 8px;
 }
 .abnormality-heading span,
-.handling span {
+.handling > span {
   color: var(--el-text-color-secondary);
   font-size: 12px;
+}
+.affected-quantity,
+.handling-quantities strong {
+  color: var(--el-text-color-primary);
+  font-size: 14px;
+}
+.handling-quantities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+}
+.reference-evidence {
+  color: var(--el-text-color-regular);
+  overflow-wrap: anywhere;
 }
 .description {
   white-space: pre-wrap;

@@ -274,7 +274,7 @@
           <div class="scan-bottom">
             <el-icon><InfoFilled /></el-icon
             ><span
-              >到站不计本站完成量；下一站接收时计入前站交接量，归前站原登记人。末站由质检人员显式确认产出。</span
+              >到站不计本站完成量；下一站接收时计入前站交接量，归前站原登记人。末站由质检人员按剩余盘量确认产出。</span
             >
           </div>
           <p class="identity-hint">登记人记录现场身份，登录账号保留操作审计。</p>
@@ -594,6 +594,7 @@ async function loadDetail(): Promise<void> {
     selectedCard.value = card;
     selectedSteps.value = workbench.steps;
     if (currentCard.value?.id === card.id) currentCard.value = card;
+    if (actionCard.value?.id === card.id) actionCard.value = card;
   } catch (error) {
     if (read.isCurrent())
       detailError.value = error instanceof Error ? error.message : '追踪卡详情加载失败';
@@ -734,7 +735,12 @@ async function cardChanged(card: ProductionTrackingCardDetail): Promise<void> {
     currentCard.value = card;
     scanResultLabel.value = '';
   }
-  if (detailVisible.value && selectedCard.value?.id === card.id) selectedCard.value = card;
+  if (detailVisible.value && detailTarget.value?.cardId === card.id) {
+    detailReads.invalidate();
+    detailError.value = '';
+    selectedCard.value = card;
+  }
+  if (actionCard.value?.id === card.id) actionCard.value = card;
   if (batchId.value === card.productionBatchId)
     await Promise.all([loadContext(), recentReports.load()]);
 }

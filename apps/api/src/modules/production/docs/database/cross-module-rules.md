@@ -10,7 +10,7 @@ Production 拥有工单、任务、物料需求与分配、冻结工序、追踪
 | Approval    | 仅承接保留的正式需求更正与关闭；追踪卡异常、逐站交接和最终产出不进入审批                                                             |
 | Procurement | 通过 ProductionProcurementQuery 查询和复核按需采购来源，不回写生产需求或替代真实领料履约                                             |
 
-Production 不依赖 Quality 的生产专检或成品检查能力；来料质量流程继续由 Quality 与 Procurement 所有。路线中的检验节点按普通扫码站流转，最终可用数量是 Production 明确确认的产出事实。
+Production 不依赖 Quality 的生产专检或成品检查能力；来料质量流程继续由 Quality 与 Procurement 所有。路线中的检验节点按普通扫码站流转，异常数量结算和卡剩余量由 Production 所有，批量最终产出按剩余量确认，研发仍手填实际产出。新增产品报废只扣在制卡量，不记库存；关联已有报废不再次扣量，也不由 Inventory 去重。
 
 需求唯一事实为 production_item_demand，库存唯一事实为 inventory_transaction；任何汇总都只读。额外用料独立人工提需，不从异常自动生成返工、报废补产或补料授权。已领物料损耗不再次扣库存，真实余料沿原分配退回；[各自额度](return-scrap-and-stocktake.md)不可与产品数量混算。
 

@@ -11,7 +11,7 @@
 在 PowerShell 为本次命令指定独立库，连接及凭据仍从本机 `.env` 读取：
 
 ```powershell
-$env:DB_NAME='easy_mes_tracking_experiment_20261109'
+$env:DB_NAME='easy_mes_tracking_disposition_20261109'
 corepack pnpm db:init
 corepack pnpm db:seed:demo
 $env:APP_PORT='3002'

@@ -19,7 +19,7 @@
 | 系统表格模板与共享 JSON 表格   | [Template](../../apps/api/src/modules/template/README.md)；`JsonTableData` 的结构规范化由 [utils](../utils/README.md#json-表格) 所有，业务资料保存规则由各模块维护 |
 | 工单、任务与产出汇总           | [工单与任务](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)                                                                       |
 | 需求与替代                     | [需求设计](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md)                                                                  |
-| 追踪卡、扫码与任务结束         | [结案设计](../../apps/api/src/modules/production/docs/database/production-termination.md)                                                                          |
+| 追踪卡、扫码与异常数量结算     | [追踪卡执行](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)；[任务结束](../../apps/api/src/modules/production/docs/database/production-termination.md) |
 | 采购、到货与分配               | [Procurement](../../apps/api/src/modules/procurement/README.md)、[查询语义](../../apps/api/src/modules/procurement/docs/receipt-queries.md)                        |
 | 检验事实与数量建议             | [Quality](../../apps/api/src/modules/quality/README.md)                                                                                                            |
 | 库存的物料／成品身份及入库来源 | [Inventory](../../apps/api/src/modules/inventory/docs/database.md)；外购历史来源投影见[公开能力](../../apps/api/src/modules/inventory/docs/public-contracts.md)    |

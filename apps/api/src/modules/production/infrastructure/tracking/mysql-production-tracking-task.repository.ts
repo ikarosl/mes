@@ -107,10 +107,17 @@ export class MysqlProductionTrackingTaskRepository {
           'production_termination',
           context,
         );
-      const [unfinishedCards] = await db.query<(RowDataPacket & { id: string })[]>(
-        "SELECT CAST(id AS CHAR) id FROM production_tracking_card WHERE production_batch_id=? AND status IN ('unused','in_progress') ORDER BY id FOR UPDATE",
+      const [unfinishedCards] = await db.query<
+        (RowDataPacket & { id: string; quantity: number })[]
+      >(
+        "SELECT CAST(id AS CHAR) id,quantity FROM production_tracking_card WHERE production_batch_id=? AND status IN ('unused','in_progress') ORDER BY id FOR UPDATE",
         [batchId],
       );
+      if (unfinishedCards.some((card) => Number(card.quantity) === 0))
+        throw new ProductionDomainError(
+          'CONFLICT',
+          '存在盘量为零且异常未结算的追踪卡，请先完成关联报废结算再结束任务',
+        );
       await db.execute(
         `UPDATE production_tracking_card SET status='voided',void_reason=?,voided_by=?,voided_at=NOW(),version=version+1,updated_by=? WHERE production_batch_id=? AND status IN ('unused','in_progress')`,
         [payload.reason, context.actorId, context.actorId, batchId],

@@ -50,7 +50,7 @@
           >
         </div>
         <div class="card-detail">
-          <span>本盘实际数量</span>
+          <span>当前剩余盘量</span>
           <strong class="card-quantity"
             >{{ formatQuantity(card.quantity) }}<small>{{ card.unit }}</small></strong
           >
@@ -60,11 +60,14 @@
           <el-button
             v-if="card.openAbnormalityCount"
             link
-            type="warning"
+            type="danger"
             :disabled="disabled"
             @click="$emit('detail')"
           >
-            {{ card.openAbnormalityCount }} 条待处理 · 查看异常
+            {{ card.openAbnormalityCount }} 条{{
+              card.status === 'voided' ? '未处理记录' : '待处理'
+            }}
+            · 查看异常
           </el-button>
           <strong v-else>无待处理异常</strong>
         </div>
@@ -147,40 +150,54 @@ const selectedStep = computed(() => props.steps.find((step) => step.stepRecordId
 const canReportAbnormality = computed(
   () =>
     props.card &&
-    props.card.visits.length > 0 &&
-    !['voided', 'completed'].includes(props.card.status),
+    Number(props.card.quantity) > 0 &&
+    !['voided', 'completed', 'scrapped'].includes(props.card.status),
 );
 const canConfirmOutput = computed(
   () =>
     props.card?.status === 'in_progress' &&
+    Number(props.card.quantity) > 0 &&
     props.steps.length > 0 &&
     props.card.currentStepRecordId === props.steps.at(-1)?.stepRecordId,
 );
 const location = computed(() => {
   if (!props.card) return '—';
   if (props.card.status === 'completed') return '已完成终检定稿';
+  if (props.card.status === 'scrapped') return '已整盘报废';
+  if (props.card.status === 'voided') return '已人工作废';
   return props.card.currentStepName || '等待首站到站';
 });
 const attention = computed<{ type: 'error' | 'warning' | 'info'; message: string } | null>(() => {
   const card = props.card;
   if (!card) return null;
   if (card.status === 'voided')
-    return { type: 'info', message: `本盘已作废：${card.voidReason || '—'}` };
-  if (card.isPaused)
-    return { type: 'error', message: '本盘有待处理的暂停异常，处理完成后才能继续流转与终检定稿。' };
+    return { type: 'info', message: `本盘已人工作废：${card.voidReason || '—'}` };
+  if (card.status === 'scrapped')
+    return { type: 'error', message: '本盘已整盘报废，异常已全部结算，无产出入库。' };
   if (card.openAbnormalityCount)
-    return { type: 'warning', message: '本盘有待处理异常，可继续流转；终检定稿前须全部处理。' };
+    return {
+      type: 'error',
+      message:
+        Number(card.quantity) === 0
+          ? '本盘剩余盘量为0，仍有异常待处理；请继续完成异常结算。'
+          : '本盘有待处理异常，已暂停整盘流转；全部处理完成后才能继续。',
+    };
   return null;
 });
 const flowHint = computed(() => {
   const card = props.card;
   if (!card) return '';
   if (card.status === 'voided') return '到站、报工与异常历史保留，可打开追踪详情核对。';
+  if (card.status === 'scrapped')
+    return '整盘报废后保留到站、报工与异常结算记录，不能继续流转或更改盘量。';
+  if (Number(card.quantity) === 0 && card.openAbnormalityCount > 0)
+    return '剩余异常可关联本盘其他问题中已登记的报废记录，本次新增报废填写0。';
+  if (card.openAbnormalityCount > 0) return '请打开追踪详情逐条处理随盘问题，当前盘暂停流转。';
   if (card.availableQuantity !== null)
     return `实际可用产出已确认：${formatQuantity(card.availableQuantity)} ${card.unit}。`;
   if (card.status === 'unused') return '追踪卡已生成。建卡与打印不登记到站，请在首工序扫码。';
   if (canConfirmOutput.value)
-    return '本盘已到达末站。加工完成并处理全部异常后，据实填写可用产出并一次定稿。';
+    return '本盘已到达末站。加工完成并处理全部异常后，以当前剩余盘量一次确认产出并入库。';
   return '本盘已到站。流转至下一工序后，由下一站扫码完成本站交接，无需再次确认。';
 });
 function stepState(step: ProductionTrackingStep): 'is-completed' | 'is-current' | '' {

@@ -87,7 +87,12 @@
             }}</strong>
             条</span
           >
-          <p>进度按本站报工量与任务计划数量核对。下一站扫码完成前站交接，末站显式确认可用产出。</p>
+          <span
+            >整盘报废 <strong>{{ context.summary.scrappedCardCount }}</strong> 盘</span
+          >
+          <p>
+            进度按本站报工量与任务计划数量核对。下一站扫码完成前站交接，末站以剩余盘量确认产出。
+          </p>
         </div>
       </template>
       <el-empty

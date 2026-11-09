@@ -4,7 +4,7 @@
 
 | 文件                                                                           | 用途                                                                             |
 | ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| [`prepare-tracking-workbench-demo.mjs`](prepare-tracking-workbench-demo.mjs)   | 在已有执行中批量任务下准备六盘追踪卡、交接改量、随盘异常、作废及正数／零产出确认 |
+| [`prepare-tracking-workbench-demo.mjs`](prepare-tracking-workbench-demo.mjs)   | 在已有执行中批量任务下准备七盘卡、异常数量结算、重叠报废引用、整盘报废和剩余量入库 |
 | [`prepare-procurement-amount-demo.mjs`](prepare-procurement-amount-demo.mjs)   | 采购金额补填与正式单更正，核对报价、总额来源、舍入和成功审计                     |
 | [`prepare-incoming-inspection-demo.mjs`](prepare-incoming-inspection-demo.mjs) | 来料分组分页、跨采购与供应商、完整明细、移组、空组、作废及实物办理完成场景       |
 | [`prepare-procurement-receipt-demo.mjs`](prepare-procurement-receipt-demo.mjs) | 采购／到货两层分页、完整明细、待定稿与作废、组合筛选和页外定位场景               |
@@ -55,7 +55,7 @@ PROCUREMENT_AMOUNT_DEMO_TAG=acceptance_01 node tools/demo/prepare-procurement-am
 | --------------------------------------- | ---------------------------------------------------- |
 | `TRACKING_DEMO_API_BASE_URL`            | `http://127.0.0.1:3002/api`                          |
 | `TRACKING_DEMO_ALLOW_REMOTE`            | 未设置时禁止远程；远程须为 `1`                       |
-| `TRACKING_DEMO_TAG`                     | 默认 `sample`，标记为 `[demo-tracking-v1:<TAG>]`     |
+| `TRACKING_DEMO_TAG`                     | 默认 `sample`，标记为 `[demo-tracking-v2:<TAG>]`     |
 | `TRACKING_DEMO_BATCH_ID`                | 必填，已有 doing 批量任务，至少两道冻结工序          |
 | `ALLOW_DEMO_SEED`                       | 两种模式都必须显式为 `1`                             |
 | `ADMIN_USERNAME`                        | `admin`                                              |
@@ -92,4 +92,8 @@ $env:TRACKING_DEMO_TAG='acceptance_01'
 node tools/demo/prepare-tracking-workbench-demo.mjs prepare
 ```
 
-六盘分别是正常流转后确认9件、已交接后盘量5改7且前道异常处理后确认6件、首站暂停异常待处理、未使用待打印、已用作废保留到站，以及显式零产出。前两盘形成实际库存，零产出只保留确认事实；已有暂停、未用及未完卡供人工继续办理。重复同TAG只读取报告，不覆盖或续写现有样例。业务语义见[追踪卡所有者](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
+七盘分别是正常流转按剩余10件入库、已交接后盘量5改7再结算异常后按剩余5件入库、首站未结异常阻止流转、未使用待打印、已用作废保留到站、整盘报废保留交接历史，以及零盘量仍有异常待人工关联报废结算。
+
+第二盘先登记影响3件的异常，按返修1件与新增报废2件一次结算；另两条各影响2件的异常分别引用相同的已有报废，不再次扣量，也不累计耗用引用额度。场景记录同幂等键重放的盘量、未结异常扫码拒绝、最终剩余量产出和全报废无产出的观察结果。盘量更正与报废结算分别留痕，历史过站5件保持原值。前两盘实际入库合计15件；全报废卡无产出和库存。
+
+`prepare` 通过公开 API 写入以上单据、处理事实及库存，不自动结束任务；留下正量未结、零量未结和未用卡供人工继续办理。重复同 TAG 只读取报告，不覆盖、修复或续写已存在的样例，准备中断后换新 TAG 建立另一组。`report` 只读取该组当前状态，不重新执行历史观察；准备时输出的 `preparedObservations` 可保存到 `temp/`。业务语义见[追踪卡所有者](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
