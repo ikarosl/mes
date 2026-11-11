@@ -6,7 +6,7 @@ export const BUSINESS_NUMBER_PREFIX = {
   purchase_order: 'CG', // 采购订单
   purchase_receipt: 'DH', // 采购到货
   incoming_inspection_order: 'LLZJ', // 来料质检单
-  supplier_return: 'GYSTH', // 供应商退回
+  incoming_inspection_report: 'JLJYBG', // 进料检验报告
   purchase_inbound: 'CGRK', // 采购入库
   finished_inbound: 'CPRK', // 成品入库
   other_inbound: 'QTRK', // 其他入库

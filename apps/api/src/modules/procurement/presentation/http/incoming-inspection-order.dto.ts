@@ -20,7 +20,6 @@ import {
   QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS,
   QUALITY_INCOMING_INSPECTION_ORDER_REMARK_MAX_LENGTH,
   QUALITY_INCOMING_INSPECTION_RECEIPT_ASSOCIATIONS,
-  RECEIPT_LINE_STAGES,
 } from '@company/constants';
 import type {
   ChangeQualityIncomingInspectionAssociationsPayload,
@@ -54,7 +53,6 @@ export class IncomingInspectionOrderQueryDto
   extends IncomingInspectionTargetQueryDto
   implements QualityIncomingInspectionOrderQuery
 {
-  @IsOptional() @IsIn(RECEIPT_LINE_STAGES) stage?: QualityIncomingInspectionOrderQuery['stage'];
   @IsOptional() @Matches(ID) supplierId?: string;
 }
 export class IncomingInspectionReceiptCandidateQueryDto

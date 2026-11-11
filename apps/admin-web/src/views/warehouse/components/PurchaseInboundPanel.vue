@@ -4,45 +4,45 @@
       v-model="view"
       @change="refresh"
     >
-      <el-radio-button value="releases">待入库</el-radio-button>
+      <el-radio-button value="sources">到货入库</el-radio-button>
       <el-radio-button value="history">已入库记录</el-radio-button>
     </el-radio-group>
-    <template v-if="view === 'releases'">
+    <template v-if="view === 'sources'">
       <InlineHint class="inbound-hint">
-        按<strong>当前有效余量</strong>分次、分批入库；复检、更正或拒收后，<strong>旧授权不可继续使用</strong>。
+        选择有效到货明细，填写本次实际入库数量与库存批次。
       </InlineHint>
       <section class="query-panel">
         <el-form
           inline
-          :model="releases.query"
-          @submit.prevent="releases.search"
+          :model="sources.query"
+          @submit.prevent="sources.search"
         >
           <el-form-item label="关键词"
             ><el-input
-              v-model="releases.query.keyword"
+              v-model="sources.query.keyword"
               clearable
               placeholder="采购单、到货单、供应商或物料"
           /></el-form-item>
           <el-form-item
             ><el-button
               type="primary"
-              :loading="releases.loading.value"
-              @click="releases.search"
+              :loading="sources.loading.value"
+              @click="sources.search"
               >查询</el-button
-            ><el-button @click="releases.reset">重置</el-button></el-form-item
+            ><el-button @click="sources.reset">重置</el-button></el-form-item
           >
-          <el-form-item v-if="releases.query.receiptLineId"
+          <el-form-item v-if="sources.query.receiptLineId"
             ><el-tag
               closable
-              @close="releases.reset"
+              @close="sources.reset"
               >已定位到货明细</el-tag
             ></el-form-item
           >
         </el-form>
       </section>
       <el-alert
-        v-if="releases.loadError.value"
-        :title="releases.loadError.value"
+        v-if="sources.loadError.value"
+        :title="sources.loadError.value"
         type="error"
         :closable="false"
       />
@@ -51,13 +51,13 @@
           <template #actions>
             <el-button
               type="primary"
-              :disabled="!releases.selected.value.length"
-              @click="releases.open"
-              >核对入库（{{ releases.selected.value.length }}）</el-button
+              :disabled="!sources.selected.value.length"
+              @click="sources.open"
+              >核对入库（{{ sources.selected.value.length }}）</el-button
             >
             <el-button
-              :disabled="!releases.selected.value.length || releases.locked.value"
-              @click="releases.clear"
+              :disabled="!sources.selected.value.length || sources.locked.value"
+              @click="sources.clear"
               >清空已选</el-button
             >
             <span class="muted">跨页保留已选范围</span>
@@ -65,24 +65,24 @@
           <template #tools
             ><el-button
               :icon="Refresh"
-              :loading="releases.loading.value"
+              :loading="sources.loading.value"
               text
               circle
-              aria-label="刷新放行清单"
-              @click="releases.load"
+              aria-label="刷新到货明细"
+              @click="sources.load"
           /></template>
         </TableToolbar>
-        <PurchaseInboundReleaseGroups
-          :releases="releases"
+        <PurchaseInboundSourceGroups
+          :sources="sources"
           :go-source="goSource"
         />
         <PaginationFooter
-          :total="releases.total.value"
-          :current-page="releases.page.value"
-          :page-size="releases.pageSize.value"
-          total-suffix="条可入明细"
-          @page-change="releasePage"
-          @update:page-size="releaseSize"
+          :total="sources.total.value"
+          :current-page="sources.page.value"
+          :page-size="sources.pageSize.value"
+          total-suffix="条到货明细"
+          @page-change="sourcePage"
+          @update:page-size="sourceSize"
         />
       </section>
     </template>
@@ -193,7 +193,7 @@
       </section>
     </template>
     <el-dialog
-      :model-value="active && pageActive && releases.visible.value"
+      :model-value="active && pageActive && sources.visible.value"
       title="核对外购物料入库"
       :width="DialogWidth.workbench"
       workbench
@@ -202,22 +202,22 @@
       @update:model-value="closeConfirmation"
     >
       <el-alert
-        title="请核对本次入库数量和入库批次，确认后将增加库存。"
+        title="请核对本次实际入库数量和目标批次，确认后将增加库存。"
         type="info"
         show-icon
         :closable="false"
       />
       <div class="dialog-toolbar">
         <el-button
-          :loading="releases.checking.value"
-          :disabled="releases.command.locked.value"
-          @click="releases.recheck(true)"
+          :loading="sources.checking.value"
+          :disabled="sources.command.locked.value"
+          @click="sources.recheck(true)"
           >刷新数据</el-button
         >
       </div>
       <el-alert
-        v-if="releases.checkError.value"
-        :title="releases.checkError.value"
+        v-if="sources.checkError.value"
+        :title="sources.checkError.value"
         type="error"
         :closable="false"
       />
@@ -227,7 +227,7 @@
         >本次涉及 <strong>{{ selectedReceiptGroups.length }}</strong> 张到货单、<strong>{{
           selectedSupplierCount
         }}</strong>
-        家供应商，将生成一张外购入库单。</InlineHint
+        家供应商，确认后生成一张外购入库单。</InlineHint
       >
       <div class="review-groups">
         <section
@@ -292,8 +292,8 @@
                   :material-variant-id="row.source.materialVariantId"
                   :unit="row.source.unit"
                   :identity="`${row.source.itemCode} / ${row.source.materialVariantCode} / ${row.source.unit}`"
-                  :new-batch-groups="releases.newBatchChoices(row.source)"
-                  :disabled="releases.locked.value"
+                  :new-batch-groups="sources.newBatchChoices(row.source)"
+                  :disabled="sources.locked.value"
                 />
               </template>
             </el-table-column>
@@ -304,49 +304,28 @@
                 ><el-input
                   v-model="row.quantity"
                   inputmode="numeric"
-                  :disabled="releases.locked.value"
+                  :disabled="sources.locked.value"
                   :aria-label="`本次入库数量 ${row.source.itemCode}`"
                 />
                 <div
                   v-if="quantitySummaries[row.rowKey]"
                   class="quantity-summary"
-                  :class="{
-                    'is-invalid':
-                      !quantitySummaries[row.rowKey].valid ||
-                      quantitySummaries[row.rowKey].after < 0,
-                  }"
+                  :class="{ 'is-invalid': !quantitySummaries[row.rowKey].valid }"
                 >
-                  <span v-if="quantitySummaries[row.rowKey].count > 1">
-                    {{ quantitySummaries[row.rowKey].count }} 条目标合计
+                  <span
+                    >{{ quantitySummaries[row.rowKey].count }} 条目标合计
                     <strong>{{
                       quantitySummaries[row.rowKey].valid
                         ? `${formatQuantity(quantitySummaries[row.rowKey].total)} ${row.source.unit}`
-                        : '待修正'
-                    }}</strong>
-                    ·
-                  </span>
-                  <span
-                    >可入
-                    <strong
-                      >{{ formatQuantity(quantitySummaries[row.rowKey].allowance) }}
-                      {{ row.source.unit }}</strong
-                    ></span
-                  >
-                  <span
-                    >· 入库后剩余
-                    <strong>{{
-                      quantitySummaries[row.rowKey].valid &&
-                      quantitySummaries[row.rowKey].after >= 0
-                        ? `${formatQuantity(quantitySummaries[row.rowKey].after)} ${row.source.unit}`
                         : '待修正'
                     }}</strong></span
                   >
                 </div>
                 <div
-                  v-if="row.error || releases.quantityErrors.value.get(row.rowKey)"
+                  v-if="row.error || sources.quantityErrors.value.get(row.rowKey)"
                   class="error"
                 >
-                  {{ row.error || releases.quantityErrors.value.get(row.rowKey) }}
+                  {{ row.error || sources.quantityErrors.value.get(row.rowKey) }}
                 </div></template
               ></el-table-column
             >
@@ -359,14 +338,14 @@
                 <div class="review-actions">
                   <InboundSplitControl
                     :quantity="row.quantity"
-                    :disabled="releases.locked.value || releases.selected.value.length >= 100"
-                    @split="(quantity) => releases.split(row.rowKey, quantity)"
+                    :disabled="sources.locked.value || sources.selected.value.length >= 100"
+                    @split="(quantity) => sources.split(row.rowKey, quantity)"
                   />
                   <el-button
                     type="danger"
                     link
-                    :disabled="releases.locked.value"
-                    @click="releases.remove(row.rowKey)"
+                    :disabled="sources.locked.value"
+                    @click="sources.remove(row.rowKey)"
                     >移除此目标</el-button
                   >
                 </div>
@@ -380,15 +359,15 @@
         class="remark-form"
         ><el-form-item label="入库备注"
           ><el-input
-            v-model="releases.remark.value"
+            v-model="sources.remark.value"
             type="textarea"
             :rows="2"
             maxlength="500"
             show-word-limit
-            :disabled="releases.locked.value" /></el-form-item
+            :disabled="sources.locked.value" /></el-form-item
       ></el-form>
       <el-alert
-        v-if="releases.command.status.value !== 'idle'"
+        v-if="sources.command.status.value !== 'idle'"
         title="上次确认结果尚未确定，已保留原数量和依据。请核对入库历史后按原操作重试，勿重复发起新入库。"
         type="warning"
         show-icon
@@ -396,24 +375,24 @@
       />
       <template #footer>
         <el-button
-          :disabled="releases.command.busy.value || releases.checking.value"
-          @click="releases.close"
-          >{{ releases.command.status.value === 'idle' ? '收起并保留' : '核对后关闭' }}</el-button
+          :disabled="sources.command.busy.value || sources.checking.value"
+          @click="sources.close"
+          >{{ sources.command.status.value === 'idle' ? '收起并保留' : '核对后关闭' }}</el-button
         >
         <el-button
-          v-if="releases.command.status.value === 'pending'"
+          v-if="sources.command.status.value === 'pending'"
           type="primary"
-          :loading="releases.command.busy.value"
-          @click="releases.command.retry"
+          :loading="sources.command.busy.value"
+          @click="sources.command.retry"
           >按原操作重试</el-button
         >
         <el-button
           v-else
           type="primary"
-          :loading="releases.command.busy.value"
-          :disabled="releases.locked.value || !releases.canSubmit.value"
-          @click="releases.submit"
-          >确认入库</el-button
+          :loading="sources.command.busy.value"
+          :disabled="sources.locked.value || !sources.canSubmit.value"
+          @click="sources.submit"
+          >确认办理</el-button
         >
       </template>
     </el-dialog>
@@ -434,9 +413,9 @@ import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
 import { usePurchaseInbounds } from '../composables/use-purchase-inbounds';
 import { useInboundHistoryExpansion } from '../composables/use-inbound-history-expansion';
-import { usePurchaseInboundReleases } from '../composables/usePurchaseInboundReleases';
+import { usePurchaseInboundSources } from '../composables/usePurchaseInboundSources';
 import PurchaseInboundHistoryGroups from './PurchaseInboundHistoryGroups.vue';
-import PurchaseInboundReleaseGroups from './PurchaseInboundReleaseGroups.vue';
+import PurchaseInboundSourceGroups from './PurchaseInboundSourceGroups.vue';
 import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
 import InboundSplitControl from './InboundSplitControl.vue';
 
@@ -454,13 +433,13 @@ const route = useRoute(),
 const { canAccessRoute } = useRouteAccess();
 const goSource = async (name: string, query: Record<string, string>): Promise<void> => {
   if (!canAccessRoute({ name, query })) return;
-  if (releases.command.locked.value || releases.checking.value) {
+  if (sources.command.locked.value || sources.checking.value) {
     EMessage.warning('请先完成当前入库操作的核对或原操作重试');
     return;
   }
   await router.push({ name, query });
 };
-const view = ref('releases'),
+const view = ref('sources'),
   history = usePurchaseInbounds();
 const historyKeyword = ref(''),
   historyPage = ref(1),
@@ -469,7 +448,7 @@ const historyExpansion = useInboundHistoryExpansion();
 const currentInboundId = ref<string | null>(null);
 const locationOrigin = ref<'route' | 'confirmed' | null>(null);
 const pageActive = ref(true);
-const releases = usePurchaseInboundReleases(async (result) => {
+const sources = usePurchaseInboundSources(async (result) => {
   if (route.name === 'warehouse-inbound' && (route.query.inboundId || route.query.receiptLineId))
     await router.replace({
       query: { ...route.query, inboundId: undefined, receiptLineId: undefined },
@@ -493,10 +472,10 @@ const selectedReceiptGroups = computed(() => {
       receiptId: string;
       receiptNo: string;
       receiptPurchaseNo: string;
-      items: typeof releases.selected.value;
+      items: typeof sources.selected.value;
     }
   >();
-  for (const row of releases.selected.value) {
+  for (const row of sources.selected.value) {
     const source = row.source;
     let group = byReceipt.get(source.receiptId);
     if (!group) {
@@ -513,23 +492,23 @@ const selectedReceiptGroups = computed(() => {
   return [...byReceipt.values()];
 });
 const selectedSupplierCount = computed(
-  () => new Set(releases.selected.value.map((row) => row.source.supplierId)).size,
+  () => new Set(sources.selected.value.map((row) => row.source.supplierId)).size,
 );
 const quantitySummaries = computed(() => {
   const firstDetails = new Map<string, string>();
-  for (const row of releases.selected.value) {
-    if (!firstDetails.has(row.source.allocationId))
-      firstDetails.set(row.source.allocationId, row.rowKey);
+  for (const row of sources.selected.value) {
+    if (!firstDetails.has(row.source.receiptLineId))
+      firstDetails.set(row.source.receiptLineId, row.rowKey);
   }
   return Object.fromEntries(
-    releases.groupSummaries.value.map((group) => [
-      firstDetails.get(group.source.allocationId)!,
+    sources.groupSummaries.value.map((group) => [
+      firstDetails.get(group.source.receiptLineId)!,
       group,
     ]),
   );
 });
 const targetRowNumbers = computed(
-  () => new Map(releases.selected.value.map((row, index) => [row.rowKey, index + 1])),
+  () => new Map(sources.selected.value.map((row, index) => [row.rowKey, index + 1])),
 );
 let historyLoadSequence = 0;
 const syncHistoryLocation = async (refreshDetached = false): Promise<void> => {
@@ -583,24 +562,24 @@ const changeHistorySize = (size: number) => {
   historySize.value = size;
   return searchHistory();
 };
-const releasePage = (page: number) => {
-  releases.page.value = page;
-  return releases.load();
+const sourcePage = (page: number) => {
+  sources.page.value = page;
+  return sources.load();
 };
-const releaseSize = (size: number) => {
-  releases.pageSize.value = size;
-  return releases.search();
+const sourceSize = (size: number) => {
+  sources.pageSize.value = size;
+  return sources.search();
 };
-const refresh = () => (view.value === 'releases' ? releases.load() : loadHistory());
+const refresh = () => (view.value === 'sources' ? sources.load() : loadHistory());
 const refreshActive = async (): Promise<void> => {
   if (!pageActive.value || !props.active) return;
   if (view.value === 'history') await loadHistory(true);
-  else await releases.load();
-  if (pageActive.value && releases.visible.value && !releases.command.locked.value)
-    await releases.recheck(false);
+  else await sources.load();
+  if (pageActive.value && sources.visible.value && !sources.command.locked.value)
+    await sources.recheck(false);
 };
 const closeConfirmation = () => {
-  void releases.close();
+  void sources.close();
 };
 async function showInbound(id: string, origin: 'route' | 'confirmed'): Promise<void> {
   view.value = 'history';
@@ -662,7 +641,7 @@ async function locate(
   }
   if (
     (inboundId && inboundId === currentInboundId.value && view.value === 'history') ||
-    (!inboundId && receiptLineId === releases.query.receiptLineId && view.value === 'releases')
+    (!inboundId && receiptLineId === sources.query.receiptLineId && view.value === 'sources')
   )
     return;
   consumedLocation = token;
@@ -674,18 +653,18 @@ async function locate(
         ...route.query,
         sourceType: 'purchased',
         inboundId: currentInboundId.value || undefined,
-        receiptLineId: releases.query.receiptLineId || undefined,
+        receiptLineId: sources.query.receiptLineId || undefined,
       },
     });
   };
   navigating = true;
   try {
-    if (releases.command.locked.value || releases.checking.value) {
+    if (sources.command.locked.value || sources.checking.value) {
       EMessage.warning('请先完成当前入库操作的核对或原操作重试');
       await restore();
       return;
     }
-    if (releases.selected.value.length && !(await releases.clear())) {
+    if (sources.selected.value.length && !(await sources.clear())) {
       await restore();
       return;
     }
@@ -700,9 +679,9 @@ async function locate(
       await showInbound(inboundId, 'route');
     } else if (receiptLineId) {
       clearHistoryLocation();
-      view.value = 'releases';
-      releases.query.receiptLineId = receiptLineId;
-      await releases.search();
+      view.value = 'sources';
+      sources.query.receiptLineId = receiptLineId;
+      await sources.search();
     }
   } finally {
     navigating = false;
@@ -752,7 +731,7 @@ onDeactivated(() => {
   history.cancelList();
   history.closeDetail();
 });
-onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', releases.clear));
+onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', sources.clear));
 </script>
 
 <style scoped>

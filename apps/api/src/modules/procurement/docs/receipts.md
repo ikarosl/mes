@@ -1,78 +1,53 @@
-# 到货、整批处理与实际执行
+# 到货登记与仓库处理
 
-当前流程遵循[ADR-0015](../../../../../../docs/adr/0015-unified-quality-quantity-semantics.md)：数量草稿 → 明确发起检验 → Quality 记录事实和结论 → 库管核对定稿 → 实际入库／退回。采购来源固定取到货明细，补单来源解耦见[ADR-0023](../../../../../../docs/adr/0023-supplement-source-and-receipt-ownership.md)。表结构见[数据库](database.md)，数量与去向见[正式清单](receipt-acceptance.md)，展示投影见[查询](receipt-queries.md)。
+到货登记、独立检验报告、采购补单和仓库实际入库分别保存各自事实。到货不登记数量，不发起检查或处理轮次；检验报告的结论及数量不决定入库或补单资格。选择理由见 [ADR-0028](../../../../../../docs/adr/0028-independent-warehouse-receipt-and-inspection.md)，表结构见[到货表](database/receipts.md)。
 
-## 到货与数量
+## 到货登记
 
-确认到货需要已下单且 open 的 new_arrival 采购行、根／行版本、真实交接时间和凭据。按同次实际来货登记，不按采购计划封顶，也不先拆原单和补单。不同来货批次建立不同 receipt_line；本行物料精确版本、供应商及原采购行不因后续操作改变。
+确认到货要求采购主单已下单、采购行 open 且 fulfillment_mode=new_arrival，核对根与行 version、有效供应商及物料身份。一次选择 1 至 100 条不重复采购行，保存交接时间、选填交接凭据、备注和逐行供应商批号。同一次实际来货登记一张到货单，不同来货另建登记。登记不写库存、不保存实收数量、修订、授权或检验轮次。
 
-首次登记有效主单，创建实收 revision 与 uninspected round，line 指向两者；不建分配、不写库存。revision.received_quantity 是**本次到货核实总量 T**，包含这次来货后来已入库和已退回的数量。同原采购行的有效到货按各到货行当前版本汇总，作废登记的 T 只保留历史；采购统计按该到货自身采购行及实际执行计算，不重复计同次实物或分走给超量补单。不把某行改量当作后来新到货。实际已入 I、实际已退 B，剩余 U=T−I−B；round.starting_quantity 只是新轮创建时 U 的快照，不能累加为实收。
+到货明细的原采购行、物料精确版本、供应商批号及创建事实固定。供应商沿原采购主单取得；不同入库组织方式、补单和质检分组不转移该归属。采购行结束阻止新增到货，已有有效到货仍可检验、入库或登记说明。
 
-独立实收更正提交 receivedQuantity=T、当前行／轮版本、previousRevisionId、同批确认和原因。T 必须变化且不小于 I+B；追加 revision，旧轮 superseded，新轮 trigger=receipt_correction。U>0 回 uninspected，U=0 直接 finalized，无分配、无零量质检。已拒收批次同样回新草稿，旧拒收只保留历史，需要拒收则重新操作。更正不接收采购归属；来源固定取到货明细，不因重办改变。真实新货、丢失或损耗不能冒充实收更正。
+## 实际入库与其他处理说明
 
-## 整单到货登记作废
+### 实际入库
 
-`POST /procurement/receipts/:id/actions/void` 作废整张到货登记，不提供逐行作废。须提交主单版本、原因及全单明细和当前轮版本；集合须与锁内整单完全相同。主单过期、漏行、重复、行或轮次变化均在新增事实前拒绝。详情的 `voiding` 仅提供同一只读快照下的预览，提交仍在业务事务内复核。
+`POST /procurement/purchase-inbounds/actions/confirm` 一次提交 1 至 100 条实际入库明细，可混合多个到货、采购单和供应商。同一来源可拆到多个目标，同次输入共享来源行 version；每个来源在命令中只推进一次版本。每条 quantity 为 1～99999999 的实际正整数数量，target 必填；新批次相同 clientKey 共批时必须物料精确身份及单位一致。目标规则归 [Inventory](../../inventory/docs/public-contracts.md#采购和终检成品实际入库)。
 
-整单所有行必须真实已入 I=0 且真实已退 B=0，且不存在非 `cancelled` 关联补单依赖。依赖为 `origin_receipt_line_id` 引用，处理轮变化不改变原到货来源依赖；`draft/ordered/completed` 补单均阻断，已取消补单的历史引用不阻断。用户须先人工处理关联补单，作废命令不自动取消补单或修改历史来源。已做 QC、已定稿或已人工拒收不单独阻断作废；任一行已有真实执行则整单拒绝，实际实物处置继续按拒收或退回办理。
+实际入库不受采购计划量、检验样本量或检验结果封顶。Procurement 在锁内复核未作废及同源身份，Inventory 在同池事务复核物料与目标批次资格并生成一张入库单、逐笔明细及唯一正库存流水。历史已入只从这些真实流水累计；没有可入授权量或未入余量，也不从说明推算实际退回。输入与结果以[入库契约](../../../../../../packages/contracts/src/procurement/inbounds.ts)为准；确认不接收说明或零入库明细。
 
-成功时记录作废原因、操作者与时间，主单版本递增一次；原登记字段及创建审计保持冻结，成功审计保存作废状态与版本的前后值、原因及终止轮引用。每行旧当前轮 `superseded`，追加 `receipt_void/voided` 终止轮并推进该行版本；原 revision 的 T、清单、allocation 及已完成 Quality 结果保留，不改 T、不制造退回或库存冲销。终止轮记录作废时 U 的历史快照，不保留来源分配指针、不产生任何新执行授权。经 `QualityInboundCommand.supersedeReceiptCases` 在同池事务终止该行全部历史轮次仍为 reviewing 的办理，迟到检验在新增结果前拒绝。
+### 独立其他处理说明
 
-作废登记保留主单、行及各类历史查询；有效到货及待处理／可入／待退数量退出统计，待定稿、未分组来料候选、入库和补单候选不再列入。已有质检分组关系保留，分组目录展示来源作废及历史，仍可解除或移组。所有后续行写命令、新补单引用均拒绝，没有恢复或反作废动作。作废不自动结束或恢复采购；采购取消仍检查自身历史到货，不因作废重新获得资格。新增到货继续要求采购行 open。
+`POST /procurement/receipt-lines/:id/handlings` 在指定到货行追加其他处理说明，仅接收必填 otherHandlingNote，trim 后 1～2000 字，不提交数量、目标、入库引用或来源版本。命令锁定并核验有效、未作废的到货后独立追加，与检验、补单和实际入库均无前置关系，不推进到货行 version。说明与成功审计、幂等结果在同一事务提交，返回不可变 ReceiptHandlingItem；输入与历史形状见[到货契约](../../../../../../packages/contracts/src/procurement/receipts.ts)。
 
-## 质检分组的来源编排
+说明只保留人工文字，不登记退回数量或追踪线下执行，不建立库存单据、批次或流水。无需补购时也可独立记录赠送说明；有实际入库时仍通过实际入库入口登记数量。说明不自动结束或恢复采购，不证明实物已全部完成处置。
 
-来料[分组主单](../../quality/docs/incoming-inspection-orders.md)属于 Quality；本模块只编排真实到货来源与事务。关系命令先按数值 ID 升序锁全部受影响 `procurement_receipt` 主表并核对存在性；未分组且已作废的来源不得首次关联，已有作废关系可以解除或转移。随后调用同池活动事务中的 `QualityIncomingInspectionOrderCommand`，由 Quality 按数值 ID 升序锁受影响既存主单，核对预期版本和真实原归属并更新自己的关系。新建初始关系同样遵守此顺序。
+新说明的 inbound_id 恒为 NULL。已有历史说明的入库关联保留原事实，不重挂或清空。说明更正通过追加新说明保留完整原文，历史读取不受后续检验或入库影响。
 
-分组不锁采购根、到货明细、处理轮次或 case，不先锁质检主单再回头锁到货。原整单作废仍按采购根、到货行、到货主表、轮次／检查的顺序办理，不自动修改分组，因此不形成反向锁依赖。备注修改只锁 Quality 主单。分组变化不推进任何来源版本，不替代后续检查或仓储命令的资格校验。
+## 整单作废
 
-一次关系命令的到货 ID 并集最多 100；初次登记的到货整单明细也限制 1～100，其他导入或追加入口不得绕过该完整轻量读取边界。HTTP 场景入口及返回见[查询与命令契约](receipt-queries.md#来料质检主单查询)，新建、备注和关联写入独立要求 `quality:inbound-inspections:manage`，成功审计、关系、版本和幂等结果原子提交。
+`POST /procurement/receipts/:id/actions/void` 作废整张到货登记，要求主单 version、原因以及完整、无重复明细的 receiptLineId/version 集合。所有行均无真实采购入库且没有非 cancelled 补单依赖才可作废。已保存检验或说明不单独阻断，作废保留全部历史，不制造库存冲销、退回或零数量事实。
 
-## 整批检验与定稿
+非取消补单按 origin_receipt_line_id 引用阻断作废，取消后保留历史引用但解除依赖。作废不自动取消补单或改变采购状态；采购取消继续检查历史自身到货。作废后不恢复，所有新增检验报告、入库、说明及新补单来源写入拒绝，历史报告仍可打印。质检分组关系保留，已有作废关系仍可解除或移组。
 
-全检／抽检都判定当前整批剩余实物资格，样本不单独拆成办理范围。首次和复检都需要明确开始动作，不传部分检验覆盖数量。初检推进当前轮 reviewing；复检创建新轮并使旧轮全部剩余分配退出执行资格。Quality 未完成办理同步 superseded；已完成检查作为事实保留，不授予旧轮执行资格。数据库锁不跨现场检查过程持有。
+## 独立检验与分组
 
-`start-review` 仅接收行／轮版本、轮次 ID 和发起原因，不接收 `caseType`。Procurement 在锁内按当前轮状态确定办理类型：`uninspected` 沿当前轮发起 `initial`，其他符合复检资格的阶段建立新轮并发起 `reinspection`。不再提供人工选择的“检验更正”分类；已有分类及检查事实继续保留，历史值约束见 [Quality 数据库](../../quality/docs/database.md#检验办理-quality_inspection_case)。
+`POST /procurement/receipt-lines/:id/inspect` 在锁内核验有效到货，调用 Quality 公开命令保存独立报告。检查或更正不推进到货版本，不影响仓库输入资格。数量、报告更正和打印头快照由 [Quality](../../quality/docs/unified-inspection-model.md)所有。
 
-Quality 填方法、合格 G、不合格 F、结论、时间、说明和凭据，实际检查数 N=G+F。来料不填整批 C、剔除量或零数量核实。released 进入 awaiting_acceptance；pending_reinspection 进入 reinspection_required；not_released 进入 quality_rejected。后两者继续阻断普通定稿及入库，允许重新发起整批检验或人工拒收。
+来料分组关系命令先按数值 ID 升序锁全部受影响到货主单，再调用 Quality 公开能力锁定并维护质检主单与关系。未分组且已作废的到货不能首次关联，已有作废关系允许解除或转移。分组不锁采购根或到货行，不影响后续来源资格和版本。
 
-库管只引用当前轮关联的明确放行记录，填写本轮剩余实物 C 及分配。本轮核对发现数量变化时，同事务追加 T=I+B+C 的 revision，不因此重复质检；Quality 原申报与 G/F 不覆盖。超建议可入量必须保存 overrideReason，所有分配合计=C。详细公式见[正式清单](receipt-acceptance.md)。
+## 事务、权限与幂等
 
-更正正式分配也针对整个剩余 U，追加 acceptance_correction 轮及新清单，可显式继承当前同批有效 QC；旧清单和分配不可变。不能任取历史最高 G，不得恢复已执行数量或丢失采购终止约束；历史补单来源保留，不因更正阻断其继续办理。
+来源写命令先按数值顺序锁原采购及关联补单根，再锁受影响到货主单、到货行；作废在同样锁序中核验全单版本和依赖。入库在这些来源锁后复核 Product、供应商及 Inventory 目标批次；同源入库、说明、作废、报告与补单办理互斥；实际入库与作废核验预期版本，独立说明和报告只核验有效来源。业务写入、库存流水、成功审计与 HTTP 幂等结果原子提交。
 
-## 人工拒收、撤销及重新办理
+| POST 路径（省略 /api/procurement） | 独立动作权限                        |
+| ---------------------------------- | ----------------------------------- |
+| /receipts/actions/confirm          | warehouse:receipts:confirm          |
+| /receipts/:id/actions/void         | warehouse:receipts:void             |
+| /receipt-lines/:id/handlings       | warehouse:receipts:handle           |
+| /receipt-lines/:id/inspect         | quality:inbound-inspections:inspect |
+| /purchase-inbounds/actions/confirm | warehouse:inbound:confirm-purchase  |
 
-库管可在待检、检验中、待复检、不放行、待定稿或已定稿阶段，填写原因拒收本批全部剩余 U>0。新增 manual_rejection 轮，直接 finalized，生成 return/manual_rejection 分配；acceptance_id 和 QC 可空，拒收依据为该轮原因、创建人和时间。旧轮失效，未完成 Quality case 同事务终止；迟到写入直接冲突，不能先新增事实再标作废。
+登记采购候选、到货列表和历史要求 warehouse:receipts:view；入库来源候选及已入库历史要求 warehouse:inbound:view。质量来源与报告读取要求 quality:inbound-inspections:view。页面权限不替代每个写接口鉴权。
 
-**revoke-rejection** 仅接受当前 manual_rejection/finalized 且 U>0 的批次。必须填原因，替代旧轮并创建 rejection_revocation/uninspected 轮；T 不变，不新增 revision，不直接恢复旧可入分配。后续必须重新质检和定稿。已实际退回不回到新轮，全部已退时不允许撤销。部分人工拒收及已入库退货仍不在本入口。
-
-当前尚未撤销或更正的拒收轮不能直接复检或普通定稿。拒收不是实检不合格，也不表示实际已退；不会生成质量补发资格。
-
-拒收不接受采购归属输入。新拒收分配合计为 U，保留既有 termination_reason；只有真实数量净减少允许相应减少采购终止范围，不能借拒收、撤销或复检清除终止约束。新分配使用自己的数量和办理依据，不假借旧清单授权。
-
-## 实际入库与退回
-
-入库一次提交 1～100 条目标明细，可选不同供应商、采购及到货的当前有效 allocation，同一 allocation 允许拆到多个目标；一次确认生成一张入库单。请求携行 version、roundId/roundVersion、allocationId、receiptRevisionId、inspectionId 和本次数量。服务端逐供应商核验有效身份，锁内解析每行确认时供应商名称，并核对当前轮 finalized、disposition=inbound、正常 acceptance、同源当前 revision/QC、有效 released 以及真实剩余。任何明细不合格均整体回滚。
-
-一个 allocation 可分多次实际入库；不拆分或修改分配行。每次创建 inbound_detail 和唯一库存正流水，引用同一个 allocation_id；余量=授权 quantity−真实已入−真实已退。库存流水幂等键以本次 inbound_detail 身份生成，HTTP 同键重试只重放原结果。每条执行明细由库管选择新建或已有的合资格目标库存批次；同一授权本次拆成多明细时按 allocation 合计校验不超余量。到货行不绑定唯一批次，逐笔目标从 inbound_detail 与正库存流水追溯。跨供应商合单不改变各行采购归属和实际退回规则，供应商名称与来源保存边界见 [Inventory](../../inventory/docs/public-contracts.md)。
-
-实际退回一次办理所选 return 分配的全部余量，保存真实交接时间、凭据和数量，不写库存。普通质量／超发／采购终止退回须正常定稿及 QC；manual_rejection 仅可凭当前真实拒收轮和分配办理，允许无正常清单／QC。不能凭客户端声明退回原因豁免依据。采购关闭不阻止已有合法物流，已入和已退不被后续轮次覆盖。
-
-## 事务、权限与防重
-
-按数值ID锁原采购及关联补单根，再锁到货行／当前轮，读取不可变分配及锁内实际事实，经 public 核对 Quality／Inventory。整单作废在锁齐到货行后锁定主单、核对主单版本和未作废标记，再锁各当前轮；其他同源行命令在原锁内复核主表作废标记。状态、主单及预期行／轮版本在新增事实前校验。更正、复检、拒收、撤销、定稿、入库、退回及整单作废同源互斥；业务写入、审计和幂等结果同事务。
-
-| POST 路径（省略 `/api/procurement`） | 独立动作权限 |
-| --- | --- |
-| `/receipts/actions/confirm` | `warehouse:receipts:confirm` |
-| `/receipts/:id/actions/void` | `warehouse:receipts:void` |
-| `/receipt-lines/:id/actions/correct-receipt` | `warehouse:receipts:correct` |
-| `/receipt-lines/:id/actions/start-review` | `quality:inbound-inspections:review` |
-| `/receipt-lines/:id/actions/inspect` | `quality:inbound-inspections:inspect` |
-| `/receipt-lines/:id/actions/accept`、`reject`、`revoke-rejection` | `warehouse:receipts:accept` |
-| `/receipt-lines/:id/actions/return` | `warehouse:receipts:return` |
-| `/purchase-inbounds/actions/confirm` | `warehouse:inbound:confirm-purchase` |
-
-到货页的登记采购候选和候选详情仅要求 `warehouse:receipts:view`，办理不依赖采购管理页权限；入库页的正式可入候选、归批候选和历史读取统一要求 `warehouse:inbound:view`。这些仓储职责的接口继续由 Procurement 校验来源并编排，Quality 与 Inventory 保持各自事实所有权。
-
-所有写入要求 `Idempotency-Key`，scope、完整输入与结果见[应用幂等契约](../application/idempotency/)。作废结果标识原到货及新版本；采购入库结果保留各笔实际入库明细、目标批次与库存流水身份。未知结果保留原请求重试；成功后即使轮次变化，也只重放首次结果，不能恢复旧授权。
+所有写入要求 Idempotency-Key，完整规范化输入与语义 path 参与指纹；实际入库、作废包含各自提交版本，独立说明不携带来源版本。同键同请求重放首次成功结果，后续来源变化不重新执行；错误及未知结果恢复遵守[幂等契约](../../../../docs/idempotency.md)。scope 以[应用代码](../application/idempotency/procurement-idempotency-scopes.contract.ts)为准。

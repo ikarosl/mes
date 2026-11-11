@@ -44,66 +44,12 @@ export function useReceiptVoid(
           latest.items.length ||
         latest.items.some((line) => {
           const token = latest.voiding.lines.find((item) => item.receiptLineId === line.id);
-          return (
-            !token ||
-            line.receiptId !== target ||
-            token.version !== line.version ||
-            token.roundId !== line.currentRound.id ||
-            token.roundVersion !== line.currentRound.version
-          );
+          return !token || line.receiptId !== target || token.version !== line.version;
         })
       )
         throw new Error('到货整单作废依据不完整或与当前明细不匹配，请重新核对');
       const basis = detail.value;
-      if (
-        basis &&
-        (latest.id !== basis.id ||
-          latest.version !== basis.version ||
-          latest.receiptNo !== basis.receiptNo ||
-          latest.purchaseOrderId !== basis.purchaseOrderId ||
-          latest.purchaseNo !== basis.purchaseNo ||
-          Boolean(latest.void) !== Boolean(basis.void) ||
-          latest.void?.reason !== basis.void?.reason ||
-          latest.void?.createdBy !== basis.void?.createdBy ||
-          latest.void?.createdAt !== basis.void?.createdAt ||
-          latest.voiding.canVoid !== basis.voiding.canVoid ||
-          latest.voiding.blockedReason !== basis.voiding.blockedReason ||
-          latest.voiding.lines.length !== basis.voiding.lines.length ||
-          basis.voiding.lines.some((line) => {
-            const next = latest.voiding.lines.find(
-              (item) => item.receiptLineId === line.receiptLineId,
-            );
-            return (
-              !next ||
-              next.version !== line.version ||
-              next.roundId !== line.roundId ||
-              next.roundVersion !== line.roundVersion
-            );
-          }) ||
-          latest.items.length !== basis.items.length ||
-          basis.items.some((line) => {
-            const next = latest.items.find((item) => item.id === line.id);
-            return (
-              !next ||
-              next.receiptId !== line.receiptId ||
-              next.purchaseOrderId !== line.purchaseOrderId ||
-              next.purchaseOrderLineId !== line.purchaseOrderLineId ||
-              next.supplierId !== line.supplierId ||
-              next.itemId !== line.itemId ||
-              next.materialVariantId !== line.materialVariantId ||
-              next.unit !== line.unit ||
-              next.supplierBatchCode !== line.supplierBatchCode ||
-              next.currentReceiptRevisionId !== line.currentReceiptRevisionId ||
-              next.currentRound.status !== line.currentRound.status ||
-              next.currentRound.triggerType !== line.currentRound.triggerType ||
-              next.currentRound.inspectionId !== line.currentRound.inspectionId ||
-              next.quantities.receivedQuantity !== line.quantities.receivedQuantity ||
-              next.quantities.inboundQuantity !== line.quantities.inboundQuantity ||
-              next.quantities.returnedQuantity !== line.quantities.returnedQuantity
-            );
-          }))
-      )
-        stale.value = true;
+      if (basis && JSON.stringify(latest) !== JSON.stringify(basis)) stale.value = true;
       if (!basis) detail.value = latest;
       eligibility.value = latest.voiding;
       readError.value = false;

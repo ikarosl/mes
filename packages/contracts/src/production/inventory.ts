@@ -340,9 +340,6 @@ export interface InventoryBatchItem {
     productionBatchId: string | null;
     workOrderId: string | null;
     procurementReceiptLineId: string | null;
-    procurementReceiptRevisionId: string | null;
-    procurementInspectionId: string | null;
-    procurementAllocationId: string | null;
   }>;
 }
 

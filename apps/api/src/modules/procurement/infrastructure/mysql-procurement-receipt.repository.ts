@@ -1,35 +1,26 @@
-import { confirmReceiptAcceptance } from './mysql-receipt-acceptance.operation.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type { Pool } from 'mysql2/promise';
 import type {
   ConfirmProcurementReceiptPayload,
-  ConfirmReceiptAcceptancePayload,
-  CorrectReceiptLinePayload,
-  StartReceiptReviewPayload,
-  InspectReceiptLinePayload,
-  RejectReceiptLinePayload,
-  RevokeReceiptRejectionPayload,
-  ConfirmSupplierReturnPayload,
+  RecordReceiptHandlingPayload,
+  ReceiptHandlingItem,
   ConfirmProcurementInboundPayload,
   VoidProcurementReceiptPayload,
+  QualityIncomingInspectionReportInput,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductInventoryEligibility } from '../../product/public.js';
-import { QualityInboundCommand, QualityInboundQuery } from '../../quality/public.js';
+import { QualityInboundCommand } from '../../quality/public.js';
 import { InventoryInboundCommand, InventoryInboundQuery } from '../../inventory/public.js';
 import { ProcurementReceiptRepository } from '../application/ports/receipt.repository.js';
 import { confirmReceiptArrival } from './mysql-receipt-arrival.operation.js';
-import { correctReceiptLine } from './mysql-receipt-correction.operation.js';
-import { startReceiptReview, inspectReceiptLine } from './mysql-receipt-inspection.operations.js';
-import {
-  rejectReceiptLine,
-  revokeReceiptRejection,
-  confirmReceiptReturn,
-} from './mysql-receipt-return.operations.js';
 import { confirmReceiptInbound } from './mysql-receipt-inbound.operation.js';
+import { recordReceiptHandling } from './mysql-receipt-handling.operation.js';
 import { voidProcurementReceipt } from './mysql-receipt-void.operation.js';
+import { lockReceiptLines } from './mysql-receipt.shared.js';
+import { readReceiptLine } from './queries/receipt-lines.query.js';
 
 @Injectable()
 export class MysqlProcurementReceiptRepository extends ProcurementReceiptRepository {
@@ -37,83 +28,55 @@ export class MysqlProcurementReceiptRepository extends ProcurementReceiptReposit
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly product: ProductInventoryEligibility,
     private readonly quality: QualityInboundCommand,
-    private readonly qualityQuery: QualityInboundQuery,
     private readonly inventory: InventoryInboundCommand,
     private readonly inventoryQuery: InventoryInboundQuery,
   ) {
     super();
   }
   voidReceipt(id: string, payload: VoidProcurementReceiptPayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      voidProcurementReceipt(connection, id, payload, context, this.quality, this.inventoryQuery),
+    return withTransaction(this.pool, (db) =>
+      voidProcurementReceipt(db, id, payload, context, this.inventoryQuery),
     );
   }
   confirmReceipt(payload: ConfirmProcurementReceiptPayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      confirmReceiptArrival(connection, payload, context, this.product),
+    return withTransaction(this.pool, (db) =>
+      confirmReceiptArrival(db, payload, context, this.product),
     );
   }
-  correctReceipt(id: string, payload: CorrectReceiptLinePayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      correctReceiptLine(connection, id, payload, context, this.quality, this.inventoryQuery),
-    );
-  }
-  startReview(id: string, payload: StartReceiptReviewPayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      startReceiptReview(connection, id, payload, context, this.quality, this.inventoryQuery),
-    );
-  }
-  inspect(id: string, payload: InspectReceiptLinePayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      inspectReceiptLine(
-        connection,
-        id,
-        payload,
+  inspect(id: string, payload: QualityIncomingInspectionReportInput, context: CommandContext) {
+    return withTransaction(this.pool, async (db) => {
+      await lockReceiptLines(db, [id]);
+      const line = await readReceiptLine(db, id);
+      return this.quality.recordIncomingInspectionReport(
+        {
+          source: {
+            receiptId: line.receiptId,
+            receiptLineId: line.id,
+            receiptNo: line.receiptNo,
+            purchaseNo: line.purchaseNo,
+            itemCode: line.itemCode,
+            itemName: line.itemName,
+            materialVariantCode: line.materialVariantCode,
+            unit: line.unit,
+            supplierName: line.supplierName,
+            specification: null,
+          },
+          report: payload,
+        },
         context,
-        this.quality,
-        this.qualityQuery,
-        this.inventoryQuery,
-      ),
-    );
+      );
+    });
   }
-  accept(id: string, payload: ConfirmReceiptAcceptancePayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      confirmReceiptAcceptance(
-        connection,
-        id,
-        payload,
-        context,
-        this.qualityQuery,
-        this.inventoryQuery,
-      ),
-    );
-  }
-  reject(id: string, payload: RejectReceiptLinePayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      rejectReceiptLine(connection, id, payload, context, this.quality, this.inventoryQuery),
-    );
-  }
-  revokeRejection(id: string, payload: RevokeReceiptRejectionPayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      revokeReceiptRejection(connection, id, payload, context, this.quality, this.inventoryQuery),
-    );
-  }
-  confirmReturn(id: string, payload: ConfirmSupplierReturnPayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      confirmReceiptReturn(connection, id, payload, context, this.inventoryQuery),
-    );
+  recordHandling(
+    id: string,
+    payload: RecordReceiptHandlingPayload,
+    context: CommandContext,
+  ): Promise<ReceiptHandlingItem> {
+    return withTransaction(this.pool, (db) => recordReceiptHandling(db, id, payload, context));
   }
   confirmInbound(payload: ConfirmProcurementInboundPayload, context: CommandContext) {
-    return withTransaction(this.pool, (connection) =>
-      confirmReceiptInbound(
-        connection,
-        payload,
-        context,
-        this.product,
-        this.qualityQuery,
-        this.inventory,
-        this.inventoryQuery,
-      ),
+    return withTransaction(this.pool, (db) =>
+      confirmReceiptInbound(db, payload, context, this.inventory),
     );
   }
 }

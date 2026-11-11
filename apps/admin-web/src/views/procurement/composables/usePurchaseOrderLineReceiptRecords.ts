@@ -24,7 +24,7 @@ export function usePurchaseOrderLineReceiptRecords() {
   const snapshot = shallowRef<PurchaseOrderLineReceiptRecordPage | null>(null);
   const rows = computed(() => snapshot.value?.items ?? []);
   const total = computed(() => snapshot.value?.total ?? 0);
-  const receivedQuantity = computed(() => snapshot.value?.receivedQuantity ?? null);
+  const inboundQuantity = computed(() => snapshot.value?.inboundQuantity ?? null);
   const read = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -144,7 +144,7 @@ export function usePurchaseOrderLineReceiptRecords() {
     failed,
     rows,
     total,
-    receivedQuantity,
+    inboundQuantity,
     open,
     close,
     load,

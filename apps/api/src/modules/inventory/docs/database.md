@@ -19,7 +19,7 @@
 | Inventory             | `stock_check_order`、`stock_check_detail` | [盘点主从表](database/stock-check.md)，仅现有物料库存批次／库存状态                                                              |
 | Inventory，仅历史登记 | `inventory_item_balance`                  | 已删除投影；保留登记以检查不可修改的历史迁移，不恢复该表                                                                         |
 
-`production_item_allocation`、生产需求、`item_scrap`、终检产出仍归 Production。生产退料使用公共入库主从；Production 编排领退料来源、额度和需求履约，经 Inventory 窄能力写入／锁定实际单据。采购到货不是库存批次，采购实收与 Quality 结论不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-design.md)。
+`production_item_allocation`、生产需求、`item_scrap`、终检产出仍归 Production。生产退料使用公共入库主从；Production 编排领退料来源、额度和需求履约，经 Inventory 窄能力写入／锁定实际单据。采购到货不是库存批次，到货登记与独立检验报告不写库存；采购到货表及来料检验表分别见 [Procurement 数据库](../../procurement/docs/database.md)与 [Quality 数据库](../../quality/docs/database.md)，跨模块结构见[采购技术设计](../../../../../../docs/procurement-inbound-design.md)。
 
 ## 2. 身份与约束
 
@@ -31,7 +31,7 @@
 
 ## 4. 采购来源引用
 
-实际入库明细保存确认时到货、实收修订、检验与授权依据，历史不随后续更正重挂。组合引用见[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)，调用及历史读取见[公开能力](public-contracts.md#采购和终检成品实际入库)。
+实际入库明细保存原到货来源和确认时供应商名称快照；检验报告、仓库说明和补单不改变已入库历史。组合引用见[入库明细](database/inventory-ledger-and-inbound.md#9-inbound_detail)，调用及历史读取见[公开能力](public-contracts.md#采购和终检成品实际入库)。
 
 ## 5. 迁移策略
 

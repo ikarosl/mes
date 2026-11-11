@@ -1,7 +1,6 @@
 import type { InventoryInboundBatchCandidate, PageResult } from '@company/contracts';
 import { Inject, Injectable } from '@nestjs/common';
 import { withActiveConnection } from '@company/database';
-import { integerQuantity } from '@company/utils';
 import type { Pool, RowDataPacket } from 'mysql2/promise';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { InventoryInboundQuery } from '../application/inventory-inbound.query.js';
@@ -11,7 +10,6 @@ import { InventoryDomainError } from '../domain/inventory.errors.js';
 type FactRow = RowDataPacket & {
   detail_id: number | string;
   receipt_line_id: number | string;
-  allocation_id: number | string;
   quantity: number | string;
 };
 
@@ -93,13 +91,13 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
       // 共批入库只在确认写入时统一锁定目标批次，避免历史共享锁再升级为排他锁。
       const [rows] = await db.query<FactRow[]>(
         `SELECT d.id detail_id,d.procurement_receipt_line_id receipt_line_id,
-         d.procurement_allocation_id allocation_id,tx.quantity
+         tx.quantity
          FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
          JOIN inventory_transaction tx ON tx.reference_type='inbound_detail' AND tx.reference_detail_id=d.id
-           AND tx.transaction_type='purchase_inbound' AND tx.quantity=d.inbound_number AND tx.quantity>0
+           AND tx.transaction_type='purchase_inbound' AND tx.reversal_of_transaction_id IS NULL AND tx.quantity=d.inbound_number AND tx.quantity>0
            AND tx.batch_id=d.batch_id AND tx.item_id=d.item_id AND tx.material_variant_id=d.material_variant_id
            AND tx.unit_snapshot=d.unit_snapshot AND tx.stock_status=d.stock_status
-         WHERE o.source_type='purchased' AND o.status='completed' AND d.stock_status='available'
+         WHERE o.source_type='purchased' AND o.status='completed' AND d.stock_status='available' AND d.is_deleted=0
            AND d.procurement_receipt_line_id IN (${ids.map(() => '?').join(',')})
          ORDER BY d.procurement_receipt_line_id,d.id,tx.id${db === this.pool ? '' : ' FOR SHARE'}`,
         ids,
@@ -121,11 +119,9 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
         if (seenDetails.has(detailId))
           throw new InventoryDomainError('INVALID_STATE', '到货入库事实存在重复正流水');
         seenDetails.add(detailId);
-        target.inboundQuantity = String(
-          integerQuantity(target.inboundQuantity) + integerQuantity(row.quantity),
-        );
+        target.inboundQuantity = String(BigInt(target.inboundQuantity) + BigInt(row.quantity));
         target.receipts.push({
-          allocationId: String(row.allocation_id),
+          inboundDetailId: detailId,
           quantity: String(row.quantity),
         });
       }

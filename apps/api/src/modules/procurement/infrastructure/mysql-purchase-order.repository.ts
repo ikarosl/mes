@@ -32,7 +32,6 @@ import {
   type InventoryMaterialEligibility,
 } from '../../product/public.js';
 import { ProductionProcurementQuery } from '../../production/public.js';
-import { InventoryInboundQuery } from '../../inventory/public.js';
 import { PurchaseOrderRepository } from '../application/ports/purchase-order.repository.js';
 import {
   normalizePurchaseDraft,
@@ -69,10 +68,7 @@ import {
   requireOrderWithoutReceiptFacts,
 } from './mysql-purchase-order.write.js';
 import { correctPurchaseOrderAmounts } from './mysql-purchase-order-amounts.operation.js';
-import {
-  requireSupplementIdentity,
-  requireSupplementCreationEligibility,
-} from './mysql-purchase-order-supplement.shared.js';
+import { requireSupplementIdentity } from './mysql-purchase-order-supplement.shared.js';
 
 @Injectable()
 export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
@@ -80,7 +76,6 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly production: ProductionProcurementQuery,
     private readonly product: ProductInventoryEligibility,
-    private readonly inventory: InventoryInboundQuery,
   ) {
     super();
   }
@@ -520,12 +515,6 @@ export class MysqlPurchaseOrderRepository extends PurchaseOrderRepository {
           connection,
           item.originOrderLineId,
           item.originReceiptLineId,
-        );
-        await requireSupplementCreationEligibility(
-          connection,
-          payload.supplementReason,
-          item.originReceiptLineId,
-          this.inventory,
         );
       }
       await insertLines(

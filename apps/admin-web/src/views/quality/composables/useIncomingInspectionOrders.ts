@@ -1,6 +1,6 @@
 import { computed, onActivated, onDeactivated, onScopeDispose, ref } from 'vue';
 import type {
-  ProcurementInboundInspectionLineItem,
+  QualityIncomingInspectionLineItem,
   QualityIncomingInspectionLocation,
   QualityIncomingInspectionOrderItem,
   QualityIncomingInspectionReceiptItem,
@@ -13,7 +13,7 @@ import { EMessage } from '../../../utils/message';
 
 export interface IncomingInspectionReceiptState {
   receipt: QualityIncomingInspectionReceiptItem;
-  items: ProcurementInboundInspectionLineItem[];
+  items: QualityIncomingInspectionLineItem[];
   loading: boolean;
   loaded: boolean;
   error: string;

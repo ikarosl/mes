@@ -86,7 +86,7 @@
         <InlineHint>
           按整张到货单调整关联，一次最多
           {{ QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS }}
-          张；检验、实收和库存事实保持原有依据。
+          张；到货来源、检验报告和库存事实保持原有依据。
         </InlineHint>
         <InlineHint tone="warning"> 若现场已贴有质检单号，调整关联后请同步更新标签。 </InlineHint>
 

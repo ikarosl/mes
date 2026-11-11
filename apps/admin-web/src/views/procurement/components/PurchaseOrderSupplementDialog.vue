@@ -98,12 +98,12 @@
           </div>
           <InlineHint v-if="reason">
             <template v-if="reason === 'excess_purchase'"
-              >记录<strong>已有到货补购</strong>及采购约定，不新增到货；原到货的质检、定稿和入退库独立办理。</template
+              >记录<strong>已有到货补购</strong>及采购约定，不新增到货；原到货的检验报告、实际入库和其他处理独立办理。</template
             >
             <template v-else
-              >补发须登记<strong>新到货</strong>并重新质检入库；原货实际退回另行办理。</template
+              >补发须独立登记<strong>新到货</strong>；检验报告与实际入库分别办理。</template
             >
-            请结合可入库、已入库及退回数量核对{{
+            请结合供应商约定及实际情况核对{{
               reason === 'excess_purchase' ? '补购量' : '约定补发量'
             }}。
           </InlineHint>

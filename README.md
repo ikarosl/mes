@@ -4,21 +4,22 @@
 
 从[文档索引](docs/README.md)查找对应模块的当前规则；业务事实、审批和库存分别由各模块所有，根入口不重复维护它们的状态与数量公式。
 
-## 追踪卡实验分支
+## 仓库简化实验分支
 
-本分支 `experiment/tracking-card-workbench` 采用[追踪卡工作台方案](docs/adr/0027-tracking-card-workbench-and-terminal-output.md)。仅使用独立空库，不保留或迁移旧生产执行及结案数据。原业务库不要直接执行本分支的初始化或迁移；已有基线文件保持不可变。
+本分支 `experiment/warehouse-simplification` 基于追踪卡实验，采用[仓库独立办理方案](docs/adr/0028-independent-warehouse-receipt-and-inspection.md)。到货登记、检查报告、仓库实际入库与补单独立办理。仅使用新建独立空库，不保留或迁移旧业务数据；原业务库不要执行本分支迁移，已有基线文件保持不可变。
 
 在 PowerShell 为本次命令指定独立库，连接及凭据仍从本机 `.env` 读取：
 
 ```powershell
-$env:DB_NAME='easy_mes_tracking_disposition_20261109'
+$env:DB_NAME='easy_mes_warehouse_simplification_20261111'
 corepack pnpm db:init
+$env:ALLOW_DEMO_SEED='1'
 corepack pnpm db:seed:demo
-$env:APP_PORT='3002'
+$env:APP_PORT='3003'
 corepack pnpm exec turbo watch dev:serve --filter=@company/api --env-mode=loose
 ```
 
-管理端在另一个终端设置同一 `APP_PORT=3002`，运行 `corepack pnpm exec turbo watch dev:serve --filter=@company/admin-web --env-mode=loose`；以 Vite 输出地址访问。演示种子仍须显式启用，追踪卡场景工具见[演示入口](tools/demo/README.md)。实验范围、当前规则和验收状态分别由 ADR、模块文档和路线图维护。
+管理端在另一个终端设置同一 `APP_PORT=3003`，运行 `corepack pnpm exec turbo watch dev:serve --filter=@company/admin-web --env-mode=loose`；以 Vite 输出地址访问。仓库和追踪卡场景工具见[演示入口](tools/demo/README.md)。实验范围、当前规则和验收状态分别由 ADR、模块文档和路线图维护。
 
 ## 快速开始（测试环境）
 

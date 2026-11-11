@@ -22,17 +22,15 @@
         </el-descriptions-item>
         <el-descriptions-item label="供应商">{{ context.supplierName }}</el-descriptions-item>
         <el-descriptions-item
-          label="累计到货"
+          label="累计已入库"
           :span="2"
         >
-          <strong v-if="receivedQuantity !== null"
-            >{{ receivedQuantity }} {{ context.unit }}</strong
-          >
+          <strong v-if="inboundQuantity !== null">{{ inboundQuantity }} {{ context.unit }}</strong>
           <span v-else>{{ loading ? '读取中' : '尚未读取成功' }}</span>
         </el-descriptions-item>
       </el-descriptions>
       <InlineHint class="records-hint">
-        仅列登记在本采购行的有效到货；搜索不改变累计总量。
+        仅列登记在本采购行的有效到货及其累计入库数量；搜索不改变累计总量。
       </InlineHint>
       <el-form
         inline
@@ -65,7 +63,7 @@
       <el-alert
         v-if="failed"
         :title="
-          receivedQuantity === null
+          inboundQuantity === null
             ? '到货记录读取失败，请刷新重试。'
             : '到货记录刷新失败，当前内容为上次读取结果，请刷新重试。'
         "
@@ -111,12 +109,12 @@
           <template #default="{ row }">{{ row.supplierBatchCode || '—' }}</template>
         </el-table-column>
         <el-table-column
-          label="计入本行数量"
+          label="已入库数量"
           min-width="150"
           align="right"
         >
           <template #default="{ row }">
-            <strong>{{ row.receivedQuantity }} {{ context.unit }}</strong>
+            <strong>{{ row.inboundQuantity }} {{ context.unit }}</strong>
           </template>
         </el-table-column>
         <el-table-column
@@ -136,7 +134,7 @@
         </el-table-column>
       </el-table>
       <PaginationFooter
-        v-if="receivedQuantity !== null"
+        v-if="inboundQuantity !== null"
         :total="total"
         :current-page="page"
         :page-size="pageSize"
@@ -177,7 +175,7 @@ const {
   failed,
   rows,
   total,
-  receivedQuantity,
+  inboundQuantity,
   open,
   close,
   load,

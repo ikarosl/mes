@@ -1,5 +1,7 @@
 # ADR-0018：外购物料按实际确认成单
 
+仓库简化实验中的质量门槛、当前轮、实收修订及正式分配引用和余量约束，由 [ADR-0028](0028-independent-warehouse-receipt-and-inspection.md) 取代；跨供应商合单、目标身份、来源追溯及原子记账继续有效。
+
 本 ADR 涉及补单承接、分配采购归属及其取消／继续办理资格的条款，在 [ADR-0023](0023-supplement-source-and-receipt-ownership.md) 明确范围内被取代；其余业务边界继续有效。
 
 状态：Accepted。用户已批准跨供应商合单；实施及验收状态见[路线图](../roadmap.md)。

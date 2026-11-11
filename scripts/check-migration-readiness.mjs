@@ -16,6 +16,7 @@ const allowedTables = new Set([
   'procurement_order_line_closure', // Historical migration ownership.
   'procurement_receipt',
   'procurement_receipt_line',
+  'procurement_receipt_handling',
   'procurement_receipt_revision',
   'procurement_receipt_round',
   'procurement_receipt_scope',
@@ -26,6 +27,7 @@ const allowedTables = new Set([
   'quality_inspection_case',
   'quality_inspection_record',
   'quality_incoming_inspection_order',
+  'quality_incoming_inspection_report',
   'quality_incoming_inspection_order_receipt',
   'quality_process_inspection',
   'quality_process_inspection_record',

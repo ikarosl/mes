@@ -1,42 +1,36 @@
 import { Injectable } from '@nestjs/common';
 import type {
   ConfirmProcurementReceiptPayload,
-  ConfirmReceiptAcceptancePayload,
-  CorrectReceiptLinePayload,
-  StartReceiptReviewPayload,
-  InspectReceiptLinePayload,
-  RejectReceiptLinePayload,
-  RevokeReceiptRejectionPayload,
-  ConfirmSupplierReturnPayload,
+  RecordReceiptHandlingPayload,
+  ReceiptHandlingItem,
   ConfirmProcurementInboundPayload,
-  ProcurementReceiptCommandResult,
-  ConfirmProcurementInboundResult,
   VoidProcurementReceiptPayload,
-  VoidProcurementReceiptCommandResult,
+  QualityIncomingInspectionReportInput,
 } from '@company/contracts';
 import type {
   CommandContext,
   IdempotentCommandContext,
 } from '../../../common/audit/audit.types.js';
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
+import {
+  incomingInspectionReportResultCodec,
+  normalizeIncomingInspectionDetails,
+} from '../../quality/public.js';
 import { ProcurementReceiptRepository } from './ports/receipt.repository.js';
 import {
   CONFIRM_PROCUREMENT_RECEIPT_SCOPE,
-  CORRECT_RECEIPT_SCOPE,
-  START_RECEIPT_REVIEW_SCOPE,
+  RECORD_RECEIPT_HANDLING_SCOPE,
   INSPECT_RECEIPT_SCOPE,
-  ACCEPT_RECEIPT_SCOPE,
-  REJECT_RECEIPT_SCOPE,
-  REVOKE_RECEIPT_REJECTION_SCOPE,
-  CONFIRM_SUPPLIER_RETURN_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
   VOID_RECEIPT_SCOPE,
 } from './idempotency/procurement-idempotency-scopes.contract.js';
 import {
   receiptCommandResultCodec,
+  receiptHandlingResultCodec,
   inboundCommandResultCodec,
   voidReceiptCommandResultCodec,
 } from './idempotency/receipt-result.codec.js';
+const nullableTrim = (value: string | null | undefined) => value?.trim() || null;
 @Injectable()
 export class ReceiptService {
   constructor(
@@ -47,11 +41,13 @@ export class ReceiptService {
     id: string,
     payload: VoidProcurementReceiptPayload,
     context: IdempotentCommandContext,
-  ): Promise<VoidProcurementReceiptCommandResult> {
+  ) {
     const body = {
       version: payload.version,
       reason: payload.reason.trim(),
-      lines: payload.lines.map((line) => ({ ...line })),
+      lines: [...payload.lines].sort((a, b) =>
+        BigInt(a.receiptLineId) < BigInt(b.receiptLineId) ? -1 : 1,
+      ),
     };
     const execution = await this.idempotency.execute({
       scope: VOID_RECEIPT_SCOPE,
@@ -67,8 +63,16 @@ export class ReceiptService {
   async confirmReceipt(
     payload: ConfirmProcurementReceiptPayload,
     context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload, details: payload.details.map((detail) => ({ ...detail })) };
+  ) {
+    const body = {
+      ...payload,
+      handoverEvidence: nullableTrim(payload.handoverEvidence),
+      remark: nullableTrim(payload.remark),
+      details: payload.details.map((row) => ({
+        ...row,
+        supplierBatchCode: nullableTrim(row.supplierBatchCode),
+      })),
+    };
     const execution = await this.idempotency.execute({
       scope: CONFIRM_PROCUREMENT_RECEIPT_SCOPE,
       key: context.idempotencyKey,
@@ -80,154 +84,63 @@ export class ReceiptService {
     });
     return execution.result;
   }
-  async correctReceipt(
-    id: string,
-    payload: CorrectReceiptLinePayload,
-    context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = {
-      ...payload,
-    };
-    const execution = await this.idempotency.execute({
-      scope: CORRECT_RECEIPT_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.correctReceipt(id, body, auditContext(context)),
-    });
-    return execution.result;
-  }
-  async startReview(
-    id: string,
-    payload: StartReceiptReviewPayload,
-    context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = {
-      version: payload.version,
-      roundId: payload.roundId,
-      roundVersion: payload.roundVersion,
-      reason: payload.reason.trim(),
-    };
-    const execution = await this.idempotency.execute({
-      scope: START_RECEIPT_REVIEW_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.startReview(id, body, auditContext(context)),
-    });
-    return execution.result;
-  }
   async inspect(
     id: string,
-    payload: InspectReceiptLinePayload,
+    payload: QualityIncomingInspectionReportInput,
     context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload };
+  ) {
+    const body: QualityIncomingInspectionReportInput = {
+      inspectionMethod: payload.inspectionMethod,
+      qualifiedQuantity: payload.qualifiedQuantity,
+      unqualifiedQuantity: payload.unqualifiedQuantity,
+      inspectedAt: payload.inspectedAt,
+      specification: nullableTrim(payload.specification),
+      expiresOn: payload.expiresOn ?? null,
+      remark: nullableTrim(payload.remark),
+      evidence: nullableTrim(payload.evidence),
+      previousRecordId: payload.previousRecordId ?? null,
+      correctionReason: nullableTrim(payload.correctionReason),
+      inspectionDetails: normalizeIncomingInspectionDetails(payload.inspectionDetails),
+    };
     const execution = await this.idempotency.execute({
       scope: INSPECT_RECEIPT_SCOPE,
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
       request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
+      resultCodec: incomingInspectionReportResultCodec,
       handler: () => this.repository.inspect(id, body, auditContext(context)),
     });
     return execution.result;
   }
-  async accept(
+  async recordHandling(
     id: string,
-    payload: ConfirmReceiptAcceptancePayload,
+    payload: RecordReceiptHandlingPayload,
     context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload, details: payload.details.map((detail) => ({ ...detail })) };
+  ): Promise<ReceiptHandlingItem> {
+    const body = { otherHandlingNote: payload.otherHandlingNote.trim() };
     const execution = await this.idempotency.execute({
-      scope: ACCEPT_RECEIPT_SCOPE,
+      scope: RECORD_RECEIPT_HANDLING_SCOPE,
       key: context.idempotencyKey,
       actorId: context.actorId,
       requestId: context.requestId,
       request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.accept(id, body, auditContext(context)),
-    });
-    return execution.result;
-  }
-  async reject(
-    id: string,
-    payload: RejectReceiptLinePayload,
-    context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload };
-    const execution = await this.idempotency.execute({
-      scope: REJECT_RECEIPT_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.reject(id, body, auditContext(context)),
-    });
-    return execution.result;
-  }
-  async revokeRejection(
-    id: string,
-    payload: RevokeReceiptRejectionPayload,
-    context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload };
-    const execution = await this.idempotency.execute({
-      scope: REVOKE_RECEIPT_REJECTION_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.revokeRejection(id, body, auditContext(context)),
-    });
-    return execution.result;
-  }
-  async confirmReturn(
-    id: string,
-    payload: ConfirmSupplierReturnPayload,
-    context: IdempotentCommandContext,
-  ): Promise<ProcurementReceiptCommandResult> {
-    const body = { ...payload };
-    const execution = await this.idempotency.execute({
-      scope: CONFIRM_SUPPLIER_RETURN_SCOPE,
-      key: context.idempotencyKey,
-      actorId: context.actorId,
-      requestId: context.requestId,
-      request: { params: { id }, body },
-      resultCodec: receiptCommandResultCodec,
-      handler: () => this.repository.confirmReturn(id, body, auditContext(context)),
+      resultCodec: receiptHandlingResultCodec,
+      handler: () => this.repository.recordHandling(id, body, auditContext(context)),
     });
     return execution.result;
   }
   async confirmInbound(
     payload: ConfirmProcurementInboundPayload,
     context: IdempotentCommandContext,
-  ): Promise<ConfirmProcurementInboundResult> {
+  ) {
     const body: ConfirmProcurementInboundPayload = {
-      remark: payload.remark,
-      details: payload.details.map((detail) => ({
-        receiptLineId: detail.receiptLineId,
-        roundId: detail.roundId,
-        roundVersion: detail.roundVersion,
-        version: detail.version,
-        receiptRevisionId: detail.receiptRevisionId,
-        allocationId: detail.allocationId,
-        inspectionId: detail.inspectionId,
-        quantity: detail.quantity,
-        target:
-          detail.target.mode === 'new'
-            ? {
-                mode: 'new',
-                clientKey: detail.target.clientKey,
-              }
-            : { mode: 'existing', batchId: detail.target.batchId },
+      remark: nullableTrim(payload.remark),
+      details: payload.details.map((row) => ({
+        receiptLineId: row.receiptLineId,
+        version: row.version,
+        quantity: row.quantity,
+        target: normalizeTarget(row.target),
       })),
     };
     const execution = await this.idempotency.execute({
@@ -248,3 +161,10 @@ const auditContext = (context: IdempotentCommandContext): CommandContext => ({
   ip: context.ip,
   userAgent: context.userAgent,
 });
+
+function normalizeTarget(
+  target: import('@company/contracts').InventoryInboundTarget,
+): import('@company/contracts').InventoryInboundTarget {
+  if (target.mode === 'new') return { mode: 'new', clientKey: target.clientKey.trim() };
+  return { mode: 'existing', batchId: target.batchId };
+}

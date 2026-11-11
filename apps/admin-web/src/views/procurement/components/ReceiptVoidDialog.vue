@@ -17,7 +17,7 @@
       />
       <el-alert
         v-if="stale"
-        title="整单明细、处理轮次或作废资格已变化。原因已保留，请关闭后从最新到货单重新核对。"
+        title="整单明细或作废资格已变化。原因已保留，请关闭后从最新到货单重新核对。"
         type="warning"
         :closable="false"
         class="notice"
@@ -50,8 +50,8 @@
           tone="warning"
           class="notice"
         >
-          本次作废整张到货登记，全部明细一并处理。已有检验及正式清单保留历史，剩余办理授权失效，原采购状态保持不变。
-          仅无真实入库、无真实退回且没有未取消关联补单时可办理。草稿、已下单与已结束的关联补单均会阻断，已取消补单历史不阻断。
+          本次作废整张到货登记，全部明细一并处理。已有检验报告和其他处理说明保留历史，作废后不能新增仓库办理。
+          仅无真实入库且没有未取消关联补单时可办理。草稿、已下单与已结束的关联补单均会阻断，已取消补单历史不阻断。
         </InlineHint>
         <el-alert
           v-if="eligibility && !eligibility.canVoid"
@@ -84,22 +84,12 @@
             >
           </el-table-column>
           <el-table-column
-            label="本批到货量"
-            width="110"
-          >
-            <template #default="{ row }"
-              >{{ row.quantities.receivedQuantity }} {{ row.unit }}</template
-            >
-          </el-table-column>
-          <el-table-column
-            label="已入库 / 已退回"
+            label="累计已入库"
             width="140"
+            ><template #default="{ row }"
+              >{{ row.quantities.inboundQuantity }} {{ row.unit }}</template
+            ></el-table-column
           >
-            <template #default="{ row }"
-              >{{ row.quantities.inboundQuantity }} /
-              {{ row.quantities.returnedQuantity }}</template
-            >
-          </el-table-column>
         </el-table>
         <el-form
           :disabled="command.locked.value"

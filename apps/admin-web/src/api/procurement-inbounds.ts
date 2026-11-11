@@ -2,8 +2,8 @@ import type {
   ConfirmProcurementInboundPayload,
   ConfirmProcurementInboundResult,
   PageResult,
-  ProcurementInboundReleaseItem,
-  ProcurementInboundReleaseQuery,
+  ProcurementInboundSourceItem,
+  ProcurementInboundSourceQuery,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -17,15 +17,15 @@ const request = async <T>(config: RetryRequestConfig): Promise<T> => {
 };
 
 export const procurementInboundsApi = {
-  releases: (
-    params: ProcurementInboundReleaseQuery,
+  sources: (
+    params: ProcurementInboundSourceQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ProcurementInboundReleaseItem>> =>
+  ): Promise<PageResult<ProcurementInboundSourceItem>> =>
     request({
-      url: '/procurement/inbound-releases',
+      url: '/procurement/inbound-sources',
       params: {
         ...params,
-        allocationIds: params.allocationIds?.length ? params.allocationIds.join(',') : undefined,
+        receiptLineIds: params.receiptLineIds?.length ? params.receiptLineIds.join(',') : undefined,
       },
       signal,
       skipErrorHandling: true,

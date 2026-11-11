@@ -51,9 +51,6 @@ type DetailRow = RowDataPacket & {
   stock_status: 'available';
   inventory_transaction_id: number | null;
   procurement_receipt_line_id: number | null;
-  procurement_receipt_revision_id: number | null;
-  procurement_inspection_id: number | null;
-  procurement_allocation_id: number | null;
   supplier_name_snapshot: string | null;
 };
 @Injectable()
@@ -238,9 +235,6 @@ export class MysqlInventoryInboundRepository extends InventoryInboundRepository 
         inventoryTransactionId:
           x.inventory_transaction_id === null ? null : String(x.inventory_transaction_id),
         procurementReceiptLineId: idOrNull(x.procurement_receipt_line_id),
-        procurementReceiptRevisionId: idOrNull(x.procurement_receipt_revision_id),
-        procurementInspectionId: idOrNull(x.procurement_inspection_id),
-        procurementAllocationId: idOrNull(x.procurement_allocation_id),
         supplierId: supplierIds.get(String(x.id)) ?? null,
         supplierName: x.supplier_name_snapshot,
         procurementSource: sources.get(String(x.id)) ?? null,

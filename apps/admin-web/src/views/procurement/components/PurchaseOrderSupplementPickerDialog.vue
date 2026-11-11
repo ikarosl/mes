@@ -23,8 +23,8 @@
     >
       {{
         reason === 'excess_purchase'
-          ? '可选范围：当前有效定稿仍有可入库数量，或已有实际入库记录的到货；仅完成质检暂不可选。'
-          : '可选范围：当前有效定稿仍有质量待退数量，或已有实际质量退回记录的到货；人工拒收不提供质量依据。'
+          ? '可选范围：该采购行的有效到货明细；补购不新增物流。'
+          : '可选范围：该采购行的有效到货明细；供应商补发独立登记新到货。'
       }}
     </InlineHint>
     <div class="picker-columns">
@@ -110,7 +110,7 @@
                 :disabled="disabled"
                 :placeholder="
                   reason === 'quality_replacement'
-                    ? '搜索到货单、供应商批号或退回单'
+                    ? '搜索到货单或供应商批号'
                     : '搜索到货单或供应商批号'
                 "
                 aria-label="搜索补单依据"
@@ -372,8 +372,8 @@ const {
 const candidateEmptyText = computed(() => {
   const filtered = Boolean(currentPage.value?.keyword.trim() || currentPage.value?.receiptLineId);
   if (props.reason === 'excess_purchase')
-    return filtered ? '未找到匹配条件的补购依据到货' : '未找到有可入库余量或实际入库记录的到货';
-  return filtered ? '未找到匹配条件的质量补发依据到货' : '未找到有质量待退或实际质量退回记录的到货';
+    return filtered ? '未找到匹配条件的补购依据到货' : '未找到有效到货明细';
+  return filtered ? '未找到匹配条件的质量补发依据到货' : '未找到有效到货明细';
 });
 const confirmSelection = (): void => {
   const selection = confirm();

@@ -6,71 +6,60 @@
         class="query-form"
         @submit.prevent="search"
       >
-        <el-form-item label="到货 / 采购 / 供应商 / 物料">
-          <el-input
+        <el-form-item label="到货 / 采购 / 供应商 / 物料"
+          ><el-input
             v-model="keyword"
             clearable
             maxlength="100"
             placeholder="搜索单号、供应商、物料或版本"
-          />
-        </el-form-item>
+        /></el-form-item>
         <el-form-item
-          ><el-checkbox v-model="awaitingAcceptance">含待核对清单</el-checkbox></el-form-item
-        >
-        <el-form-item>
-          <el-button
+          ><el-button
             type="primary"
             native-type="submit"
             :loading="loading"
             >查询</el-button
-          >
-          <el-button @click="reset">重置</el-button>
-        </el-form-item>
+          ><el-button @click="reset">重置</el-button></el-form-item
+        >
       </el-form>
     </div>
     <div class="table-panel">
       <TableToolbar>
-        <template #actions>
-          <el-button
+        <template #actions
+          ><el-button
             type="primary"
             :icon="Plus"
             :disabled="blocked"
             @click="create()"
             >记录到货</el-button
-          >
-          <el-button
+          ><el-button
             v-if="hasExplicitLocation() || focusedReceipt"
             :disabled="blocked"
             @click="retryLocation"
             >重新读取定位</el-button
-          >
-        </template>
-        <template #tools>
-          <el-button
+          ></template
+        >
+        <template #tools
+          ><el-button
             text
             :disabled="loading"
             @click="expandPage"
-            >展开当前页采购单</el-button
-          >
-          <el-button
+            >展开当前页到货单</el-button
+          ><el-button
             text
             @click="collapsePage"
-            >收起当前页采购单</el-button
-          >
-          <el-button
+            >收起当前页到货单</el-button
+          ><el-button
             :icon="Refresh"
             text
             circle
             :loading="loading"
-            aria-label="刷新采购到货目录"
+            aria-label="刷新到货目录"
             @click="load"
-          />
-        </template>
+        /></template>
       </TableToolbar>
       <div class="list-hint">
-        <InlineHint
-          >筛选用于查找采购单；展开后显示该单的完整到货目录和每张到货的全部物料。</InlineHint
-        >
+        <InlineHint>按到货单分页；展开后显示该到货单的全部物料。</InlineHint>
       </div>
       <el-alert
         v-if="error"
@@ -84,23 +73,21 @@
         v-if="focusedReceipt || locationLoading || locationError"
         class="location-bar"
       >
-        <span v-if="locationLoading">正在定位到货及来源采购单…</span>
-        <span v-else-if="locationError">{{ locationError }}</span>
-        <span v-else
-          >当前定位： <strong class="identity-value">{{ focusedReceipt?.receipt.receiptNo }}</strong
+        <span v-if="locationLoading">正在定位到货…</span
+        ><span v-else-if="locationError">{{ locationError }}</span
+        ><span v-else
+          >当前定位：<strong class="identity-value">{{ focusedReceipt?.receipt.receiptNo }}</strong
           ><template v-if="focusedLineId">
             · 到货行 ID：<strong class="identity-value">{{ focusedLineId }}</strong></template
           ></span
-        >
-        <el-button
+        ><el-button
           v-if="locationError"
           link
           type="primary"
           :disabled="blocked"
           @click="retryLocation"
           >重试列表定位</el-button
-        >
-        <el-button
+        ><el-button
           link
           type="primary"
           @click="clearListLocation"
@@ -109,76 +96,41 @@
       </div>
       <section
         v-if="focusedReceipt && !focusedIsInPage"
-        class="document-block located-block"
+        class="located-block"
       >
-        <div class="document-heading">
-          <div class="order-identity">
-            <span class="order-title"
-              >采购单
-              <span class="order-number">{{
-                focusedPurchaseOrder?.purchaseNo ?? focusedReceipt.receipt.purchaseNo
-              }}</span></span
-            >
-            <span
-              >供应商
-              {{ focusedPurchaseOrder?.supplierName ?? focusedReceipt.receipt.supplierName }}</span
-            >
-            <el-tag
-              size="small"
-              effect="plain"
-              >当前定位</el-tag
-            >
-            <p
-              v-if="focusedPurchaseOrder?.remark"
-              class="order-remark"
-            >
-              <span class="remark-label">备注</span>{{ focusedPurchaseOrder.remark }}
-            </p>
-          </div>
-          <span class="document-meta">此到货不在当前目录页，不计入分页总数</span>
-        </div>
-        <div class="receipt-directory located-directory">
-          <div class="receipt-tree">
-            <ReceiptLinesTable
-              :receipt="focusedReceipt.receipt"
-              :state="locationError ? undefined : focusedReceipt"
-              :expanded="focusedExpanded"
-              :highlighted-line-id="focusedLineId"
-              focused
-              @toggle="toggleFocused"
-              @retry="refreshLocation"
-              @detail="navigate"
-              @quality="goQuality"
-              @inbound="goInbound"
-            />
-          </div>
-        </div>
+        <p class="located-note">此到货不在当前筛选页，不计入分页总数</p>
+        <ReceiptLinesTable
+          :receipt="focusedReceipt.receipt"
+          :state="locationError ? undefined : focusedReceipt"
+          :expanded="focusedExpanded"
+          :highlighted-line-id="focusedLineId"
+          focused
+          @toggle="toggleFocused"
+          @retry="refreshLocation"
+          @detail="navigate"
+          @quality="goQuality"
+          @inbound="goInbound"
+        />
       </section>
       <div
         v-loading="loading"
-        class="order-list"
+        class="receipt-list"
       >
         <el-empty
-          v-if="!groups.length && !loading && !error"
-          description="当前筛选下暂无采购到货，可登记实际到货或调整查询"
+          v-if="!rows.length && !loading && !error"
+          description="当前筛选下暂无到货，可登记实际到货或调整查询"
           :image-size="72"
         />
-        <PurchaseReceiptOrderGroup
-          v-for="group in groups"
-          :key="group.purchaseOrder.id"
-          :group="group"
-          :expanded="expandedOrders.has(group.purchaseOrder.id)"
-          :loading="loading"
-          :blocked="blocked"
-          :focused-line-id="focusedLineId"
-          :focused-receipt-id="focusedReceipt?.receipt.id"
-          :focused="focusedPurchaseOrder?.id === group.purchaseOrder.id"
-          @toggle="toggleOrder(group)"
-          @refresh="loadReceipts(group)"
-          @create="create(group.purchaseOrder.id)"
-          @receipt-toggle="toggleReceipt(group, $event)"
-          @receipt-retry="loadLines(group, $event)"
-          @receipt-page="changeReceiptPage(group, $event)"
+        <ReceiptLinesTable
+          v-for="receipt in rows"
+          :key="receipt.id"
+          :receipt="receipt"
+          :state="states[receipt.id]"
+          :expanded="expandedReceipts.has(receipt.id)"
+          :highlighted-line-id="focusedLineId"
+          :focused="focusedReceipt?.receipt.id === receipt.id"
+          @toggle="toggleReceipt(receipt)"
+          @retry="loadLines(receipt)"
           @detail="navigate"
           @quality="goQuality"
           @inbound="goInbound"
@@ -189,7 +141,7 @@
         :current-page="page"
         :page-size="pageSize"
         :disabled="loading"
-        total-suffix="张采购单"
+        total-suffix="张到货单"
         @page-change="changePage"
         @update:page-size="changePageSize"
       />
@@ -215,12 +167,11 @@ import InlineHint from '../../components/InlineHint.vue';
 import { EMessage } from '../../utils/message';
 import { useTabsStore } from '../../stores/tabs';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
-import { usePurchaseReceiptOrders } from './composables/usePurchaseReceiptOrders';
-import type { ReceiptDetailIntent } from './receipt-round-presentation';
+import { usePurchaseReceipts } from './composables/usePurchaseReceipts';
+import type { ReceiptDetailIntent } from './receipt-presentation';
 import ReceiptCreateDialog from './components/ReceiptCreateDialog.vue';
 import ReceiptDetailDialog from './components/ReceiptDetailDialog.vue';
 import ReceiptLinesTable from './components/ReceiptLinesTable.vue';
-import PurchaseReceiptOrderGroup from './components/PurchaseReceiptOrderGroup.vue';
 
 defineOptions({ name: 'PurchaseReceiptsPage' });
 const route = useRoute(),
@@ -232,21 +183,20 @@ const hasExplicitLocation = (): boolean =>
   );
 const navigating = ref(false);
 const backgroundTarget = ref<{ receiptId: string; lineId?: string } | null>(null);
-const list = usePurchaseReceiptOrders(
+const list = usePurchaseReceipts(
   () => hasExplicitLocation() || navigating.value || Boolean(backgroundTarget.value),
 );
 const {
-  awaitingAcceptance,
   keyword,
-  groups,
-  expandedOrders,
+  rows,
+  states,
+  expandedReceipts,
   page,
   pageSize,
   total,
   loading,
   error,
   focusedReceipt,
-  focusedPurchaseOrder,
   focusedLineId,
   focusedExpanded,
   focusedIsInPage,
@@ -259,11 +209,8 @@ const {
   changePageSize,
   expandPage,
   collapsePage,
-  toggleOrder,
   toggleReceipt,
-  loadReceipts,
   loadLines,
-  changeReceiptPage,
   refreshLocation,
   toggleFocused,
 } = list;
@@ -537,73 +484,10 @@ onActivated(() => {
   margin: 0 16px 12px;
   width: auto;
 }
-.order-list {
+.receipt-list {
   min-width: 0;
   min-height: 160px;
-}
-.document-block {
-  min-width: 0;
-  margin: 0 16px 18px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 8px;
-  overflow: hidden;
-}
-.document-heading {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: baseline;
-  gap: 8px 20px;
-  padding: 12px 16px;
-  background: var(--el-fill-color-light);
-  border-bottom: 1px solid var(--el-border-color-lighter);
-  color: var(--el-text-color-primary);
-  font-size: 14px;
-}
-.document-meta {
-  font-size: 12px;
-  color: var(--el-text-color-secondary);
-  white-space: nowrap;
-}
-.order-identity {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 6px 20px;
-  min-width: 0;
-}
-.order-title {
-  font-size: 14px;
-  font-weight: 400;
-  overflow-wrap: anywhere;
-}
-.order-number {
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-}
-.order-remark {
-  flex: 1 1 160px;
-  min-width: 0;
-  margin: 0;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.remark-label {
-  margin-right: 10px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.receipt-directory {
-  min-width: 0;
-  min-height: 56px;
-  padding: 16px 16px 16px 24px;
-}
-.receipt-tree {
-  min-width: 0;
-  padding-left: 16px;
-  border-left: 1px solid var(--el-border-color);
+  padding: 0 16px 16px;
 }
 .location-bar {
   display: flex;
@@ -615,9 +499,14 @@ onActivated(() => {
   color: var(--el-text-color-regular);
 }
 .located-block {
-  border-color: var(--el-color-primary-light-5);
+  margin: 0 16px 16px;
+  padding: 12px;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 8px;
 }
-.located-directory {
-  padding-bottom: 16px;
+.located-note {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 </style>

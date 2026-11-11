@@ -1,81 +1,85 @@
-import type { QualityInboundCaseItem, QualityInboundInspectionItem } from '@company/contracts';
+import type {
+  JsonTableData,
+  QualityIncomingInspectionReportItem,
+  QualityIncomingInspectionReportSummary,
+} from '@company/contracts';
 import type { RowDataPacket } from 'mysql2/promise';
-import { toBeijingISOString } from '../../../common/time/date-time.js';
+import { toBeijingISOString, toDateOnlyString } from '../../../common/time/date-time.js';
 
-export type CaseRow = RowDataPacket & {
+export type InspectionReportSummaryRow = RowDataPacket & {
   id: string;
+  report_no: string;
   receipt_line_id: string;
-  receipt_revision_id: string;
-  incoming_round_id: string;
-  case_type: QualityInboundCaseItem['caseType'];
-  status: QualityInboundCaseItem['status'];
-  declared_quantity: number;
-  reason: string;
-  version: number;
-  completed_by: string | null;
-  completed_at: Date | null;
-  superseded_by_round_id: string | null;
-  superseded_reason: string | null;
-  created_by: string;
-  created_at: Date;
-};
-export type InspectionRow = RowDataPacket & {
-  id: string;
-  case_id: string;
-  receipt_line_id: string;
-  receipt_revision_id: string;
-  inspection_method: QualityInboundInspectionItem['inspectionMethod'];
+  inspection_method: QualityIncomingInspectionReportSummary['inspectionMethod'];
   qualified_quantity: number;
   unqualified_quantity: number;
-  release_decision: QualityInboundInspectionItem['releaseDecision'];
   previous_record_id: string | null;
+  corrected_by_record_id: string | null;
   inspected_at: Date;
-  result_note: string;
-  evidence_reference: string;
+  result_note: string | null;
   created_by: string;
   created_at: Date;
 };
-const nullable = (value: string | number | null): string | null =>
-  value === null ? null : String(value);
-export function mapInspection(row: InspectionRow): QualityInboundInspectionItem {
+
+export type InspectionReportRow = InspectionReportSummaryRow & {
+  receipt_id: string;
+  receipt_no_snapshot: string;
+  purchase_no_snapshot: string;
+  item_code_snapshot: string;
+  item_name_snapshot: string;
+  material_variant_code_snapshot: string;
+  unit_snapshot: string;
+  supplier_name_snapshot: string;
+  specification: string | null;
+  batch_no: string | null;
+  expires_on: Date | string | null;
+  evidence_reference: string | null;
+  correction_reason: string | null;
+  inspection_details: JsonTableData | string;
+};
+
+const nullableId = (value: string | number | null): string | null =>
+  value == null ? null : String(value);
+
+export function mapInspectionReportSummary(
+  row: InspectionReportSummaryRow,
+): QualityIncomingInspectionReportSummary {
   return {
     id: String(row.id),
-    caseId: String(row.case_id),
+    reportNo: row.report_no,
     receiptLineId: String(row.receipt_line_id),
-    receiptRevisionId: String(row.receipt_revision_id),
     inspectionMethod: row.inspection_method,
     qualifiedQuantity: String(row.qualified_quantity),
     unqualifiedQuantity: String(row.unqualified_quantity),
     inspectedQuantity: String(Number(row.qualified_quantity) + Number(row.unqualified_quantity)),
-    releaseDecision: row.release_decision,
-    previousRecordId: nullable(row.previous_record_id),
+    previousRecordId: nullableId(row.previous_record_id),
+    correctedByRecordId: nullableId(row.corrected_by_record_id),
     inspectedAt: toBeijingISOString(row.inspected_at),
     remark: row.result_note,
-    evidence: row.evidence_reference,
     createdBy: String(row.created_by),
     createdAt: toBeijingISOString(row.created_at),
   };
 }
-export function mapCase(
-  row: CaseRow,
-  inspection: QualityInboundInspectionItem | null = null,
-): QualityInboundCaseItem {
+
+export function mapInspectionReport(row: InspectionReportRow): QualityIncomingInspectionReportItem {
   return {
-    id: String(row.id),
-    receiptLineId: String(row.receipt_line_id),
-    receiptRevisionId: String(row.receipt_revision_id),
-    roundId: String(row.incoming_round_id),
-    caseType: row.case_type,
-    status: row.status,
-    coveredQuantity: String(row.declared_quantity),
-    reason: row.reason,
-    version: row.version,
-    completedBy: nullable(row.completed_by),
-    completedAt: row.completed_at ? toBeijingISOString(row.completed_at) : null,
-    supersededByRoundId: nullable(row.superseded_by_round_id),
-    supersededReason: row.superseded_reason,
-    createdBy: String(row.created_by),
-    createdAt: toBeijingISOString(row.created_at),
-    inspection,
+    ...mapInspectionReportSummary(row),
+    receiptId: String(row.receipt_id),
+    receiptNo: row.receipt_no_snapshot,
+    purchaseNo: row.purchase_no_snapshot,
+    itemCode: row.item_code_snapshot,
+    itemName: row.item_name_snapshot,
+    materialVariantCode: row.material_variant_code_snapshot,
+    unit: row.unit_snapshot,
+    supplierName: row.supplier_name_snapshot,
+    specification: row.specification,
+    batchNo: row.batch_no,
+    expiresOn: toDateOnlyString(row.expires_on),
+    evidence: row.evidence_reference,
+    correctionReason: row.correction_reason,
+    inspectionDetails:
+      typeof row.inspection_details === 'string'
+        ? JSON.parse(row.inspection_details)
+        : row.inspection_details,
   };
 }

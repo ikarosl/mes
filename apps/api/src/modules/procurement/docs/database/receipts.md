@@ -1,132 +1,69 @@
-# 到货、处理轮次与供应商退回表
+# 到货登记与仓库说明表
 
-本页维护 Procurement 七张到货链表的职责、字段、关系及约束，与[版本化 migration](../../../../../../../packages/database/migrations/)同步；公共类型与审计见[数据库约定](../../../../../../../docs/database-conventions.md)。数量及授权由[正式清单](../receipt-acceptance.md)维护，命令资格、锁序与作废由[到货办理](../receipts.md)维护。Quality 检查及 Inventory 实际入库由各自模块所有。
+> [返回采购数据库](../database.md)。本章是以下三表的唯一完整结构所有者；业务含义与锁序见[到货与仓库处理](../receipts.md)。
 
-以下表均为 InnoDB、`utf8mb4_0900_ai_ci`，`id` 为 `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY`，所有引用 ID 为 `BIGINT UNSIGNED`。除显式标明 NULL 的字段外均为 NOT NULL，未写 DEFAULT 的字段无显式默认值；外键使用默认 RESTRICT，所列外键均有支撑索引。创建审计为 `created_by`（FK users.id）及 `created_at DATETIME DEFAULT CURRENT_TIMESTAMP`；可变审计另含 `updated_by`（FK users.id）、`updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP`、`version INT DEFAULT 0 CHECK(version>=0)`。时间与事实规则遵守[数据库公共约定](../../../../../../../docs/database-conventions.md)。
+使用 InnoDB、utf8mb4_0900_ai_ci。ID 和外键均 BIGINT UNSIGNED；FK 使用 RESTRICT。时间为北京时间 DATETIME。可变审计列组与不可变事实列组遵守[数据库公共规则](../../../../../../../docs/database-conventions.md#统一审计规则)。本实验通过 [202611110010](../../../../../../../packages/database/migrations/202611110010-warehouse-simplification.up.sql)追加替换，仅接受没有旧采购业务的独立空库；旧基线不修改。选填交接凭据由 [202611110040](../../../../../../../packages/database/migrations/202611110040-optional-arrival-evidence.up.sql)放开可空性，保留原凭据；down 遇空凭据拒绝，不补造历史资料。下行迁移拒绝恢复退役授权模型，不转换历史业务语义。
 
 ## procurement_receipt
 
-一次真实到货登记。单号永久唯一；采购根、交接时间、凭据、备注和创建依据冻结，禁止删除。主单只允许一次整单作废，作废原因、人员和时间必须成套，版本递增一次；已作废不可再改。作废资格见[整单作废](../receipts.md#整单到货登记作废)。
+职责：记录一次实际来货与采购主单的固定关联及整单作废事实，不保存到货数量。
 
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| receipt_no | VARCHAR(100)，永久唯一 | 服务端到货编号 |
-| purchase_order_id | ID，FK procurement_order(id) | 本次到货所属采购根 |
-| received_at | DATETIME | 实际交接时间 |
-| handover_evidence | TEXT，CHECK trim 后非空 | 原交接凭据 |
-| remark | TEXT NULL | 登记说明 |
-| is_voided | TINYINT DEFAULT 0，CHECK IN(0,1) | 一次性整单作废标记 |
-| void_reason | TEXT NULL | 作废时 trim 后 1～2000 字，未作废为空 |
-| voided_by / voided_at | ID NULL，FK users(id)／DATETIME NULL | 作废人及时间，与作废原因成组 |
-| 创建／可变审计 | 见本页公共字段 | 主单版本供整单作废并发核对 |
+| 字段                    | 类型、空值和默认                            | 含义                             |
+| ----------------------- | ------------------------------------------- | -------------------------------- |
+| id                      | 自增主键                                    | 到货稳定身份                     |
+| receipt_no              | VARCHAR(100) NOT NULL                       | 服务端编号，永久唯一             |
+| purchase_order_id       | ID NOT NULL                                 | 原采购主单                       |
+| received_at             | DATETIME NOT NULL                           | 人工填写实际交接时间             |
+| handover_evidence       | TEXT NULL                                   | 选填交接凭据；空输入归 NULL      |
+| remark                  | TEXT NULL                                   | 登记备注                         |
+| is_voided               | TINYINT NOT NULL DEFAULT 0                  | CHECK IN(0,1)                    |
+| void_reason             | TEXT NULL                                   | 作废原因，非空白且不超过 2000 字 |
+| voided_by / voided_at   | ID NULL / DATETIME NULL                     | 作废操作者与时间                 |
+| created_by / updated_by | ID NOT NULL                                 | 创建与最近修改人员               |
+| created_at / updated_at | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 后者 ON UPDATE CURRENT_TIMESTAMP |
+| version                 | INT NOT NULL DEFAULT 0                      | CHECK >=0；作废恰好递增一次      |
 
-唯一键为 `receipt_no`、`(id,purchase_order_id)`；业务索引为 `(purchase_order_id,received_at,id)`，作废人和修改人另有支撑索引。CHECK 要求有效登记三项作废字段均空，作废登记三项均非空且原因合法。`trg_procurement_receipt_void_update` 冻结 `id/receipt_no/purchase_order_id/received_at/handover_evidence/remark/created_by/created_at`，文本按字节比较；只允许 `is_voided:0→1` 且 `version=旧值+1`。已作废主单不可再次修改，DELETE 触发器禁止删除。
+FK：purchase_order_id→procurement_order，created_by/updated_by/voided_by→users。唯一键 receipt_no 及 (id,purchase_order_id)；查询索引 (purchase_order_id,received_at,id) 和人员 FK 支撑索引。CHECK 要求未作废的作废字段全部 NULL，已作废三字段完整且原因有效。trg_procurement_receipt_void_update 冻结登记字段与创建事实，只允许未作废转作废及 version+1；trg_procurement_receipt_no_delete 禁止物理删除。原始登记不修改或恢复，作废资格在应用事务锁内核验。
 
 ## procurement_receipt_line
 
-同次到货的精确物料身份及当前办理入口。组合外键保证到货主单、采购根、采购行、物料和精确版本同源；这些身份及原供应商批号创建后冻结。供应商沿采购行所属主单取得，不另存可变供应商。
+职责：固定本次来货勾选的采购物料及其精确版本；本行不拥有数量、检查办理或唯一库存批次。
 
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| receipt_id / purchase_order_id | ID | 同一到货及采购根 |
-| purchase_order_line_id | ID | 固定来源采购行，供应商沿该行所属采购主单取得 |
-| line_no | INT，CHECK >0 | 单内登记顺序，仅供稳定排序，公开定位使用 id |
-| item_id / material_variant_id | ID | 与原采购行相同的物料及精确版本 |
-| supplier_batch_code | VARCHAR(100) NULL | 供应商提供的原批号，不是库存批次编号 |
-| current_receipt_revision_id / current_round_id | ID NULL | 当前实收版本／当前办理轮；同源组合 FK |
-| over_receipt_note | TEXT NULL | 登记时的超到货说明，不是授权或补单依据 |
-| 创建／可变审计 | 见本页公共字段 | 来源行并发版本 |
+| 字段                           | 类型、空值和默认                            | 含义                             |
+| ------------------------------ | ------------------------------------------- | -------------------------------- |
+| id                             | 自增主键                                    | 到货明细稳定身份                 |
+| receipt_id / purchase_order_id | ID NOT NULL                                 | 同一到货主单及原采购根           |
+| purchase_order_line_id         | ID NOT NULL                                 | 本次来货的原采购行               |
+| line_no                        | INT NOT NULL                                | CHECK >0；固定到货行号           |
+| item_id / material_variant_id  | ID NOT NULL                                 | 原采购行的物料精确身份           |
+| supplier_batch_code            | VARCHAR(100) NULL                           | 人工供应商批号                   |
+| created_by / updated_by        | ID NOT NULL                                 | 创建与最近修改人员               |
+| created_at / updated_at        | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 后者 ON UPDATE CURRENT_TIMESTAMP |
+| version                        | INT NOT NULL DEFAULT 0                      | CHECK >=0；实际入库或作废时递增  |
 
-唯一键为 `(receipt_id,line_no)`、`(id,item_id,material_variant_id)`、`(id,purchase_order_line_id)`；业务索引为 `(purchase_order_line_id,id)`。组合外键分别为 `(receipt_id,purchase_order_id)→procurement_receipt(id,purchase_order_id)`、`(purchase_order_line_id,purchase_order_id)→procurement_order_line(id,purchase_order_id)`、`(purchase_order_line_id,item_id,material_variant_id)→procurement_order_line(id,item_id,material_variant_id)`；两个当前指针各与本行 id 组合引用 revision／round 的 `(id,receipt_line_id)`。保留的 `fk_procurement_receipt_line_batch(item_id,material_variant_id)` 只是索引名，不存在到库存批次的外键或 batch_id 列。
+组合 FK：(receipt_id,purchase_order_id)→receipt(id,purchase_order_id)，(purchase_order_line_id,purchase_order_id)→order_line(id,purchase_order_id)，(purchase_order_line_id,item_id,material_variant_id)→order_line(id,item_id,material_variant_id)。人员列引用 users。组合 FK 防止冗余根与物料身份成为独立事实。
 
-`trg_procurement_receipt_identity_update` 冻结 receipt_id、purchase_order_id、purchase_order_line_id、item_id、material_variant_id 和 supplier_batch_code；登记顺序、说明及创建依据由命令保留，当前指针和可变审计按命令推进。同源冗余 ID 不构成第二份来源；供应商名称按来源采购主单的供应商身份读取。
+唯一键：(receipt_id,line_no)、(receipt_id,purchase_order_line_id)、(id,item_id,material_variant_id)、(id,purchase_order_line_id)、(id,receipt_id)。前两者保证同次勾选不重复；其余供库存、补单和报告的组合引用。业务查询索引 (purchase_order_line_id,id)，组合 FK 与人员 FK 有支撑索引。供应商和单位沿固定原采购取得，不复制可变供应商字段；物料名称按公共规则取当前名称。
 
-## procurement_receipt_revision
+trg_procurement_receipt_identity_update 禁止修改来源身份与供应商批号，trg_procurement_receipt_line_no_delete 禁止物理删除。应用原子比较版本并推进，同来源本次多个目标仅推进一次。报告、分组和独立说明均不推进本行版本。实际数量与目标逐笔沿 Inventory 入库明细及原始正流水追溯；说明沿下表追溯。
 
-保存本次到货核实总量 T 的不可变版本，包含后来真实已入和已退。版本号在明细内唯一，前驱必须同源；创建与当前指针推进同事务。更正须保存依据并确认仍为同次实物，不能将新货登记成更正。旧版本禁止更新或删除。
+## procurement_receipt_handling
 
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| receipt_line_id | ID，FK procurement_receipt_line(id) | 本次到货明细 |
-| revision_no | INT，CHECK >0 | 本明细实收版本号 |
-| previous_revision_id | ID NULL | 前版本；与 receipt_line_id 组合自 FK |
-| received_quantity | INT，CHECK 0..99999999 | 本次到货核实总量 T，包含后来真实已入和已退 |
-| reason | TEXT，CHECK trim 后非空 | 登记或计数更正依据 |
-| physical_identity_confirmed | TINYINT，CHECK =1 | 已确认仍为同次实物，不以更正登记新货 |
-| 创建审计 | 见本页公共字段 | 不可变数量事实 |
+职责：追加保存仓库对到货物料的其他处理说明。它只表示人工文字，不保存退回量、执行状态或第二份库存数量。
 
-唯一键 `(receipt_line_id,revision_no)`、`(id,receipt_line_id)` 同时支持按来源读取及组合引用。前版本 FK 为 `(previous_revision_id,receipt_line_id)→本表(id,receipt_line_id)`。UPDATE／DELETE 触发器禁止改写；版本链创建与当前指针推进同事务，不覆盖旧总量。
+| 字段                | 类型、空值和默认                            | 含义                                         |
+| ------------------- | ------------------------------------------- | -------------------------------------------- |
+| id                  | BIGINT UNSIGNED 自增主键                    | 稳定说明记录                                 |
+| receipt_line_id     | ID NOT NULL                                 | 有效到货明细                                 |
+| inbound_id          | ID NULL                                     | 历史说明的公共入库主单关联；新独立说明恒为空 |
+| other_handling_note | TEXT NOT NULL                               | trim 后 1～2000 字的说明                     |
+| created_by          | ID NOT NULL                                 | 本次操作者                                   |
+| created_at          | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 追加时间                                     |
 
-## procurement_receipt_round
+FK：receipt_line_id→procurement_receipt_line(id)，inbound_id→inbound_order(id)，created_by→users(id)，均 RESTRICT。索引 (receipt_line_id,created_at,id) 支持历史分页，(inbound_id) 支持关联读取；操作者 FK 有支撑索引。无可变审计列、version、软删除或业务状态，不复制数量。CHECK 拒绝空白或超长说明；trg_procurement_receipt_handling_insert 共享锁核验来源未作废；no_update/no_delete 触发器冻结已保存说明。补充或更正通过追加新说明保留原文；应用在同一来源锁内独立追加，不推进来源版本，与成功审计、幂等原子提交；新记录 inbound_id 恒 NULL，既有历史关联保持不变。
 
-保存整批剩余实物的一轮办理资格，轮号在明细内唯一；前轮、实收版本、检验依据及来源分配轮必须同源。`starting_quantity` 是建轮时未处置量快照；`receipt_revision_id` 是建轮依据，不能代替定稿后的当前实收。
+## 跨模块引用与退役范围
 
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| receipt_line_id | ID，FK procurement_receipt_line(id) | 所属到货明细 |
-| round_no | INT，CHECK >0 | 本明细办理轮号 |
-| previous_round_id | ID NULL | 前一轮，同到货组合自 FK |
-| source_allocation_round_id | ID NULL | 继承采购终止约束的来源轮，同到货组合自 FK；不授予执行资格 |
-| trigger_type | VARCHAR(30)，CHECK 封闭值域 | receipt／receipt_correction／review／acceptance_correction／manual_rejection／rejection_revocation／receipt_void |
-| receipt_revision_id | ID | 建轮时的实收版本，与 receipt_line_id 组合 FK revision |
-| starting_quantity | INT，CHECK 0..99999999 | 建轮时尚未实际处置量快照 |
-| status | VARCHAR(30)，CHECK 封闭值域 | uninspected／reviewing／reinspection_required／quality_rejected／awaiting_acceptance／finalized／superseded／voided |
-| inspection_id | ID NULL | 本轮明确引用的检验结果，与 receipt_line_id 组合 FK quality_inspection_record |
-| reason | TEXT，CHECK trim 后非空 | 本次建轮原因 |
-| 创建／可变审计 | 见本页公共字段 | 当前办理资格的乐观版本 |
+Quality 独立报告通过 (receipt_line_id,receipt_id) 组合 FK 固定原到货，拥有自己的不可变报告及更正引用。Inventory 实际入库只保存 procurement_receipt_line_id 和供应商名称快照，物料由组合 FK 绑定；详细字段与守卫见[库存明细](../../../inventory/docs/database/inventory-ledger-and-inbound.md#9-inbound_detail)。
 
-唯一键为 `(id,receipt_line_id)`、`(receipt_line_id,round_no)`；列表索引为 `(status,created_at,id)`，其余组合引用有各自支撑索引。轮次资格、起始依据保留和状态转换由来源命令在锁内校验，不能把 CHECK 值域误当状态转换校验。当前轮以明细指针定位，不按最大 ID 推断；来源轮继承及零剩余时的清空规则由[正式清单](../receipt-acceptance.md#整批换轮与继承)维护。
-
-## procurement_receipt_acceptance
-
-库管的不可变定稿依据：明确引用放行结果、核对前后实收版本、确认剩余量 C、定稿说明及必要偏离依据；前清单必须同到货。组合外键保证检验、修订和轮次同源，每轮至多一份清单。
-
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| receipt_line_id / round_id | ID | 所属到货及定稿轮；组合 FK round(id,receipt_line_id) |
-| inspection_record_id | ID | 明确引用的放行结果，与 receipt_line_id 组合 FK quality_inspection_record |
-| before_receipt_revision_id / after_receipt_revision_id | ID | 核对前后实收版本，分别与 receipt_line_id 组合 FK revision |
-| confirmed_scope_quantity | INT，CHECK 0..99999999 | 本轮核实的尚未处置实物量 C |
-| previous_acceptance_id | ID NULL | 同到货前清单，组合自 FK |
-| override_reason | TEXT NULL，非空时 CHECK trim 后非空 | 数量差异／超建议依据 |
-| remark | TEXT，CHECK trim 后非空 | 本次定稿说明 |
-| 创建审计 | 见本页公共字段 | 库管确认依据 |
-
-唯一键为 `round_id`、`(id,receipt_line_id)`、`(id,receipt_line_id,round_id)`；历史索引为 `(receipt_line_id,id)`，receipt_line_id 另有到明细的 FK。每轮至多一份，UPDATE／DELETE 触发器禁止改写。CHECK 容许 C=0 不代表开放重复零量定稿；当前命令资格仍遵守[实际执行](../receipt-acceptance.md#实际执行)及[定稿规则](../receipts.md#整批检验与定稿)。
-
-## procurement_receipt_allocation
-
-不可变的执行授权，保存本轮去向、正数数量和相应退回依据，不保存已入、已退或余额。正常分配必须引用同到货同轮清单；只有真实人工拒收轮的退回允许清单为空，不能靠请求中的原因豁免依据。
-
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| receipt_line_id / round_id | ID | 执行授权来源，组合 FK round(id,receipt_line_id) |
-| acceptance_id | ID NULL | 正常分配依据；与 receipt_line_id、round_id 组合 FK acceptance |
-| line_no | INT，CHECK >0 | 本轮分配顺序 |
-| disposition | VARCHAR(30)，CHECK inbound／return／pending | 正式去向，不表达实际完成状态 |
-| quantity | INT，CHECK 1..99999999 | 本分配授权数量 |
-| return_reason | VARCHAR(30) NULL | return 必填 quality／excess／procurement_termination／manual_rejection；其他去向为空 |
-| termination_reason | TEXT NULL | 非空时须 trim 后非空，且为采购终止或人工拒收退回 |
-| remark | TEXT NULL | 分配说明 |
-| 创建审计 | 见本页公共字段 | 不可变授权事实 |
-
-唯一键为 `(round_id,line_no)`、`(id,receipt_line_id)`；历史索引为 `(receipt_line_id,id)`。CHECK 保证 acceptance 为空仅限 `return/manual_rejection`，普通分配必须有 acceptance 且不能使用 manual_rejection 原因；业务事务还须核对当前真实拒收轮。UPDATE／DELETE 触发器禁止改写，不存已入、已退或剩余额；采购归属沿 receipt_line 固定解析，不保存 purchase_order_line_id。正常分配合计=C、当前资格及终止约束继承由[正式清单](../receipt-acceptance.md)维护。
-
-## procurement_supplier_return
-
-不可变的真实退回交接，保存实际数量、时间、凭据与当时的实收和检验依据。单号按[统一编号](../../../../../docs/business-numbering.md)生成；组合外键保证分配、修订和检验同一到货。
-
-| 字段 | 类型／约束 | 语义 |
-| --- | --- | --- |
-| return_no | VARCHAR(100)，永久唯一 | 按 supplier_return 类型生成实际退回单号 |
-| receipt_line_id / allocation_id | ID | 实际交接来源；组合 FK allocation(id,receipt_line_id) |
-| receipt_revision_id | ID | 当时实收版本，与 receipt_line_id 组合 FK revision |
-| inspection_id | ID NULL | 当时检验依据，与 receipt_line_id 组合 FK quality_inspection_record |
-| reason_type | VARCHAR(30)，CHECK 封闭值域 | quality／excess／procurement_termination／manual_rejection |
-| returned_quantity | INT，CHECK 1..99999999 | 本次真实退回量，不代表不合格数或库存出库 |
-| returned_at | DATETIME | 真实交接时间 |
-| handover_evidence | TEXT，CHECK trim 后非空 | 真实退回凭据 |
-| remark | TEXT NULL | 交接说明 |
-| 创建审计 | 见本页公共字段 | 不可变实际退回事实 |
-
-唯一键为 `return_no`、`(id,receipt_line_id)`、`allocation_id`；历史索引为 `(receipt_line_id,returned_at,id)`。CHECK 要求非 manual_rejection 时 inspection_id 非空；人工拒收是否免 QC 仍由当前轮及分配真实类型验证，不能仅信任请求原因。一个分配一次交接全部余量，UPDATE／DELETE 触发器禁止改写。本表不写库存，实际已入由 Inventory 公开事实读取。
+旧 receipt_revision、receipt_round、receipt_acceptance、receipt_allocation 和 supplier_return 表及其执行引用已退出活动结构；历史 migration 登记只用于校验，不授权恢复旧接口。到货和说明没有实收修订、放行授权、处置定稿或实际退回状态。

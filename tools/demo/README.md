@@ -1,85 +1,51 @@
-# 演示场景工具
+# 业务场景数据工具
 
-本目录随 Git 维护可复用的场景数据准备与 JSON 报告工具，用于人工验收。目录职责见[工程脚本与临时文件](../../docs/coding-standards.md#工程脚本与临时文件)；基础数据和 SQL 演示种子通过[数据库包](../../packages/database/README.md)的统一入口维护。
+本目录通过公开业务 API 准备可重复定位的人工验收数据，不直接写业务事实表。工具不属于应用初始化、部署或正式测试；源码职责见[编码规范](../../docs/coding-standards.md#工程脚本与临时文件)。
 
-| 文件                                                                           | 用途                                                                             |
-| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| [`prepare-tracking-workbench-demo.mjs`](prepare-tracking-workbench-demo.mjs)   | 在已有执行中批量任务下准备七盘卡、异常数量结算、重叠报废引用、整盘报废和剩余量入库 |
-| [`prepare-procurement-amount-demo.mjs`](prepare-procurement-amount-demo.mjs)   | 采购金额补填与正式单更正，核对报价、总额来源、舍入和成功审计                     |
-| [`prepare-incoming-inspection-demo.mjs`](prepare-incoming-inspection-demo.mjs) | 来料分组分页、跨采购与供应商、完整明细、移组、空组、作废及实物办理完成场景       |
-| [`prepare-procurement-receipt-demo.mjs`](prepare-procurement-receipt-demo.mjs) | 采购／到货两层分页、完整明细、待定稿与作废、组合筛选和页外定位场景               |
+| 工具 | 用途 |
+| --- | --- |
+| [仓库简化](prepare-warehouse-simplification-demo.mjs) | 无数量到货、独立检查报告、先入库后报告、独立补购／补发、仅说明和跨供应商共批 |
+| [采购金额](prepare-procurement-amount-demo.mjs) | 报价、含税总额、舍入、正式单更正及审计 |
+| [追踪卡](prepare-tracking-workbench-demo.mjs) | 扫码、异常结算、末站产出与库存 |
 
 ## 前置准备
 
-从仓库根执行命令，先按[快速开始](../../README.md#快速开始测试环境)安装依赖并配置开发环境。工具通过 `@company/config` 加载根 `.env`，进程注入的环境变量优先；不要把凭证写入工具或提交到仓库。
+使用根 [README](../../README.md#仓库简化实验分支) 指定的新空实验库，完成 db:init 后显式加载[演示种子](../../packages/database/demo/README.md)，再以同一配置启动 API。工具由 @company/config 加载根 .env，进程环境变量优先；不在脚本中保存密码。ADMIN_USERNAME／ADMIN_PASSWORD 应与初始化管理员一致，DEMO_USER_PASSWORD 用于演示职责账号。
 
-先构建工具依赖、初始化开发数据库并显式加载[演示种子](../../packages/database/demo/README.md)，再启动 API：
+所有工具的 prepare 与 report 均须 ALLOW_DEMO_SEED=1，NODE_ENV=production 时拒绝。report 只读业务数据；登录会建立会话及认证记录。prepare 会创建业务单据、检查报告和库存流水，不代表正式测试或用户验收通过。
 
-```bash
-corepack pnpm --filter @company/config build
-corepack pnpm --filter @company/utils build
-corepack pnpm db:init
-ALLOW_DEMO_SEED=1 DEMO_USER_PASSWORD='<至少 6 位的独立演示密码>' corepack pnpm db:seed:demo
-corepack pnpm dev:api
+## 仓库简化样例
+
+在根目录运行，API默认使用 http://127.0.0.1:3003/api；WAREHOUSE_DEMO_API_BASE_URL 可修改本地地址，工具拒绝远程主机、URL凭证、查询串、片段和重定向。
+
+```powershell
+$env:ALLOW_DEMO_SEED='1'
+$env:WAREHOUSE_DEMO_TAG='acceptance_01'
+node tools/demo/prepare-warehouse-simplification-demo.mjs prepare
+node tools/demo/prepare-warehouse-simplification-demo.mjs report
 ```
 
-`ADMIN_USERNAME`、`ADMIN_PASSWORD` 必须与初始化管理员一致；`db:init` 重跑会按当前配置更新管理员密码。`DEMO_USER_PASSWORD` 只供演示种子使用，工具使用管理员登录。种子中的演示共批供应商和 `demo-stock-multi` 精确版本须保持可用，工具会按名称／编码精确匹配，不创建替代主数据。
+WAREHOUSE_DEMO_TAG 默认 sample，只接受1～40位字母、数字、下划线或连字符。标记 [demo-warehouse-v1:TAG] 写入采购与到货备注；不要手工删除标记后重复 prepare。相同TAG已存在任何采购时只输出当前报告，不覆盖、补缺或继续写入。
 
-## 运行方式与写入影响
+| 场景 | 留下的记录 |
+| --- | --- |
+| 免费赠送 | 原采购20，检查21合格／1不合格，到货行独立记录退回与赠送说明，再实际入库21 |
+| 收费补购 | 在检查和入库前补购1，实际入21后在到货行独立登记说明及报告；补单不新增到货或库存 |
+| 仅其他处理 | 未检查未入库也可先建立质量补发约定，再在到货行独立记录全批线下处理说明，不调用入库接口 |
+| 待人工办理 | 只登记采购及到货，供手工检查／收货／补单 |
+| 跨供应商共批 | 两家供应商的到货分别入4和6，共用一个新库存批次，保留两条来源 |
 
-每个工具接受 `prepare` 或 `report`，省略时默认 `report`。`report` 登录后仅通过 GET 读取业务数据；登录本身调用 `POST /auth/login`，可产生认证记录或会话状态。`prepare` 通过公开业务 API 创建和办理场景，会写入业务单据、事实及审计；来料分组工具还会定稿、实际入库和退回，形成库存事实。
+报告列出实际单号、来源、采购量、已入数量、处理说明和报告记录；它只描述当前数据，不以初始样例预期替代用户后续修改。
 
-读取默认数据集：
+## 其他工具配置
 
-```bash
-export ALLOW_DEMO_SEED=1
-node tools/demo/prepare-procurement-amount-demo.mjs report
-node tools/demo/prepare-incoming-inspection-demo.mjs report
-node tools/demo/prepare-procurement-receipt-demo.mjs report
-```
+采购金额工具使用 PROCUREMENT_AMOUNT_DEMO_API_BASE_URL（默认 http://127.0.0.1:3002/api）、PROCUREMENT_AMOUNT_DEMO_TAG（缺省为原工具数据标记）；本实验可显式把 API 基址改为3003。工具需要演示共批供应商和 demo-stock-multi 两个精确版本。远程执行仅在HTTPS并显式设置 PROCUREMENT_AMOUNT_DEMO_ALLOW_REMOTE=1 时允许。
 
-准备新数据集时设置新的对应 TAG，例如：
+追踪卡工具使用 TRACKING_DEMO_API_BASE_URL（默认 http://127.0.0.1:3002/api）、TRACKING_DEMO_TAG（默认sample）和必填 TRACKING_DEMO_BATCH_ID；在本实验使用3003。远程同样要求HTTPS及 TRACKING_DEMO_ALLOW_REMOTE=1。具体生产前提见下节。
 
-```bash
-PROCUREMENT_AMOUNT_DEMO_TAG=acceptance_01 node tools/demo/prepare-procurement-amount-demo.mjs prepare
-PROCUREMENT_AMOUNT_DEMO_TAG=acceptance_01 node tools/demo/prepare-procurement-amount-demo.mjs report
-```
+## 重复执行和中断
 
-另外两个工具同样传入 `prepare`，分别使用下表中自己的 TAG。准备与报告必须携带同一 TAG；未设置 TAG 时操作默认无后缀的数据集。TAG 为 1～40 位字母、数字、下划线或连字符。
-
-## 环境变量
-
-以下配置同时适用于 `prepare` 与 `report`。
-
-| 环境变量                                | 默认值／要求                                         |
-| --------------------------------------- | ---------------------------------------------------- |
-| `TRACKING_DEMO_API_BASE_URL`            | `http://127.0.0.1:3002/api`                          |
-| `TRACKING_DEMO_ALLOW_REMOTE`            | 未设置时禁止远程；远程须为 `1`                       |
-| `TRACKING_DEMO_TAG`                     | 默认 `sample`，标记为 `[demo-tracking-v2:<TAG>]`     |
-| `TRACKING_DEMO_BATCH_ID`                | 必填，已有 doing 批量任务，至少两道冻结工序          |
-| `ALLOW_DEMO_SEED`                       | 两种模式都必须显式为 `1`                             |
-| `ADMIN_USERNAME`                        | `admin`                                              |
-| `ADMIN_PASSWORD`                        | 必填，与初始化管理员密码一致                         |
-| `NODE_ENV`                              | 为 `production` 时禁止执行，比较前会 trim 并转为小写 |
-| `PROCUREMENT_AMOUNT_DEMO_API_BASE_URL`  | `http://127.0.0.1:3002/api`                          |
-| `PROCUREMENT_AMOUNT_DEMO_ALLOW_REMOTE`  | 未设置时禁止远程；远程须为 `1`                       |
-| `PROCUREMENT_AMOUNT_DEMO_TAG`           | 未设置时使用 `[demo-procurement-amount-v5]`          |
-| `INCOMING_INSPECTION_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api`                          |
-| `INCOMING_INSPECTION_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1`                       |
-| `INCOMING_INSPECTION_DEMO_TAG`          | 未设置时使用 `[demo-incoming-group-v1]`              |
-| `PROCUREMENT_RECEIPT_DEMO_API_BASE_URL` | `http://127.0.0.1:3002/api`                          |
-| `PROCUREMENT_RECEIPT_DEMO_ALLOW_REMOTE` | 未设置时禁止远程；远程须为 `1`                       |
-| `PROCUREMENT_RECEIPT_DEMO_TAG`          | 未设置时使用 `[demo-procurement-receipts-v1]`        |
-
-API 基址仅接受 HTTP(S)，路径须以 `/api` 结尾，不得包含凭证、查询串或片段。`localhost`、`127.0.0.1`、`[::1]` 视为本地；其他主机必须同时使用 HTTPS 并显式设置对应工具的 `ALLOW_REMOTE` 变量为 `1`。所有请求禁止重定向。
-
-## 重复执行与失败处理
-
-设置 TAG 后，标记在版本号后追加 `:<TAG>`，并随场景标识写入备注。同一标记已有数据时，`prepare` 保留已有状态并输出报告，不补缺、不覆盖或自动续写；请保留这些备注标记，删除或修改后再次执行可能重复创建数据。
-
-每次业务写入携带新的 UUID `Idempotency-Key`，失败请求不自动重试；备注标记用于防止重复启动，不承担跨次执行的请求幂等。整个工具没有跨请求事务，失败不会回滚此前成功提交的事实。失败后先用相同 TAG 执行 `report` 核对并人工处理；需要重新准备时使用新的对应 TAG，或从空开发库通过统一初始化与演示种子恢复，避免对同一标记盲目续写。
-
-报告用于辅助人工核对。用户办理后的状态与统计可能偏离初始基准，报告或准备成功不代表正式测试或用户验收通过；验证阶段遵守[测试策略](../../docs/testing-strategy.md)。
+每次业务写入携带独立幂等键；工具不会在未知结果后用新键自动重试，也没有跨请求事务。失败会保留此前成功写入，先用同TAG report核对。需要另一组样例时换新TAG，不通过删数据或重跑demo绕过迁移或业务错误。报告输出可保存到temp，禁止将密码、Token或Cookie写入输出。
 
 ## 追踪卡工作台样例
 

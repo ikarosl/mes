@@ -15,12 +15,9 @@ export interface PurchaseInboundDetailItem {
   stockStatus: 'available';
   inventoryTransactionId: string | null;
   procurementReceiptLineId: string | null;
-  procurementReceiptRevisionId: string | null;
-  procurementInspectionId: string | null;
-  procurementAllocationId: string | null;
   supplierId: string | null;
   supplierName: string | null;
-  /** Historical source of this actual inbound detail; absent on legacy purchased inbounds. */
+  /** Historical source of this actual inbound detail. */
   procurementSource: {
     receipt: {
       receiptId: string;
@@ -29,16 +26,11 @@ export interface PurchaseInboundDetailItem {
       /** Purchase order on which this delivery was originally registered. */
       purchaseOrderNo: string;
     };
-    /** Purchase order assigned by this detail's immutable allocation. */
+    /** Purchase order on the recorded arrival source. */
     purchaseOrder: {
       purchaseOrderId: string;
       purchaseOrderNo: string;
       purchaseOrderLineId: string;
-    };
-    inspection: {
-      inspectionId: string;
-      caseId: string;
-      inspectedAt: string;
     };
   } | null;
 }

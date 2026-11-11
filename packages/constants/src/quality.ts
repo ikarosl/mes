@@ -1,36 +1,30 @@
-/** 新办理排除 inspection_correction；该值仅在历史契约和展示映射中保留。 */
-export const QUALITY_INBOUND_CASE_START_TYPES = [
-  'initial',
-  'reinspection',
-  'receipt_correction',
-] as const;
 export const QUALITY_INSPECTION_METHOD_LABELS = {
   full: '全检',
   sampling: '抽检',
 } as const;
-export const QUALITY_RELEASE_DECISIONS = [
-  'released',
-  'pending_reinspection',
-  'not_released',
-] as const;
-export const QUALITY_RELEASE_DECISION_LABELS = {
-  released: '剔除不合格后放行',
-  pending_reinspection: '待全检或复检',
-  not_released: '不放行',
-} as const;
 export const QUALITY_INBOUND_METHODS = ['full', 'sampling'] as const;
-export const QUALITY_INBOUND_CASE_TYPE_LABELS = {
-  initial: '初次检验',
-  reinspection: '主动复检',
-  inspection_correction: '检验更正',
-  receipt_correction: '实收更正复核',
-} as const;
-export const QUALITY_INBOUND_CASE_STATUS_LABELS = {
-  reviewing: '检验中',
-  completed: '已完成',
-  superseded: '已失效',
-} as const;
 export const QUALITY_INBOUND_TEXT_MAX_LENGTH = 4000;
+export const QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH = 2000;
+export const QUALITY_INCOMING_INSPECTION_REPORT_BATCH_MAX_LENGTH = 120;
+export const QUALITY_INCOMING_INSPECTION_REPORT_TITLE = '进料检验报告';
+export const QUALITY_INCOMING_INSPECTION_REPORT_COLUMN_LABELS = {
+  inspectionItem: '检验项目',
+  acceptanceRequirement: '验收要求',
+  inspectionTool: '检验工具',
+  contentDescription: '检验内容描述',
+  inspectionResult: '检验结果',
+} as const;
+export const QUALITY_INCOMING_INSPECTION_REPORT_DEFAULT_ITEMS = [
+  '外观',
+  '包装要求',
+  '材料证明',
+  '数量',
+] as const;
+export const QUALITY_INCOMING_INSPECTION_REPORT_SIGNATURE_LABELS = [
+  '编制',
+  '审核',
+  '批准',
+] as const;
 /** 单次分组命令的到货数量上限，不限制主单累计关联数。 */
 export const QUALITY_INCOMING_INSPECTION_ORDER_MAX_RECEIPTS = 100;
 export const QUALITY_INCOMING_INSPECTION_ORDER_REMARK_MAX_LENGTH = 500;

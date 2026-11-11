@@ -41,9 +41,6 @@ type SourceRow = RowDataPacket & {
   production_batch_id: number | null;
   work_order_id: number | null;
   procurement_receipt_line_id: number | null;
-  procurement_receipt_revision_id: number | null;
-  procurement_inspection_id: number | null;
-  procurement_allocation_id: number | null;
   inbound_no: string;
   provider: string | null;
   inbound_at: Date;
@@ -198,7 +195,7 @@ async function loadInventories(
     [...ids, ...ids],
   );
   const [sources] = await db.query<SourceRow[]>(
-    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,d.supplier_name_snapshot provider,o.inbound_at,d.inbound_number,it.id transaction_id,o.source_type,d.production_output_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id,d.procurement_receipt_revision_id,d.procurement_inspection_id,d.procurement_allocation_id
+    `SELECT d.batch_id,d.id inbound_detail_id,o.id inbound_id,o.inbound_no,d.supplier_name_snapshot provider,o.inbound_at,d.inbound_number,it.id transaction_id,o.source_type,d.production_output_id,o.production_batch_id,o.work_order_id,d.procurement_receipt_line_id
      ${completedInboundSourceSql}
      WHERE d.batch_id IN (${placeholders}) ORDER BY d.batch_id,d.id`,
     ids,
@@ -256,9 +253,6 @@ async function loadInventories(
       productionBatchId: nullableId(source.production_batch_id),
       workOrderId: nullableId(source.work_order_id),
       procurementReceiptLineId: nullableId(source.procurement_receipt_line_id),
-      procurementReceiptRevisionId: nullableId(source.procurement_receipt_revision_id),
-      procurementInspectionId: nullableId(source.procurement_inspection_id),
-      procurementAllocationId: nullableId(source.procurement_allocation_id),
     })),
   }));
 }

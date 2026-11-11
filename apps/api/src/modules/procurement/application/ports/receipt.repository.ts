@@ -1,64 +1,36 @@
 import type {
   ConfirmProcurementReceiptPayload,
-  ConfirmReceiptAcceptancePayload,
-  CorrectReceiptLinePayload,
-  StartReceiptReviewPayload,
-  InspectReceiptLinePayload,
-  RejectReceiptLinePayload,
-  RevokeReceiptRejectionPayload,
-  ConfirmSupplierReturnPayload,
+  RecordReceiptHandlingPayload,
+  ReceiptHandlingItem,
   ConfirmProcurementInboundPayload,
   ProcurementReceiptCommandResult,
   ConfirmProcurementInboundResult,
   VoidProcurementReceiptPayload,
   VoidProcurementReceiptCommandResult,
+  QualityIncomingInspectionReportInput,
+  QualityIncomingInspectionReportItem,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 export abstract class ProcurementReceiptRepository {
+  abstract recordHandling(
+    id: string,
+    payload: RecordReceiptHandlingPayload,
+    context: CommandContext,
+  ): Promise<ReceiptHandlingItem>;
   abstract voidReceipt(
     id: string,
     payload: VoidProcurementReceiptPayload,
     context: CommandContext,
   ): Promise<VoidProcurementReceiptCommandResult>;
-  abstract accept(
-    id: string,
-    payload: ConfirmReceiptAcceptancePayload,
-    context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
   abstract confirmReceipt(
     payload: ConfirmProcurementReceiptPayload,
     context: CommandContext,
   ): Promise<ProcurementReceiptCommandResult>;
-  abstract correctReceipt(
-    id: string,
-    payload: CorrectReceiptLinePayload,
-    context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
-  abstract startReview(
-    id: string,
-    payload: StartReceiptReviewPayload,
-    context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
   abstract inspect(
     id: string,
-    payload: InspectReceiptLinePayload,
+    payload: QualityIncomingInspectionReportInput,
     context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
-  abstract reject(
-    id: string,
-    payload: RejectReceiptLinePayload,
-    context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
-  abstract revokeRejection(
-    id: string,
-    payload: RevokeReceiptRejectionPayload,
-    context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
-  abstract confirmReturn(
-    id: string,
-    payload: ConfirmSupplierReturnPayload,
-    context: CommandContext,
-  ): Promise<ProcurementReceiptCommandResult>;
+  ): Promise<QualityIncomingInspectionReportItem>;
   abstract confirmInbound(
     payload: ConfirmProcurementInboundPayload,
     context: CommandContext,

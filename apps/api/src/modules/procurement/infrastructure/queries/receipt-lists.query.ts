@@ -1,131 +1,124 @@
-import { allocationRemaining } from './receipt-allocation.query.js';
 import type {
+  ProcurementInboundSourceQuery,
+  ProcurementReceiptQuery,
+  ProcurementReceiptItem,
+  ProcurementInboundSourceItem,
   PageResult,
-  ProcurementInboundReleaseQuery,
-  ProcurementInboundReleaseItem,
 } from '@company/contracts';
-import type { MaterialVariantQuery } from '../../../product/public.js';
 import type { Db } from '../mysql-purchase-order.shared.js';
 import {
-  type ReadRow,
-  RECEIPT_LINE_FROM,
   LINE_COLUMNS,
+  receiptSelect,
+  RECEIPT_COLUMNS,
+  mapReceipt,
+  lineSelect,
   pageInput,
   slots,
-  text,
-  nullableText,
   date,
+  type ReadRow,
 } from './receipt-read.shared.js';
+import { mapReceiptLines } from './receipt-lines.query.js';
+export async function listInboundSources(
+  db: Db,
+  query: ProcurementInboundSourceQuery,
+): Promise<PageResult<ProcurementInboundSourceItem>> {
+  const page = pageInput(query),
+    where = ['r.is_voided=0'],
+    params: Array<string | number> = [];
+  for (const [column, value] of [
+    ['po.supplier_id', query.supplierId],
+    ['po.id', query.purchaseOrderId],
+    ['line.id', query.receiptLineId],
+  ]) {
+    if (value) {
+      where.push(column + '=?');
+      params.push(value);
+    }
+  }
+  if (query.receiptLineIds?.length) {
+    where.push(`line.id IN (${slots(query.receiptLineIds)})`);
+    params.push(...query.receiptLineIds);
+  }
+  if (query.keyword?.trim()) {
+    where.push(
+      '(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ? OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ? OR line.supplier_batch_code LIKE ?)',
+    );
+    params.push(...Array<string>(7).fill('%' + query.keyword.trim() + '%'));
+  }
+  const [[count]] = await db.query<ReadRow[]>(
+    `${lineSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
+    params,
+  );
+  const [rows] = await db.query<ReadRow[]>(
+    `${lineSelect(LINE_COLUMNS)} WHERE ${where.join(' AND ')} ORDER BY r.received_at DESC,line.id DESC LIMIT ? OFFSET ?`,
+    [...params, page.pageSize, (page.page - 1) * page.pageSize],
+  );
+  const lines = await mapReceiptLines(db, rows);
+  return {
+    items: lines.map((line, index) => ({
+      receiptLineId: line.id,
+      receiptLineVersion: line.version,
+      purchaseOrderLineId: line.purchaseOrderLineId,
+      receiptId: line.receiptId,
+      receiptNo: line.receiptNo,
+      receiptReceivedAt: date(rows[index]!.received_at),
+      receiptPurchaseNo: line.purchaseNo,
+      purchaseOrderId: line.purchaseOrderId,
+      purchaseNo: line.purchaseNo,
+      supplierId: line.supplierId,
+      supplierName: line.supplierName,
+      itemId: line.itemId,
+      itemCode: line.itemCode,
+      itemName: line.itemName,
+      materialVariantId: line.materialVariantId,
+      materialVariantCode: line.materialVariantCode,
+      unit: line.unit,
+      supplierBatchCode: line.supplierBatchCode,
+      inboundQuantity: line.quantities.inboundQuantity,
+      handlingCount: line.handlingCount,
+      otherHandlingNote: line.otherHandlingNote,
+    })),
+    total: Number(count?.total ?? 0),
+    ...page,
+  };
+}
 
-function filters(query: { keyword?: string; supplierId?: string; purchaseOrderId?: string }) {
-  const where = ['1=1'];
+const receiptMaterialKeywordSelect = () => `SELECT 1 FROM procurement_receipt_line search_line
+  JOIN procurement_order_line search_order_line ON search_order_line.id=search_line.purchase_order_line_id
+  JOIN materials search_material ON search_material.id=search_line.item_id`;
+
+export async function listReceipts(
+  db: Db,
+  query: ProcurementReceiptQuery,
+): Promise<PageResult<ProcurementReceiptItem>> {
+  const page = pageInput(query);
+  const where: string[] = [];
   const params: Array<string | number> = [];
   if (query.supplierId) {
     where.push('po.supplier_id=?');
     params.push(query.supplierId);
   }
   if (query.purchaseOrderId) {
-    where.push('po.id=?');
+    where.push('r.purchase_order_id=?');
     params.push(query.purchaseOrderId);
   }
-  if (query.keyword?.trim()) {
-    where.push(
-      '(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ? OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?)',
-    );
-    params.push(...Array<string>(6).fill(`%${query.keyword.trim()}%`));
+  const keyword = query.keyword?.trim();
+  if (keyword) {
+    where.push(`(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ? OR EXISTS(
+      ${receiptMaterialKeywordSelect()}
+      WHERE search_line.receipt_id=r.id AND (search_material.material_name LIKE ?
+        OR search_order_line.item_code_snapshot LIKE ? OR search_order_line.material_variant_code_snapshot LIKE ?
+        OR search_line.supplier_batch_code LIKE ?)))`);
+    params.push(...Array<string>(7).fill(`%${keyword}%`));
   }
-  return { where, params };
-}
-export async function listInboundReleases(
-  db: Db,
-  variants: MaterialVariantQuery,
-  query: ProcurementInboundReleaseQuery,
-): Promise<PageResult<ProcurementInboundReleaseItem>> {
-  const { page, pageSize } = pageInput(query);
-  const empty = { items: [], total: 0, page, pageSize };
-  const [materials] = await db.query<
-    ReadRow[]
-  >(`SELECT DISTINCT line.item_id FROM procurement_receipt_line line
-    JOIN procurement_receipt receipt ON receipt.id=line.receipt_id
-    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=line.current_round_id JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id WHERE current_round.status='finalized' AND allocation.disposition='inbound' AND allocation.termination_reason IS NULL
-      AND receipt.is_voided=0`);
-  const eligible = await variants.listPurchasableByMaterials({
-    materialIds: materials.map((r) => text(r.item_id)),
-  });
-  if (!eligible.length) return empty;
-  const selectedFilters = filters(query);
-  const where = selectedFilters.where;
-  const params = selectedFilters.params;
-  where.push(
-    `r.is_voided=0`,
-    `allocation.disposition='inbound'`,
-    `allocation.termination_reason IS NULL`,
-    `inspection.release_decision='released'`,
-    `current_round.status='finalized'`,
-    `allocation.round_id=current_round.id`,
-    `current_round.inspection_id=inspection.id`,
-    `acceptance.round_id=current_round.id`,
-    `qc.status='completed'`,
-    `(${allocationRemaining('allocation.id', 'allocation.quantity')})>0`,
-    `line.material_variant_id IN (${slots(eligible.map((v) => v.id))})`,
-  );
-  params.push(...eligible.map((v) => v.id));
-  if (query.receiptLineId) {
-    where.push('line.id=?');
-    params.push(query.receiptLineId);
-  }
-  if (query.allocationIds) {
-    if (!query.allocationIds.length) return empty;
-    where.push(`allocation.id IN (${slots(query.allocationIds)})`);
-    params.push(...query.allocationIds);
-  }
-  const select = (columns: string) => `SELECT ${columns} ${RECEIPT_LINE_FROM}
-    JOIN materials material ON material.id=line.item_id
-    JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id
-    JOIN procurement_receipt_allocation allocation ON allocation.receipt_line_id=line.id AND allocation.round_id=current_round.id
-    JOIN procurement_receipt_acceptance acceptance ON acceptance.id=allocation.acceptance_id
-    JOIN quality_inspection_record inspection ON inspection.id=acceptance.inspection_record_id AND inspection.receipt_line_id=line.id
-    JOIN quality_inspection_case qc ON qc.id=inspection.case_id`;
+  const filter = where.length ? ` WHERE ${where.join(' AND ')}` : '';
   const [[count]] = await db.query<ReadRow[]>(
-    `${select('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
+    `${receiptSelect('COUNT(*) total')}${filter}`,
     params,
   );
   const [rows] = await db.query<ReadRow[]>(
-    `${select(LINE_COLUMNS + ',r.received_at,current_round.id round_id,current_round.version round_version,acceptance.id acceptance_id,allocation.id allocation_id,acceptance.after_receipt_revision_id receipt_revision_id,inspection.id inspection_id,qc.id inspection_case_id,' + allocationRemaining('allocation.id', 'allocation.quantity') + ' quantity')}
-    WHERE ${where.join(' AND ')} ORDER BY r.received_at,line.id,allocation.id LIMIT ? OFFSET ?`,
-    [...params, pageSize, (page - 1) * pageSize],
+    `${receiptSelect(RECEIPT_COLUMNS)}${filter} ORDER BY r.received_at DESC,r.id DESC LIMIT ? OFFSET ?`,
+    [...params, page.pageSize, (page.page - 1) * page.pageSize],
   );
-  return {
-    items: rows.map((row) => ({
-      receiptId: text(row.receipt_id),
-      receiptNo: text(row.receipt_no),
-      receiptLineId: text(row.id),
-      receiptLineVersion: Number(row.version),
-      receiptReceivedAt: date(row.received_at),
-      receiptPurchaseNo: text(row.purchase_no),
-      roundId: text(row.round_id),
-      roundVersion: Number(row.round_version),
-      purchaseOrderId: text(row.purchase_order_id),
-      purchaseNo: text(row.purchase_no),
-      purchaseOrderLineId: text(row.purchase_order_line_id),
-      acceptanceId: text(row.acceptance_id),
-      allocationId: text(row.allocation_id),
-      supplierId: text(row.supplier_id),
-      supplierName: text(row.supplier_name),
-      itemId: text(row.item_id),
-      itemCode: text(row.item_code_snapshot),
-      itemName: text(row.material_name),
-      materialVariantId: text(row.material_variant_id),
-      materialVariantCode: text(row.material_variant_code_snapshot),
-      unit: text(row.unit_snapshot),
-      supplierBatchCode: nullableText(row.supplier_batch_code),
-      receiptRevisionId: text(row.receipt_revision_id),
-      inspectionId: text(row.inspection_id),
-      inspectionCaseId: text(row.inspection_case_id),
-      approvedRemainingQuantity: text(row.quantity),
-    })),
-    total: Number(count?.total ?? 0),
-    page,
-    pageSize,
-  };
+  return { items: rows.map(mapReceipt), total: Number(count?.total ?? 0), ...page };
 }

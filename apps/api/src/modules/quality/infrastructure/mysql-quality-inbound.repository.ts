@@ -1,36 +1,43 @@
-import { normalizeIncomingInspectionQuantities } from '../domain/inspection-quantity.policy.js';
 import { Inject, Injectable } from '@nestjs/common';
-import { QUALITY_INBOUND_CASE_START_TYPES } from '@company/constants';
 import type {
   PageQuery,
   PageResult,
-  QualityInboundCaseItem,
-  QualityInboundInspectionItem,
+  QualityIncomingInspectionReportItem,
+  QualityIncomingInspectionReportSummary,
 } from '@company/contracts';
 import { withActiveConnection } from '@company/database';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { allocateBusinessNumber } from '../../../infrastructure/numbering/mysql-business-number.js';
 import {
   QualityInboundCommand,
-  type StartQualityInboundCaseInput,
-  type CompleteQualityInboundCaseInput,
+  type RecordIncomingInspectionReportInput,
 } from '../application/quality-inbound.command.js';
-import type {
-  QualityInboundQuery,
-  QualityInboundReleaseBasis,
-} from '../application/quality-inbound.query.js';
-import { requireQualityText, requireQuantity } from '../domain/inbound-inspection.policy.js';
+import type { QualityInboundQuery } from '../application/quality-inbound.query.js';
+import {
+  normalizeIncomingInspectionReport,
+  requireInspectionIdentifier,
+} from '../domain/incoming-inspection-report.policy.js';
 import { QualityCommandError } from '../quality-command.error.js';
 import {
-  mapCase,
-  mapInspection,
-  type CaseRow,
-  type InspectionRow,
+  mapInspectionReport,
+  mapInspectionReportSummary,
+  type InspectionReportRow,
+  type InspectionReportSummaryRow,
 } from './mysql-quality-inbound.mapper.js';
 
-type Db = Pool | PoolConnection;
+const SUMMARY_COLUMNS = `report.id,report.report_no,report.receipt_line_id,report.inspection_method,
+  report.qualified_quantity,report.unqualified_quantity,report.previous_record_id,
+  correction.id corrected_by_record_id,report.inspected_at,report.result_note,report.created_by,report.created_at`;
+const REPORT_FROM = `FROM quality_incoming_inspection_report report
+  LEFT JOIN quality_incoming_inspection_report correction ON correction.previous_record_id=report.id`;
+const REPORT_COLUMNS = `${SUMMARY_COLUMNS},report.receipt_id,report.receipt_no_snapshot,
+  report.purchase_no_snapshot,report.item_code_snapshot,report.item_name_snapshot,
+  report.material_variant_code_snapshot,report.unit_snapshot,report.supplier_name_snapshot,
+  report.specification,report.batch_no,report.expires_on,report.evidence_reference,
+  report.correction_reason,report.inspection_details`;
 
 @Injectable()
 export class MysqlQualityInboundRepository
@@ -41,200 +48,118 @@ export class MysqlQualityInboundRepository
     super();
   }
 
-  private inTransaction<T>(run: (db: PoolConnection) => Promise<T>): Promise<T> {
-    return withActiveConnection(this.pool, async (db) => {
-      if (db === this.pool || !('release' in db))
-        throw new QualityCommandError('INVALID_STATE', '检验命令必须位于来源业务事务中');
-      return run(db as PoolConnection);
-    });
-  }
-
-  startCase(
-    input: StartQualityInboundCaseInput,
+  recordIncomingInspectionReport(
+    input: RecordIncomingInspectionReportInput,
     context: CommandContext,
-  ): Promise<QualityInboundCaseItem> {
-    requireQuantity(input.coveredQuantity, '来源申报数量');
-    const reason = requireQualityText(input.reason, '检验原因');
-    if (
-      !QUALITY_INBOUND_CASE_START_TYPES.includes(input.caseType) ||
-      input.coveredQuantity <= 0 ||
-      !input.roundId
-    ) {
-      throw new QualityCommandError('INVALID_INPUT', '检验类型、申报数量和来源轮次不一致');
-    }
+  ): Promise<QualityIncomingInspectionReportItem> {
+    const normalized = normalizeIncomingInspectionReport(input.source, input.report);
+    if (context.actorId === null)
+      throw new QualityCommandError('INVALID_STATE', '检验报告须由已认证人员登记');
     return this.inTransaction(async (db) => {
-      const [result] = await db.execute<ResultSetHeader>(
-        `INSERT INTO quality_inspection_case(receipt_line_id,receipt_revision_id,incoming_round_id,
-          source_kind,case_type,declared_quantity,reason,created_by,updated_by) VALUES(?,?,?,'incoming',?,?,?,?,?)`,
-        [
-          input.receiptLineId,
-          input.receiptRevisionId,
-          input.roundId,
-          input.caseType,
-          input.coveredQuantity,
-          reason,
-          context.actorId,
-          context.actorId,
-        ],
-      );
-      const after = mapCase(await this.requireCase(db, String(result.insertId)));
-      await audit(db, context, 'inbound-case.start', after.id, null, after);
-      return after;
-    });
-  }
-
-  completeCase(
-    input: CompleteQualityInboundCaseInput,
-    context: CommandContext,
-  ): Promise<QualityInboundInspectionItem> {
-    return this.inTransaction(async (db) => {
-      const row = await this.requireCase(db, input.caseId, 'FOR UPDATE');
-      if (row.version !== input.version)
-        throw new QualityCommandError('CONCURRENT_MODIFICATION', '检验办理已变化，请刷新');
-      if (row.status !== 'reviewing')
-        throw new QualityCommandError('INVALID_STATE', '检验已完成或已因来源重办、拒收失效');
-      if (
-        String(row.receipt_line_id) !== input.receiptLineId ||
-        String(row.receipt_revision_id) !== input.receiptRevisionId ||
-        String(row.incoming_round_id) !== input.roundId
-      ) {
-        throw new QualityCommandError('INVALID_INPUT', '检验引用与已锁定到货范围不一致');
-      }
-      const quantities = normalizeIncomingInspectionQuantities(input);
-      const inspectedAt = new Date(input.inspectedAt);
-      if (!Number.isFinite(inspectedAt.getTime()))
-        throw new QualityCommandError('INVALID_INPUT', '检验时间无效');
-      const remark = requireQualityText(input.remark, '检验说明');
-      const evidence = requireQualityText(input.evidence, '检验凭据');
-      if (input.previousRecordId) {
-        const [[previous]] = await db.query<InspectionRow[]>(
-          'SELECT * FROM quality_inspection_record WHERE id=? AND receipt_line_id=? FOR SHARE',
-          [input.previousRecordId, input.receiptLineId],
+      if (normalized.previousRecordId !== null) {
+        const [[previous]] = await db.query<(RowDataPacket & { receipt_line_id: string })[]>(
+          'SELECT receipt_line_id FROM quality_incoming_inspection_report WHERE id=? FOR UPDATE',
+          [normalized.previousRecordId],
         );
-        if (!previous) throw new QualityCommandError('INVALID_INPUT', '前驱检验记录与到货不匹配');
-      }
-      const [result] = await db.execute<ResultSetHeader>(
-        `INSERT INTO quality_inspection_record(case_id,receipt_line_id,receipt_revision_id,covered_quantity,
-          inspection_method,qualified_quantity,unqualified_quantity,release_decision,previous_record_id,
-          inspected_at,result_note,evidence_reference,created_by) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        [
-          input.caseId,
-          input.receiptLineId,
-          input.receiptRevisionId,
-          null,
-          quantities.inspectionMethod,
-          quantities.qualifiedQuantity,
-          quantities.unqualifiedQuantity,
-          quantities.releaseDecision,
-          input.previousRecordId ?? null,
-          inspectedAt,
-          remark,
-          evidence,
-          context.actorId,
-        ],
-      );
-      await db.execute(
-        `UPDATE quality_inspection_case SET status='completed',completed_by=?,completed_at=NOW(),updated_by=?,version=version+1 WHERE id=?`,
-        [context.actorId, context.actorId, input.caseId],
-      );
-      const [[inspection]] = await db.query<InspectionRow[]>(
-        'SELECT * FROM quality_inspection_record WHERE id=?',
-        [result.insertId],
-      );
-      const after = mapInspection(inspection!);
-      await audit(db, context, 'inbound-case.complete', input.caseId, mapCase(row), after);
-      return after;
-    });
-  }
-
-  supersedeCases(
-    input: { receiptLineId: string; roundId: string; supersededByRoundId: string; reason: string },
-    context: CommandContext,
-  ): Promise<void> {
-    return this.supersedeMatchingCases(input, context);
-  }
-
-  supersedeReceiptCases(
-    input: { receiptLineId: string; supersededByRoundId: string; reason: string },
-    context: CommandContext,
-  ): Promise<void> {
-    return this.supersedeMatchingCases(input, context);
-  }
-
-  private supersedeMatchingCases(
-    input: {
-      receiptLineId: string;
-      roundId?: string;
-      supersededByRoundId: string;
-      reason: string;
-    },
-    context: CommandContext,
-  ): Promise<void> {
-    return this.inTransaction(async (db) => {
-      const [rows] = await db.query<CaseRow[]>(
-        `SELECT * FROM quality_inspection_case WHERE receipt_line_id=?
-          AND source_kind='incoming' AND status='reviewing'
-          ${input.roundId === undefined ? '' : 'AND incoming_round_id=?'} ORDER BY id FOR UPDATE`,
-        input.roundId === undefined ? [input.receiptLineId] : [input.receiptLineId, input.roundId],
-      );
-      for (const row of rows) {
-        const id = String(row.id);
-        if (row.status !== 'reviewing' || String(row.receipt_line_id) !== input.receiptLineId) {
-          throw new QualityCommandError('INVALID_STATE', '仅能使本到货尚未完成的检验办理失效');
+        if (!previous || String(previous.receipt_line_id) !== normalized.source.receiptLineId) {
+          throw new QualityCommandError('INVALID_INPUT', '原检验报告与本次到货明细不一致');
         }
-        await db.execute(
-          `UPDATE quality_inspection_case SET status='superseded',superseded_by_round_id=?,superseded_reason=?,updated_by=?,version=version+1 WHERE id=?`,
-          [
-            input.supersededByRoundId,
-            requireQualityText(input.reason, '失效原因'),
-            context.actorId,
-            id,
-          ],
+        const [[correction]] = await db.query<RowDataPacket[]>(
+          'SELECT id FROM quality_incoming_inspection_report WHERE previous_record_id=? FOR SHARE',
+          [normalized.previousRecordId],
         );
-        await audit(db, context, 'inbound-case.supersede', id, mapCase(row), {
-          supersededByRoundId: input.supersededByRoundId,
-          reason: input.reason,
-        });
+        if (correction) {
+          throw new QualityCommandError(
+            'CONCURRENT_MODIFICATION',
+            '原报告已有更正记录，请核对后更正最新记录',
+          );
+        }
       }
-    });
-  }
-
-  requireReleaseBasis(input: QualityInboundReleaseBasis): Promise<QualityInboundInspectionItem> {
-    return this.inTransaction(async (db) => {
-      const row = await this.requireCase(db, input.caseId, 'FOR SHARE');
-      const [[inspection]] = await db.query<InspectionRow[]>(
-        'SELECT * FROM quality_inspection_record WHERE id=? FOR SHARE',
-        [input.inspectionId],
+      const reportNo = await allocateBusinessNumber(db, 'incoming_inspection_report');
+      const source = normalized.source;
+      const [insert] = await db.execute<ResultSetHeader>(
+        `INSERT INTO quality_incoming_inspection_report (
+          report_no,receipt_line_id,receipt_id,receipt_no_snapshot,purchase_no_snapshot,
+          item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,unit_snapshot,
+          supplier_name_snapshot,specification,batch_no,expires_on,inspection_method,
+          qualified_quantity,unqualified_quantity,inspected_at,result_note,evidence_reference,
+          inspection_details,previous_record_id,correction_reason,created_by
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          reportNo,
+          source.receiptLineId,
+          source.receiptId,
+          source.receiptNo,
+          source.purchaseNo,
+          source.itemCode,
+          source.itemName,
+          source.materialVariantCode,
+          source.unit,
+          source.supplierName,
+          source.specification,
+          source.batchNo,
+          normalized.expiresOn,
+          normalized.inspectionMethod,
+          normalized.qualifiedQuantity,
+          normalized.unqualifiedQuantity,
+          new Date(normalized.inspectedAt),
+          normalized.remark,
+          normalized.evidence,
+          JSON.stringify(normalized.inspectionDetails),
+          normalized.previousRecordId,
+          normalized.correctionReason,
+          context.actorId,
+        ],
       );
-      if (
-        row.status !== 'completed' ||
-        !inspection ||
-        String(inspection.case_id) !== input.caseId ||
-        String(inspection.receipt_line_id) !== input.receiptLineId ||
-        String(inspection.receipt_revision_id) !== String(row.receipt_revision_id) ||
-        String(row.receipt_line_id) !== input.receiptLineId ||
-        inspection.release_decision !== 'released'
-      ) {
-        throw new QualityCommandError('INVALID_STATE', '当前范围缺少明确有效的质检放行依据');
-      }
-      return mapInspection(inspection);
+      const report = await readReport(db, String(insert.insertId));
+      if (!report) throw new Error('新建检验报告无法读取');
+      await writeTransactionalAudit(db, {
+        logType: 'business',
+        module: 'quality',
+        action:
+          normalized.previousRecordId === null
+            ? 'incoming-inspection-report.record'
+            : 'incoming-inspection-report.correct',
+        userId: context.actorId,
+        targetId: report.id,
+        targetType: 'incoming-inspection-report',
+        result: 'success',
+        afterData: {
+          id: report.id,
+          reportNo,
+          receiptLineId: source.receiptLineId,
+          inspectionMethod: report.inspectionMethod,
+          qualifiedQuantity: report.qualifiedQuantity,
+          unqualifiedQuantity: report.unqualifiedQuantity,
+          inspectedAt: report.inspectedAt,
+          previousRecordId: report.previousRecordId,
+        },
+        ip: context.ip,
+        requestId: context.requestId,
+        userAgent: context.userAgent,
+      });
+      return report;
     });
   }
 
-  listCases(receiptLineId: string, query: PageQuery): Promise<PageResult<QualityInboundCaseItem>> {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 10;
+  listReports(
+    receiptLineId: string,
+    query: PageQuery,
+  ): Promise<PageResult<QualityIncomingInspectionReportSummary>> {
+    requireInspectionIdentifier(receiptLineId, '到货明细');
+    const { page = 1, pageSize = 10 } = query;
     return withActiveConnection(this.pool, async (db) => {
       const [[count]] = await db.query<(RowDataPacket & { total: number })[]>(
-        "SELECT COUNT(*) total FROM quality_inspection_case WHERE source_kind='incoming' AND receipt_line_id=?",
+        'SELECT COUNT(*) total FROM quality_incoming_inspection_report WHERE receipt_line_id=?',
         [receiptLineId],
       );
-      const [rows] = await db.query<CaseRow[]>(
-        "SELECT * FROM quality_inspection_case WHERE source_kind='incoming' AND receipt_line_id=? ORDER BY id DESC LIMIT ? OFFSET ?",
+      const [rows] = await db.query<InspectionReportSummaryRow[]>(
+        `SELECT ${SUMMARY_COLUMNS} ${REPORT_FROM}
+         WHERE report.receipt_line_id=? ORDER BY report.created_at DESC,report.id DESC LIMIT ? OFFSET ?`,
         [receiptLineId, pageSize, (page - 1) * pageSize],
       );
       return {
-        items: await this.attachInspections(db, rows),
+        items: rows.map(mapInspectionReportSummary),
         total: Number(count?.total ?? 0),
         page,
         pageSize,
@@ -242,80 +167,28 @@ export class MysqlQualityInboundRepository
     });
   }
 
-  async getCaseByInspection(inspectionId: string) {
-    return withActiveConnection(this.pool, async (db) => {
-      const [[record]] = await db.query<(RowDataPacket & { case_id: number })[]>(
-        'SELECT case_id FROM quality_inspection_record WHERE id=? AND receipt_line_id IS NOT NULL',
-        [inspectionId],
-      );
-      return record ? this.getCase(String(record.case_id)) : null;
+  getReport(reportId: string): Promise<QualityIncomingInspectionReportItem | null> {
+    requireInspectionIdentifier(reportId, '检验报告');
+    return withActiveConnection(this.pool, (db) => readReport(db, reportId));
+  }
+
+  private inTransaction<T>(run: (db: PoolConnection) => Promise<T>): Promise<T> {
+    return withActiveConnection(this.pool, (db) => {
+      if (db === this.pool || !('release' in db)) {
+        throw new QualityCommandError('INVALID_STATE', '检验命令必须位于来源业务事务中');
+      }
+      return run(db as PoolConnection);
     });
-  }
-  getCase(caseId: string): Promise<QualityInboundCaseItem | null> {
-    return withActiveConnection(this.pool, async (db) => {
-      const [rows] = await db.query<CaseRow[]>(
-        `SELECT * FROM quality_inspection_case WHERE source_kind='incoming' AND id=?${db === this.pool ? '' : ' FOR SHARE'}`,
-        [caseId],
-      );
-      return (await this.attachInspections(db, rows, db !== this.pool))[0] ?? null;
-    });
-  }
-  getCases(caseIds: string[]): Promise<QualityInboundCaseItem[]> {
-    const ids = [...new Set(caseIds)];
-    if (!ids.length) return Promise.resolve([]);
-    if (ids.length > 100)
-      throw new QualityCommandError('INVALID_INPUT', '一次最多读取 100 个检验办理');
-    return withActiveConnection(this.pool, async (db) => {
-      const [rows] = await db.query<CaseRow[]>(
-        `SELECT * FROM quality_inspection_case WHERE source_kind='incoming' AND id IN (${ids.map(() => '?').join(',')}) ORDER BY id`,
-        ids,
-      );
-      return this.attachInspections(db, rows);
-    });
-  }
-  private async attachInspections(
-    db: Db,
-    rows: CaseRow[],
-    current = false,
-  ): Promise<QualityInboundCaseItem[]> {
-    if (!rows.length) return [];
-    const [facts] = await db.query<InspectionRow[]>(
-      `SELECT * FROM quality_inspection_record WHERE case_id IN (${rows.map(() => '?').join(',')}) ORDER BY id${current ? ' FOR SHARE' : ''}`,
-      rows.map((r) => r.id),
-    );
-    const byCase = new Map(facts.map((r) => [String(r.case_id), mapInspection(r)]));
-    return rows.map((r) => mapCase(r, byCase.get(String(r.id)) ?? null));
-  }
-  private async requireCase(db: Db, id: string, lock = ''): Promise<CaseRow> {
-    const [[row]] = await db.query<CaseRow[]>(
-      `SELECT * FROM quality_inspection_case WHERE source_kind='incoming' AND id=? ${lock}`,
-      [id],
-    );
-    if (!row) throw new QualityCommandError('NOT_FOUND', '检验办理不存在');
-    return row;
   }
 }
 
-async function audit(
-  db: PoolConnection,
-  context: CommandContext,
-  action: string,
+async function readReport(
+  db: Pool | PoolConnection,
   id: string,
-  beforeData: unknown,
-  afterData: unknown,
-) {
-  await writeTransactionalAudit(db, {
-    logType: 'business',
-    module: 'quality',
-    action,
-    userId: context.actorId,
-    targetId: id,
-    targetType: 'quality-inbound-case',
-    result: 'success',
-    beforeData,
-    afterData,
-    ip: context.ip,
-    requestId: context.requestId,
-    userAgent: context.userAgent,
-  });
+): Promise<QualityIncomingInspectionReportItem | null> {
+  const [[row]] = await db.query<InspectionReportRow[]>(
+    `SELECT ${REPORT_COLUMNS} ${REPORT_FROM} WHERE report.id=?`,
+    [id],
+  );
+  return row ? mapInspectionReport(row) : null;
 }

@@ -1,18 +1,18 @@
 <template>
   <el-alert
-    :title="RECEIPT_ROUND_STATUS_LABELS.voided"
+    :title="RECEIPT_LINE_STAGE_LABELS.voided"
     type="error"
     :closable="false"
     show-icon
   >
     <p class="void-reason">作废原因：{{ record.reason }}</p>
     <p>操作人：{{ record.createdBy }} · {{ formatDateTimeForDisplay(record.createdAt) }}</p>
-    <p>原始登记、检验和正式清单保留，未执行授权已失效；采购状态保持不变。</p>
+    <p>原始到货、检验报告和处理说明保留历史，作废后不能新增仓库办理。</p>
   </el-alert>
 </template>
 <script setup lang="ts">
 import type { ProcurementReceiptVoidItem } from '@company/contracts';
-import { RECEIPT_ROUND_STATUS_LABELS } from '@company/constants';
+import { RECEIPT_LINE_STAGE_LABELS } from '@company/constants';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 
 defineProps<{ record: ProcurementReceiptVoidItem }>();

@@ -35,36 +35,24 @@ import type {
   ProcurementDemandResolution,
   RelatedPurchasesQuery,
   RelatedPurchasesResult,
-  ProcurementReceiptPurchaseOrderQuery,
-  ProcurementReceiptPurchaseOrderItem,
-  ProcurementReceiptPurchaseOrderReceiptPage,
+  ProcurementReceiptQuery,
+  ProcurementReceiptItem,
   ProcurementReceiptWorklistLines,
   ProcurementReceiptLineLocation,
   ProcurementReceiptDetail,
   ProcurementReceiptLine,
-  ProcurementReceiptAcceptanceContext,
   ProcurementReceiptVoidingDetail,
-  ProcurementInboundInspectionDetail,
   ConfirmProcurementReceiptPayload,
   VoidProcurementReceiptPayload,
   VoidProcurementReceiptCommandResult,
-  CorrectReceiptLinePayload,
-  StartReceiptReviewPayload,
-  InspectReceiptLinePayload,
-  RejectReceiptLinePayload,
-  RevokeReceiptRejectionPayload,
-  ConfirmSupplierReturnPayload,
   ProcurementReceiptCommandResult,
-  ConfirmReceiptAcceptancePayload,
-  ReceiptAcceptanceItem,
-  ProcurementInboundInspectionCaseDetail,
   PageQuery,
-  ReceiptRevisionItem,
-  ReceiptRoundItem,
-  ReceiptAllocationItem,
-  SupplierReturnItem,
   ReceiptInboundHistoryItem,
-  QualityInboundCaseItem,
+  ReceiptHandlingItem,
+  RecordReceiptHandlingPayload,
+  QualityIncomingInspectionReportInput,
+  QualityIncomingInspectionReportItem,
+  QualityIncomingInspectionReportSummary,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -124,32 +112,11 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
-  listReceiptPurchaseOrders: (
-    params: ProcurementReceiptPurchaseOrderQuery,
+  listReceipts: (
+    params: ProcurementReceiptQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ProcurementReceiptPurchaseOrderItem>> =>
-    request({
-      url: '/procurement/receipt-purchase-orders',
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  getReceiptPurchaseOrder: (
-    id: string,
-    signal?: AbortSignal,
-  ): Promise<ProcurementReceiptPurchaseOrderItem> =>
-    request({ url: `/procurement/receipt-purchase-orders/${id}`, signal, skipErrorHandling: true }),
-  listPurchaseOrderReceipts: (
-    id: string,
-    params: PageQuery,
-    signal?: AbortSignal,
-  ): Promise<ProcurementReceiptPurchaseOrderReceiptPage> =>
-    request({
-      url: `/procurement/receipt-purchase-orders/${id}/receipts`,
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
+  ): Promise<PageResult<ProcurementReceiptItem>> =>
+    request({ url: '/procurement/receipts', params, signal, skipErrorHandling: true }),
   receiptWorklistLines: (
     id: string,
     signal?: AbortSignal,
@@ -161,15 +128,6 @@ export const procurementApi = {
     request({ url: `/procurement/receipts/${id}`, signal, skipErrorHandling: true }),
   getReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>
     request({ url: `/procurement/receipt-lines/${id}`, signal, skipErrorHandling: true }),
-  receiptAcceptanceContext: (
-    id: string,
-    signal?: AbortSignal,
-  ): Promise<ProcurementReceiptAcceptanceContext> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/acceptance-context`,
-      signal,
-      skipErrorHandling: true,
-    }),
   receiptVoiding: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptVoidingDetail> =>
     request({ url: `/procurement/receipts/${id}/voiding`, signal, skipErrorHandling: true }),
   receiptOrderOptions: (
@@ -190,110 +148,25 @@ export const procurementApi = {
     key: string,
   ): Promise<VoidProcurementReceiptCommandResult> =>
     command(`/procurement/receipts/${id}/actions/void`, data, key),
-  correctReceipt: (
-    id: string,
-    data: CorrectReceiptLinePayload,
-    key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/correct-receipt`, data, key),
-  startReview: (
-    id: string,
-    data: StartReceiptReviewPayload,
-    key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/start-review`, data, key),
   inspectReceipt: (
     id: string,
-    data: InspectReceiptLinePayload,
+    data: QualityIncomingInspectionReportInput,
     key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/inspect`, data, key),
-  acceptReceipt: (
+  ): Promise<QualityIncomingInspectionReportItem> =>
+    command(`/procurement/receipt-lines/${id}/inspect`, data, key),
+  recordReceiptHandling: (
     id: string,
-    data: ConfirmReceiptAcceptancePayload,
+    body: RecordReceiptHandlingPayload,
     key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/accept`, data, key),
-  receiptAcceptances: (
+  ): Promise<ReceiptHandlingItem> =>
+    command(`/procurement/receipt-lines/${id}/handlings`, body, key),
+  receiptHandlings: (
     id: string,
     params: PageQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<ReceiptAcceptanceItem>> =>
+  ): Promise<PageResult<ReceiptHandlingItem>> =>
     request({
-      url: `/procurement/receipt-lines/${id}/acceptances`,
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  revokeReceiptRejection: (
-    id: string,
-    body: RevokeReceiptRejectionPayload,
-    key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/revoke-rejection`, body, key),
-  rejectReceipt: (
-    id: string,
-    data: RejectReceiptLinePayload,
-    key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/reject`, data, key),
-  confirmSupplierReturn: (
-    id: string,
-    data: ConfirmSupplierReturnPayload,
-    key: string,
-  ): Promise<ProcurementReceiptCommandResult> =>
-    command(`/procurement/receipt-lines/${id}/actions/return`, data, key),
-  receiptRounds: (
-    id: string,
-    params: PageQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<ReceiptRoundItem>> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/rounds`,
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  receiptRevisions: (
-    id: string,
-    params: PageQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<ReceiptRevisionItem>> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/revisions`,
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  receiptAllocations: (
-    id: string,
-    params: PageQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<ReceiptAllocationItem>> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/allocations`,
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  receiptCases: (
-    id: string,
-    params: PageQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<QualityInboundCaseItem>> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/cases`,
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
-  receiptReturns: (
-    id: string,
-    params: PageQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<SupplierReturnItem>> =>
-    request({
-      url: `/procurement/receipt-lines/${id}/returns`,
+      url: `/procurement/receipt-lines/${id}/handlings`,
       params,
       signal,
       skipErrorHandling: true,
@@ -309,15 +182,20 @@ export const procurementApi = {
       signal,
       skipErrorHandling: true,
     }),
-  getInspection: (
+  getInspection: (id: string, signal?: AbortSignal): Promise<QualityIncomingInspectionReportItem> =>
+    request({ url: `/quality/inbound-inspections/reports/${id}`, signal, skipErrorHandling: true }),
+  inspectionReports: (
     id: string,
+    params: PageQuery,
     signal?: AbortSignal,
-  ): Promise<ProcurementInboundInspectionCaseDetail> =>
-    request({ url: `/quality/inbound-inspections/${id}`, signal, skipErrorHandling: true }),
-  inspectionReceiptLine: (
-    id: string,
-    signal?: AbortSignal,
-  ): Promise<ProcurementInboundInspectionDetail> =>
+  ): Promise<PageResult<QualityIncomingInspectionReportSummary>> =>
+    request({
+      url: `/quality/inbound-inspections/${id}/reports`,
+      params,
+      signal,
+      skipErrorHandling: true,
+    }),
+  inspectionReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>
     request({
       url: `/quality/inbound-inspections/receipt-lines/${id}`,
       signal,

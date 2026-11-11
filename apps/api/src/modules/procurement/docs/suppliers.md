@@ -2,12 +2,12 @@
 
 所有路径以 `/api` 开头，依照[接口规范](../../../../../../docs/api-conventions.md)。一期仅保存供应商名称，无启停、删除、联系人、电话或附件 API。
 
-| 方法与路径 | 权限 | 请求与响应 |
-| --- | --- | --- |
-| GET /procurement/suppliers | procurement:suppliers:view | page/pageSize/keyword → PageResult<SupplierItem> |
-| GET /procurement/suppliers/options | procurement:suppliers:view、procurement:orders:view、warehouse:receipts:view 任一 | keyword/includeIds → SupplierOption[] |
-| POST /procurement/suppliers | procurement:suppliers:create | supplierName → SupplierItem |
-| PATCH /procurement/suppliers/:id | procurement:suppliers:update | supplierName/version → SupplierItem |
+| 方法与路径                         | 权限                                                                              | 请求与响应                                       |
+| ---------------------------------- | --------------------------------------------------------------------------------- | ------------------------------------------------ |
+| GET /procurement/suppliers         | procurement:suppliers:view                                                        | page/pageSize/keyword → PageResult<SupplierItem> |
+| GET /procurement/suppliers/options | procurement:suppliers:view、procurement:orders:view、warehouse:receipts:view 任一 | keyword/includeIds → SupplierOption[]            |
+| POST /procurement/suppliers        | procurement:suppliers:create                                                      | supplierName → SupplierItem                      |
+| PATCH /procurement/suppliers/:id   | procurement:suppliers:update                                                      | supplierName/version → SupplierItem              |
 
 名称按数据库排序规则永久唯一，修改名称保留原身份。列表按名称和 ID 排序，字段形状与格式见[采购契约](../../../../../../packages/contracts/src/procurement/)。
 

@@ -1,53 +1,61 @@
-import type { QualityInspectionMethod, QualityReleaseDecision } from './inspection.js';
+import type { QualityInspectionMethod } from './inspection.js';
+import type { JsonTableData } from '../template.js';
 
-export type QualityInboundCaseType =
-  'initial' | 'reinspection' | 'inspection_correction' | 'receipt_correction';
-export type QualityInboundCaseStatus = 'reviewing' | 'completed' | 'superseded';
-export type QualityInboundInspectionMethod = QualityInspectionMethod;
-
-export interface QualityInboundInspectionInput {
-  inspectionMethod: QualityInboundInspectionMethod;
-  qualifiedQuantity: number;
-  unqualifiedQuantity: number;
-  releaseDecision: QualityReleaseDecision;
-  inspectedAt: string;
-  remark: string;
-  evidence: string;
+/** Source identity is supplied by Procurement after checking the locked, non-voided receipt. */
+export interface QualityIncomingInspectionReportSource {
+  receiptId: string;
+  receiptLineId: string;
+  receiptNo: string;
+  purchaseNo: string;
+  itemCode: string;
+  itemName: string;
+  materialVariantCode: string;
+  unit: string;
+  supplierName: string;
+  /** Actual specification text; a variant code must not be used as a substitute. */
+  specification: string | null;
 }
 
-export interface QualityInboundInspectionItem {
+export interface QualityIncomingInspectionReportInput {
+  inspectionMethod: QualityInspectionMethod;
+  qualifiedQuantity: number;
+  unqualifiedQuantity: number;
+  inspectedAt: string;
+  specification?: string | null;
+  expiresOn?: string | null;
+  remark?: string | null;
+  evidence?: string | null;
+  /** A complete independent copy; no template identity or live template binding is saved. */
+  inspectionDetails: JsonTableData;
+  /** Corrections append a fact referencing the original report for the same receipt line. */
+  previousRecordId?: string | null;
+  correctionReason?: string | null;
+}
+
+export interface QualityIncomingInspectionReportSummary {
   id: string;
-  caseId: string;
+  reportNo: string;
   receiptLineId: string;
-  receiptRevisionId: string;
-  inspectionMethod: QualityInboundInspectionMethod;
+  inspectionMethod: QualityInspectionMethod;
   qualifiedQuantity: string;
   unqualifiedQuantity: string;
   inspectedQuantity: string;
-  releaseDecision: QualityReleaseDecision;
   previousRecordId: string | null;
+  /** Derived from the immutable correction reference; no field is updated on the original report. */
+  correctedByRecordId: string | null;
   inspectedAt: string;
-  remark: string;
-  evidence: string;
+  remark: string | null;
   createdBy: string;
   createdAt: string;
 }
 
-export interface QualityInboundCaseItem {
-  id: string;
-  receiptLineId: string;
-  receiptRevisionId: string;
-  roundId: string;
-  caseType: QualityInboundCaseType;
-  status: QualityInboundCaseStatus;
-  coveredQuantity: string;
-  reason: string;
-  version: number;
-  completedBy: string | null;
-  completedAt: string | null;
-  supersededByRoundId: string | null;
-  supersededReason: string | null;
-  createdBy: string;
-  createdAt: string;
-  inspection: QualityInboundInspectionItem | null;
+/** Persisted report content is the source for printing, including its header snapshot. */
+export interface QualityIncomingInspectionReportItem
+  extends QualityIncomingInspectionReportSource, QualityIncomingInspectionReportSummary {
+  /** Saved print snapshot; new reports use the trusted receipt number. */
+  batchNo: string | null;
+  expiresOn: string | null;
+  evidence: string | null;
+  correctionReason: string | null;
+  inspectionDetails: JsonTableData;
 }

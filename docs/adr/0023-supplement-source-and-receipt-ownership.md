@@ -1,6 +1,9 @@
 # ADR-0023：补单历史来源与到货采购归属
 
-状态：Accepted。具体接口和操作规则由 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)、[正式清单](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)及[数据库](../../apps/api/src/modules/procurement/docs/database.md)维护；实施、验收和正式测试状态见[路线图](../roadmap.md)。
+> 仓库简化实验中的来料数量、放行、处置授权与补单门槛按 [ADR-0028](0028-independent-warehouse-receipt-and-inspection.md#取代范围) 的明确范围取代。以下保留本决策的历史理由与其余有效边界。
+
+
+状态：Accepted。具体接口和操作规则由 [Procurement 采购订单](../../apps/api/src/modules/procurement/docs/purchase-orders.md)、[仓库实验取代边界](0028-independent-warehouse-receipt-and-inspection.md#取代范围)及[数据库](../../apps/api/src/modules/procurement/docs/database.md)维护；实施、验收和正式测试状态见[路线图](../roadmap.md)。
 
 部分取代：质量补单精确引用分配、历史当前性提示及精确反查由 [ADR-0025](0025-supplement-receipt-line-basis.md) 的到货明细级来源取代；[ADR-0024](0024-quality-supplement-basis-correction.md) 的中间更正方案也由 ADR-0025 完整取代。其他规则继续有效，下面记录本决策原有理由及边界。
 

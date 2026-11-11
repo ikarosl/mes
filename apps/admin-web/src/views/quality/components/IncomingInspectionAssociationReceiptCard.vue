@@ -28,7 +28,7 @@
           size="small"
           type="danger"
           effect="plain"
-          >{{ RECEIPT_ROUND_STATUS_LABELS.voided }}</el-tag
+          >{{ RECEIPT_LINE_STAGE_LABELS.voided }}</el-tag
         >
         <span
           v-if="showAssociation"
@@ -58,7 +58,7 @@
 </template>
 
 <script setup lang="ts">
-import { RECEIPT_ROUND_STATUS_LABELS } from '@company/constants';
+import { RECEIPT_LINE_STAGE_LABELS } from '@company/constants';
 import type { QualityIncomingInspectionReceiptItem } from '@company/contracts';
 
 defineOptions({ name: 'IncomingInspectionAssociationReceiptCard' });

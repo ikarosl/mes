@@ -17,7 +17,7 @@
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)：采购单位单价、逐行税率、含税总额推算及下单后更正；不提供税务或结算
-- [到货与来料查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：采购主单或质检主单下的到货分页、按需完整明细及精确定位
+- [到货与来料查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：到货单分页、按需完整明细及精确定位，来料质检可选分组
 - [前端组件复用审查](frontend-component-reuse-review.md)：入库数量、领料选择与批次摘要的抽离候选及待决边界；未批准实施
 - [用户提示语语义核对](user-facing-copy-review.md)：尚未完成的 DTO 业务字段映射与履约术语核对
 - [审批接入边界](approval-design.md)
@@ -34,8 +34,8 @@
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
 - [Template](../apps/api/src/modules/template/README.md)：独立系统模板、通用 JSON 表格内容与[数据库设计](../apps/api/src/modules/template/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[跨模块职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)
-- [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货、实收修订和仓库处置编排
-- [Quality](../apps/api/src/modules/quality/README.md)：来料检验、复检、明确放行与不可变检查事实；[来料分组主单](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)组织完整到货并保持逐来源检查边界
+- [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货来源、其他处理记录和实际收货编排
+- [Quality](../apps/api/src/modules/quality/README.md)：独立来料检查与不可变进料检验报告；[来料分组主单](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)组织完整到货并保持逐来源检查边界
 - [Inventory](../apps/api/src/modules/inventory/README.md)：唯一库存账本、批次、入库和盘点
 - [Approval](../apps/api/src/modules/approval/README.md)：[数据库设计](../apps/api/src/modules/approval/docs/database.md)
 - [Notification](../apps/api/src/modules/notification/README.md)：[数据库设计](../apps/api/src/modules/notification/docs/database.md)
@@ -73,12 +73,12 @@
 - [历史工单选版决策（选版及阻断规则由 ADR-0014 取代）](adr/0012-work-order-material-configuration.md)
 - [采购来源、检验后入库与事实边界](adr/0013-procurement-source-and-stock-boundaries.md)
 - [任务用料边界、研发执行与产出检验](adr/0014-task-material-policy-and-output-inspection.md)
-- [统一质检数量与放行语义](adr/0015-unified-quality-quantity-semantics.md)：成品 C/R/S 旧裁决由 ADR-0019 取代，来料规则保持
-- [入库授权与库存批次分离](adr/0016-inbound-authorizations-and-stock-batches.md)：采购授权与库存批次分离；成品部分由 ADR-0027 取代
+- [统一质检数量与放行语义](adr/0015-unified-quality-quantity-semantics.md)：成品旧方案由 ADR-0019／0027 取代，来料旧方案由 ADR-0028 取代
+- [入库授权与库存批次分离](adr/0016-inbound-authorizations-and-stock-batches.md)：采购授权由 ADR-0028 取代，目标库批选择保留；成品部分由 ADR-0027 取代
 
 - [统一业务编号与北京时间职责](adr/0017-business-numbering-and-beijing-time.md)
 - [外购物料按实际确认成单](adr/0018-purchase-inbound-multiple-suppliers.md)：跨供应商合单与逐明细来源
-- [成品质检只记录检查事实](adr/0019-finished-inspection-measurement-simplification.md)：取代成品 C/R/S，保留来料库管整批核实
+- [成品质检只记录检查事实](adr/0019-finished-inspection-measurement-simplification.md)：后续生产方案见 ADR-0027，来料核实方案由 ADR-0028 取代
 
 - [公共出入库单据与来源边界](adr/0020-shared-stock-documents-and-source-boundaries.md)：公共主从与内嵌来源的取舍、其他出库保护预留的反向读取例外
 - [工序专检与异常处置承接](adr/0021-process-inspection-and-abnormal-disposition.md)：独立现场检查、冲销更正下限与既有异常处理来源扩展
@@ -90,3 +90,4 @@
 - [采购主单统一供应商与明细金额边界](adr/0026-purchase-order-supplier-and-amounts.md)：取代逐行供应商与旧金额文本边界，限定采购价款推算及更正；保留后续跨供应商分组与实际入库
 
 - [追踪卡工作台与终检产出](adr/0027-tracking-card-workbench-and-terminal-output.md)：实验分支的轻量生产模型、可接受的数据误差及旧方案取代范围
+- [仓库收货、来料报告与补单独立办理](adr/0028-independent-warehouse-receipt-and-inspection.md)：到货来源、独立报告、实际入库与补单的解耦及实验空库边界

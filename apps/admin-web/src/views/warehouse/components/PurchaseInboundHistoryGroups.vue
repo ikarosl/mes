@@ -125,7 +125,7 @@
             <template #default="{ row }">{{ row.supplierName || '未记录' }}</template>
           </el-table-column>
           <el-table-column
-            label="来源采购与采用检验"
+            label="来源采购"
             min-width="350"
           >
             <template #default="{ row }">
@@ -166,28 +166,6 @@
                       row.procurementSource.purchaseOrder.purchaseOrderLineId
                     }}</span>
                   </span>
-                </div>
-                <div>
-                  <span class="source-label">采用检验</span>
-                  <el-button
-                    v-if="auth.can(PERMISSIONS.quality.inboundInspections.view)"
-                    class="source-link"
-                    type="primary"
-                    link
-                    :title="`检验时间：${formatDateTimeForDisplay(row.procurementSource.inspection.inspectedAt)}`"
-                    @click="
-                      goSource('quality-inbound-inspections', {
-                        receiptLineId: row.procurementSource.receipt.receiptLineId,
-                        caseId: row.procurementSource.inspection.caseId,
-                      })
-                    "
-                    >检验记录 ID {{ row.procurementSource.inspection.inspectionId }}</el-button
-                  >
-                  <span
-                    v-else
-                    :title="`检验时间：${formatDateTimeForDisplay(row.procurementSource.inspection.inspectedAt)}`"
-                    >检验记录 ID {{ row.procurementSource.inspection.inspectionId }}</span
-                  >
                 </div>
               </div>
               <span

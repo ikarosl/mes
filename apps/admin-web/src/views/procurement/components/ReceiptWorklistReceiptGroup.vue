@@ -12,7 +12,7 @@
         effect="plain"
         size="small"
         :title="(voidRecord ?? receipt.lines[0]?.void)?.reason"
-        >{{ RECEIPT_ROUND_STATUS_LABELS.voided }}</el-tag
+        >{{ RECEIPT_LINE_STAGE_LABELS.voided }}</el-tag
       >
       <span class="document-meta">本单共 {{ lineCount ?? receipt.lines.length }} 条到货明细</span>
       <span class="supplier-name">供应商 {{ receipt.supplierName }}</span>
@@ -76,10 +76,10 @@
     </div>
   </div>
 </template>
-<script setup lang="ts" generic="T extends ProcurementReceiptListSource">
-import type { ProcurementReceiptListSource, ProcurementReceiptVoidItem } from '@company/contracts';
-import { RECEIPT_ROUND_STATUS_LABELS } from '@company/constants';
-import type { ReceiptWorklistReceipt } from '../receipt-worklist';
+<script setup lang="ts" generic="T extends ReceiptWorklistLine">
+import type { ProcurementReceiptVoidItem } from '@company/contracts';
+import { RECEIPT_LINE_STAGE_LABELS } from '@company/constants';
+import type { ReceiptWorklistLine, ReceiptWorklistReceipt } from '../receipt-worklist';
 
 defineOptions({ name: 'ReceiptWorklistReceiptGroup' });
 withDefaults(

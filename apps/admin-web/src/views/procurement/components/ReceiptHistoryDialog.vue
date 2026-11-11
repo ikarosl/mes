@@ -1,1049 +1,379 @@
 <template>
   <el-dialog
     v-model="visible"
-    title="到货明细历史"
-    width="min(1680px, calc(100% - 32px))"
-    workbench
+    title="到货办理记录"
+    :width="DialogWidth.xl"
     :before-close="beforeClose"
+    :show-close="!command.busy.value"
   >
-    <el-alert
-      v-if="readError"
-      type="error"
-      title="本次历史读取失败，请重试；当前显示仅供参考。"
-      :closable="false"
-    />
-    <div
-      v-if="sourceLine"
-      class="history-context"
+    <el-descriptions
+      v-if="source"
+      :column="2"
+      border
+      size="small"
+      class="notice"
     >
-      <span
-        ><strong class="identity-value">{{ sourceLine.receiptNo }}</strong> · 到货行 ID：<strong
-          class="identity-value"
-          >{{ sourceLine.id }}</strong
-        ></span
-      >
-      <span>{{ sourceLine.itemName }}（{{ sourceLine.itemCode }}）</span>
-      <span>物料版本：{{ sourceLine.materialVariantCode }}</span>
-    </div>
+      <el-descriptions-item label="到货单"
+        ><strong>{{ source.receiptNo }}</strong></el-descriptions-item
+      ><el-descriptions-item label="采购单">{{ source.purchaseNo }}</el-descriptions-item
+      ><el-descriptions-item label="物料 / 精确版本"
+        >{{ source.itemName }} · {{ source.materialVariantCode }}</el-descriptions-item
+      ><el-descriptions-item label="来料批次号">{{
+        source.supplierBatchCode || '未提供'
+      }}</el-descriptions-item>
+    </el-descriptions>
+    <InlineHint class="notice"
+      >其他处理按到货物料独立登记说明；退回、报废或暂存等线下处理是否完成不在系统追踪。</InlineHint
+    >
+    <el-alert
+      v-if="command.status.value !== 'idle'"
+      :title="submissionRecoveryMessage(command.status.value, '其他处理记录')"
+      type="warning"
+      :closable="false"
+      class="notice"
+    />
     <el-tabs
       v-model="tab"
       @tab-change="changeTab"
-    >
-      <el-tab-pane
-        label="处理轮次"
-        name="rounds"
-      />
-      <el-tab-pane
-        label="到货量修订"
-        name="revisions"
-      />
-      <el-tab-pane
-        label="检验与复核"
-        name="cases"
-      />
-      <el-tab-pane
-        label="正式清单"
-        name="acceptances"
-      />
-      <el-tab-pane
-        label="供应商退回"
-        name="returns"
-      />
-      <el-tab-pane
+      ><el-tab-pane
+        label="其他处理说明"
+        name="handlings" /><el-tab-pane
         label="实际入库"
         name="inbounds"
-      />
-      <el-tab-pane
-        label="处置分配"
-        name="allocations"
-      />
-    </el-tabs>
-
-    <section
-      v-if="tab === 'acceptances'"
-      v-loading="loading"
-      class="acceptance-history"
+    /></el-tabs>
+    <el-form
+      v-if="tab === 'handlings' && recording"
+      label-position="top"
+      :disabled="command.locked.value"
+      @submit.prevent="save"
     >
-      <el-empty
-        v-if="!loading && !acceptanceRows.length"
-        description="暂无记录"
-      />
-      <article
-        v-for="row in acceptanceRows"
-        :key="row.id"
-        class="acceptance-card"
+      <el-form-item
+        label="本次其他处理说明"
+        required
+        ><el-input
+          v-model="note"
+          type="textarea"
+          :rows="3"
+          :maxlength="PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH"
+          show-word-limit
+          placeholder="如退回、报废、暂存的情况；只登记文字说明"
+      /></el-form-item>
+    </el-form>
+    <el-alert
+      v-if="readError"
+      title="记录读取失败，已显示内容为上次结果。请刷新后核对。"
+      type="error"
+      :closable="false"
+      class="notice"
+    />
+    <el-table
+      v-if="tab === 'handlings'"
+      v-loading="loading"
+      :data="handlings"
+      row-key="id"
+    >
+      <el-table-column
+        label="其他处理说明"
+        min-width="300"
+        ><template #default="{ row }"
+          ><span class="record-text">{{ row.otherHandlingNote }}</span></template
+        ></el-table-column
       >
-        <div class="acceptance-heading">
-          <strong
-            >正式清单 ID：<span class="history-id">{{ row.id }}</span></strong
-          >
-          <span class="acceptance-quantity"
-            >当时剩余数量：<strong>{{ displayValue(row.confirmedScopeQuantity) }}</strong></span
-          >
-          <span>确认时间：{{ formatDateTimeForDisplay(row.createdAt) }}</span>
-        </div>
-        <div class="acceptance-fields">
-          <div class="history-field">
-            <span class="history-label">引用检验记录 ID</span>
-            <span class="history-value history-id">{{ displayValue(row.inspectionId) }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">处理轮 ID</span>
-            <span class="history-value history-id">{{ displayValue(row.roundId) }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">确认前到货量修订 ID</span>
-            <span class="history-value history-id">{{
-              displayValue(row.beforeReceiptRevisionId)
-            }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">确认后到货量修订 ID</span>
-            <span class="history-value history-id">{{
-              displayValue(row.afterReceiptRevisionId)
-            }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">前一清单 ID</span>
-            <span class="history-value history-id">{{
-              displayValue(row.previousAcceptanceId)
-            }}</span>
-          </div>
-          <div
-            class="history-field history-field--wide"
-            :class="{ 'history-field--exception': row.overrideReason?.trim() }"
-          >
-            <span class="history-label">异常 / 超建议依据</span>
-            <span class="history-value">{{ displayValue(row.overrideReason) }}</span>
-          </div>
-          <div class="history-field history-field--wide">
-            <span class="history-label">确认 / 更正说明</span>
-            <span class="history-value">{{ displayValue(row.remark) }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">确认人</span>
-            <span class="history-value">{{ displayValue(row.createdBy) }}</span>
-          </div>
-        </div>
-        <div class="allocation-heading">正式分配明细（{{ row.details.length }}）</div>
-        <div
-          v-if="!row.details.length"
-          class="allocation-empty"
-        >
-          —
-        </div>
-        <div
-          v-for="detail in row.details"
-          :key="detail.id"
-          class="acceptance-allocation"
-        >
-          <div class="history-field">
-            <span class="history-label">分配明细 ID</span>
-            <span class="history-value history-id">{{ displayValue(detail.id) }}</span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">授权去向</span>
-            <span class="history-value">
-              <el-tag
-                size="small"
-                v-bind="receiptAllocationAuthorizationTag(detail.disposition)"
-                >{{ RECEIPT_ALLOCATION_AUTHORIZATION_LABELS[detail.disposition] }}</el-tag
-              >
-            </span>
-          </div>
-          <div class="history-field">
-            <span class="history-label">数量</span>
-            <strong class="history-value history-quantity">{{
-              displayValue(detail.quantity)
-            }}</strong>
-          </div>
-          <div class="history-field">
-            <span class="history-label">退回原因</span>
-            <span
-              class="history-value"
-              :class="{ 'history-value--warning': detail.returnReason }"
-              >{{
-                detail.returnReason ? SUPPLIER_RETURN_REASON_LABELS[detail.returnReason] : '—'
-              }}</span
-            >
-          </div>
-        </div>
-      </article>
-    </section>
+      <el-table-column
+        label="记录时间"
+        width="190"
+        ><template #default="{ row }">{{
+          formatDateTimeForDisplay(row.createdAt)
+        }}</template></el-table-column
+      >
+      <el-table-column
+        label="历史关联入库"
+        min-width="180"
+        ><template #default="{ row }"
+          ><el-button
+            v-if="row.inboundId && canViewInbound"
+            link
+            type="primary"
+            @click="goInbound(row.inboundId)"
+            >查看入库单</el-button
+          ><span v-else>{{ row.inboundId ? '有历史关联入库' : '—' }}</span></template
+        ></el-table-column
+      >
+    </el-table>
     <el-table
       v-else
       v-loading="loading"
-      :data="rows"
-      :row-key="tab === 'cases' ? 'id' : undefined"
-      :expand-row-keys="tab === 'cases' ? expandedCaseKeys : undefined"
-      class="business-expandable-table history-table"
-      empty-text="暂无记录"
-      @expand-change="onCaseExpandChange"
+      :data="inbounds"
+      row-key="inboundDetailId"
     >
-      <template v-if="tab === 'rounds'">
-        <el-table-column
-          prop="roundNo"
-          label="轮次"
-          width="78"
-        />
-        <el-table-column
-          label="发起原因"
-          width="130"
-        >
-          <template #default="{ row }">{{
-            RECEIPT_ROUND_TRIGGER_LABELS[row.triggerType as ReceiptRoundItem['triggerType']]
-          }}</template>
-        </el-table-column>
-        <el-table-column
-          label="阶段"
-          width="145"
-        >
-          <template #default="{ row }">
-            <el-tag
-              size="small"
-              :type="receiptRoundTagType(row.status)"
-              :effect="receiptRoundTagEffect(row.status)"
-              >{{ RECEIPT_ROUND_STATUS_LABELS[row.status as ReceiptRoundItem['status']] }}</el-tag
-            >
-          </template>
-        </el-table-column>
-        <el-table-column
-          prop="startingQuantity"
-          label="轮开始时剩余实物"
-          width="170"
-        />
-        <el-table-column
-          label="关联 ID"
-          min-width="330"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>处理轮 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>前一处理轮 ID</span
-                ><span class="history-id">{{ displayValue(row.previousRoundId) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>引用检验记录 ID</span
-                ><span class="history-id">{{ displayValue(row.inspectionId) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="原因"
-          min-width="250"
-        >
-          <template #default="{ row }">{{ displayValue(row.reason) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="发起时间"
-          width="180"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.createdAt) }}</template>
-        </el-table-column>
-      </template>
-      <template v-else-if="tab === 'revisions'">
-        <el-table-column
-          prop="revisionNo"
-          label="修订"
-          width="78"
-        />
-        <el-table-column
-          :label="sourceLine?.void ? '作废前到货量' : '当时到货量'"
-          width="135"
-        >
-          <template #default="{ row }">{{ Number(row.receivedQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="修订 ID"
-          min-width="260"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>到货量修订 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>前一修订 ID</span
-                ><span class="history-id">{{ displayValue(row.previousRevisionId) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="更正依据"
-          min-width="300"
-        >
-          <template #default="{ row }">{{ displayValue(row.reason) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="记录时间"
-          width="185"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.createdAt) }}</template>
-        </el-table-column>
-      </template>
-      <template v-else-if="tab === 'cases'">
-        <el-table-column
-          type="expand"
-          width="48"
-        >
-          <template #default="{ row }">
-            <InboundInspectionRecord
-              v-if="row.inspection"
-              :inspection="row.inspection"
-            />
-            <el-empty
-              v-else
-              description="尚无检验结论"
-            />
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="关联 ID"
-          min-width="260"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>处理轮 ID</span
-                ><span class="history-id">{{ displayValue(row.roundId) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>检验办理 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="发起类型"
-          width="145"
-        >
-          <template #default="{ row }">{{
-            QUALITY_INBOUND_CASE_TYPE_LABELS[row.caseType as QualityInboundCaseType]
-          }}</template>
-        </el-table-column>
-        <el-table-column
-          label="状态"
-          width="160"
-        >
-          <template #default="{ row }">{{
-            QUALITY_INBOUND_CASE_STATUS_LABELS[row.status as QualityInboundCaseStatus]
-          }}</template>
-        </el-table-column>
-        <el-table-column
-          label="原申报量"
-          width="110"
-        >
-          <template #default="{ row }">{{ Number(row.coveredQuantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="发起原因"
-          min-width="280"
-        >
-          <template #default="{ row }">{{ displayValue(row.reason) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="发起时间"
-          width="185"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.createdAt) }}</template>
-        </el-table-column>
-      </template>
-      <template v-else-if="tab === 'returns'">
-        <el-table-column
-          prop="returnNo"
-          label="退回记录"
-          min-width="165"
-        />
-        <el-table-column
-          label="原因"
-          width="135"
-        >
-          <template #default="{ row }">{{
-            SUPPLIER_RETURN_REASON_LABELS[row.reasonType as SupplierReturnItem['reasonType']]
-          }}</template>
-        </el-table-column>
-        <el-table-column
-          label="已退回"
-          width="110"
-        >
-          <template #default="{ row }">
-            <span :class="receiptReturnQuantityClass(row.returnedQuantity)">
-              {{ displayValue(row.returnedQuantity) }}
-            </span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="交接凭据"
-          min-width="250"
-        >
-          <template #default="{ row }">{{ displayValue(row.handoverEvidence) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="关联 ID"
-          min-width="270"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>退回记录 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>分配明细 ID</span
-                ><span class="history-id">{{ displayValue(row.allocationId) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="交接时间"
-          width="185"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.returnedAt) }}</template>
-        </el-table-column>
-        <el-table-column
-          v-if="sourceLine"
-          label="来源采购单"
-          min-width="255"
-          fixed="right"
-        >
-          <template #default>
-            <div class="id-stack">
-              <el-button
-                v-if="auth.can(PERMISSIONS.procurement.orders.view)"
-                link
-                type="primary"
-                class="source-purchase-link"
-                @click="goSourcePurchase"
-                ><span
-                  ><strong class="source-order-number">{{ sourceLine.purchaseNo }}</strong> · 采购第
-                  {{ sourceLine.purchaseOrderLineNo }} 行</span
-                ></el-button
-              >
-              <span v-else>
-                <strong class="identity-value">{{ sourceLine.purchaseNo }}</strong> · 采购第
-                {{ sourceLine.purchaseOrderLineNo }} 行
-              </span>
-              <div class="id-pair">
-                <span>采购行 ID：</span>
-                <strong class="history-id identity-value">{{
-                  sourceLine.purchaseOrderLineId
-                }}</strong>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-      </template>
-      <template v-else-if="tab === 'inbounds'">
-        <el-table-column
-          label="入库单"
-          min-width="180"
-        >
-          <template #default="{ row }">
-            <el-button
-              v-if="auth.can(PERMISSIONS.warehouse.inbound.view)"
-              link
-              type="primary"
-              @click="goInbound(row.inboundId)"
-              >{{ row.inboundNo }}</el-button
-            >
-            <span v-else>{{ row.inboundNo }}</span>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="入库量"
-          width="100"
-        >
-          <template #default="{ row }">{{ Number(row.quantity) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="目标库存批次"
-          min-width="170"
-        >
-          <template #default="{ row }">{{ displayValue(row.batchCode) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="执行 ID"
-          min-width="270"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>入库单 ID</span
-                ><span class="history-id">{{ displayValue(row.inboundId) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>库存流水记录 ID</span
-                ><span class="history-id">{{ displayValue(row.transactionId) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="来源 ID"
-          min-width="310"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>正式分配明细 ID</span
-                ><span class="history-id">{{ displayValue(row.allocationId) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>引用检验记录 ID</span
-                ><span class="history-id">{{ displayValue(row.inspectionId) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="确认时间"
-          width="185"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.confirmedAt) }}</template>
-        </el-table-column>
-      </template>
-      <template v-else>
-        <el-table-column
-          label="效力"
-          width="110"
-        >
-          <template #default="{ row }">
-            <el-tag
-              size="small"
-              :type="row.isCurrent ? 'primary' : 'info'"
-              effect="plain"
-              >{{ row.isCurrent ? '当前轮次' : '历史轮次' }}</el-tag
-            >
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="数量与执行"
-          min-width="310"
-        >
-          <template #default="{ row }">
-            <div class="quantity-grid">
-              <span
-                >数量 <strong>{{ Number(row.quantity) }}</strong></span
-              >
-              <span
-                >已入库 <strong>{{ displayValue(row.inboundQuantity) }}</strong></span
-              >
-              <span
-                >已退回
-                <strong :class="receiptReturnQuantityClass(row.returnedQuantity)">
-                  {{ displayValue(row.returnedQuantity) }}
-                </strong></span
-              >
-              <span
-                >当前分配余量 <strong>{{ row.isCurrent ? row.remainingQuantity : 0 }}</strong></span
-              >
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="关联 ID"
-          min-width="290"
-        >
-          <template #default="{ row }">
-            <div class="id-stack">
-              <div class="id-pair">
-                <span>分配明细 ID</span><span class="history-id">{{ displayValue(row.id) }}</span>
-              </div>
-              <div class="id-pair">
-                <span>所属处理轮 ID</span
-                ><span class="history-id">{{ displayValue(row.roundId) }}</span>
-              </div>
-            </div>
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="授权去向"
-          width="155"
-        >
-          <template #default="{ row }">
-            <el-tag
-              size="small"
-              v-bind="receiptAllocationAuthorizationTag(row.disposition)"
-              >{{
-                RECEIPT_ALLOCATION_AUTHORIZATION_LABELS[
-                  row.disposition as ReceiptAllocationDisposition
-                ]
-              }}</el-tag
-            >
-          </template>
-        </el-table-column>
-        <el-table-column
-          label="处置说明"
-          min-width="250"
-        >
-          <template #default="{ row }">{{ displayValue(row.remark) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="形成时间"
-          width="185"
-        >
-          <template #default="{ row }">{{ formatDateTimeForDisplay(row.createdAt) }}</template>
-        </el-table-column>
-      </template>
+      <el-table-column
+        prop="inboundNo"
+        label="入库单号"
+        min-width="180"
+        ><template #default="{ row }"
+          ><el-button
+            v-if="canViewInbound"
+            link
+            type="primary"
+            @click="goInbound(row.inboundId)"
+            >{{ row.inboundNo }}</el-button
+          ><span v-else>{{ row.inboundNo }}</span></template
+        ></el-table-column
+      >
+      <el-table-column
+        prop="batchCode"
+        label="库存批次"
+        min-width="180"
+      /><el-table-column
+        prop="quantity"
+        label="入库数量"
+        width="120"
+        align="right"
+      />
+      <el-table-column
+        label="入库时间"
+        width="190"
+        ><template #default="{ row }">{{
+          formatDateTimeForDisplay(row.confirmedAt)
+        }}</template></el-table-column
+      >
     </el-table>
+    <PaginationFooter
+      :total="total"
+      :current-page="page"
+      :page-size="pageSize"
+      :disabled="loading"
+      @page-change="changePage"
+      @update:page-size="changePageSize"
+    />
     <template #footer>
-      <div class="history-footer">
-        <PaginationFooter
-          class="history-pagination"
-          :total="total"
-          :current-page="page"
-          :page-size="pageSize"
-          @page-change="changePage"
-          @update:page-size="changePageSize"
-        />
-        <div class="history-footer-actions">
-          <el-button @click="load">刷新</el-button>
-          <el-button @click="close">关闭</el-button>
-        </div>
-      </div>
+      <el-button
+        :disabled="command.busy.value"
+        @click="load"
+        >刷新记录</el-button
+      ><el-button
+        :disabled="command.busy.value"
+        @click="close"
+        >关闭</el-button
+      >
+      <el-button
+        v-if="command.status.value === 'pending'"
+        type="primary"
+        :loading="command.busy.value"
+        @click="command.retry"
+        >重试本次提交</el-button
+      >
+      <template v-else-if="command.status.value === 'idle'"
+        ><el-button
+          v-if="canRecord && tab === 'handlings' && !recording"
+          type="primary"
+          @click="recording = true"
+          >登记其他处理</el-button
+        ><el-button
+          v-if="tab === 'handlings' && recording"
+          type="primary"
+          :disabled="!canSave"
+          :loading="command.busy.value"
+          @click="save"
+          >保存处理说明</el-button
+        ></template
+      >
     </template>
   </el-dialog>
 </template>
-
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
+import { RequestError } from '@company/request';
+import { PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH } from '@company/constants';
 import type {
-  ReceiptRevisionItem,
-  ReceiptAllocationItem,
-  ReceiptAllocationDisposition,
-  SupplierReturnItem,
+  ReceiptHandlingItem,
   ReceiptInboundHistoryItem,
-  QualityInboundCaseItem,
-  QualityInboundCaseType,
-  QualityInboundCaseStatus,
-  ProcurementReceiptLine,
-  ReceiptAcceptanceItem,
-  ReceiptRoundItem,
+  ReceiptHistoryKind,
+  ProcurementReceiptLineOverview,
+  RecordReceiptHandlingPayload,
 } from '@company/contracts';
-import {
-  PERMISSIONS,
-  QUALITY_INBOUND_CASE_TYPE_LABELS,
-  QUALITY_INBOUND_CASE_STATUS_LABELS,
-  RECEIPT_ALLOCATION_AUTHORIZATION_LABELS,
-  SUPPLIER_RETURN_REASON_LABELS,
-  RECEIPT_ROUND_STATUS_LABELS,
-  RECEIPT_ROUND_TRIGGER_LABELS,
-} from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
-import { useAuthStore } from '../../../stores/auth';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
+import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
+import { useProcurementCommand } from '../composables/useProcurementCommand';
+import InlineHint from '../../../components/InlineHint.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
-import InboundInspectionRecord from './InboundInspectionRecord.vue';
-import {
-  receiptAllocationAuthorizationTag,
-  receiptRoundTagType,
-  receiptRoundTagEffect,
-  receiptReturnQuantityClass,
-} from '../receipt-round-presentation';
-
-type HistoryTab =
-  'rounds' | 'revisions' | 'cases' | 'returns' | 'inbounds' | 'allocations' | 'acceptances';
+const emit = defineEmits<{ saved: [record: ReceiptHandlingItem] }>();
 const visible = ref(false),
   lineId = ref(''),
-  tab = ref<HistoryTab>('revisions'),
-  loading = ref(false),
+  tab = ref<ReceiptHistoryKind>('handlings');
+const loading = ref(false),
   readError = ref(false),
-  total = ref(0),
   page = ref(1),
-  pageSize = ref(10);
-const rows = ref<
-  Array<
-    | ReceiptRoundItem
-    | ReceiptAcceptanceItem
-    | ReceiptRevisionItem
-    | ReceiptAllocationItem
-    | SupplierReturnItem
-    | ReceiptInboundHistoryItem
-    | QualityInboundCaseItem
-  >
->([]);
-const acceptanceRows = computed(() => rows.value as ReceiptAcceptanceItem[]);
-const expandedCaseKeys = ref<string[]>([]);
-const displayValue = (value: string | number | null | undefined): string =>
-  value === null || value === undefined || String(value).trim() === '' ? '—' : String(value);
-const onCaseExpandChange = (
-  _row: QualityInboundCaseItem,
-  expandedRows: QualityInboundCaseItem[],
-): void => {
-  expandedCaseKeys.value = expandedRows.map((row) => row.id);
-};
-const auth = useAuthStore(),
-  router = useRouter();
-const sourceLine = ref<ProcurementReceiptLine | null>(null);
+  pageSize = ref(10),
+  total = ref(0);
+const handlings = ref<ReceiptHandlingItem[]>([]),
+  inbounds = ref<ReceiptInboundHistoryItem[]>([]);
+const source = ref<ProcurementReceiptLineOverview | null>(null),
+  note = ref(''),
+  recording = ref(false);
+const router = useRouter(),
+  { canAccessRoute } = useRouteAccess();
+const canViewInbound = computed(() => canAccessRoute({ name: 'warehouse-inbound' }));
 const read = useLatestReadRequest(() => {
   loading.value = false;
 });
-const load = async (): Promise<void> => {
+const command = useProcurementCommand<ReceiptHandlingItem>(async (result) => {
+  if (!visible.value || result.receiptLineId !== lineId.value) return;
+  note.value = '';
+  recording.value = false;
+  page.value = 1;
+  emit('saved', result);
+  if (tab.value === 'handlings') await load();
+}, '其他处理说明');
+const canRecord = computed(() =>
+  Boolean(source.value && source.value.id === lineId.value && !source.value.void),
+);
+const canSave = computed(
+  () =>
+    canRecord.value &&
+    recording.value &&
+    tab.value === 'handlings' &&
+    read.isActive() &&
+    !command.locked.value &&
+    Boolean(note.value.trim()) &&
+    note.value.trim().length <= PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH,
+);
+async function load(): Promise<void> {
   if (!visible.value || !read.isActive()) return;
-  const target = lineId.value,
-    kind = tab.value;
-  const current = read.begin(() => visible.value && lineId.value === target && tab.value === kind);
+  const id = lineId.value,
+    kind = tab.value,
+    requestedPage = page.value,
+    requestedSize = pageSize.value;
+  const current = read.begin(
+    () =>
+      visible.value &&
+      lineId.value === id &&
+      tab.value === kind &&
+      page.value === requestedPage &&
+      pageSize.value === requestedSize,
+  );
   loading.value = true;
   try {
-    const loaders = {
-      rounds: procurementApi.receiptRounds,
-      acceptances: procurementApi.receiptAcceptances,
-      revisions: procurementApi.receiptRevisions,
-      cases: procurementApi.receiptCases,
-      returns: procurementApi.receiptReturns,
-      inbounds: procurementApi.receiptInbounds,
-      allocations: procurementApi.receiptAllocations,
-    };
-    const result = await loaders[kind](
-      target,
-      { page: page.value, pageSize: pageSize.value },
-      current.signal,
-    );
-    if (current.isCurrent()) {
-      rows.value = result.items;
-      total.value = result.total;
-      if (kind === 'cases') {
-        const firstCase = (result.items as QualityInboundCaseItem[])[0];
-        expandedCaseKeys.value = firstCase ? [firstCase.id] : [];
-      } else {
-        expandedCaseKeys.value = [];
+    const params = { page: requestedPage, pageSize: requestedSize };
+    if (kind === 'handlings') {
+      const result = await procurementApi.receiptHandlings(id, params, current.signal);
+      if (current.isCurrent()) {
+        handlings.value = result.items;
+        total.value = result.total;
       }
-      readError.value = false;
+    } else {
+      const result = await procurementApi.receiptInbounds(id, params, current.signal);
+      if (current.isCurrent()) {
+        inbounds.value = result.items;
+        total.value = result.total;
+      }
     }
+    if (current.isCurrent()) readError.value = false;
   } catch (error) {
     if (current.isCurrent()) {
       readError.value = true;
-      EMessage.error(error, '到货历史加载失败');
+      EMessage.error(error, '到货办理记录加载失败');
     }
   } finally {
     if (current.isCurrent()) loading.value = false;
   }
-};
-const open = async (
+}
+async function open(
   id: string,
-  initial: HistoryTab = 'revisions',
-  source?: ProcurementReceiptLine,
-): Promise<void> => {
-  if (visible.value && !(await close())) return;
+  initial: ReceiptHistoryKind = 'handlings',
+  basis?: ProcurementReceiptLineOverview,
+  beginRecording = false,
+): Promise<boolean> {
+  if (visible.value && !(await close())) return false;
+  if (basis && basis.id !== id) {
+    EMessage.warning('处理说明来源不匹配，请重新读取到货明细');
+    return false;
+  }
   lineId.value = id;
-  sourceLine.value = source ?? null;
+  source.value = basis ? { ...basis, quantities: { ...basis.quantities } } : null;
   tab.value = initial;
   page.value = 1;
-  rows.value = [];
-  expandedCaseKeys.value = [];
   total.value = 0;
+  handlings.value = [];
+  inbounds.value = [];
   readError.value = false;
+  note.value = '';
+  recording.value = beginRecording && Boolean(basis && !basis.void);
   visible.value = true;
   await load();
-};
-const changeTab = async (): Promise<void> => {
-  rows.value = [];
-  expandedCaseKeys.value = [];
-  total.value = 0;
-  readError.value = false;
+  return true;
+}
+async function save(): Promise<void> {
+  if (!canSave.value || !visible.value || !read.isActive()) return;
+  const target = lineId.value;
+  const body: RecordReceiptHandlingPayload = { otherHandlingNote: note.value.trim() };
+  await command.run(
+    {
+      intentType: 'procurement.receipt-handling.record',
+      params: { receiptLineId: target },
+      query: {},
+      body,
+    },
+    async (key) => {
+      const result = await procurementApi.recordReceiptHandling(target, body, key);
+      if (
+        !result ||
+        result.receiptLineId !== target ||
+        !result.id ||
+        result.otherHandlingNote !== body.otherHandlingNote ||
+        result.inboundId !== null
+      )
+        throw new RequestError('处理说明保存结果不完整，请核对记录后重试本次提交', 502);
+      return result;
+    },
+    '其他处理说明已登记',
+  );
+}
+async function close(): Promise<boolean> {
+  if (!(await command.canClose(Boolean(note.value)))) return false;
+  visible.value = false;
+  read.invalidate();
+  return true;
+}
+async function changeTab(): Promise<void> {
   page.value = 1;
+  handlings.value = [];
+  inbounds.value = [];
+  total.value = 0;
   await load();
-};
-const changePage = async (value: number): Promise<void> => {
+}
+async function changePage(value: number): Promise<void> {
   page.value = value;
-  rows.value = [];
-  expandedCaseKeys.value = [];
-  readError.value = false;
   await load();
-};
-const changePageSize = async (value: number): Promise<void> => {
+}
+async function changePageSize(value: number): Promise<void> {
   pageSize.value = value;
   await changeTab();
-};
-const close = async (): Promise<boolean> => {
-  visible.value = false;
-  return true;
-};
-const beforeClose = (): void => {
-  void close();
-};
-const goSourcePurchase = async (): Promise<void> => {
-  const line = sourceLine.value;
-  if (!line) return;
-  if (await close())
-    await router.push({
-      name: 'procurement-orders',
-      query: {
-        purchaseOrderId: line.purchaseOrderId,
-        purchaseOrderLineId: line.purchaseOrderLineId,
-      },
-    });
-};
-const goInbound = async (id: string): Promise<void> => {
+}
+async function goInbound(id: string): Promise<void> {
   if (await close())
     await router.push({
       name: 'warehouse-inbound',
-      query: { inboundId: id, sourceType: 'purchased' },
+      query: { sourceType: 'purchased', inboundId: id },
     });
+}
+const beforeClose = (): void => {
+  void close();
 };
-watch(visible, (value) => {
-  if (!value) read.invalidate();
-});
-
-defineExpose({ open, close, visible, locked: computed(() => false) });
+defineExpose({ open, close, visible, locked: command.locked });
 </script>
-
 <style scoped>
-.identity-value {
-  color: var(--el-text-color-primary);
-  font-weight: 600;
+.notice {
+  margin-bottom: 12px;
 }
-.source-order-number {
-  font-weight: 600;
-}
-.history-context {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 16px;
-  padding: 0 0 8px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
-}
-
-.history-context strong,
-.acceptance-heading strong,
-.quantity-grid strong {
-  color: var(--el-text-color-primary);
-}
-
-.history-id {
+.record-text {
+  white-space: pre-wrap;
   overflow-wrap: anywhere;
-  user-select: text;
-  font-variant-numeric: tabular-nums;
-}
-
-.source-purchase-link {
-  justify-content: flex-start;
-  height: auto;
-  padding: 0;
-  white-space: normal;
-  text-align: left;
-}
-
-.history-table {
-  width: 100%;
-  font-size: 13px;
-  --el-table-header-bg-color: var(--el-fill-color-light);
-}
-
-.history-table :deep(.el-table__cell) {
-  padding: 6px 0;
-}
-
-.history-table :deep(.cell) {
-  overflow: visible;
-  overflow-wrap: anywhere;
-  white-space: normal;
-}
-
-.history-table :deep(.el-table__expanded-cell) {
-  padding: 12px;
-}
-
-.history-table :deep(.el-descriptions__content) {
-  overflow-wrap: anywhere;
-}
-
-.id-stack {
-  display: grid;
-  gap: 2px;
-  line-height: 1.4;
-}
-
-.id-pair {
-  display: flex;
-  align-items: baseline;
-  gap: 6px;
-  min-width: 0;
-}
-
-.id-pair > span:first-child {
-  flex: none;
-  color: var(--el-text-color-secondary);
-}
-
-.id-pair > .history-id {
-  min-width: 0;
-}
-
-.quantity-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 2px 8px;
-  line-height: 1.4;
-}
-
-.quantity-grid strong {
-  margin-left: 4px;
-}
-
-.acceptance-history {
-  display: grid;
-  gap: 8px;
-  min-height: 72px;
-}
-
-.acceptance-card {
-  min-width: 0;
-  padding: 8px 10px;
-  border: 1px solid var(--el-border-color-lighter);
-  border-radius: 6px;
-  background: var(--el-bg-color);
-  font-size: 13px;
-}
-
-.acceptance-heading {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 4px 20px;
-  margin: -8px -10px 6px;
-  padding: 5px 10px;
-  border-bottom: 1px solid var(--el-color-primary-light-8);
-  border-radius: 5px 5px 0 0;
-  background: var(--el-color-primary-light-9);
-  line-height: 1.4;
-}
-
-.acceptance-heading > strong {
-  margin-right: auto;
-  color: var(--el-color-primary-dark-2);
-  font-size: 14px;
-}
-
-.acceptance-quantity strong {
-  margin-left: 3px;
-  font-size: 15px;
-  font-variant-numeric: tabular-nums;
-}
-
-.acceptance-fields,
-.acceptance-allocation {
-  display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 4px 12px;
-}
-
-.acceptance-fields {
-  margin-top: 0;
-}
-
-.acceptance-fields > .history-field {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: baseline;
-  gap: 4px 8px;
-  line-height: 1.5;
-}
-
-.history-field {
-  min-width: 0;
-  line-height: 1.35;
-}
-
-.history-field--wide {
-  grid-column: span 2;
-}
-
-.history-field--exception {
-  padding: 2px 6px;
-  border-left: 2px solid var(--el-color-warning);
-  background: var(--el-color-warning-light-9);
-}
-
-.history-label,
-.history-value {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.history-label {
-  color: var(--el-text-color-regular);
-}
-
-.history-value {
-  color: var(--el-text-color-primary);
-}
-
-.history-quantity {
-  font-size: 14px;
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
-
-.history-value--warning {
-  color: var(--el-color-warning-dark-2);
-  font-weight: 500;
-}
-.quantity-grid strong.quantity-return,
-.quantity-return {
-  color: var(--el-color-warning-dark-2);
-  font-weight: 700;
-}
-.quantity-grid strong.quantity-zero,
-.quantity-zero {
-  color: var(--el-text-color-placeholder);
-  font-weight: 400;
-}
-
-.allocation-heading {
-  margin-top: 6px;
-  padding: 3px 6px;
-  border-radius: 3px;
-  background: var(--el-fill-color-light);
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-  line-height: 1.35;
-}
-
-.acceptance-allocation {
-  padding-top: 4px;
-}
-
-.acceptance-allocation + .acceptance-allocation {
-  margin-top: 4px;
-  border-top: 1px solid var(--el-border-color-lighter);
-}
-
-.allocation-empty {
-  color: var(--el-text-color-secondary);
-}
-
-.history-footer {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px 16px;
-}
-
-.history-footer .history-pagination {
-  height: auto;
-  padding: 0;
-}
-
-.history-footer-actions {
-  margin-left: auto;
-}
-
-@media (max-width: 1250px) {
-  .acceptance-fields,
-  .acceptance-allocation {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 </style>

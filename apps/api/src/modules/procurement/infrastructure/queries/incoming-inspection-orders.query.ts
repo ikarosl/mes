@@ -3,6 +3,7 @@ import type {
   PageQuery,
   PageResult,
   QualityIncomingInspectionLocation,
+  QualityIncomingInspectionLineItem,
   QualityIncomingInspectionOrderItem,
   QualityIncomingInspectionOrderQuery,
   QualityIncomingInspectionOrderReceiptPage,
@@ -14,11 +15,6 @@ import type {
 import { QualityCommandError } from '../../../quality/public.js';
 import { ProcurementDomainError } from '../../domain/procurement.errors.js';
 import type { Db } from '../mysql-purchase-order.shared.js';
-import {
-  readInspectionWorklistRows,
-  receiptInspectionStage,
-} from './receipt-inspection-worklist.query.js';
-import { receiptUnprocessedQuantityForLine } from './receipt-quantities.query.js';
 import {
   type ReadRow,
   RECEIPT_VOID_COLUMNS,
@@ -50,12 +46,6 @@ const sourceSelect = (
   JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
   JOIN procurement_supplier supplier ON supplier.id=po.supplier_id
   JOIN materials material ON material.id=line.item_id`;
-const stageSourceSelect = (withSupplier: boolean) => `SELECT 1
-  FROM quality_incoming_inspection_order_receipt search_link
-  JOIN procurement_receipt r ON r.id=search_link.receipt_id
-  JOIN procurement_receipt_line line ON line.receipt_id=r.id
-  JOIN procurement_receipt_round current_round ON current_round.id=line.current_round_id AND current_round.receipt_line_id=line.id
-  ${withSupplier ? 'JOIN procurement_order po ON po.id=r.purchase_order_id' : ''}`;
 const SOURCE_KEYWORD = `(r.receipt_no LIKE ? OR po.purchase_no LIKE ? OR supplier.supplier_name LIKE ?
   OR material.material_name LIKE ? OR pol.item_code_snapshot LIKE ? OR pol.material_variant_code_snapshot LIKE ?)`;
 const CANDIDATE_KEYWORD_LINES = `SELECT 1 FROM procurement_receipt_line search_line
@@ -78,19 +68,10 @@ export async function listIncomingInspectionOrders(
       WHERE search_link.inspection_order_id=o.id AND ${SOURCE_KEYWORD}))`);
     params.push(...Array<string>(7).fill(`%${query.keyword.trim()}%`));
   }
-  if (query.stage || query.supplierId) {
-    const sourceWhere = ['search_link.inspection_order_id=o.id'];
-    if (query.supplierId) {
-      sourceWhere.push('po.supplier_id=?');
-      params.push(query.supplierId);
-    }
-    if (query.stage) {
-      sourceWhere.push(`${receiptInspectionStage(receiptUnprocessedQuantityForLine())}=?`);
-      params.push(query.stage);
-    }
-    where.push(
-      `EXISTS(${stageSourceSelect(Boolean(query.supplierId))} WHERE ${sourceWhere.join(' AND ')})`,
-    );
+  if (query.supplierId) {
+    where.push(`EXISTS(${sourceSelect('1')}
+      WHERE search_link.inspection_order_id=o.id AND po.supplier_id=?)`);
+    params.push(query.supplierId);
   }
   const [[count]] = await db.query<ReadRow[]>(
     `${orderSelect('COUNT(*) total')} WHERE ${where.join(' AND ')}`,
@@ -173,20 +154,28 @@ export async function readIncomingInspectionReceiptLines(
   ]);
   if (!row) throw new ProcurementDomainError('RECEIPT_NOT_FOUND', '到货单不存在');
   const [lineRows] = await db.query<ReadRow[]>(
-    'SELECT id FROM procurement_receipt_line WHERE receipt_id=? ORDER BY line_no,id LIMIT ?',
+    `SELECT line.id receipt_line_id,line.receipt_id,line.purchase_order_id,material.material_name,
+      pol.material_variant_code_snapshot,pol.unit_snapshot,line.supplier_batch_code,${RECEIPT_VOID_COLUMNS},
+      (SELECT COUNT(*) FROM quality_incoming_inspection_report counted_report
+        WHERE counted_report.receipt_line_id=line.id) report_count,
+      latest_report.id report_id,latest_report.report_no,latest_report.inspection_method,
+      latest_report.qualified_quantity,latest_report.unqualified_quantity,latest_report.inspected_at
+    FROM procurement_receipt_line line
+    JOIN procurement_receipt r ON r.id=line.receipt_id
+    JOIN procurement_order_line pol ON pol.id=line.purchase_order_line_id
+    JOIN materials material ON material.id=line.item_id
+    LEFT JOIN quality_incoming_inspection_report latest_report ON latest_report.id=(
+      SELECT newest_report.id FROM quality_incoming_inspection_report newest_report
+      WHERE newest_report.receipt_line_id=line.id ORDER BY newest_report.created_at DESC,newest_report.id DESC LIMIT 1
+    )
+    WHERE line.receipt_id=? ORDER BY line.line_no,line.id LIMIT ?`,
     [receiptId, PROCUREMENT_RECEIPT_MAX_LINES + 1],
   );
   if (lineRows.length > PROCUREMENT_RECEIPT_MAX_LINES)
     throw new QualityCommandError('INVALID_STATE', '到货明细超过单据读取上限，请联系管理员核对');
-  const ids = lineRows.map((line) => text(line.id));
-  const lines = await readInspectionWorklistRows(db, ids);
   return {
     receipt: mapReceipts([row])[0]!,
-    items: ids.map((id) => {
-      const item = lines.get(id);
-      if (!item) throw new Error('到货明细缺少当前检验投影');
-      return item;
-    }),
+    items: lineRows.map(mapInspectionLine),
   };
 }
 
@@ -242,4 +231,34 @@ function mapReceipts(rows: ReadRow[]): QualityIncomingInspectionReceiptItem[] {
     void: mapReceiptVoid(row),
     order: mapOrderReference(row),
   }));
+}
+
+function mapInspectionLine(row: ReadRow): QualityIncomingInspectionLineItem {
+  return {
+    receiptLineId: text(row.receipt_line_id),
+    receiptId: text(row.receipt_id),
+    purchaseOrderId: text(row.purchase_order_id),
+    itemName: text(row.material_name),
+    materialVariantCode: text(row.material_variant_code_snapshot),
+    unit: text(row.unit_snapshot),
+    supplierBatchCode: nullableText(row.supplier_batch_code),
+    void: mapReceiptVoid(row),
+    reportCount: Number(row.report_count),
+    latestReport:
+      row.report_id == null
+        ? null
+        : {
+            id: text(row.report_id),
+            reportNo: text(row.report_no),
+            inspectionMethod: row.inspection_method as NonNullable<
+              QualityIncomingInspectionLineItem['latestReport']
+            >['inspectionMethod'],
+            qualifiedQuantity: text(row.qualified_quantity),
+            unqualifiedQuantity: text(row.unqualified_quantity),
+            inspectedQuantity: String(
+              Number(row.qualified_quantity) + Number(row.unqualified_quantity),
+            ),
+            inspectedAt: date(row.inspected_at),
+          },
+  };
 }

@@ -30,26 +30,19 @@ export interface PurchaseOrderLineReceiptRecord {
   receiptNo: string;
   receivedAt: string;
   supplierBatchCode: string | null;
-  /** 当前累计到货中计入本采购行的数量。 */
-  receivedQuantity: string;
+  /** 该到货实际已入库数量。 */
+  inboundQuantity: string;
 }
 export interface PurchaseOrderLineReceiptRecordPage extends PageResult<PurchaseOrderLineReceiptRecord> {
-  /** 本采购行完整累计量，不受 keyword 或分页影响。 */
-  receivedQuantity: string;
+  /** 本采购行完整实际已入库累计量，不受 keyword 或分页影响。 */
+  inboundQuantity: string;
 }
 export interface PurchaseExcessReceiptCandidateQuery extends PageQuery {
   keyword?: string;
   receiptLineId?: string;
 }
-/** 整次到货的处理数量；待退、已退包含全部原因，不表示补单资格或额度。 */
-export type PurchaseSupplementReceiptQuantities = Pick<
-  ReceiptQuantitySummary,
-  | 'receivedQuantity'
-  | 'pendingInboundQuantity'
-  | 'inboundQuantity'
-  | 'pendingReturnQuantity'
-  | 'returnedQuantity'
->;
+/** 实际已入库投影仅供参考，不表示补单资格或额度。 */
+export type PurchaseSupplementReceiptQuantities = Pick<ReceiptQuantitySummary, 'inboundQuantity'>;
 export interface PurchaseExcessReceiptCandidate extends PurchaseSupplementReceiptQuantities {
   id: string;
   receiptId: string;

@@ -1,25 +1,20 @@
 import type { PageQuery } from '../common.js';
 import type { InventoryInboundTarget } from '../production/inventory-target.js';
-
-export interface ProcurementInboundReleaseQuery extends PageQuery {
+export interface ProcurementInboundSourceQuery extends PageQuery {
   keyword?: string;
   supplierId?: string;
   purchaseOrderId?: string;
   receiptLineId?: string;
-  allocationIds?: string[];
+  receiptLineIds?: string[];
 }
-export interface ProcurementInboundReleaseItem {
-  roundId: string;
-  roundVersion: number;
-  acceptanceId: string;
-  allocationId: string;
+/** Active arrival material. Inspection and planned quantities do not grant or limit warehouse entry. */
+export interface ProcurementInboundSourceItem {
   purchaseOrderLineId: string;
   receiptId: string;
   receiptNo: string;
   receiptLineId: string;
   receiptLineVersion: number;
   receiptReceivedAt: string;
-  /** 到货登记来源采购单号，与 purchaseNo 指向同一采购来源。 */
   receiptPurchaseNo: string;
   purchaseOrderId: string;
   purchaseNo: string;
@@ -32,22 +27,15 @@ export interface ProcurementInboundReleaseItem {
   materialVariantCode: string;
   unit: string;
   supplierBatchCode: string | null;
-  receiptRevisionId: string;
-  inspectionId: string;
-  /** Case of the inspection adopted by this acceptance. */
-  inspectionCaseId: string;
-  approvedRemainingQuantity: string;
+  inboundQuantity: string;
+  handlingCount: number;
+  otherHandlingNote: string | null;
 }
 export interface ConfirmProcurementInboundPayload {
   remark?: string | null;
   details: Array<{
     receiptLineId: string;
-    roundId: string;
-    roundVersion: number;
     version: number;
-    receiptRevisionId: string;
-    allocationId: string;
-    inspectionId: string;
     quantity: number;
     target: InventoryInboundTarget;
   }>;
@@ -57,7 +45,6 @@ export interface ConfirmProcurementInboundResult {
   inboundNo: string;
   details: Array<{
     receiptLineId: string;
-    allocationId: string;
     batchId: string;
     inboundDetailId: string;
     transactionId: string;

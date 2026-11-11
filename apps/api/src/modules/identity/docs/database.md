@@ -90,6 +90,8 @@
 
 目录随版本化 migration 发布静态快照，当前初始化快照见[权限目录基线](../../../../../../packages/database/migrations/202611020401-baseline-permission-catalog.up.sql)；回退不读取当前 TypeScript catalog，也不修改已执行文件。目录发布不自动授予已有角色；系统 seed 负责初始化，演示 seed 只保证显式配置的演示角色。发布与回退边界见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)。
 
+独立其他处理说明的职责拆分是一次限定授权迁移例外：[202611110050](../../../../../../packages/database/migrations/202611110050-independent-receipt-handling-permission.up.sql)仅向已显式获授 warehouse:inbound:confirm-purchase 的未删除角色补 warehouse:receipts:handle 及到货页面、仓储菜单权限，使原有说明登记职责能在到货页继续办理；不展开通配授权，不向其他角色自动授予能力。迁移不覆盖既有授权；后续角色分配仍由人工管理，down 拒绝无法无损识别的权限撤销。
+
 `*` 是系统 seed 管理的全权限例外，不属于业务 catalog 的模块树。授权匹配复用共享 `permissionMatches`：具体编码命中自身，合法的 `:*` 编码按前缀匹配，`*` 命中全部；模块分组的 `:view` 不是通配符。
 
 ### 分组、页面与逐接口授权

@@ -1,87 +1,97 @@
 import { computed, ref, watch } from 'vue';
+import { RequestError } from '@company/request';
+import { normalizeJsonTable } from '@company/utils';
 import type {
-  ProcurementInboundInspectionDetail,
-  QualityInboundCaseItem,
+  ProcurementReceiptLine,
+  QualityIncomingInspectionReportItem,
+  QualityIncomingInspectionReportSummary,
 } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
-import { currentReceiptCase, isReceiptVoided } from '../receipt-round-presentation';
-import { useReceiptLineAction } from './useReceiptLineAction';
+import { RouteMessageBox } from '../../../utils/route-message-box';
+import {
+  initialInboundInspection,
+  correctionInboundInspection,
+  inboundInspectionInput,
+} from '../../quality/inbound-inspection';
+import { useProcurementCommand } from './useProcurementCommand';
 
-/** 质检工作台持有当前依据、历史窗口与编辑器，读取刷新不替换编辑器的冻结版本。 */
+/** Each arrival material owns its draft and immutable report history independently of warehouse entry. */
 export function useInboundInspection(onChanged: () => void) {
-  const visible = ref(false);
-  const lineId = ref('');
-  const line = ref<ProcurementInboundInspectionDetail | null>(null);
-  const loading = ref(false);
-  const error = ref('');
-  const activeTab = ref<'current' | 'history'>('current');
-  const records = ref<QualityInboundCaseItem[]>([]);
-  const recordsLoading = ref(false);
-  const recordsError = ref('');
-  const recordsLoaded = ref(false);
-  const page = ref(1);
-  const pageSize = ref(10);
-  const total = ref(0);
-  const focusedCaseId = ref('');
-  const focusedSourceRoundNo = ref<number>();
-  const detailRead = useLatestReadRequest(() => {
+  const visible = ref(false),
+    lineId = ref(''),
+    line = ref<ProcurementReceiptLine | null>(null);
+  const loading = ref(false),
+    error = ref(''),
+    activeTab = ref<'current' | 'history'>('current');
+  const form = ref(initialInboundInspection());
+  let original = JSON.stringify(form.value);
+  const dirty = computed(() => JSON.stringify(form.value) !== original);
+  const records = ref<QualityIncomingInspectionReportSummary[]>([]),
+    recordsLoading = ref(false),
+    recordsError = ref('');
+  const page = ref(1),
+    pageSize = ref(10),
+    total = ref(0),
+    recordsLoaded = ref(false);
+  const selectedReport = ref<QualityIncomingInspectionReportItem | null>(null),
+    reportLoading = ref(false),
+    reportError = ref('');
+  const focusedReportId = ref(''),
+    checking = ref(false);
+  const sourceRead = useLatestReadRequest(() => {
     loading.value = false;
   });
   const historyRead = useLatestReadRequest(() => {
     recordsLoading.value = false;
   });
-
-  const actions = useReceiptLineAction(async (result) => {
-    onChanged();
+  const reportRead = useLatestReadRequest(() => {
+    reportLoading.value = false;
+  });
+  const command = useProcurementCommand<QualityIncomingInspectionReportItem>(async (result) => {
     if (!visible.value || result.receiptLineId !== lineId.value) return;
-    const latest = await loadDetail();
+    resetForm();
+    selectedReport.value = result;
+    focusedReportId.value = result.id;
+    reportError.value = '';
+    activeTab.value = 'history';
     recordsLoaded.value = false;
-    if (activeTab.value === 'history') void loadRecords();
-    return latest ?? undefined;
-  });
-  const reviewingCase = computed(() => (line.value ? currentReceiptCase(line.value) : undefined));
-  const editingLine = computed(() => {
-    const source = actions.line.value;
-    return actions.visible.value && source && !('allocations' in source) ? source : null;
-  });
-  const contextLine = computed(() => editingLine.value ?? line.value);
-  const currentCase = computed(
-    () =>
-      contextLine.value?.cases.find(
-        (record) => record.inspection?.id === contextLine.value?.currentRound.inspectionId,
-      ) ?? null,
+    onChanged();
+    await loadRecords();
+  }, '进料检验报告');
+  const locked = computed(() => command.locked.value || checking.value);
+  const canSave = computed(() =>
+    Boolean(
+      line.value &&
+      !line.value.void &&
+      !loading.value &&
+      !error.value &&
+      !locked.value &&
+      sourceRead.isActive() &&
+      inboundInspectionInput(form.value),
+    ),
   );
-  const currentInspection = computed(() => currentCase.value?.inspection ?? null);
-  const roundNoForCase = (record: QualityInboundCaseItem | null): number | undefined => {
-    const source = contextLine.value;
-    if (!source || !record) return undefined;
-    if (source.currentRound.id === record.roundId) return source.currentRound.roundNo;
-    return source.rounds.find((round) => round.id === record.roundId)?.roundNo;
-  };
-  const currentCaseRoundNo = computed(() => roundNoForCase(currentCase.value));
-  const busy = computed(() => loading.value || actions.loading.value || actions.command.busy.value);
-  const blocked = computed(
-    () => busy.value || Boolean(error.value) || actions.command.locked.value,
-  );
-
-  async function loadDetail(): Promise<ProcurementInboundInspectionDetail | null> {
-    if (!visible.value || !lineId.value || !detailRead.isActive()) return null;
+  function resetForm(): void {
+    form.value = initialInboundInspection();
+    original = JSON.stringify(form.value);
+  }
+  async function loadDetail(): Promise<ProcurementReceiptLine | null> {
+    if (!visible.value || !lineId.value || !sourceRead.isActive()) return null;
     const target = lineId.value;
-    const current = detailRead.begin(() => visible.value && lineId.value === target);
+    const current = sourceRead.begin(() => visible.value && lineId.value === target);
     loading.value = true;
     try {
       const result = await procurementApi.inspectionReceiptLine(target, current.signal);
       if (!current.isCurrent()) return null;
-      if (result.id !== target) throw new Error('检验详情与到货明细不匹配');
+      if (result.id !== target) throw new Error('检验来源与到货明细不匹配');
       line.value = result;
       error.value = '';
       return result;
     } catch (cause) {
       if (current.isCurrent()) {
-        error.value = '检验依据加载失败；已显示的内容为上次读取结果，请刷新后重新核对。';
-        EMessage.error(cause, '检验依据加载失败');
+        error.value = '到货来源读取失败，当前输入已保留；请刷新后核对。';
+        EMessage.error(cause, '检验来源读取失败');
       }
       return null;
     } finally {
@@ -89,140 +99,204 @@ export function useInboundInspection(onChanged: () => void) {
     }
   }
   async function loadRecords(): Promise<void> {
-    if (!visible.value || activeTab.value !== 'history' || !historyRead.isActive()) return;
-    const targetLine = lineId.value;
-    const targetCase = focusedCaseId.value;
-    const requestedPage = page.value;
-    const requestedPageSize = pageSize.value;
-    if (!targetLine && !targetCase) return;
+    if (!visible.value || !lineId.value || !historyRead.isActive()) return;
+    const target = lineId.value,
+      requestedPage = page.value;
     const current = historyRead.begin(
-      () =>
-        visible.value &&
-        activeTab.value === 'history' &&
-        (!targetLine || lineId.value === targetLine) &&
-        focusedCaseId.value === targetCase &&
-        page.value === requestedPage &&
-        pageSize.value === requestedPageSize,
+      () => visible.value && lineId.value === target && page.value === requestedPage,
     );
     recordsLoading.value = true;
     try {
-      if (targetCase) {
-        const result = await procurementApi.getInspection(targetCase, current.signal);
-        if (!current.isCurrent()) return;
-        if (
-          result.case.id !== targetCase ||
-          result.case.receiptLineId !== result.receiptLineId ||
-          (targetLine && result.receiptLineId !== targetLine)
-        )
-          throw new Error('指定检验记录与到货明细不匹配');
-        lineId.value = result.receiptLineId;
-        records.value = [result.case];
-        focusedSourceRoundNo.value = result.sourceRoundNo;
-        total.value = 1;
-        if (!line.value && !loading.value) void loadDetail();
-      } else {
-        const result = await procurementApi.receiptCases(
-          targetLine,
-          { page: requestedPage, pageSize: requestedPageSize },
-          current.signal,
-        );
-        if (!current.isCurrent()) return;
-        if (result.items.some((record) => record.receiptLineId !== targetLine))
-          throw new Error('检验历史与到货明细不匹配');
+      const result = await procurementApi.inspectionReports(
+        target,
+        { page: requestedPage, pageSize: pageSize.value },
+        current.signal,
+      );
+      if (current.isCurrent()) {
         records.value = result.items;
         total.value = result.total;
+        recordsLoaded.value = true;
+        recordsError.value = '';
       }
-      recordsError.value = '';
-      recordsLoaded.value = true;
     } catch (cause) {
       if (current.isCurrent()) {
-        recordsError.value = targetCase
-          ? '指定检验记录读取失败或不属于此到货明细；未切换到其他记录，请重试或查看全部历史。'
-          : '检验历史加载失败，请重试；已显示的内容为上次读取结果。';
-        EMessage.error(cause, '检验历史加载失败');
+        recordsError.value = '检验报告目录读取失败，请重试；旧内容仅供核对。';
+        EMessage.error(cause, '检验报告目录读取失败');
       }
     } finally {
       if (current.isCurrent()) recordsLoading.value = false;
     }
   }
-  async function refresh(): Promise<void> {
-    if (actions.command.busy.value) return;
-    const latest = await loadDetail();
-    if (latest && actions.visible.value && !actions.command.locked.value)
-      await actions.check(latest);
-    if (activeTab.value === 'history') await loadRecords();
+  async function showReport(id: string): Promise<QualityIncomingInspectionReportItem | null> {
+    if (!visible.value || !reportRead.isActive()) return null;
+    const target = lineId.value;
+    focusedReportId.value = id;
+    const current = reportRead.begin(
+      () => visible.value && focusedReportId.value === id && lineId.value === target,
+    );
+    reportLoading.value = true;
+    try {
+      const result = await procurementApi.getInspection(id, current.signal);
+      if (!current.isCurrent()) return null;
+      if (result.id !== id || (target && result.receiptLineId !== target))
+        throw new Error('报告不属于当前到货物料，请核对来源');
+      selectedReport.value = result;
+      reportError.value = '';
+      return result;
+    } catch (cause) {
+      if (current.isCurrent()) {
+        reportError.value = '指定报告读取失败，请重新读取；不会替换为其他报告。';
+        EMessage.error(cause, '进料检验报告读取失败');
+      }
+      return null;
+    } finally {
+      if (current.isCurrent()) reportLoading.value = false;
+    }
   }
-  async function open(id: string, caseId = ''): Promise<boolean> {
+  async function mayReplaceDraft(): Promise<boolean> {
+    if (locked.value) return false;
+    if (!dirty.value) return true;
+    try {
+      await RouteMessageBox.confirm(
+        '当前报告填写尚未保存，确定放弃并重新填写吗？',
+        '更换报告草稿',
+        { type: 'warning', confirmButtonText: '放弃当前填写' },
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  async function newReport(): Promise<void> {
+    if (!(await mayReplaceDraft())) return;
+    resetForm();
+    activeTab.value = 'current';
+  }
+  async function correctReport(id: string): Promise<void> {
+    if (!(await mayReplaceDraft()) || !(await showReport(id))) return;
+    const record = selectedReport.value;
+    if (!record || record.id !== id || record.correctedByRecordId || line.value?.void) {
+      EMessage.warning('该报告已更正或到货已作废，请查看最新记录');
+      return;
+    }
+    form.value = correctionInboundInspection(record);
+    original = JSON.stringify(form.value);
+    activeTab.value = 'current';
+  }
+  async function save(): Promise<void> {
+    if (!canSave.value) return;
+    const body = inboundInspectionInput(form.value),
+      target = lineId.value;
+    if (!body) return;
+    checking.value = true;
+    try {
+      if (
+        !(await loadDetail()) ||
+        !line.value ||
+        line.value.void ||
+        !visible.value ||
+        target !== lineId.value ||
+        !sourceRead.isActive()
+      )
+        return;
+      if (body.previousRecordId) {
+        const previous = await procurementApi.getInspection(body.previousRecordId);
+        if (!visible.value || target !== lineId.value || !sourceRead.isActive()) return;
+        if (previous.receiptLineId !== target || previous.correctedByRecordId) {
+          EMessage.warning('原报告已被更正，填写已保留，请核对报告历史后重新选择');
+          return;
+        }
+      }
+      await command.run(
+        {
+          intentType: 'quality.incoming-report.record',
+          params: { receiptLineId: target },
+          query: {},
+          body,
+        },
+        async (key) => {
+          const record = await procurementApi.inspectReceipt(target, body, key);
+          let detailsMatch = false;
+          try {
+            detailsMatch =
+              JSON.stringify(normalizeJsonTable(record?.inspectionDetails)) ===
+              JSON.stringify(body.inspectionDetails);
+          } catch {
+            // 不完整的成功响应仍按结果未知处理，保留原键和完整请求。
+          }
+          if (
+            !record ||
+            record.receiptLineId !== target ||
+            !record.id ||
+            !record.reportNo ||
+            !detailsMatch ||
+            record.inspectionMethod !== body.inspectionMethod ||
+            Number(record.qualifiedQuantity) !== body.qualifiedQuantity ||
+            Number(record.unqualifiedQuantity) !== body.unqualifiedQuantity
+          )
+            throw new RequestError('检验报告保存结果不完整，请核对历史后重试本次提交', 502);
+          return record;
+        },
+        body.previousRecordId ? '更正报告已保存，原记录已保留' : '进料检验报告已保存',
+      );
+    } catch (cause) {
+      EMessage.error(cause, '检验报告核对失败，当前填写已保留');
+    } finally {
+      checking.value = false;
+    }
+  }
+  async function open(id: string, reportId = ''): Promise<boolean> {
     if (visible.value && !(await close())) return false;
-    if (!id && !caseId) return false;
-    detailRead.invalidate();
-    historyRead.invalidate();
     lineId.value = id;
     line.value = null;
     error.value = '';
-    focusedCaseId.value = caseId;
-    focusedSourceRoundNo.value = undefined;
     records.value = [];
-    total.value = 0;
-    page.value = 1;
-    pageSize.value = 10;
-    recordsError.value = '';
     recordsLoaded.value = false;
-    activeTab.value = caseId ? 'history' : 'current';
+    recordsError.value = '';
+    selectedReport.value = null;
+    reportError.value = '';
+    focusedReportId.value = '';
+    page.value = 1;
+    total.value = 0;
     visible.value = true;
-    if (id) void loadDetail();
-    if (caseId) void loadRecords();
+    if (reportId) {
+      const loadedReport = await showReport(reportId);
+      if (!loadedReport) return false;
+      lineId.value = loadedReport.receiptLineId;
+    }
+    const source = await loadDetail();
+    if (!source) return false;
+    resetForm();
+    activeTab.value = reportId || source.void ? 'history' : 'current';
+    if (activeTab.value === 'history') await loadRecords();
     return true;
   }
   async function close(): Promise<boolean> {
-    if (actions.command.busy.value) return false;
-    if ((actions.visible.value || actions.command.locked.value) && !(await actions.close()))
-      return false;
+    if (checking.value || !(await command.canClose(dirty.value))) return false;
     visible.value = false;
-    detailRead.invalidate();
+    sourceRead.invalidate();
     historyRead.invalidate();
+    reportRead.invalidate();
     return true;
   }
-  async function showAllRecords(): Promise<void> {
-    if (!lineId.value) return;
-    historyRead.invalidate();
-    focusedCaseId.value = '';
-    focusedSourceRoundNo.value = undefined;
-    records.value = [];
-    recordsError.value = '';
-    recordsLoaded.value = false;
-    page.value = 1;
-    await loadRecords();
+  async function refresh(): Promise<void> {
+    if (locked.value) return;
+    await loadDetail();
+    if (activeTab.value === 'history') await loadRecords();
+    if (focusedReportId.value) await showReport(focusedReportId.value);
   }
   async function changePage(value: number): Promise<void> {
-    if (value === page.value) return;
     page.value = value;
-    records.value = [];
-    recordsLoaded.value = false;
     await loadRecords();
   }
   async function changePageSize(value: number): Promise<void> {
     pageSize.value = value;
     page.value = 1;
-    records.value = [];
-    recordsLoaded.value = false;
     await loadRecords();
   }
-  function beginAction(): void {
-    if (blocked.value || !line.value || isReceiptVoided(line.value) || actions.visible.value)
-      return;
-    if (reviewingCase.value) actions.openInspection(line.value, 'inspect', reviewingCase.value);
-    else actions.openInspection(line.value, 'review');
-  }
-  watch(
-    activeTab,
-    (value) => {
-      if (!visible.value) return;
-      if (value === 'history' && !recordsLoaded.value) void loadRecords();
-      else if (value !== 'history') historyRead.invalidate();
-    },
-    { flush: 'sync' },
-  );
+  watch(activeTab, (tab) => {
+    if (visible.value && tab === 'history' && !recordsLoaded.value) void loadRecords();
+  });
   return {
     visible,
     lineId,
@@ -230,28 +304,31 @@ export function useInboundInspection(onChanged: () => void) {
     loading,
     error,
     activeTab,
+    form,
+    dirty,
     records,
     recordsLoading,
     recordsError,
     page,
     pageSize,
     total,
-    focusedCaseId,
-    focusedSourceRoundNo,
-    actions,
-    reviewingCase,
-    currentCase,
-    currentInspection,
-    currentCaseRoundNo,
-    contextLine,
-    busy,
-    blocked,
+    selectedReport,
+    reportLoading,
+    reportError,
+    focusedReportId,
+    command,
+    locked,
+    checking,
+    canSave,
     open,
     close,
     refresh,
-    showAllRecords,
+    loadRecords,
+    showReport,
+    newReport,
+    correctReport,
+    save,
     changePage,
     changePageSize,
-    beginAction,
   };
 }

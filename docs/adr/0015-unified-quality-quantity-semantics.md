@@ -1,12 +1,15 @@
 # ADR-0015：统一质检数量与放行语义
 
+> 仓库简化实验中的来料数量、放行、处置授权与补单门槛按 [ADR-0028](0028-independent-warehouse-receipt-and-inspection.md#取代范围) 的明确范围取代。以下保留本决策的历史理由与其余有效边界。
+
+
 > 实验分支取代范围见 [ADR-0027](0027-tracking-card-workbench-and-terminal-output.md)：本文涉及的旧生产执行、成品质检、结案与成品授权部分只保留决策背景；采购来料、任务用料等未被取代部分继续有效。
 
 本 ADR 涉及补单承接、分配采购归属及其取消／继续办理资格的条款，在 [ADR-0023](0023-supplement-source-and-receipt-ownership.md) 明确范围内被取代；其余业务边界继续有效。
 
 本文取代关系中保留的 ADR-0013 逐行供应商规则，由 [ADR-0026](0026-purchase-order-supplier-and-amounts.md) 的采购主单唯一供应商取代；检验、正式授权及实际入库的职责不变。
 
-状态：Accepted，成品 C/R/S 部分由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。本文保留检验事实、来源数量授权与实际入库分离的跨模块决策及取代关系。当前完整规则分别由 [实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)、[Procurement 来料正式清单](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md)和 [Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)维护，统一事实结构见 [Quality 模型](../../apps/api/src/modules/quality/docs/unified-inspection-model.md)。入库授权、库批分离及成品执行方式由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 调整；未完成验收及正式测试见[路线图](../roadmap.md)。
+状态：Accepted，成品 C/R/S 部分由 [ADR-0019](0019-finished-inspection-measurement-simplification.md) 精确取代。本文保留检验事实、来源数量授权与实际入库分离的跨模块决策及取代关系。当前完整规则分别由 [实验分支取代方案](0027-tracking-card-workbench-and-terminal-output.md)、[仓库实验取代边界](0028-independent-warehouse-receipt-and-inspection.md#取代范围)和 [Production 结案](../../apps/api/src/modules/production/docs/database/production-termination.md)维护，统一事实结构见 [Quality 模型](../../apps/api/src/modules/quality/docs/unified-inspection-model.md)。入库授权、库批分离及成品执行方式由 [ADR-0016](0016-inbound-authorizations-and-stock-batches.md) 调整；未完成验收及正式测试见[路线图](../roadmap.md)。
 
 ## 统一职责与数量定义
 
@@ -36,13 +39,13 @@
 
 来料可入数量由库管核实并负责，不把检查样本机械当成整批可入额度。库管有依据可确认超出检查建议的可入量，但所有正式分配必须完整覆盖本次核实量；数量差异说明不能推翻待复检／不放行结论，也不能改写原 G/F。
 
-首次建议、同 QC 更正时已处置量的扣除、抽样异常以及必须留依据的条件，统一见[正式清单：数量与建议](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md#数量与建议)。不累计历史质量结果或清单重新授予已消费数量；入库仍要求当前有效轮、明确放行和正式分配余量。
+首次建议、同 QC 更正时已处置量的扣除、抽样异常以及必须留依据的条件，统一见[仓库实验取代边界](0028-independent-warehouse-receipt-and-inspection.md#取代范围)。不累计历史质量结果或清单重新授予已消费数量；入库仍要求当前有效轮、明确放行和正式分配余量。
 
 ### 整批处理轮次
 
 `receipt_line` 对应一次到货的精确物料与批次身份。`procurement_receipt_round` 表达该批未处置实物当前办理资格；不可变 `allocation` 表达去向授权，实际入退直接引用它，不再维护 scope 范围树。
 
-轮次状态与换轮继承条件由[来料正式清单](../../apps/api/src/modules/procurement/docs/receipt-acceptance.md#整批换轮与继承)和[到货处置](../../apps/api/src/modules/procurement/docs/receipts.md)维护。
+轮次状态与换轮继承条件由[仓库实验取代边界](0028-independent-warehouse-receipt-and-inspection.md#取代范围)和[到货处置](../../apps/api/src/modules/procurement/docs/receipts.md)维护。
 
 全检／抽检都对整批未处置实物判断资格；抽查100中的20不会拆成80继续可入、20检查。发起复检时，当前轮 superseded，使其可入／待退／待处理分配的全部剩余资格失效，分配事实不改写，创建新 reviewing 轮。新结果放行后重新整批定稿；已入库、已实际退回保持原事实，旧正式清单和旧质量记录也不删除。
 

@@ -101,8 +101,8 @@ export class MysqlInventoryPurchaseInboundWriter {
         const batchId = resolved.get(line)!;
         const [detail] = await db.execute<ResultSetHeader>(
           `INSERT INTO inbound_detail(inbound_id,line_no,source_type,item_id,material_variant_id,batch_id,target_mode,new_batch_key,item_code_snapshot,inbound_number,unit_snapshot,stock_status,supplier_name_snapshot,
-           procurement_receipt_line_id,procurement_receipt_revision_id,procurement_inspection_id,procurement_allocation_id,created_by,updated_by)
-           VALUES (?,?,'purchased',?,?,?,?,?,?,?,?,'available',?,?,?,?,?,?,?)`,
+           procurement_receipt_line_id,created_by,updated_by)
+           VALUES (?,?,'purchased',?,?,?,?,?,?,?,?,'available',?,?,?,?)`,
           [
             inboundId,
             index + 1,
@@ -116,9 +116,6 @@ export class MysqlInventoryPurchaseInboundWriter {
             line.unit,
             line.supplierNameSnapshot.trim(),
             line.receiptLineId,
-            line.receiptRevisionId,
-            line.inspectionId,
-            line.allocationId,
             context.actorId,
             context.actorId,
           ],
@@ -145,7 +142,6 @@ export class MysqlInventoryPurchaseInboundWriter {
         );
         details.push({
           receiptLineId: line.receiptLineId,
-          allocationId: line.allocationId,
           batchId,
           inboundDetailId,
           transactionId: String(transaction.insertId),
@@ -217,14 +213,7 @@ function validateInput(input: ConfirmPurchaseReceiptInput): void {
     throw new InventoryDomainError('INVALID_INPUT', '入库明细数量无效');
   const newTargets = new Map<string, string>();
   for (const line of input.details) {
-    const ids = [
-      line.receiptLineId,
-      line.receiptRevisionId,
-      line.inspectionId,
-      line.allocationId,
-      line.itemId,
-      line.materialVariantId,
-    ];
+    const ids = [line.receiptLineId, line.itemId, line.materialVariantId];
     if (line.target.mode === 'existing') ids.push(line.target.batchId);
     const quantity = Number(line.quantity);
     if (
@@ -259,5 +248,4 @@ const compareId = (a: string, b: string): number => {
 const uniqueSorted = (ids: string[]): string[] => [...new Set(ids)].sort(compareId);
 const compareLines = (a: PurchaseReceiptInboundLine, b: PurchaseReceiptInboundLine): number =>
   compareId(a.materialVariantId, b.materialVariantId) ||
-  compareId(a.receiptLineId, b.receiptLineId) ||
-  compareId(a.allocationId, b.allocationId);
+  compareId(a.receiptLineId, b.receiptLineId);

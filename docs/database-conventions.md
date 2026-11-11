@@ -35,6 +35,7 @@
 本节是物料名称展示、搜索和快照策略的主要维护位置；各模块表设计及查询文档引用本节，跨模块访问授权仍遵守[架构登记规则](architecture.md#展示查询的跨模块读取)。
 
 - 基础物料名称仅是当前展示属性：按稳定物料ID读取 `materials.material_name`，展示、名称搜索和排序使用同一来源；历史展示不因物料停用或软删除而丢失。
+- 已登记的进料检验报告保存生成时的材料名称、规格型号、供应商及采购单号作为报告内容快照，保证之后打印同一报告内容稳定；快照不作为物料身份、搜索或新增业务资格。报告结构由 [Quality](../apps/api/src/modules/quality/docs/database.md) 唯一维护，普通采购／库存列表仍读取当前物料名称。
 - 任务需求基础 `production_material_requirement_basis`、正式需求 `production_item_demand`、库存批次 `item_batch` 和入库明细 `inbound_detail` 不持久化物料名称快照，也不从旧业务快照恢复历史名称。
 - 当前批准 Production、Procurement 与 Inventory 的 `infrastructure/queries/` 只读使用 `materials.id/material_name`；库存和生产来源展示字段以 `scripts/api-data-ownership.mjs` 的逐字段登记为准。SQL可在本模块查询中组合复用，但不得将展示名称作为物料身份、精确版本替代条件或写入资格，业务校验仍通过所属模块公开能力。
 - 物料编码、单位、精确版本与业务数量继续按各所有者规则固化；工单成品名称、工序／SOP快照不属于本节物料名称策略，审计前后值和HTTP幂等结果重放也保持各自语义；重放保留原结果，更名后需要当前名称时重新读取查询接口，不改写旧审计或重放响应。

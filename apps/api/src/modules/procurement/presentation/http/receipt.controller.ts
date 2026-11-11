@@ -12,30 +12,22 @@ import { ProcurementReceiptQuery } from '../../application/ports/receipt-query.j
 import { ReceiptService } from '../../application/receipt.service.js';
 import {
   CONFIRM_PROCUREMENT_RECEIPT_SCOPE,
-  CORRECT_RECEIPT_SCOPE,
-  START_RECEIPT_REVIEW_SCOPE,
+  RECORD_RECEIPT_HANDLING_SCOPE,
   INSPECT_RECEIPT_SCOPE,
-  ACCEPT_RECEIPT_SCOPE,
-  REJECT_RECEIPT_SCOPE,
-  REVOKE_RECEIPT_REJECTION_SCOPE,
-  CONFIRM_SUPPLIER_RETURN_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
   VOID_RECEIPT_SCOPE,
 } from '../../application/idempotency/procurement-idempotency-scopes.contract.js';
+import { QualityInboundQuery, QualityCommandError } from '../../../quality/public.js';
 import { ProcurementDomainExceptionFilter } from './procurement-domain-exception.filter.js';
 import { PurchaseOrderIdDto, PurchaseOrderQueryDto } from './purchase-order.dto.js';
 import {
-  ReceiptPurchaseOrdersQueryDto,
-  ReceiptReleaseQueryDto,
+  ReceiptQueryDto,
+  ReceiptSourceCandidatesQueryDto,
   ReceiptHistoryPathDto,
+  InspectionReportPathDto,
   ConfirmProcurementReceiptDto,
-  CorrectReceiptDto,
-  StartReceiptReviewDto,
+  RecordReceiptHandlingDto,
   InspectReceiptDto,
-  ConfirmReceiptAcceptanceDto,
-  RejectReceiptDto,
-  RevokeReceiptRejectionDto,
-  ConfirmSupplierReturnDto,
   ConfirmProcurementInboundDto,
   VoidProcurementReceiptDto,
 } from './receipt.dto.js';
@@ -47,20 +39,10 @@ export class ProcurementReceiptController {
     private readonly query: ProcurementReceiptQuery,
     private readonly service: ReceiptService,
   ) {}
-  @Get('receipt-purchase-orders')
+  @Get('receipts')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  listPurchaseOrders(@Query() query: ReceiptPurchaseOrdersQueryDto) {
-    return this.query.listReceiptPurchaseOrders(query);
-  }
-  @Get('receipt-purchase-orders/:id')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  purchaseOrder(@Param() { id }: PurchaseOrderIdDto) {
-    return this.query.getReceiptPurchaseOrder(id);
-  }
-  @Get('receipt-purchase-orders/:id/receipts')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  purchaseOrderReceipts(@Param() { id }: PurchaseOrderIdDto, @Query() query: PageQueryDto) {
-    return this.query.listPurchaseOrderReceipts(id, query);
+  list(@Query() query: ReceiptQueryDto) {
+    return this.query.listReceipts(query);
   }
   @Get('receipts/:id/worklist-lines')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
@@ -87,11 +69,6 @@ export class ProcurementReceiptController {
   line(@Param() { id }: PurchaseOrderIdDto) {
     return this.query.getReceiptLine(id);
   }
-  @Get('receipt-lines/:id/acceptance-context')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
-  acceptanceContext(@Param() { id }: PurchaseOrderIdDto) {
-    return this.query.getReceiptAcceptanceContext(id);
-  }
   @Get('receipt-order-options')
   @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   orders(@Query() query: PurchaseOrderQueryDto) {
@@ -103,17 +80,14 @@ export class ProcurementReceiptController {
     return this.query.getReceiptOrder(id);
   }
   @Get('receipt-lines/:id/:historyKind')
-  @RequirePermission([
-    PERMISSIONS.warehouse.receipts.view,
-    PERMISSIONS.quality.inboundInspections.view,
-  ])
+  @RequirePermission(PERMISSIONS.warehouse.receipts.view)
   history(@Param() { id, historyKind }: ReceiptHistoryPathDto, @Query() query: PageQueryDto) {
     return this.query.history(id, historyKind, query);
   }
-  @Get('inbound-releases')
+  @Get('inbound-sources')
   @RequirePermission(PERMISSIONS.warehouse.inbound.view)
-  releases(@Query() query: ReceiptReleaseQueryDto) {
-    return this.query.listInboundReleases(query);
+  sources(@Query() query: ReceiptSourceCandidatesQueryDto) {
+    return this.query.listInboundSources(query);
   }
   @Post('receipts/actions/confirm')
   @RequirePermission(PERMISSIONS.warehouse.receipts.confirm)
@@ -124,17 +98,6 @@ export class ProcurementReceiptController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.confirmReceipt(body, context);
-  }
-  @Post('receipt-lines/:id/actions/correct-receipt')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.correct)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: CORRECT_RECEIPT_SCOPE })
-  correct(
-    @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: CorrectReceiptDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.correctReceipt(id, body, context);
   }
   @Post('receipts/:id/actions/void')
   @RequirePermission(PERMISSIONS.warehouse.receipts.void)
@@ -147,18 +110,7 @@ export class ProcurementReceiptController {
   ) {
     return this.service.voidReceipt(id, body, context);
   }
-  @Post('receipt-lines/:id/actions/start-review')
-  @RequirePermission(PERMISSIONS.quality.inboundInspections.review)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: START_RECEIPT_REVIEW_SCOPE })
-  review(
-    @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: StartReceiptReviewDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.startReview(id, body, context);
-  }
-  @Post('receipt-lines/:id/actions/inspect')
+  @Post('receipt-lines/:id/inspect')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.inspect)
   @AuditInApplication()
   @IdempotentEndpoint({ scope: INSPECT_RECEIPT_SCOPE })
@@ -169,49 +121,16 @@ export class ProcurementReceiptController {
   ) {
     return this.service.inspect(id, body, context);
   }
-  @Post('receipt-lines/:id/actions/accept')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.accept)
+  @Post('receipt-lines/:id/handlings')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.handle)
   @AuditInApplication()
-  @IdempotentEndpoint({ scope: ACCEPT_RECEIPT_SCOPE })
-  accept(
+  @IdempotentEndpoint({ scope: RECORD_RECEIPT_HANDLING_SCOPE })
+  recordHandling(
     @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: ConfirmReceiptAcceptanceDto,
+    @Body() body: RecordReceiptHandlingDto,
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
-    return this.service.accept(id, body, context);
-  }
-  @Post('receipt-lines/:id/actions/reject')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.accept)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: REJECT_RECEIPT_SCOPE })
-  reject(
-    @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: RejectReceiptDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.reject(id, body, context);
-  }
-  @Post('receipt-lines/:id/actions/revoke-rejection')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.accept)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: REVOKE_RECEIPT_REJECTION_SCOPE })
-  revokeRejection(
-    @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: RevokeReceiptRejectionDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.revokeRejection(id, body, context);
-  }
-  @Post('receipt-lines/:id/actions/return')
-  @RequirePermission(PERMISSIONS.warehouse.receipts.return)
-  @AuditInApplication()
-  @IdempotentEndpoint({ scope: CONFIRM_SUPPLIER_RETURN_SCOPE })
-  return(
-    @Param() { id }: PurchaseOrderIdDto,
-    @Body() body: ConfirmSupplierReturnDto,
-    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
-  ) {
-    return this.service.confirmReturn(id, body, context);
+    return this.service.recordHandling(id, body, context);
   }
   @Post('purchase-inbounds/actions/confirm')
   @RequirePermission(PERMISSIONS.warehouse.inbound.confirmPurchase)
@@ -224,19 +143,29 @@ export class ProcurementReceiptController {
     return this.service.confirmInbound(body, context);
   }
 }
-
 @Controller('quality/inbound-inspections')
 @UseFilters(ProcurementDomainExceptionFilter)
 export class ProcurementInboundInspectionController {
-  constructor(private readonly query: ProcurementReceiptQuery) {}
+  constructor(
+    private readonly query: ProcurementReceiptQuery,
+    private readonly quality: QualityInboundQuery,
+  ) {}
   @Get('receipt-lines/:id')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   line(@Param() { id }: PurchaseOrderIdDto) {
-    return this.query.getInspectionReceiptLine(id);
+    return this.query.getReceiptLine(id);
   }
-  @Get(':id')
+  @Get('reports/:reportId')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
-  get(@Param() { id }: PurchaseOrderIdDto) {
-    return this.query.getInspection(id);
+  async report(@Param() { reportId }: InspectionReportPathDto) {
+    const item = await this.quality.getReport(reportId);
+    if (!item) throw new QualityCommandError('NOT_FOUND', '检验报告不存在');
+    return item;
+  }
+  @Get(':id/reports')
+  @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
+  async reports(@Param() { id }: PurchaseOrderIdDto, @Query() query: PageQueryDto) {
+    await this.query.locateReceiptLine(id);
+    return this.quality.listReports(id, query);
   }
 }

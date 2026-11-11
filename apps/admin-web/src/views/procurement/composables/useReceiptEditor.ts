@@ -2,11 +2,10 @@ import { computed, ref } from 'vue';
 import type {
   ConfirmProcurementReceiptPayload,
   ProcurementReceiptCommandResult,
-  PurchaseOrderDetail,
   ProcurementReceiptOrderOption,
+  PurchaseOrderDetail,
   PurchaseOrderLine,
 } from '@company/contracts';
-import { PURCHASE_ORDER_MAX_QUANTITY } from '@company/constants';
 import { toBeijingISOString } from '@company/utils';
 import { procurementApi } from '../../../api/procurement';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
@@ -14,19 +13,12 @@ import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useProcurementCommand } from './useProcurementCommand';
 
-type ReceiptPurchaseOrderLine = PurchaseOrderLine & {
-  quantities: NonNullable<PurchaseOrderLine['quantities']>;
-};
-const hasReceiptQuantities = (line: PurchaseOrderLine): line is ReceiptPurchaseOrderLine =>
-  line.quantities !== null;
-
 interface ReceiptDraftRow {
-  key: number;
-  line: ReceiptPurchaseOrderLine;
-  receivedQuantity: number | null | undefined;
+  line: PurchaseOrderLine;
+  selected: boolean;
   supplierBatchCode: string;
-  overReceiptNote: string;
 }
+
 export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) {
   const visible = ref(false),
     loading = ref(false),
@@ -34,8 +26,8 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
   const keyword = ref(''),
     page = ref(1),
     pageSize = ref(10),
-    total = ref(0),
-    orders = ref<ProcurementReceiptOrderOption[]>([]);
+    total = ref(0);
+  const orders = ref<ProcurementReceiptOrderOption[]>([]);
   const order = ref<PurchaseOrderDetail | null>(null),
     rows = ref<ReceiptDraftRow[]>([]);
   const receivedAt = ref(''),
@@ -48,8 +40,15 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     visible.value = false;
     await onSaved(result.receiptId);
   }, '到货记录');
-  let sequence = 0;
-  const loadOrders = async (): Promise<void> => {
+  const activeRows = computed(() => rows.value.filter((row) => row.selected));
+  const dirty = computed(() =>
+    Boolean(
+      handoverEvidence.value ||
+      remark.value ||
+      rows.value.some((row) => row.selected || row.supplierBatchCode),
+    ),
+  );
+  async function loadOrders(): Promise<void> {
     if (!visible.value || order.value || !read.isActive()) return;
     const current = read.begin(() => visible.value && !order.value);
     loading.value = true;
@@ -63,119 +62,73 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
         total.value = result.total;
       }
     } catch (error) {
-      if (current.isCurrent()) EMessage.error(error, '可收货采购列表加载失败');
+      if (current.isCurrent()) EMessage.error(error, '可登记到货的采购单加载失败');
     } finally {
       if (current.isCurrent()) loading.value = false;
     }
-  };
-  const selectOrder = async (id: string): Promise<void> => {
+  }
+  async function selectOrder(id: string): Promise<void> {
     if (command.locked.value) return;
     const current = read.begin(() => visible.value);
     loading.value = true;
     try {
       const result = await procurementApi.receiptOrderDetail(id, current.signal);
       if (!current.isCurrent()) return;
-      const receivable = result.items.filter(
-        (line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival',
-      );
-      if (receivable.some((line) => !hasReceiptQuantities(line)))
-        throw new Error('可收货采购行的数量信息不完整，请重新读取');
       order.value = result;
-      rows.value = receivable.filter(hasReceiptQuantities).map((line) => ({
-        key: ++sequence,
-        line,
-        receivedQuantity: undefined,
-        supplierBatchCode: '',
-        overReceiptNote: '',
-      }));
+      rows.value = result.items
+        .filter((line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival')
+        .map((line) => ({ line, selected: false, supplierBatchCode: '' }));
       stale.value = false;
     } catch (error) {
-      if (current.isCurrent()) EMessage.error(error, '采购收货依据加载失败');
+      if (current.isCurrent()) EMessage.error(error, '采购到货依据加载失败');
     } finally {
       if (current.isCurrent()) loading.value = false;
     }
-  };
-  const checkOrder = async (beforeSubmit = false): Promise<boolean> => {
-    const currentOrder = order.value;
-    if (!currentOrder || !visible.value) return false;
-    const current = read.begin(() => visible.value && order.value?.id === currentOrder.id);
+  }
+  async function checkOrder(): Promise<boolean> {
+    const source = order.value;
+    if (!source || !visible.value) return false;
+    const current = read.begin(() => visible.value && order.value?.id === source.id);
     loading.value = true;
     try {
-      const latest = await procurementApi.receiptOrderDetail(currentOrder.id, current.signal);
+      const latest = await procurementApi.receiptOrderDetail(source.id, current.signal);
       if (!current.isCurrent()) return false;
-      const latestLines = new Map(latest.items.map((line) => [line.id, line]));
+      const byId = new Map(latest.items.map((line) => [line.id, line]));
       stale.value =
-        latest.version !== currentOrder.version ||
+        latest.version !== source.version ||
         latest.status !== 'ordered' ||
-        rows.value.some((row) => {
-          const line = latestLines.get(row.line.id);
+        activeRows.value.some((row) => {
+          const line = byId.get(row.line.id);
           return (
             !line ||
             line.version !== row.line.version ||
             line.status !== 'open' ||
-            line.fulfillmentMode !== 'new_arrival' ||
-            !hasReceiptQuantities(line)
+            line.fulfillmentMode !== 'new_arrival'
           );
         });
-      if (stale.value) return false;
-      let quantitiesChanged = false;
-      for (const row of rows.value) {
-        const line = latestLines.get(row.line.id);
-        if (!line || !hasReceiptQuantities(line)) continue;
-        quantitiesChanged ||=
-          Number(line.quantities.receivedQuantity) !==
-            Number(row.line.quantities.receivedQuantity) ||
-          Number(line.quantities.inboundQuantity) !== Number(row.line.quantities.inboundQuantity);
-        row.line = line;
-      }
-      order.value = latest;
-      if (beforeSubmit && quantitiesChanged) {
-        EMessage.warning('累计已到货或已入库数量已更新，本次输入已保留。请核对后再次确认。');
-        return false;
-      }
-      return true;
+      return !stale.value;
     } catch (error) {
       if (current.isCurrent()) {
         stale.value = true;
-        EMessage.error(error, '收货依据核对失败');
+        EMessage.error(error, '到货依据核对失败');
       }
       return false;
     } finally {
       if (current.isCurrent()) loading.value = false;
     }
-  };
-  const refreshQuantities = async (): Promise<void> => {
-    if (!command.locked.value) await checkOrder();
-  };
-  const dirty = computed(() =>
-    Boolean(
-      handoverEvidence.value ||
-      remark.value ||
-      rows.value.some(
-        (row) => row.receivedQuantity != null || row.supplierBatchCode || row.overReceiptNote,
-      ),
-    ),
-  );
-  const activeRows = computed(() => rows.value.filter((row) => row.receivedQuantity != null));
+  }
   const canConfirm = computed(() =>
     Boolean(
       order.value &&
+      receivedAt.value &&
       !stale.value &&
       !loading.value &&
       !command.locked.value &&
-      receivedAt.value &&
-      handoverEvidence.value.trim() &&
-      activeRows.value.length &&
-      activeRows.value.length <= 100 &&
-      activeRows.value.every(
-        (row) =>
-          Number.isInteger(row.receivedQuantity) &&
-          Number(row.receivedQuantity) > 0 &&
-          Number(row.receivedQuantity) <= PURCHASE_ORDER_MAX_QUANTITY,
-      ),
+      activeRows.value.length > 0 &&
+      activeRows.value.length <= 100,
     ),
   );
-  const open = async (orderId?: string): Promise<void> => {
+  async function open(orderId?: string): Promise<void> {
     if (visible.value || command.locked.value) return;
     order.value = null;
     rows.value = [];
@@ -188,20 +141,20 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     visible.value = true;
     if (orderId) await selectOrder(orderId);
     else await loadOrders();
-  };
-  const close = async (): Promise<boolean> => {
+  }
+  async function close(): Promise<boolean> {
     if (!(await command.canClose(dirty.value))) return false;
     visible.value = false;
     read.invalidate();
     return true;
-  };
-  const reselect = async (): Promise<void> => {
+  }
+  async function reselect(): Promise<void> {
     if (command.locked.value) return;
     if (dirty.value) {
       try {
         await RouteMessageBox.confirm(
           '更换采购单将清空本次未确认的到货输入，确定继续吗？',
-          '重新选择采购',
+          '更换采购单',
           { type: 'warning' },
         );
       } catch {
@@ -214,54 +167,40 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     remark.value = '';
     stale.value = false;
     await loadOrders();
-  };
-  const split = (row: ReceiptDraftRow): void => {
-    if (rows.value.length < 100) {
-      const lastIndex = rows.value.map((item) => item.line.id).lastIndexOf(row.line.id);
-      rows.value.splice(lastIndex + 1, 0, {
-        key: ++sequence,
-        line: row.line,
-        receivedQuantity: undefined,
-        supplierBatchCode: '',
-        overReceiptNote: '',
-      });
-    } else EMessage.warning('一次到货最多100条明细，请分次登记');
-  };
-  const confirm = async (): Promise<void> => {
-    if (!canConfirm.value || !(await checkOrder(true)) || !order.value) return;
-    const target = order.value;
+  }
+  async function confirm(): Promise<void> {
+    if (!canConfirm.value || !(await checkOrder()) || !order.value) return;
+    const source = order.value;
     const body: ConfirmProcurementReceiptPayload = {
-      purchaseOrderId: target.id,
-      purchaseOrderVersion: target.version,
+      purchaseOrderId: source.id,
+      purchaseOrderVersion: source.version,
       receivedAt: toBeijingISOString(receivedAt.value),
       handoverEvidence: handoverEvidence.value.trim(),
       remark: remark.value.trim() || null,
-      details: activeRows.value.map((row) => ({
-        purchaseOrderLineId: row.line.id,
-        version: row.line.version,
-        receivedQuantity: Number(row.receivedQuantity),
-        supplierBatchCode: row.supplierBatchCode.trim() || null,
-        overReceiptNote: row.overReceiptNote.trim() || null,
+      details: activeRows.value.map(({ line, supplierBatchCode }) => ({
+        purchaseOrderLineId: line.id,
+        version: line.version,
+        supplierBatchCode: supplierBatchCode.trim() || null,
       })),
     };
     await command.run(
       { intentType: 'procurement.receipt.confirm', params: {}, query: {}, body },
       (key) => procurementApi.confirmReceipt(body, key),
-      '实际到货已登记，质检后由库管核对正式清单，再办理入库',
+      '到货已登记，可分别办理实际入库和进料检验报告',
     );
-  };
-  const search = async (): Promise<void> => {
+  }
+  async function search(): Promise<void> {
     page.value = 1;
     await loadOrders();
-  };
-  const changePage = async (value: number): Promise<void> => {
+  }
+  async function changePage(value: number): Promise<void> {
     page.value = value;
     await loadOrders();
-  };
-  const changePageSize = async (value: number): Promise<void> => {
+  }
+  async function changePageSize(value: number): Promise<void> {
     pageSize.value = value;
     await search();
-  };
+  }
   return {
     visible,
     loading,
@@ -281,12 +220,11 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
     open,
     close,
     selectOrder,
-    refreshQuantities,
     reselect,
-    split,
     confirm,
     search,
     changePage,
     changePageSize,
+    checkOrder,
   };
 }

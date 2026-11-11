@@ -20,7 +20,6 @@ export const PERMISSIONS = {
     inboundInspections: {
       view: 'quality:inbound-inspections:view',
       manage: 'quality:inbound-inspections:manage',
-      review: 'quality:inbound-inspections:review',
       inspect: 'quality:inbound-inspections:inspect',
     },
   },
@@ -150,9 +149,7 @@ export const PERMISSIONS = {
     receipts: {
       view: 'warehouse:receipts:view',
       confirm: 'warehouse:receipts:confirm',
-      accept: 'warehouse:receipts:accept',
-      correct: 'warehouse:receipts:correct',
-      return: 'warehouse:receipts:return',
+      handle: 'warehouse:receipts:handle',
       void: 'warehouse:receipts:void',
     },
     otherInbounds: {

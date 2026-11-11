@@ -4,7 +4,7 @@ import { productionInboundsApi } from '../../../api/production/inbounds';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
 
-/** 外购入库历史只读；实际入库仅由采购放行确认入口办理。 */
+/** 外购入库历史只读；实际入库由到货明细的仓库确认入口办理。 */
 export const usePurchaseInbounds = () => {
   const rows = ref<PurchaseInboundOrderItem[]>([]),
     total = ref(0),

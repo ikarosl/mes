@@ -1,7 +1,7 @@
 import type { RowDataPacket } from 'mysql2/promise';
 import { type Db, idsSql } from './mysql-purchase-order.shared.js';
 
-/** 非取消补单的原到货来源引用持续有效，不随到货处理轮变化而解除。 */
+/** 原到货来源引用持续有效，只有取消补单才解除作废阻断。 */
 export async function readReceiptDependentPurchases(
   db: Db,
   receiptLineIds: string[],

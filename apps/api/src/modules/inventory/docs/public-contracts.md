@@ -16,13 +16,13 @@
 
 ## 采购和终检成品实际入库
 
-`InventoryInboundCommand.confirmPurchaseReceipt` 接收 Procurement 已锁定并核验的到货授权。每条输入含到货／实收修订／检验／allocation、供应商名称快照、物料精确身份与单位、正整数数量及 target。采购允许多供应商合单，同一新批次键可共批，实际单位和身份仍须一致；目标使用 [InventoryInboundTarget](../../../../../../packages/contracts/src/production/inventory-target.ts)。
+InventoryInboundCommand.confirmPurchaseReceipt 接收 Procurement 已锁定并核验的有效到货物料。输入只含 receiptLineId、供应商名称快照、物料精确身份与单位、实际正整数数量和 target，不带检验、实收修订或分配。采购支持多到货、多供应商合单、同来源拆多个目标和共用新批次键，目标精确身份及单位必须一致，规则见 [InventoryInboundTarget](../../../../../../packages/contracts/src/production/inventory-target.ts)。其他处理说明由 Procurement 的到货行独立命令保存，不通过实际入库确认提交，也不调用库存命令。
 
 `confirmTrackingOutput` 接收 Production 在同池事务中锁定并创建的 `production_tracking_output`，输入包括 outputId、任务／工单／成品身份、编码、单位和正数产出。每次终检产出一次性创建一个成品库存批次、一张已完成入库单和一条库存流水；不选择已有批次、不分次消费，也不经过结案审批。研发零产出由 Production 保存，不调用库存命令；过程报废及整盘报废也不调用库存。批量产出按剩余盘量确定，来源数量计算由 Production 负责。
 
 确认按 pending 主单 → 来源明细 → 库存流水 → completed 主单顺序同事务提交；结果保存真实 inboundId、inboundNo、inboundDetailId、batchId、batchNo、transactionId 和 quantity。来源明细以 outputId 唯一，数据库守卫核对同任务／工单／成品、单位和整笔产出数量。来源业务门禁由 Production 负责，Inventory 只办理其库存事实，不写来源表。HTTP 幂等由终检命令承担，未知提交结果使用原请求恢复。
 
-`InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds})` 继续按到货历史全部修订累计采购实际已入量，返回每笔真实入库的 allocationId/quantity。采购与终检分别记 purchase_inbound 和 production_inbound，库存均只以 inventory_transaction 为事实来源。
+InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds}) 只累计已完成采购入库明细与匹配原始正流水，逐笔返回 inboundDetailId/quantity。它不关联检验或授权，也不从说明推算退回。采购与终检分别记 purchase_inbound 和 production_inbound，库存只以 inventory_transaction 为事实来源。
 
 ## 其他入出库与幂等
 
@@ -46,12 +46,12 @@ Inventory 用该事实及自己当前已完成生产领料核对未预留量，�
 
 ## 只读展示
 
-库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、授权单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
+库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、来源单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 
 外购入库列表和详情的主单供应商摘要使用 `suppliers` 集合，逐明细的 `supplierId` 沿真实到货采购行所属的采购主单读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。采购供应商存储层级调整不回写已确认 inbound_detail 名称快照或既有 item_batch.provider 文本。
 
 `InventoryInboundRepository` 提供入库/库存历史查询。库存批次列表、详情和名称关键词使用同一名称来源：物料按公共规则读当前名称；成品优先保留有效入库来源中首条工单的冻结名称，没有工单来源时按 `product_id` 读取 `products.product_name`，不因成品停用或软删除丢失历史展示，也不由名称补造工单或任务。
 
-库批来源集合、来源类别筛选及来源工单／任务关键词只读取已完成主单的未删除 `inbound_detail`，并匹配该明细所属场景的原始正流水：采购 `purchase_inbound`、终检成品 `production_inbound`、生产退料 `material_return_inbound`、其他入库 `other_inbound`；身份、精确版本、批次、单位、库存状态及数量必须一致。类别沿实际主单读取，成品返回真实 productionOutputId，采购到货及检验沿其明细关联；其他入库不产生生产／采购来源。批次供应方和工单／任务摘要仅在所有有效来源均有相同值时返回，否则为 `null`；`item_batch.source_type` 保留建批类别，不作为实际来源集合或唯一工单归属。
+库批来源集合、来源类别筛选及来源工单／任务关键词只读取已完成主单的未删除 `inbound_detail`，并匹配该明细所属场景的原始正流水：采购 `purchase_inbound`、终检成品 `production_inbound`、生产退料 `material_return_inbound`、其他入库 `other_inbound`；身份、精确版本、批次、单位、库存状态及数量必须一致。类别沿实际主单读取，成品返回真实 productionOutputId，采购到货沿其明细关联；其他入库不产生生产／采购来源。批次供应方和工单／任务摘要仅在所有有效来源均有相同值时返回，否则为 `null`；`item_batch.source_type` 保留建批类别，不作为实际来源集合或唯一工单归属。
 
-外购物料入库详情的 `procurementSource` 是只读展示投影：到货单号与真实明细 ID 取该明细保存的到货行，不读取或返回到货行号；`receipt.purchaseOrderNo` 是登记原采购单；采购来源沿该明细的 `procurement_allocation_id → procurement_receipt_allocation.receipt_line_id → procurement_receipt_line.purchase_order_line_id` 取真实采购行 ID、采购主单 ID 和单号，不读取或返回采购行号；该来源即到货自身采购行，不因超量补购而转移；`inspection` 仅按该明细保存的 `procurement_inspection_id` 取真实检验记录的 `caseId` 和 `inspectedAt`。旧外购无采购来源或任一关联不完整时整个投影为 `null`，原四个来源 ID 仍逐项返回。查询在登记的 `infrastructure/queries/` 批量只读完成，不参与写入资格校验。共批后的领用只能追溯到库批及其来源集合，不能推断领用精确消耗哪次来源。盘点仍是 Inventory 自有用例，仅处理物料批次。
+外购物料入库详情的 procurementSource 是只读来源投影：到货单号与明细 ID 取该实际明细保存的 procurement_receipt_line_id，采购主单与行沿原到货来源取得；不因超量补购转移归属，不复制或选择一份检验报告作为库存依据。检验历史在 Quality 独立读取。查询在登记的 infrastructure/queries 批量只读完成，不参与写入资格校验。共批后的领用只能追溯到库批及其来源集合，不能推断精确消耗哪次来源。盘点仍是 Inventory 自有用例，仅处理物料批次。

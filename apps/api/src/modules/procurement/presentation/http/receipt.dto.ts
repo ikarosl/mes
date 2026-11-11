@@ -3,14 +3,13 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
-  Equals,
   IsArray,
   IsDefined,
   IsIn,
-  IsObject,
   IsInt,
   IsISO8601,
   IsNotEmpty,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -23,24 +22,20 @@ import {
 import {
   PURCHASE_ORDER_MAX_QUANTITY,
   PROCUREMENT_RECEIPT_MAX_LINES,
+  PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH,
   QUALITY_INBOUND_METHODS,
-  QUALITY_RELEASE_DECISIONS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
+  QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH,
   RECEIPT_HISTORY_KINDS,
-  RECEIPT_ALLOCATION_DISPOSITIONS,
-  RECEIPT_RETURN_REASONS,
 } from '@company/constants';
 import type {
-  QualityReleaseDecision,
-  QualityInboundInspectionMethod,
+  QualityInspectionMethod,
   ReceiptHistoryKind,
-  ReceiptAllocationDisposition,
-  ReceiptReturnReason,
   InventoryInboundTarget,
+  JsonTableData,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 import { PurchaseOrderIdDto, PurchaseOrderVersionDto } from './purchase-order.dto.js';
-
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
 const csv = ({ value }: { value: unknown }) =>
   typeof value === 'string' ? value.split(',').map((item) => item.trim()) : value;
@@ -49,10 +44,10 @@ class ReceiptSourceQueryDto extends PageQueryDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @Matches(ID) supplierId?: string;
 }
-export class ReceiptPurchaseOrdersQueryDto extends ReceiptSourceQueryDto {
-  @IsOptional() @IsIn(['yes']) awaitingAcceptance?: 'yes';
+export class ReceiptQueryDto extends ReceiptSourceQueryDto {
+  @IsOptional() @Matches(ID) purchaseOrderId?: string;
 }
-export class ReceiptReleaseQueryDto extends ReceiptSourceQueryDto {
+export class ReceiptSourceCandidatesQueryDto extends ReceiptSourceQueryDto {
   @IsOptional() @Matches(ID) purchaseOrderId?: string;
   @IsOptional() @Matches(ID) receiptLineId?: string;
   @IsOptional()
@@ -62,35 +57,33 @@ export class ReceiptReleaseQueryDto extends ReceiptSourceQueryDto {
   @ArrayMaxSize(100)
   @ArrayUnique()
   @Matches(ID, { each: true })
-  allocationIds?: string[];
+  receiptLineIds?: string[];
 }
 export class ReceiptHistoryPathDto extends PurchaseOrderIdDto {
   @IsIn(RECEIPT_HISTORY_KINDS) historyKind!: ReceiptHistoryKind;
 }
+export class InspectionReportPathDto {
+  @Matches(ID) reportId!: string;
+}
 export class ConfirmReceiptDetailDto extends PurchaseOrderVersionDto {
   @Matches(ID) purchaseOrderLineId!: string;
-  @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) receivedQuantity!: number;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(100) supplierBatchCode?: string | null;
-  @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) overReceiptNote?: string | null;
 }
 export class ConfirmProcurementReceiptDto {
   @Matches(ID) purchaseOrderId!: string;
   @IsInt() @Min(0) @Max(2147483647) purchaseOrderVersion!: number;
   @IsISO8601({ strict: true }) @Matches(/(?:Z|[+-]\d{2}:\d{2})$/) receivedAt!: string;
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) handoverEvidence!: string;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) handoverEvidence?: string | null;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(PROCUREMENT_RECEIPT_MAX_LINES)
+  @ArrayUnique((row: ConfirmReceiptDetailDto) => row.purchaseOrderLineId)
   @ValidateNested({ each: true })
   @Type(() => ConfirmReceiptDetailDto)
   details!: ConfirmReceiptDetailDto[];
 }
-export class ReceiptRoundCommandDto extends PurchaseOrderVersionDto {
-  @Matches(ID) roundId!: string;
-  @IsInt() @Min(0) @Max(2147483647) roundVersion!: number;
-}
-export class ReceiptVoidLineVersionDto extends ReceiptRoundCommandDto {
+export class ReceiptVoidLineVersionDto extends PurchaseOrderVersionDto {
   @Matches(ID) receiptLineId!: string;
 }
 export class VoidProcurementReceiptDto extends PurchaseOrderVersionDto {
@@ -98,58 +91,40 @@ export class VoidProcurementReceiptDto extends PurchaseOrderVersionDto {
   @IsArray()
   @ArrayMinSize(1)
   @ArrayMaxSize(PROCUREMENT_RECEIPT_MAX_LINES)
-  @ArrayUnique((line: ReceiptVoidLineVersionDto) => line.receiptLineId)
+  @ArrayUnique((row: ReceiptVoidLineVersionDto) => row.receiptLineId)
   @ValidateNested({ each: true })
   @Type(() => ReceiptVoidLineVersionDto)
   lines!: ReceiptVoidLineVersionDto[];
 }
-export class CorrectReceiptDto extends ReceiptRoundCommandDto {
-  @Matches(ID) previousRevisionId!: string;
-  @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) receivedQuantity!: number;
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
-  @Equals(true) physicalIdentityConfirmed!: true;
-}
-export class ReceiptAllocationCommandDto extends ReceiptRoundCommandDto {
-  @Matches(ID) allocationId!: string;
-}
-export class RejectReceiptDto extends ReceiptRoundCommandDto {
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
-}
-export class RevokeReceiptRejectionDto extends ReceiptRoundCommandDto {
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
-}
-export class StartReceiptReviewDto extends ReceiptRoundCommandDto {
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) reason!: string;
-}
-export class InspectReceiptDto extends ReceiptRoundCommandDto {
-  @Matches(ID) caseId!: string;
-  @IsInt() @Min(0) @Max(2147483647) caseVersion!: number;
-  @Matches(ID) receiptRevisionId!: string;
-  @IsIn(QUALITY_INBOUND_METHODS) inspectionMethod!: QualityInboundInspectionMethod;
+export class InspectReceiptDto {
+  @IsIn(QUALITY_INBOUND_METHODS) inspectionMethod!: QualityInspectionMethod;
   @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) qualifiedQuantity!: number;
   @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) unqualifiedQuantity!: number;
-  @IsIn(QUALITY_RELEASE_DECISIONS) releaseDecision!: QualityReleaseDecision;
   @IsISO8601({ strict: true }) @Matches(/(?:Z|[+-]\d{2}:\d{2})$/) inspectedAt!: string;
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
-  @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH)
-  remark!: string;
+  @MaxLength(QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH)
+  specification?: string | null;
+  @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsISO8601({ strict: true }) expiresOn?:
+    string | null;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH) remark?:
+    string | null;
+  @IsOptional() @Transform(trim) @IsString() @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH) evidence?:
+    string | null;
+  @IsOptional() @Matches(ID) previousRecordId?: string | null;
+  @IsOptional()
   @Transform(trim)
   @IsString()
-  @IsNotEmpty()
   @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH)
-  evidence!: string;
-}
-export class ConfirmSupplierReturnDto extends ReceiptAllocationCommandDto {
-  @Matches(ID) receiptRevisionId!: string;
-  @IsISO8601({ strict: true }) @Matches(/(?:Z|[+-]\d{2}:\d{2})$/) returnedAt!: string;
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) handoverEvidence!: string;
-  @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
+  correctionReason?: string | null;
+  @IsObject({ message: '检验记录必须是 JSON 表格对象' })
+  inspectionDetails!: JsonTableData;
 }
 export class InboundTargetDto {
   @IsIn(['new', 'existing']) mode!: 'new' | 'existing';
   @ValidateIf((target: InboundTargetDto) => target.mode === 'new')
+  @Transform(trim)
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
@@ -158,16 +133,21 @@ export class InboundTargetDto {
   @Matches(ID)
   batchId?: string;
 }
-export class ConfirmProcurementInboundDetailDto extends ReceiptAllocationCommandDto {
+export class RecordReceiptHandlingDto {
+  @Transform(trim)
+  @IsString()
+  @IsNotEmpty()
+  @MaxLength(PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH)
+  otherHandlingNote!: string;
+}
+export class ConfirmProcurementInboundDetailDto extends PurchaseOrderVersionDto {
+  @Matches(ID) receiptLineId!: string;
+  @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) quantity!: number;
   @IsDefined()
   @IsObject()
   @ValidateNested()
   @Type(() => InboundTargetDto)
   target!: InventoryInboundTarget;
-  @Matches(ID) receiptLineId!: string;
-  @Matches(ID) receiptRevisionId!: string;
-  @Matches(ID) inspectionId!: string;
-  @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) quantity!: number;
 }
 export class ConfirmProcurementInboundDto {
   @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
@@ -177,28 +157,4 @@ export class ConfirmProcurementInboundDto {
   @ValidateNested({ each: true })
   @Type(() => ConfirmProcurementInboundDetailDto)
   details!: ConfirmProcurementInboundDetailDto[];
-}
-
-export class ReceiptAllocationDto {
-  @IsIn(RECEIPT_ALLOCATION_DISPOSITIONS) disposition!: ReceiptAllocationDisposition;
-  @IsInt() @Min(1) @Max(PURCHASE_ORDER_MAX_QUANTITY) quantity!: number;
-  @IsOptional()
-  @IsIn(RECEIPT_RETURN_REASONS.filter((reason) => reason !== 'manual_rejection'))
-  returnReason: ReceiptReturnReason | null = null;
-  @IsOptional() @Transform(trim) @IsString() @MaxLength(2000) remark?: string | null;
-}
-export class ConfirmReceiptAcceptanceDto extends ReceiptRoundCommandDto {
-  @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) confirmedQuantity!: number;
-  @IsOptional() @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) overrideReason?:
-    string | null;
-  @Matches(ID) receiptRevisionId!: string;
-  @Matches(ID) caseId!: string;
-  @Matches(ID) inspectionId!: string;
-  @Equals(true) physicalIdentityConfirmed!: true;
-  @Transform(trim) @IsString() @IsNotEmpty() @MaxLength(2000) remark!: string;
-  @IsArray()
-  @ArrayMaxSize(100)
-  @ValidateNested({ each: true })
-  @Type(() => ReceiptAllocationDto)
-  details!: ReceiptAllocationDto[];
 }

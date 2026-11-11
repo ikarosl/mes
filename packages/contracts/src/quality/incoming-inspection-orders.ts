@@ -1,13 +1,9 @@
 import type { PageQuery, PageResult } from '../common.js';
-import type {
-  ProcurementInboundInspectionLineItem,
-  ProcurementReceiptVoidItem,
-  ReceiptLineStage,
-} from '../procurement/receipts.js';
+import type { ProcurementReceiptVoidItem } from '../procurement/receipts.js';
+import type { QualityIncomingInspectionReportSummary } from './inbound-inspections.js';
 
 export interface QualityIncomingInspectionOrderQuery extends PageQuery {
   keyword?: string;
-  stage?: ReceiptLineStage;
   supplierId?: string;
 }
 
@@ -54,7 +50,30 @@ export interface QualityIncomingInspectionReceiptCandidateQuery extends PageQuer
 export interface QualityIncomingInspectionReceiptLines {
   receipt: QualityIncomingInspectionReceiptItem;
   /** Complete current receipt scope, at most 100 lightweight rows. */
-  items: ProcurementInboundInspectionLineItem[];
+  items: QualityIncomingInspectionLineItem[];
+}
+
+/** Report counts and the newest registered fact are descriptive, without stock or release eligibility. */
+export interface QualityIncomingInspectionLineItem {
+  receiptLineId: string;
+  receiptId: string;
+  purchaseOrderId: string;
+  itemName: string;
+  materialVariantCode: string;
+  unit: string;
+  supplierBatchCode: string | null;
+  void: ProcurementReceiptVoidItem | null;
+  reportCount: number;
+  latestReport: Pick<
+    QualityIncomingInspectionReportSummary,
+    | 'id'
+    | 'reportNo'
+    | 'inspectionMethod'
+    | 'qualifiedQuantity'
+    | 'unqualifiedQuantity'
+    | 'inspectedQuantity'
+    | 'inspectedAt'
+  > | null;
 }
 
 export interface QualityIncomingInspectionLocation {

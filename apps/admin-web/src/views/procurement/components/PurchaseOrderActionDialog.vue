@@ -54,23 +54,8 @@
           >
           <el-descriptions-item
             v-if="actionLine?.quantities"
-            label="累计到货"
-            >{{ actionLine.quantities.receivedQuantity }}</el-descriptions-item
-          >
-          <el-descriptions-item
-            v-if="actionLine?.quantities"
             label="累计已入"
             >{{ actionLine.quantities.inboundQuantity }}</el-descriptions-item
-          >
-          <el-descriptions-item
-            v-if="actionLine?.quantities"
-            label="当前待退"
-            >{{ actionLine.quantities.pendingReturnQuantity }}</el-descriptions-item
-          >
-          <el-descriptions-item
-            v-if="actionLine?.quantities"
-            label="实际已退"
-            >{{ actionLine.quantities.returnedQuantity }}</el-descriptions-item
           >
         </el-descriptions>
         <el-table

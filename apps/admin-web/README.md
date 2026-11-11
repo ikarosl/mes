@@ -7,7 +7,7 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 - [管理端架构](docs/architecture.md)：公共状态所有权、候选、刷新、并发和写意图。
 - [视觉设计](docs/visual-design.md)：[界面调整原则](docs/visual-design.md#1-界面调整原则)、显示规范与场景密度；[路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)：接入方式。
 - [HTTP 错误处理](docs/http-error-handling.md)：认证、重试、消息去重和已知限制。
-- [采购与入库](docs/procurement-inbound.md)、[来料检验与定稿](docs/incoming-inspection-adoption.md)、[员工工作台与工序追踪](docs/production-tracking.md)：专题前端约束。
+- [采购与入库](docs/procurement-inbound.md)、[来料检验报告](docs/incoming-inspection-adoption.md)、[员工工作台与工序追踪](docs/production-tracking.md)：专题前端约束。
 - [其他入出库](docs/other-inventory-orders.md)：本地编辑行、新批次组及确认意图。
 - [业务人员配置与生产负责人](docs/business-user-candidates.md)：配置人数与未保存选择的区别。
 - [系统模板管理](docs/business-templates.md)：表格尺寸变更及应用模板的覆盖确认。

@@ -77,3 +77,23 @@ SELECT '空白备注模板',
   ),
   'enabled',@business_template_demo_actor,@business_template_demo_actor
 WHERE NOT EXISTS (SELECT 1 FROM business_templates WHERE name='空白备注模板');
+
+INSERT INTO business_templates (name,content,status,created_by,updated_by)
+SELECT '来料检验初始模板',
+  JSON_OBJECT(
+    'columns',JSON_ARRAY(
+      JSON_OBJECT('key','inspectionItem','label','检验项目'),
+      JSON_OBJECT('key','acceptanceRequirement','label','验收要求'),
+      JSON_OBJECT('key','inspectionTool','label','检验工具'),
+      JSON_OBJECT('key','contentDescription','label','检验内容描述'),
+      JSON_OBJECT('key','inspectionResult','label','检验结果')
+    ),
+    'rows',JSON_ARRAY(
+      JSON_OBJECT('inspectionItem','外观','acceptanceRequirement','','inspectionTool','目视','contentDescription','','inspectionResult',''),
+      JSON_OBJECT('inspectionItem','包装要求','acceptanceRequirement','','inspectionTool','目视','contentDescription','','inspectionResult',''),
+      JSON_OBJECT('inspectionItem','材料证明','acceptanceRequirement','','inspectionTool','目视','contentDescription','','inspectionResult',''),
+      JSON_OBJECT('inspectionItem','数量','acceptanceRequirement','','inspectionTool','目视','contentDescription','','inspectionResult','')
+    )
+  ),
+  'enabled',@business_template_demo_actor,@business_template_demo_actor
+WHERE NOT EXISTS (SELECT 1 FROM business_templates WHERE name='来料检验初始模板');
