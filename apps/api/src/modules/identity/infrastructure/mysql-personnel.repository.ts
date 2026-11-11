@@ -3,7 +3,6 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import { DatabaseError, withActiveConnection, withTransaction } from '@company/database';
 import type {
   PageResult,
-  PersonnelGroup,
   PersonnelItem,
   PersonnelListQuery,
   PersonnelOption,
@@ -22,16 +21,14 @@ type PersonnelRow = RowDataPacket & {
   id: string;
   code: string;
   name: string;
-  personnel_group: PersonnelGroup;
   status: PersonnelStatus;
   version: number;
 };
-const columns = 'id,code,name,personnel_group,status,version';
+const columns = 'id,code,name,status,version';
 const item = (row: PersonnelRow): PersonnelItem => ({
   id: String(row.id),
   code: row.code,
   name: row.name,
-  group: row.personnel_group,
   status: row.status,
   version: row.version,
 });
@@ -39,7 +36,6 @@ const option = (row: PersonnelRow): PersonnelOption => ({
   id: String(row.id),
   code: row.code,
   name: row.name,
-  group: row.personnel_group,
 });
 
 @Injectable()
@@ -56,10 +52,6 @@ export class MysqlPersonnelRepository extends PersonnelRepository {
     if (query.keyword) {
       where.push('(code LIKE ? OR name LIKE ?)');
       values.push(`%${query.keyword}%`, `%${query.keyword}%`);
-    }
-    if (query.group) {
-      where.push('personnel_group=?');
-      values.push(query.group);
     }
     if (query.status) {
       where.push('status=?');
@@ -82,16 +74,15 @@ export class MysqlPersonnelRepository extends PersonnelRepository {
       };
     });
   }
-  options(group?: PersonnelGroup): Promise<PersonnelOption[]> {
+  options(): Promise<PersonnelOption[]> {
     return withActiveConnection(this.pool, async (db) => {
       const [rows] = await db.query<PersonnelRow[]>(
-        `SELECT ${columns} FROM personnel WHERE is_deleted=0 AND status='active' ${group ? 'AND personnel_group=?' : ''} ORDER BY name,id`,
-        group ? [group] : [],
+        `SELECT ${columns} FROM personnel WHERE is_deleted=0 AND status='active' ORDER BY name,id`,
       );
       return rows.map(option);
     });
   }
-  requireActive(id: string, group?: PersonnelGroup): Promise<PersonnelOption> {
+  requireActive(id: string): Promise<PersonnelOption> {
     return withActiveConnection(this.pool, async (db) => {
       if (db === this.pool) throw new Error('现场人员资格复核必须位于业务事务中');
       const [rows] = await db.query<PersonnelRow[]>(
@@ -99,27 +90,18 @@ export class MysqlPersonnelRepository extends PersonnelRepository {
         [id],
       );
       const row = rows[0];
-      if (!row || row.status !== 'active' || (group && row.personnel_group !== group))
-        throw new PersonnelError(
-          'INVALID_INPUT',
-          group === 'quality' ? '请选择当前启用的质检人员' : '登记人员已停用或不存在，请重新选择',
-        );
+      if (!row || row.status !== 'active')
+        throw new PersonnelError('INVALID_INPUT', '登记人员已停用或不存在，请重新选择');
       return option(row);
     });
   }
   async create(input: SavePersonnelInput, audit: AuditLogEntry): Promise<PersonnelItem> {
     try {
       return await withTransaction(this.pool, async (db) => {
+        // personnel_group 暂停使用；固定占位值满足既有 NOT NULL/CHECK，不表示人员类型。
         const [created] = await db.execute<ResultSetHeader>(
-          'INSERT INTO personnel(code,name,personnel_group,status,created_by,updated_by) VALUES (?,?,?,?,?,?)',
-          [
-            input.code,
-            input.name,
-            input.group,
-            input.status,
-            audit.userId ?? null,
-            audit.userId ?? null,
-          ],
+          "INSERT INTO personnel(code,name,personnel_group,status,created_by,updated_by) VALUES (?,?,'production',?,?,?)",
+          [input.code, input.name, input.status, audit.userId ?? null, audit.userId ?? null],
         );
         const saved = await this.read(db, String(created.insertId));
         await writeTransactionalAudit(db, {
@@ -145,8 +127,8 @@ export class MysqlPersonnelRepository extends PersonnelRepository {
         if (before.code !== input.code)
           throw new PersonnelError('INVALID_INPUT', '人员编号创建后不能修改');
         const [updated] = await db.execute<ResultSetHeader>(
-          'UPDATE personnel SET name=?,personnel_group=?,status=?,version=version+1,updated_by=? WHERE id=? AND version=? AND is_deleted=0',
-          [input.name, input.group, input.status, audit.userId ?? null, id, input.version],
+          'UPDATE personnel SET name=?,status=?,version=version+1,updated_by=? WHERE id=? AND version=? AND is_deleted=0',
+          [input.name, input.status, audit.userId ?? null, id, input.version],
         );
         requireOptimisticUpdate(updated.affectedRows);
         const saved = await this.read(db, id);

@@ -160,12 +160,7 @@ export class ProductionTrackingService {
     const body = { ...payload, remark: payload.remark?.trim() || null };
     return this.execute('confirm-output', { cardId }, body, context, trackingCardResultCodec, () =>
       this.repository.withCardTransaction(cardId, false, async (id) =>
-        this.repository.confirmOutput(
-          id,
-          body,
-          await this.person(body.personnelId, 'quality'),
-          context,
-        ),
+        this.repository.confirmOutput(id, body, await this.person(body.personnelId), context),
       ),
     );
   }
@@ -186,7 +181,7 @@ export class ProductionTrackingService {
           this.repository.confirmResearchOutput(
             batchId,
             body,
-            await this.person(body.personnelId, 'quality'),
+            await this.person(body.personnelId),
             context,
           ),
         ),
@@ -221,11 +216,8 @@ export class ProductionTrackingService {
     const content = await this.files.readHistoricalSnapshot(reference);
     return { ...content, fileName: reference.fileName };
   }
-  private async person(
-    id: string,
-    group?: 'production' | 'quality',
-  ): Promise<ProductionTrackingPersonnelSnapshot> {
-    const person = await this.personnel.requireActive(id, group);
+  private async person(id: string): Promise<ProductionTrackingPersonnelSnapshot> {
+    const person = await this.personnel.requireActive(id);
     return { personnelId: person.id, personnelCode: person.code, personnelName: person.name };
   }
   private reason(value: string): string {

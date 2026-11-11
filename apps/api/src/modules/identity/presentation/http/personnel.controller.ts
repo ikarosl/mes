@@ -22,7 +22,6 @@ import { PersonnelService } from '../../application/personnel.service.js';
 import { PersonnelError } from '../../domain/personnel.errors.js';
 import {
   PersonnelListQueryDto,
-  PersonnelOptionsQueryDto,
   PersonnelParamDto,
   SavePersonnelDto,
   UpdatePersonnelDto,
@@ -45,8 +44,8 @@ export class PersonnelController {
     PERMISSIONS.production.tracking.view,
     PERMISSIONS.production.tasks.view,
   ])
-  options(@Query() query: PersonnelOptionsQueryDto): Promise<PersonnelOption[]> {
-    return this.service.options(query.group);
+  options(): Promise<PersonnelOption[]> {
+    return this.service.options();
   }
 
   @Post()

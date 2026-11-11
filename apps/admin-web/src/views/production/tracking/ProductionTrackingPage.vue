@@ -184,6 +184,22 @@
         :closable="false"
         show-icon
       />
+      <el-alert
+        v-if="quantityError"
+        :title="quantityError"
+        type="error"
+        :closable="false"
+        show-icon
+      >
+        <el-button
+          link
+          type="primary"
+          :loading="quantityLoading"
+          :disabled="actionVisible"
+          @click="loadQuantityAction"
+          >重新加载更正依据</el-button
+        >
+      </el-alert>
       <el-table
         v-if="view === 'cards'"
         v-loading="loading"
@@ -258,7 +274,7 @@
         />
         <el-table-column
           label="操作"
-          width="105"
+          width="185"
           fixed="right"
           ><template #default="{ row }"
             ><el-button
@@ -266,6 +282,14 @@
               type="primary"
               @click.stop="selectCard(row)"
               >查看详情</el-button
+            ><el-button
+              v-if="canCorrectQuantity(row)"
+              link
+              type="primary"
+              :loading="quantityLoading && quantityTarget?.id === row.id"
+              :disabled="actionVisible"
+              @click.stop="openQuantityAction(row)"
+              >更正盘量</el-button
             ></template
           ></el-table-column
         >
@@ -326,42 +350,27 @@
       />
     </section>
 
-    <section
-      v-if="selectedId"
-      v-loading="detailLoading"
-      class="panel detail-panel"
-    >
-      <el-alert
-        v-if="detailError"
-        :title="detailError"
-        type="error"
-        :closable="false"
-        show-icon
-      /><TrackingCardEvidence
-        v-if="selectedCard"
-        :card="selectedCard"
-        :steps="selectedSteps"
-        :loading="detailLoading"
-        @refresh="loadDetail"
-        @label="labelVisible = true"
-        @action="openAction"
-      /><el-button
-        v-else-if="detailError"
-        @click="loadDetail"
-        >重试详情</el-button
-      >
-    </section>
+    <TrackingCardEvidence
+      v-model:visible="detailVisible"
+      :card="selectedCard"
+      :steps="selectedSteps"
+      :loading="detailLoading"
+      :error="detailError"
+      @refresh="loadDetail"
+      @label="openLabel"
+      @action="openAction"
+    />
     <TrackingCardActionDialog
       v-model:visible="actionVisible"
       :action="action"
-      :card="selectedCard"
+      :card="actionCard"
       :abnormality="abnormality"
       route-name="production-tracking"
       @changed="cardChanged"
     />
     <TrackingLabelDialog
       v-model:visible="labelVisible"
-      :card="selectedCard"
+      :card="labelCard"
     />
   </div>
 </template>
@@ -395,6 +404,7 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
 import { batchStatusMeta } from '../shared/production-status';
 import TrackingCardEvidence from './TrackingCardEvidence.vue';
@@ -504,13 +514,16 @@ async function loadList(): Promise<void> {
   }
 }
 async function search(): Promise<void> {
+  cancelQuantityAction();
   page.value = 1;
   await loadList();
 }
 async function refresh(): Promise<void> {
+  cancelQuantityAction();
   await Promise.all([loadContext(), loadList()]);
 }
 async function changeBatch(): Promise<void> {
+  cancelQuantityAction();
   query.stepRecordId = '';
   context.value = null;
   await loadContext();
@@ -532,6 +545,7 @@ async function selectStep(id: string): Promise<void> {
   await search();
 }
 async function changePage(value: number): Promise<void> {
+  cancelQuantityAction();
   page.value = value;
   await loadList();
 }
@@ -550,7 +564,8 @@ async function openWorkbench(): Promise<void> {
     });
 }
 
-const selectedId = ref(''),
+const detailVisible = ref(false),
+  selectedId = ref(''),
   selectedCard = ref<ProductionTrackingCardDetail | null>(null),
   selectedSteps = ref<ProductionTrackingStep[]>([]),
   detailLoading = ref(false),
@@ -560,15 +575,18 @@ const detailReads = useLatestReadRequest(() => {
 });
 async function loadDetail(): Promise<void> {
   const id = selectedId.value;
-  if (!id || !detailReads.isActive()) return;
-  const read = detailReads.begin(() => selectedId.value === id);
+  if (!id || !detailVisible.value || !detailReads.isActive()) return;
+  const read = detailReads.begin(() => detailVisible.value && selectedId.value === id);
   detailLoading.value = true;
   detailError.value = '';
+  selectedCard.value = null;
   try {
     const card = await productionTrackingApi.detail(id, {
       signal: read.signal,
       skipErrorHandling: true,
     });
+    if (!read.isCurrent()) return;
+    if (card.id !== id) throw new Error('详情与所选追踪卡不一致，请重新加载');
     const workbench = await productionTrackingApi.workbench(card.productionBatchId, {
       signal: read.signal,
       skipErrorHandling: true,
@@ -576,6 +594,7 @@ async function loadDetail(): Promise<void> {
     if (read.isCurrent()) {
       selectedCard.value = card;
       selectedSteps.value = workbench.steps;
+      updateCardFacts(card);
     }
   } catch (error) {
     if (read.isCurrent()) {
@@ -587,32 +606,120 @@ async function loadDetail(): Promise<void> {
   }
 }
 async function openCard(id: string): Promise<void> {
-  if (actionVisible.value) return;
+  if (!detailReads.isActive()) return;
+  cancelQuantityAction();
   selectedId.value = id;
   selectedCard.value = null;
   selectedSteps.value = [];
+  detailVisible.value = true;
   await loadDetail();
 }
 async function selectCard(card: ProductionTrackingCardItem): Promise<void> {
   await openCard(card.id);
 }
 const labelVisible = ref(false),
+  labelCard = ref<ProductionTrackingCardDetail | null>(null),
   actionVisible = ref(false),
+  actionCard = ref<ProductionTrackingCardDetail | null>(null),
   action = ref<TrackingCardAction>('abnormality'),
   abnormality = ref<ProductionTrackingAbnormality | null>(null);
+function openLabel(): void {
+  const card = selectedCard.value;
+  if (
+    !card ||
+    labelVisible.value ||
+    !detailVisible.value ||
+    detailLoading.value ||
+    detailError.value ||
+    !detailReads.isActive()
+  )
+    return;
+  labelCard.value = { ...card };
+  labelVisible.value = true;
+}
 function openAction(value: TrackingCardAction, item?: ProductionTrackingAbnormality): void {
-  if (actionVisible.value || detailLoading.value) return;
+  const card = selectedCard.value;
+  if (
+    !card ||
+    !detailVisible.value ||
+    actionVisible.value ||
+    detailLoading.value ||
+    detailError.value ||
+    !detailReads.isActive()
+  )
+    return;
+  actionCard.value = { ...card };
   action.value = value;
   abnormality.value = item ?? null;
   actionVisible.value = true;
 }
+const quantityTarget = ref<Pick<ProductionTrackingCardItem, 'id' | 'cardNo'> | null>(null),
+  quantityLoading = ref(false),
+  quantityError = ref('');
+const quantityReads = useLatestReadRequest(() => {
+  quantityLoading.value = false;
+});
+function canCorrectQuantity(
+  card: Pick<ProductionTrackingCardItem, 'quantity' | 'status'>,
+): boolean {
+  return Number(card.quantity) > 0 && (card.status === 'unused' || card.status === 'in_progress');
+}
+function cancelQuantityAction(): void {
+  quantityReads.invalidate();
+  quantityTarget.value = null;
+  quantityError.value = '';
+}
+async function openQuantityAction(card: ProductionTrackingCardItem): Promise<void> {
+  if (actionVisible.value || !canCorrectQuantity(card) || !quantityReads.isActive()) return;
+  quantityTarget.value = { id: card.id, cardNo: card.cardNo };
+  await loadQuantityAction();
+}
+async function loadQuantityAction(): Promise<void> {
+  const target = quantityTarget.value;
+  if (!target || actionVisible.value || detailVisible.value || !quantityReads.isActive()) return;
+  const read = quantityReads.begin(
+    () => quantityTarget.value === target && !actionVisible.value && !detailVisible.value,
+  );
+  quantityLoading.value = true;
+  quantityError.value = '';
+  try {
+    const card = await productionTrackingApi.detail(target.id, {
+      signal: read.signal,
+      skipErrorHandling: true,
+    });
+    if (!read.isCurrent()) return;
+    if (card.id !== target.id) throw new Error('更正依据与所选追踪卡不一致，请重新加载');
+    updateCardFacts(card);
+    if (!canCorrectQuantity(card)) {
+      EMessage.warning(`${card.cardNo} 当前已不能更正盘量，请查看最新详情`);
+      return;
+    }
+    actionCard.value = { ...card };
+    action.value = 'quantity';
+    abnormality.value = null;
+    quantityLoading.value = false;
+    actionVisible.value = true;
+  } catch (error) {
+    if (read.isCurrent())
+      quantityError.value = `${target.cardNo}：${error instanceof Error ? error.message : '盘量更正依据加载失败，请重试'}`;
+  } finally {
+    if (read.isCurrent()) quantityLoading.value = false;
+  }
+}
+watch(detailVisible, (visible) => {
+  if (!visible) detailReads.invalidate();
+});
+function updateCardFacts(card: ProductionTrackingCardDetail): void {
+  cards.value = cards.value.map((item) => (item.id === card.id ? card : item));
+  if (actionCard.value?.id === card.id) actionCard.value = card;
+}
 async function cardChanged(card: ProductionTrackingCardDetail): Promise<void> {
-  if (selectedId.value === card.id) {
+  if (detailVisible.value && selectedId.value === card.id) {
     detailReads.invalidate();
     detailError.value = '';
     selectedCard.value = card;
   }
-  cards.value = cards.value.map((item) => (item.id === card.id ? card : item));
+  updateCardFacts(card);
   await refresh();
 }
 let consumedLocation = '';
@@ -626,8 +733,7 @@ async function locate(): Promise<void> {
   query.batchId = batchId || null;
   query.stepRecordId = typeof route.query.stepRecordId === 'string' ? route.query.stepRecordId : '';
   view.value = route.query.view === 'history' ? 'history' : 'cards';
-  await refresh();
-  if (cardId) await openCard(cardId);
+  await Promise.all([refresh(), cardId ? openCard(cardId) : Promise.resolve()]);
 }
 watch(
   () => [
@@ -668,8 +774,7 @@ usePageInitialLoad(async () => {
   background: var(--el-bg-color);
 }
 .query-panel,
-.overview-panel,
-.detail-panel {
+.overview-panel {
   padding: 20px;
 }
 .query-form {

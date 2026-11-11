@@ -1,6 +1,5 @@
 import type {
   PageResult,
-  PersonnelGroup,
   PersonnelItem,
   PersonnelListQuery,
   PersonnelOption,
@@ -27,11 +26,10 @@ export const personnelApi = {
     options: ReadRequestOptions = {},
   ): Promise<PageResult<PersonnelItem>> =>
     request({ ...options, url: '/identity/personnel', params }),
-  options: (group?: PersonnelGroup, options: ReadRequestOptions = {}): Promise<PersonnelOption[]> =>
+  options: (options: ReadRequestOptions = {}): Promise<PersonnelOption[]> =>
     request({
       ...options,
       url: '/identity/personnel/options',
-      params: { group },
       skipErrorHandling: true,
     }),
   create: (data: SavePersonnelInput): Promise<PersonnelItem> =>

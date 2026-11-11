@@ -7,7 +7,7 @@
 当前数据集包含：
 
 - System：生产操作工、生产管理员、仓管、采购员和质检员五类职责角色及下表账号；
-- 现场人员：[`003-personnel-demo.sql`](003-personnel-demo.sql) 补缺两名 production 与一名 quality 现场人员，独立于登录账号；不覆盖已有人员名称、分组或启停状态。
+- 现场人员：[`003-personnel-demo.sql`](003-personnel-demo.sql) 补缺三名现场人员，独立于登录账号；不覆盖已有人员信息。保留字段的存储值不影响候选与登记资格，见 [Identity 人员目录](../../../apps/api/src/modules/identity/docs/database.md#110-personnel)。
 - 人员候选：[`002-user-candidate-demo.sql`](002-user-candidate-demo.sql) 分别为尚无配置的工单负责人、任务负责人场景关联演示生产管理员角色；不进入 system seed 或 `db:init`。
 - 仓储入口验收：`other-inbound-001`、`other-outbound-001` 只拥有首页及各自其他入库／出库的查看和办理权限，不授予外购／成品入库或生产领料权限；密码仍取 `DEMO_USER_PASSWORD`。
 - Product：三个同名不同编码成品、两个同名基础物料 `m1.077.012` / `m1.077.013`、六个大小版本、仅关联基础物料的 BOM，以及可在创建批量任务时手动选择的独立工艺路线；
@@ -27,7 +27,7 @@
 | `production-001`               | `production`          | 产品资料、工单与任务、追踪卡工作台、用料分配、最终产出及需求更正审批；模板与库存仅查看 |
 | `warehouse-001`                | `warehouse`           | 采购到货及整单登记作废、库存查询、出入库、退料、领料损耗和盘点                         |
 | `procurement-001`              | `procurement`         | 供应商和采购单，不办理到货、质检或库存记账                                             |
-| `quality-001`                  | `quality`             | 来料分组管理、检验与复核、随盘异常和质量人员最终产出确认                               |
+| `quality-001`                  | `quality`             | 来料分组管理、检验与复核、随盘异常和最终产出确认                               |
 | `other-inbound-001`            | `demo-other-inbound`  | 仅办理其他入库                                                                         |
 | `other-outbound-001`           | `demo-other-outbound` | 仅办理其他出库                                                                         |
 
@@ -52,7 +52,7 @@ Product 主数据、Procurement 供应商与 Production 草稿工单只补缺失
 
 结构迁移若要求空业务库，先按[迁移安全](../docs/migration-safety.md)完成重建和系统初始化，再显式加载 demo；样例加载不能绕过迁移守卫。
 
-演示路线为装配、粘接、终检三站，按卡逐站扫码，末站由质量人员显式确认并按剩余盘量形成产出；研发仍手填实际产出。办理方式见[执行规则](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
+演示路线为装配、粘接、终检三站，按卡逐站扫码，末站选择启用现场人员显式确认并按剩余盘量形成产出；研发仍手填实际产出。办理方式见[执行规则](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
 
 追踪卡完整场景通过[场景工具](../../../tools/demo/README.md#追踪卡工作台样例)经业务 API 准备，包含影响 3 件按返修 1 件与新增报废 2 件结算、重叠异常引用相同报废而不重扣、未结阻止流转、整盘报废、剩余量入库、独立改量和作废历史。SQL种子本身不生成执行、质量结论或库存事实。
 
@@ -96,7 +96,7 @@ SQL demo 不伪造对象存储 locator，成品和精确版本初始规格书可
 
 其他入库可直接用 `demo-stock-multi-v1-A` 的两行正整数数量核对共用新批次及主行备注，再加入 `demo-stock-multi-v1-B` 核对版本隔离。`demo-stock-meter-v1-A` 与前者同名但编码及单位不同，不能因名称相同归到同一组。
 
-成品不再通过计划内外授权共批办理。批量卡由质量人员按剩余盘量确认，研发手填实际产出；正数同事务直接入库并独立建批，整盘报废不生成产出或库存，研发零数不记库存。办理顺序见[生产工作流](../../../apps/api/src/modules/production/docs/business-workflow.md)，批量追踪卡样例通过上述场景工具准备。
+成品不再通过计划内外授权共批办理。批量卡选择启用现场人员按剩余盘量确认，研发手填实际产出；正数同事务直接入库并独立建批，整盘报废不生成产出或库存，研发零数不记库存。办理顺序见[生产工作流](../../../apps/api/src/modules/production/docs/business-workflow.md)，批量追踪卡样例通过上述场景工具准备。
 
 ## 到货整单登记作废的人工准备
 

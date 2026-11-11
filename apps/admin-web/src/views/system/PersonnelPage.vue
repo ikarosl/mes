@@ -14,17 +14,6 @@
             placeholder="人员编号 / 姓名"
             @keyup.enter="search"
         /></el-form-item>
-        <el-form-item label="分组"
-          ><el-select
-            v-model="query.group"
-            clearable
-            placeholder="全部"
-            ><el-option
-              v-for="item in PERSONNEL_GROUP_OPTIONS"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value" /></el-select
-        ></el-form-item>
         <el-form-item label="状态"
           ><el-select
             v-model="query.status"
@@ -89,13 +78,6 @@
           min-width="180"
         />
         <el-table-column
-          label="分组"
-          min-width="140"
-          ><template #default="{ row }">{{
-            PERSONNEL_GROUP_LABELS[row.group as PersonnelGroup]
-          }}</template></el-table-column
-        >
-        <el-table-column
           label="状态"
           width="120"
           ><template #default="{ row }"
@@ -154,16 +136,6 @@
             maxlength="100"
         /></el-form-item>
         <el-form-item
-          label="分组"
-          required
-          ><el-select v-model="form.group"
-            ><el-option
-              v-for="item in PERSONNEL_GROUP_OPTIONS"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value" /></el-select
-        ></el-form-item>
-        <el-form-item
           label="状态"
           required
           ><el-radio-group v-model="form.status"
@@ -195,18 +167,8 @@
 <script setup lang="ts">
 import { onScopeDispose, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
-import {
-  PERSONNEL_GROUP_LABELS,
-  PERSONNEL_GROUP_OPTIONS,
-  PERSONNEL_STATUS_LABELS,
-  PERSONNEL_STATUS_OPTIONS,
-} from '@company/constants';
-import type {
-  PersonnelGroup,
-  PersonnelItem,
-  PersonnelStatus,
-  SavePersonnelInput,
-} from '@company/contracts';
+import { PERSONNEL_STATUS_LABELS, PERSONNEL_STATUS_OPTIONS } from '@company/constants';
+import type { PersonnelItem, PersonnelStatus, SavePersonnelInput } from '@company/contracts';
 import { personnelApi } from '../../api/personnel';
 import InlineHint from '../../components/InlineHint.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
@@ -227,9 +189,8 @@ const loading = ref(false),
   listError = ref('');
 const query = reactive<{
   keyword: string;
-  group: PersonnelGroup | '';
   status: PersonnelStatus | '';
-}>({ keyword: '', group: '', status: '' });
+}>({ keyword: '', status: '' });
 const reads = useLatestReadRequest(() => {
   loading.value = false;
 });
@@ -244,7 +205,6 @@ async function load(): Promise<void> {
         page: page.value,
         pageSize: pageSize.value,
         keyword: query.keyword.trim() || undefined,
-        group: query.group || undefined,
         status: query.status || undefined,
       },
       { signal: read.signal, skipErrorHandling: true },
@@ -264,7 +224,7 @@ async function search(): Promise<void> {
   await load();
 }
 async function reset(): Promise<void> {
-  Object.assign(query, { keyword: '', group: '', status: '' });
+  Object.assign(query, { keyword: '', status: '' });
   await search();
 }
 async function changePage(value: number): Promise<void> {
@@ -282,7 +242,6 @@ const editorVisible = ref(false),
 const emptyForm = (): SavePersonnelInput => ({
   code: '',
   name: '',
-  group: 'production',
   status: 'active',
 });
 const form = reactive(emptyForm());
@@ -292,9 +251,7 @@ function openEditor(item?: PersonnelItem): void {
   editing.value = item ? { ...item } : null;
   Object.assign(
     form,
-    item
-      ? { code: item.code, name: item.name, group: item.group, status: item.status }
-      : emptyForm(),
+    item ? { code: item.code, name: item.name, status: item.status } : emptyForm(),
   );
   initialSignature = JSON.stringify(form);
   editorVisible.value = true;

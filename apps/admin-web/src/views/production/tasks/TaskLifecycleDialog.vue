@@ -42,7 +42,7 @@
           >确认开始后，可继续办理物料和生产追踪；实际领料仍须通过出库单确认。</InlineHint
         >
         <InlineHint v-else
-          >研发产出由质检人员一次确认。0
+          >研发产出一次确认。0
           产出不入库，正数与本次确认同时入库；确认后可人工结束任务。</InlineHint
         >
         <el-alert
@@ -59,7 +59,7 @@
         >
           <template v-if="mode === 'research-output'"
             ><el-form-item
-              label="质检登记人"
+              label="确认人员"
               required
               ><el-select
                 v-model="personnelId"
@@ -187,10 +187,10 @@ async function loadPersonnel(): Promise<void> {
   const read = personnelReads.begin(() => props.visible);
   personnelLoading.value = true;
   try {
-    const value = await personnelApi.options('quality', { signal: read.signal });
+    const value = await personnelApi.options({ signal: read.signal });
     if (read.isCurrent()) personnel.value = value;
   } catch (failure) {
-    if (read.isCurrent()) EMessage.error(failure, '质检登记人加载失败');
+    if (read.isCurrent()) EMessage.error(failure, '确认人员加载失败');
   } finally {
     if (read.isCurrent()) personnelLoading.value = false;
   }
@@ -249,7 +249,7 @@ async function submit(): Promise<void> {
     return;
   }
   if (props.mode === 'research-output' && !personnelId.value) {
-    EMessage.warning('请选择质检登记人');
+    EMessage.warning('请选择确认人员');
     return;
   }
   if (

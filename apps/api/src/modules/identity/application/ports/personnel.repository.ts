@@ -1,6 +1,5 @@
 import type {
   PageResult,
-  PersonnelGroup,
   PersonnelItem,
   PersonnelListQuery,
   PersonnelOption,
@@ -13,8 +12,8 @@ export abstract class PersonnelRepository {
   abstract list(
     query: PersonnelListQuery & { page: number; pageSize: number },
   ): Promise<PageResult<PersonnelItem>>;
-  abstract options(group?: PersonnelGroup): Promise<PersonnelOption[]>;
-  abstract requireActive(id: string, group?: PersonnelGroup): Promise<PersonnelOption>;
+  abstract options(): Promise<PersonnelOption[]>;
+  abstract requireActive(id: string): Promise<PersonnelOption>;
   abstract create(input: SavePersonnelInput, audit: AuditLogEntry): Promise<PersonnelItem>;
   abstract update(
     id: string,

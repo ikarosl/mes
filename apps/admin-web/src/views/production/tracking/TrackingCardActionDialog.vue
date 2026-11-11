@@ -63,14 +63,14 @@
       >
         <el-form-item
           v-if="needsPersonnel"
-          :label="editingAction === 'output' ? '质检登记人' : '登记人员'"
+          :label="editingAction === 'output' ? '确认人员' : '登记人员'"
           required
         >
           <div class="personnel-select">
             <el-select
               v-model="form.personnelId"
               filterable
-              placeholder="请选择现场登记人"
+              placeholder="请选择现场人员"
               :loading="personnelLoading"
             >
               <el-option
@@ -481,10 +481,7 @@ async function loadPersonnel(): Promise<void> {
   personnelLoading.value = true;
   personnelError.value = '';
   try {
-    const values = await personnelApi.options(
-      editingAction.value === 'output' ? 'quality' : undefined,
-      { signal: read.signal },
-    );
+    const values = await personnelApi.options({ signal: read.signal });
     if (read.isCurrent()) personnel.value = values;
   } catch (error) {
     if (read.isCurrent())
@@ -504,7 +501,7 @@ watch(
     editingAbnormality.value = props.abnormality ? { ...props.abnormality } : null;
     editingAction.value = props.action;
     Object.assign(form, {
-      personnelId: props.action === 'output' ? '' : props.defaultPersonnelId || '',
+      personnelId: props.defaultPersonnelId || '',
       quantity: Number(props.card?.quantity ?? 1),
       affectedQuantity: undefined,
       repairedQuantity: undefined,

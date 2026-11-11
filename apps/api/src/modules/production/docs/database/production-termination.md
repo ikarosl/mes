@@ -22,7 +22,7 @@ POST /production/batches/:batchId/actions/finish 使用当前任务 version、�
 
 ## 研发最终产出
 
-研发任务没有路线和追踪卡；在 doing 时可由质量分组人员通过 confirm-research-output 显式确认一次最终可用产出，允许零。正数量与实际成品入库同事务，零数量不记库存。提前结束允许没有产出事实，不推测历史质量结论。结构和唯一性见[最终产出表](execution-traceability-quality.md#production_tracking_output)。
+研发任务没有路线和追踪卡；在 doing 时登记当前启用的现场人员，通过 confirm-research-output 显式确认一次最终可用产出，允许零。正数量与实际成品入库同事务，零数量不记库存。提前结束允许没有产出事实，不推测历史质量结论。结构和唯一性见[最终产出表](execution-traceability-quality.md#production_tracking_output)。
 
 ## 库存与余料
 

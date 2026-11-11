@@ -6,7 +6,7 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 批量任务创建时冻结所选路线的工序顺序、编码、名称及 SOP。工序定义本身不再拥有派工、开工、完工或数量状态，每张卡分别流转。中间的检验工序与普通工序采用相同扫码操作；路线最后一道工序统一承担最终产出确认，不设置另一套成品检验轮次。
 
-扫码输入是卡号、目标工序和现场登记人员。人员来自 Identity 的独立现场人员目录，可以属于 production 或 quality 分组；分组用于工作台筛选，不等于登录账号或 RBAC 角色。扫码、异常和处理事实保存所选人员 ID、编码、姓名快照，并独立保存实际登录操作者。最终产出确认另按下文要求质量分组人员。
+扫码输入是卡号、目标工序和现场登记人员。人员来自 Identity 的统一现场人员目录，扫码、报工、异常及最终产出确认均使用当前启用且未删除的人员，资格由[人员目录](../../../identity/docs/database.md#110-personnel)所有。业务事实保存所选人员 ID、编码、姓名快照，并独立保存实际登录操作者。
 
 任务必须先由有权限的账号明确开始，只有 doing 批量任务可以建卡。卡首次只能扫路线首站，只形成到站事实，不计报工。下一站扫码须恰好是冻结路线的下一道工序，在同一事务中完成前站交接报工并登记本站到站；前站报工数量取交接时的当前剩余盘量，归属前站原登记人员，不归属本次扫码人员。已到过的工序再次扫码不重记到站、不重记数量、不换登记人员。未经过的工序不得跳站，不能用工序名称替代冻结工序 ID。
 
@@ -34,13 +34,13 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 ## 末站最终确认与入库
 
-末站扫码仍只登记到站并完成前站交接，不自动确认产出。质量人员显式确认完成，批量卡请求不接受最终数量；服务器使用锁定后的当前剩余盘量生成一次最终产出。实际盘量错误须先独立留痕更正，质量损失须先按异常结算。整盘报废不走最终产出确认。
+末站扫码仍只登记到站并完成前站交接，不自动确认产出。登记现场人员并显式确认完成，批量卡请求不接受最终数量；服务器使用锁定后的当前剩余盘量生成一次最终产出。实际盘量错误须先独立留痕更正，质量损失须先按异常结算。整盘报废不走最终产出确认。
 
-确认命令在卡版本锁内复核任务仍在执行、卡位于冻结末站、全部异常已处理，并通过 Identity 公开能力核验所选人员当前启用且属于 quality。登录账号还必须独立具备最终确认权限，人员分组不授予业务权限。
+确认命令在卡版本锁内复核任务仍在执行、卡位于冻结末站、全部异常已处理，并通过 Identity 公开能力核验所选人员当前启用且未删除。登录账号还必须独立具备最终确认权限，选择登记人员不授予业务权限。
 
 确认事实写入 `production_tracking_output`；末站完成事实、卡 completed 状态、成功审计和正数实际入库在同一数据库事务提交。数量通过 Inventory 公开 `confirmTrackingOutput` 建立成品入库及独立新库批，使用统一 finished_product 来源。任一写入或审计失败全部回滚。产出不可变，工单及任务的实际产出仅汇总本表，不读取旧审批清单或库存后续调整。
 
-研发任务不建追踪卡、路线或到站记录，使用独立 `ConfirmProductionResearchOutputPayload` 在任务级由质量人员手填实际产出并确认一次，允许零且不受盘量上限约束；正数同事务入库，零数只保存确认事实，不生成库存单、库批或流水。`tracking_card_id` 为空，生成列对同任务的研发输出建立唯一约束。
+研发任务不建追踪卡、路线或到站记录，使用独立 `ConfirmProductionResearchOutputPayload` 在任务级登记现场人员、手填实际产出并确认一次，允许零且不受盘量上限约束；正数同事务入库，零数只保存确认事实，不生成库存单、库批或流水。`tracking_card_id` 为空，生成列对同任务的研发输出建立唯一约束。
 
 | 卡状态转换 | 触发与边界 |
 | --- | --- |
@@ -48,7 +48,7 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 | in_progress → in_progress | 无 open 异常时按冻结顺序交接到下一站 |
 | unused／in_progress → 原状态 | 登记异常、独立改量、结算后仍有正量或零量未结异常；均推进卡版本 |
 | unused／in_progress → scrapped | 结算后卡量为零且无 open 异常 |
-| in_progress → completed | 已到末站、无 open 异常、正量，由质量人员显式确认 |
+| in_progress → completed | 已到末站、无 open 异常、正量，登记现场人员并显式确认 |
 | unused／in_progress → voided | 正量卡明确作废或任务结束收口，保留全部已形成事实 |
 
 completed、scrapped、voided 均为不可恢复的办理终态。scrapped 卡拒绝再次扫码，包括已到站的重复扫码。
@@ -64,7 +64,7 @@ completed、scrapped、voided 均为不可恢复的办理终态。scrapped 卡�
 | GET tracking-reports                                                                                                  | tracking:view 或 workbench:view；逐站交接历史                   |
 | POST batches/:batchId/tracking-cards、PATCH tracking-cards/:cardId/quantity、POST tracking-cards/:cardId/actions/void | tracking:manage；建卡、留痕更正和作废                           |
 | POST tracking-cards/scan、卡下 abnormalities 和 abnormality handlings                                                 | workbench:operate；现场到站、异常发现及处理                     |
-| POST tracking-cards/:cardId/actions/confirm-output、batches/:batchId/actions/confirm-research-output                  | tracking:confirm-output；质量人员显式确认最终产出               |
+| POST tracking-cards/:cardId/actions/confirm-output、batches/:batchId/actions/confirm-research-output                  | tracking:confirm-output；登记现场人员并显式确认最终产出         |
 | GET batches/:batchId/step-records/:recordId/sop                                                                       | tasks:view、tracking:view 或 workbench:view；冻结 SOP 下载      |
 
 上表权限均带 production 前缀，多项为 any-of。卡列表的 keyword 搜索卡号、任务号、工单号、成品编码或名称；精确筛选包括任务、卡状态、当前工序及是否具有指定状态的异常。交接历史按完成时间、ID 倒序分页，可按任务、工序和登记人员筛选。列表筛选不授予任何命令资格。

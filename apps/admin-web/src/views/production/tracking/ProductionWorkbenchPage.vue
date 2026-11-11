@@ -124,26 +124,8 @@
                 <label
                   class="field-label"
                   for="workbench-personnel"
-                  >登记人</label
+                  >登记人员</label
                 >
-                <el-select
-                  v-model="personnelGroup"
-                  size="small"
-                  class="personnel-group"
-                  :disabled="setupLocked"
-                  aria-label="人员分组"
-                >
-                  <el-option
-                    label="全部人员"
-                    value="all"
-                  />
-                  <el-option
-                    v-for="group in PERSONNEL_GROUP_OPTIONS"
-                    :key="group.value"
-                    :label="group.label"
-                    :value="group.value"
-                  />
-                </el-select>
               </div>
               <el-select
                 id="workbench-personnel"
@@ -155,7 +137,7 @@
                 placeholder="选择现场人员"
               >
                 <el-option
-                  v-for="person in visiblePersonnel"
+                  v-for="person in personnel"
                   :key="person.id"
                   :label="person.code + ' / ' + person.name"
                   :value="person.id"
@@ -234,9 +216,6 @@
               >查看全部追踪卡 <el-icon><ArrowRight /></el-icon
             ></el-button>
           </div>
-          <p class="scan-help">
-            扫码枪与手输共用此入口，按 Enter 登记到站；可连续扫描其他盘，记录自动保存。
-          </p>
           <el-alert
             v-if="scanRecovery"
             :title="submissionRecoveryMessage(scanStatus, '追踪卡到站与交接记录')"
@@ -274,7 +253,7 @@
           <div class="scan-bottom">
             <el-icon><InfoFilled /></el-icon
             ><span
-              >到站不计本站完成量；下一站接收时计入前站交接量，归前站原登记人。末站由质检人员按剩余盘量确认产出。</span
+              >到站不计本站完成量；下一站接收时计入前站交接量，归前站原登记人。末站按剩余盘量确认产出。</span
             >
           </div>
           <p class="identity-hint">登记人记录现场身份，登录账号保留操作审计。</p>
@@ -303,46 +282,16 @@
       @card="openReportDetail"
     />
 
-    <el-dialog
-      v-model="detailVisible"
-      title="工序追踪详情"
-      :width="DialogWidth.workbench"
-    >
-      <el-alert
-        v-if="detailError"
-        :title="detailError"
-        type="error"
-        show-icon
-        :closable="false"
-      >
-        <el-button
-          link
-          type="primary"
-          @click="loadDetail"
-          >重新加载详情</el-button
-        >
-      </el-alert>
-      <div
-        v-loading="detailLoading"
-        class="detail-content"
-      >
-        <TrackingCardEvidence
-          v-if="selectedCard"
-          :card="selectedCard"
-          :steps="selectedSteps"
-          :loading="detailLoading"
-          @refresh="loadDetail"
-          @label="openDetailLabel"
-          @action="openDetailAction"
-        />
-        <el-empty
-          v-else
-          :description="detailLoading ? '正在加载追踪卡详情' : '详情尚未加载，请重试'"
-          :image-size="64"
-        />
-      </div>
-      <template #footer><el-button @click="detailVisible = false">关闭</el-button></template>
-    </el-dialog>
+    <TrackingCardEvidence
+      v-model:visible="detailVisible"
+      :card="selectedCard"
+      :steps="selectedSteps"
+      :loading="detailLoading"
+      :error="detailError"
+      @refresh="loadDetail"
+      @label="openDetailLabel"
+      @action="openDetailAction"
+    />
 
     <WorkbenchCreateCardDialog
       v-model:visible="createVisible"
@@ -372,9 +321,7 @@ import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowRight, FullScreen, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue';
 import type { InputInstance } from 'element-plus';
-import { PERSONNEL_GROUP_OPTIONS } from '@company/constants';
 import type {
-  PersonnelGroup,
   PersonnelOption,
   ProductionTrackingAbnormality,
   ProductionTrackingCardDetail,
@@ -394,7 +341,6 @@ import {
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
 import { useTabsStore } from '../../../stores/tabs';
-import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { formatQuantity } from '../../../utils/quantity';
@@ -426,25 +372,6 @@ const personnel = ref<PersonnelOption[]>([]),
   personnelError = ref(''),
   personnelVerified = ref(false),
   contextVerified = ref(false);
-const personnelGroup = ref<PersonnelGroup | 'all'>('production');
-const filteredPersonnel = computed(() =>
-  personnel.value.filter(
-    (person) => personnelGroup.value === 'all' || person.group === personnelGroup.value,
-  ),
-);
-const visiblePersonnel = computed(() => {
-  const values = [...filteredPersonnel.value];
-  const selected = personnel.value.find((person) => person.id === personnelId.value);
-  if (selected && !values.some((person) => person.id === selected.id)) values.unshift(selected);
-  return values;
-});
-watch(stepId, (id) => {
-  if (!context.value) return;
-  personnelGroup.value =
-    id === context.value.steps[context.value.steps.length - 1]?.stepRecordId
-      ? 'quality'
-      : 'production';
-});
 const selectedPersonnel = computed(() =>
   personnel.value.find((person) => person.id === personnelId.value),
 );
@@ -487,7 +414,7 @@ async function loadPersonnel(): Promise<void> {
   personnelVerified.value = false;
   personnelError.value = '';
   try {
-    const value = await personnelApi.options(undefined, { signal: read.signal });
+    const value = await personnelApi.options({ signal: read.signal });
     if (read.isCurrent()) {
       personnel.value = value;
       personnelVerified.value = true;
@@ -707,11 +634,19 @@ const labelVisible = ref(false),
   action = ref<TrackingCardAction>('abnormality'),
   abnormality = ref<ProductionTrackingAbnormality | null>(null);
 function openLabel(card: ProductionTrackingCardDetail): void {
+  if (labelVisible.value) return;
   labelCard.value = { ...card };
   labelVisible.value = true;
 }
 function openDetailLabel(): void {
-  if (selectedCard.value && !detailLoading.value) openLabel(selectedCard.value);
+  if (
+    selectedCard.value &&
+    detailVisible.value &&
+    !detailLoading.value &&
+    !detailError.value &&
+    detailReads.isActive()
+  )
+    openLabel(selectedCard.value);
 }
 function openAction(
   card: ProductionTrackingCardDetail,
@@ -728,7 +663,14 @@ function openCurrentAction(value: TrackingCardAction): void {
   if (currentCard.value && !setupLocked.value) openAction(currentCard.value, value);
 }
 function openDetailAction(value: TrackingCardAction, item?: ProductionTrackingAbnormality): void {
-  if (selectedCard.value && !detailLoading.value) openAction(selectedCard.value, value, item);
+  if (
+    selectedCard.value &&
+    detailVisible.value &&
+    !detailLoading.value &&
+    !detailError.value &&
+    detailReads.isActive()
+  )
+    openAction(selectedCard.value, value, item);
 }
 async function cardChanged(card: ProductionTrackingCardDetail): Promise<void> {
   if (currentCard.value?.id === card.id) {
@@ -927,9 +869,6 @@ usePageInitialLoad(async () => {
   flex-shrink: 0;
   margin-bottom: 0;
 }
-.personnel-group {
-  width: 105px;
-}
 .input-group {
   display: flex;
   align-items: stretch;
@@ -953,15 +892,11 @@ usePageInitialLoad(async () => {
 .batch-tools .el-button + .el-button {
   margin-left: 0;
 }
-.scan-help,
 .scan-bottom,
 .identity-hint {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.7;
-}
-.scan-help {
-  margin: 10px 0 0;
 }
 .scan-notice {
   margin-top: 16px;
@@ -980,9 +915,6 @@ usePageInitialLoad(async () => {
 .identity-hint {
   margin: 6px 0 0 20px;
   color: var(--el-text-color-secondary);
-}
-.detail-content {
-  min-height: 180px;
 }
 @media (max-width: 1100px) {
   .context-bar {

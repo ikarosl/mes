@@ -1,7 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import type {
   PageResult,
-  PersonnelGroup,
   PersonnelItem,
   PersonnelListQuery,
   PersonnelOption,
@@ -20,11 +19,11 @@ export class PersonnelService {
   ): Promise<PageResult<PersonnelItem>> {
     return this.repository.list({ ...query, keyword: query.keyword?.trim() || undefined });
   }
-  options(group?: PersonnelGroup): Promise<PersonnelOption[]> {
-    return this.repository.options(group);
+  options(): Promise<PersonnelOption[]> {
+    return this.repository.options();
   }
-  requireActive(id: string, group?: PersonnelGroup): Promise<PersonnelOption> {
-    return this.repository.requireActive(id, group);
+  requireActive(id: string): Promise<PersonnelOption> {
+    return this.repository.requireActive(id);
   }
   create(input: SavePersonnelInput, context: CommandContext): Promise<PersonnelItem> {
     return this.repository.create(

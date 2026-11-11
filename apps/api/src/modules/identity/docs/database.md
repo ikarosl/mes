@@ -181,14 +181,14 @@
 
 ## 1.10 `personnel`
 
-保存现场登记人员，不包含密码、登录资格或角色权限，也不要求关联 `users`。同一人员归入 `production`（产线人员）或 `quality`（质检人员）；分组支持工作台筛选，终检产出确认要求启用的质检人员。登录账号仍通过 RBAC 授权并作为审计操作者，业务事实另存所选人员的身份及姓名快照，不把选人解释为该人员已登录。
+保存统一的现场登记人员，不包含密码、登录资格或角色权限，也不要求关联 `users`。当前启用且未删除的人员均可用于扫码、报工及批量或研发最终产出确认，不按产线、质检分组限制。登录账号仍通过 RBAC 授权并作为审计操作者，业务事实另存所选人员的身份及姓名快照，不把选人解释为该人员已登录。
 
 | 字段                                     | 类型、空值与默认值                                                        | 含义                             |
 | ---------------------------------------- | ------------------------------------------------------------------------- | -------------------------------- |
 | `id`                                     | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT`                                 | 主键                             |
 | `code`                                   | `VARCHAR(64) NOT NULL`                                                    | 永久唯一人员编号，创建后不可修改 |
 | `name`                                   | `VARCHAR(64) NOT NULL`                                                    | 姓名                             |
-| `personnel_group`                        | `VARCHAR(20) NOT NULL`                                                    | `production`／`quality`          |
+| `personnel_group`                        | `VARCHAR(20) NOT NULL`                                                    | 暂停使用的历史分组列，保留 `production`／`quality` 值域 |
 | `status`                                 | `VARCHAR(20) NOT NULL DEFAULT 'active'`                                   | `active`／`inactive`             |
 | `version`                                | `INT NOT NULL DEFAULT 0`                                                  | 编辑乐观锁                       |
 | `created_by`／`updated_by`／`deleted_by` | `BIGINT UNSIGNED NULL`                                                    | 操作者，引用 `users.id`          |
@@ -197,6 +197,6 @@
 | `is_deleted`                             | `TINYINT NOT NULL DEFAULT 0`                                              | 删除标记；当前仅开放停用         |
 | `deleted_at`                             | `DATETIME NULL`                                                           | 删除时间                         |
 
-主键 `id`；唯一键 `uk_personnel_code(code)`；查询索引 `idx_personnel_group_status(personnel_group,status,is_deleted,id)`。CHECK 限制分组、状态、非负版本和删除审计一致性。停用不删除历史引用，修改姓名或分组不回写历史业务快照。结构由 `202611090005-personnel-directory` 维护。
+主键 `id`；唯一键 `uk_personnel_code(code)`；保留索引 `idx_personnel_group_status(personnel_group,status,is_deleted,id)`。分组列、分组索引及分组 CHECK 暂不承担业务语义，物理结构与约束原样保留，应用不读取、筛选或校验分组。该列非空且无默认值，创建固定写入 `production` 作为满足既有约束的存储占位，不表示人员类型；更新原样保留已有值，不回填或转换历史分组。其他 CHECK 继续限制状态、非负版本和删除审计一致性。停用不删除历史引用，修改姓名不回写历史业务快照。结构由 `202611090005-personnel-directory` 维护。
 
-`PersonnelService.requireActive(id, group?)` 是跨模块公开资格能力，必须在调用方事务中执行，以共享锁复核当前人员及可选分组；终检与停用并发时按锁顺序生效。`GET /identity/personnel/options` 返回全部启用人员，不截断，消费页面为现场人员、员工工作台、工序追踪及研发任务产出确认，采用其视图权限 any-of。维护页面分页查询，创建／编辑使用独立 `system:personnel:manage` 权限，编辑须携带版本，成功审计同事务。
+`PersonnelService.requireActive(id)` 是跨模块公开资格能力，必须在调用方事务中执行，以共享锁复核当前人员启用且未删除；登记或最终确认与停用并发时按锁顺序生效。人员公开输入、列表筛选和响应均不包含分组，`GET /identity/personnel/options` 返回全部启用人员，不截断，消费页面为现场人员、员工工作台、工序追踪及研发任务产出确认，采用其视图权限 any-of。维护页面分页查询，创建／编辑使用独立 `system:personnel:manage` 权限，编辑须携带版本，成功审计同事务。

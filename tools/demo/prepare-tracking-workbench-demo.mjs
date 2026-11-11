@@ -124,13 +124,12 @@ async function prepare(config, request) {
   )
     throw new Error('场景要求已经开始执行、至少两道冻结工序的批量任务');
   const people = await request('/identity/personnel/options');
-  const production = people.find((person) => person.group === 'production');
-  const quality = people.find((person) => person.group === 'quality');
-  if (!production || !quality) throw new Error('场景要求至少一名启用的生产人员及质量人员');
+  const registrant = people[0];
+  if (!registrant) throw new Error('场景要求至少一名启用的现场人员');
   const create = (name, quantity) =>
     request(`/production/batches/${config.batchId}/tracking-cards`, {
       quantity,
-      personnelId: production.id,
+      personnelId: registrant.id,
       remark: `${config.marker} ${name}`,
     });
   const scan = async (card, step) =>
@@ -138,7 +137,7 @@ async function prepare(config, request) {
       await request('/production/tracking-cards/scan', {
         cardNo: card.cardNo,
         stepRecordId: step.stepRecordId,
-        personnelId: production.id,
+        personnelId: registrant.id,
       })
     ).card;
   const completeRoute = async (card) => {
@@ -148,14 +147,14 @@ async function prepare(config, request) {
   const confirm = (card) =>
     request(`/production/tracking-cards/${card.id}/actions/confirm-output`, {
       version: card.version,
-      personnelId: quality.id,
-      remark: `${config.marker} 质量人员确认完成，按服务器剩余盘量入库`,
+      personnelId: registrant.id,
+      remark: `${config.marker} 登记人员确认完成，按服务器剩余盘量入库`,
     });
   const discover = (card, affectedQuantity, description, stepRecordId) =>
     request(`/production/tracking-cards/${card.id}/abnormalities`, {
       version: card.version,
       ...(stepRecordId ? { stepRecordId } : {}),
-      personnelId: quality.id,
+      personnelId: registrant.id,
       affectedQuantity,
       description: `${config.marker} ${description}`,
     });
@@ -172,7 +171,7 @@ async function prepare(config, request) {
       `/production/tracking-cards/${card.id}/abnormalities/${abnormalityId}/handlings`,
       {
         version: abnormality.version,
-        personnelId: production.id,
+        personnelId: registrant.id,
         content: `${config.marker} 人工核对实物重叠后一次最终结算`,
         repairedQuantity,
         scrappedQuantity,
@@ -212,7 +211,7 @@ async function prepare(config, request) {
   const handlingPath = `/production/tracking-cards/${corrected.id}/abnormalities/${sourceAbnormalityId}/handlings`;
   const handlingBody = {
     version: corrected.abnormalities.find((item) => item.id === sourceAbnormalityId).version,
-    personnelId: production.id,
+    personnelId: registrant.id,
     content: `${config.marker} 影响3=返修1+新增报废2`,
     repairedQuantity: 1,
     scrappedQuantity: 2,
@@ -252,7 +251,7 @@ async function prepare(config, request) {
       {
         cardNo: paused.cardNo,
         stepRecordId: workbench.steps[1].stepRecordId,
-        personnelId: production.id,
+        personnelId: registrant.id,
       },
       'POST',
       { expectedCode: 'CONFLICT' },

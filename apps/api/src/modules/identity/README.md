@@ -30,9 +30,9 @@ Identity 表的身份与约束见[数据库设计](docs/database.md)。操作日
 
 `UserCandidateService` 提供按受控场景获取当前候选及事务内资格复核，场景目录、角色集合、默认拒绝、公开能力、HTTP 权限及并发规则由[业务人员候选](docs/user-candidates.md)维护；表结构由[数据库设计](docs/database.md#18-user_candidate_configs)维护。业务模块固定自身场景调用公开服务，历史姓名继续使用 `IdentityDirectoryService`。
 
-## 验证
+## 现场人员目录
 
-现场人员是独立于登录账号的登记身份，使用 `production`／`quality` 分组，结构及公开资格见[人员目录](docs/database.md#110-personnel)。切换登记人员不改变当前账号的权限或审计身份。
+现场人员是独立于登录账号的登记身份，统一维护，结构及公开资格见[人员目录](docs/database.md#110-personnel)。切换登记人员不改变当前账号的权限或审计身份。
 
 ## 验证
 

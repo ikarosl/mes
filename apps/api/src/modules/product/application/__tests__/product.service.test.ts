@@ -182,7 +182,7 @@ describe('ProductService workflow safeguards', () => {
     expect(repository.replaceRouteSteps).not.toHaveBeenCalled();
   });
 
-  // TODO(production-personnel-eligibility): 验证登记人员启用状态及所属分组资格；高重要性，Product旧默认登录负责人模型已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按Identity人员目录和Production登记资格恢复覆盖。
+  // TODO(production-personnel-eligibility): 验证登记人员启用状态、身份快照及独立账号权限；高重要性，Product旧默认登录负责人模型已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按Identity人员目录和Production登记资格恢复覆盖。
 
   // TODO(technical-file-compensation): 验证 SOP 绑定入库失败时只补偿刚上传的对象；高重要性，旧存储入口及 mock 已失效且正式测试暂缓；获正式测试授权后按统一 store 端口恢复。
 
