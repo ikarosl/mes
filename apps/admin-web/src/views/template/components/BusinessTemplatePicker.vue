@@ -113,7 +113,7 @@ import PaginationFooter from '../../../components/PaginationFooter.vue';
 const props = defineProps<{ visible: boolean }>();
 const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
-  (event: 'apply', data: JsonTableData): void;
+  (event: 'apply', data: JsonTableData, templateId: string): void;
 }>();
 const list = useBusinessTemplateList(() => props.visible);
 const selected = ref<BusinessTemplateItem | null>(null);
@@ -123,23 +123,27 @@ watch(
   () => props.visible,
   (visible) => {
     reads.invalidate();
+    selected.value = null;
     if (visible) {
-      selected.value = null;
       list.query.keyword = '';
       list.query.status = BUSINESS_TEMPLATE_STATUS.enabled;
       void list.search();
     }
   },
+  { immediate: true, flush: 'sync' },
 );
-const readTemplate = async (id: string): Promise<BusinessTemplateItem | null> => {
+const readTemplate = async (
+  id: string,
+): Promise<{ item: BusinessTemplateItem; isCurrent: () => boolean } | null> => {
   if (!props.visible || !reads.isActive()) return null;
   const { isCurrent, signal } = reads.begin(() => props.visible);
   loading.value = true;
   try {
     const item = await businessTemplatesApi.detail(id, signal);
     if (!isCurrent()) return null;
+    if (item.id !== id) throw new Error('模板与读取结果不匹配，请重新选择');
     if (item.status !== BUSINESS_TEMPLATE_STATUS.enabled) throw new Error('模板已停用，请重新选择');
-    return item;
+    return { item: { ...item, content: normalizeJsonTable(item.content) }, isCurrent };
   } catch (error) {
     if (isCurrent()) EMessage.error(error, '模板读取失败');
     return null;
@@ -148,20 +152,23 @@ const readTemplate = async (id: string): Promise<BusinessTemplateItem | null> =>
   }
 };
 const select = async (item: BusinessTemplateItem): Promise<void> => {
+  if (!props.visible || loading.value || list.loading.value || list.errorMessage.value) return;
   selected.value = null;
   const latest = await readTemplate(item.id);
-  if (latest) selected.value = latest;
+  if (latest?.isCurrent()) selected.value = latest.item;
 };
 const apply = async (): Promise<void> => {
-  if (!selected.value || loading.value) return;
-  const item = await readTemplate(selected.value.id);
-  if (!item) return;
-  if (item.version !== selected.value?.version) {
+  const target = selected.value;
+  if (!props.visible || !target || loading.value) return;
+  const latest = await readTemplate(target.id);
+  if (!latest?.isCurrent() || selected.value !== target) return;
+  const item = latest.item;
+  if (item.version !== target.version) {
     selected.value = item;
     EMessage.warning('模板内容已更新，请核对预览后再应用');
     return;
   }
-  emit('apply', normalizeJsonTable(item.content));
+  emit('apply', normalizeJsonTable(item.content), item.id);
   emit('update:visible', false);
 };
 </script>

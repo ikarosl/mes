@@ -15,7 +15,6 @@ export interface InboundInspectionDraft {
   qualifiedQuantity: number | undefined;
   unqualifiedQuantity: number | undefined;
   inspectedAt: string;
-  specification: string;
   expiresOn: string;
   remark: string;
   evidence: string;
@@ -28,7 +27,6 @@ export const initialInboundInspection = (): InboundInspectionDraft => ({
   qualifiedQuantity: undefined,
   unqualifiedQuantity: undefined,
   inspectedAt: toBeijingISOString(Date.now()),
-  specification: '',
   expiresOn: '',
   remark: '',
   evidence: '',
@@ -57,7 +55,6 @@ export const correctionInboundInspection = (
   qualifiedQuantity: Number(record.qualifiedQuantity),
   unqualifiedQuantity: Number(record.unqualifiedQuantity),
   inspectedAt: record.inspectedAt,
-  specification: record.specification ?? '',
   expiresOn: record.expiresOn ?? '',
   remark: record.remark ?? '',
   evidence: record.evidence ?? '',
@@ -115,7 +112,6 @@ export function inboundInspectionInput(
     qualifiedQuantity: quantities.qualifiedQuantity,
     unqualifiedQuantity: quantities.unqualifiedQuantity,
     inspectedAt: toBeijingISOString(input.inspectedAt),
-    specification: input.specification.trim() || null,
     expiresOn: input.expiresOn || null,
     remark: input.remark.trim() || null,
     evidence: input.evidence.trim() || null,
@@ -123,4 +119,25 @@ export function inboundInspectionInput(
     correctionReason: input.correctionReason.trim() || null,
     inspectionDetails,
   };
+}
+
+const LAST_TEMPLATE_ID_KEY = 'easy-mes:incoming-inspection:last-template-id';
+
+export function getLastInboundInspectionTemplateId(): string | null {
+  try {
+    return localStorage.getItem(LAST_TEMPLATE_ID_KEY);
+  } catch {
+    // 浏览器存储不可用时仍可使用默认检查记录。
+    return null;
+  }
+}
+
+export function rememberInboundInspectionTemplateId(id: string): boolean {
+  try {
+    localStorage.setItem(LAST_TEMPLATE_ID_KEY, id);
+    return true;
+  } catch {
+    // 记住模板为 best-effort，不影响本次已应用的草稿。
+    return false;
+  }
 }

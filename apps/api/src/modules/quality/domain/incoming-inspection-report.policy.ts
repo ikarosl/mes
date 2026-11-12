@@ -1,7 +1,4 @@
-import {
-  QUALITY_INBOUND_TEXT_MAX_LENGTH,
-  QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH,
-} from '@company/constants';
+import { QUALITY_INBOUND_TEXT_MAX_LENGTH } from '@company/constants';
 import type {
   JsonTableData,
   QualityIncomingInspectionReportInput,
@@ -121,11 +118,6 @@ export function normalizeIncomingInspectionReport(
       materialVariantCode: requiredText(source.materialVariantCode, '材料版本编码', 180),
       unit: requiredText(source.unit, '单位', 20),
       supplierName: requiredText(source.supplierName, '供应商', 100),
-      specification: optionalText(
-        input.specification === undefined ? source.specification : input.specification,
-        '规格型号',
-        QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH,
-      ),
       batchNo: receiptNo,
     },
     ...quantities,

@@ -1,3 +1,4 @@
+<!-- @deprecated 来料分组目标选择已停用，保留旧实现但不再挂载。 -->
 <template>
   <div class="association-target-picker">
     <el-form

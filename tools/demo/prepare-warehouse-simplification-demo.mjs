@@ -168,7 +168,6 @@ async function inspect(client, source, qualified = 21, unqualified = 1) {
     qualifiedQuantity: qualified,
     unqualifiedQuantity: unqualified,
     inspectedAt: new Date().toISOString(),
-    specification: '演示腔体，按图样核对',
     remark: unqualified ? '1个腔体密封面划伤；结果仅记录检查信息' : '本次检查未发现异常',
     inspectionDetails: {
       columns: [

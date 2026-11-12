@@ -1,3 +1,4 @@
+<!-- @deprecated 来料分组候选已停用，保留旧实现但不再挂载。 -->
 <template>
   <article
     class="association-receipt-card"

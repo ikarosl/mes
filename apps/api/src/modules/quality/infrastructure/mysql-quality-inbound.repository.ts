@@ -81,10 +81,10 @@ export class MysqlQualityInboundRepository
         `INSERT INTO quality_incoming_inspection_report (
           report_no,receipt_line_id,receipt_id,receipt_no_snapshot,purchase_no_snapshot,
           item_code_snapshot,item_name_snapshot,material_variant_code_snapshot,unit_snapshot,
-          supplier_name_snapshot,specification,batch_no,expires_on,inspection_method,
+          supplier_name_snapshot,batch_no,expires_on,inspection_method,
           qualified_quantity,unqualified_quantity,inspected_at,result_note,evidence_reference,
           inspection_details,previous_record_id,correction_reason,created_by
-        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           reportNo,
           source.receiptLineId,
@@ -96,7 +96,6 @@ export class MysqlQualityInboundRepository
           source.materialVariantCode,
           source.unit,
           source.supplierName,
-          source.specification,
           source.batchNo,
           normalized.expiresOn,
           normalized.inspectionMethod,

@@ -35,6 +35,7 @@ type AssociationCommand =
   | { kind: 'associations'; body: ChangeQualityIncomingInspectionAssociationsPayload };
 
 /** A single association editor keeps only explicit deltas and their original versions. */
+/** @deprecated 来料分组与归属调整已停用，保留旧实现但不再挂载。 */
 export function useIncomingInspectionOrderAssociation(onChanged: () => void) {
   const visible = ref(false);
   const mode = ref<IncomingInspectionAssociationMode>('create');

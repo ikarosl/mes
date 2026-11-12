@@ -22,7 +22,7 @@
       :closable="false"
       class="notice"
     />
-    <div v-loading="loading">
+    <div v-loading="loading || templateLoading">
       <ReceiptVoidNotice
         v-if="line?.void"
         :record="line.void"
@@ -166,7 +166,8 @@
             <div class="report-heading">
               <strong>{{ selectedReport.reportNo }}</strong
               ><el-button
-                :disabled="reportLoading"
+                :disabled="reportLoading || printing"
+                :loading="printing"
                 @click="printReport"
                 >打印进料检验报告</el-button
               >
@@ -179,7 +180,7 @@
                 selectedReport.itemName
               }}</el-descriptions-item
               ><el-descriptions-item label="规格型号">{{
-                selectedReport.specification || '—'
+                selectedReport.materialVariantCode || '—'
               }}</el-descriptions-item
               ><el-descriptions-item label="供应商">{{
                 selectedReport.supplierName
@@ -283,7 +284,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import type { QualityInspectionMethod } from '@company/contracts';
 import { QUALITY_INSPECTION_METHOD_LABELS } from '@company/constants';
@@ -291,6 +292,7 @@ import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import { EMessage } from '../../../utils/message';
 import InlineHint from '../../../components/InlineHint.vue';
 import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
@@ -327,6 +329,7 @@ const {
   command,
   locked,
   checking,
+  templateLoading,
   canSave,
   open,
   close,
@@ -346,9 +349,25 @@ async function goReceipt(): Promise<void> {
   if (id && (await close()))
     await router.push({ name: 'procurement-receipts', query: { receiptLineId: id } });
 }
-function printReport(): void {
-  if (selectedReport.value && !reportLoading.value && !reportError.value)
-    printIncomingInspectionReport(selectedReport.value);
+const printing = ref(false);
+async function printReport(): Promise<void> {
+  const report = selectedReport.value;
+  if (
+    !report ||
+    report.id !== focusedReportId.value ||
+    reportLoading.value ||
+    reportError.value ||
+    printing.value
+  )
+    return;
+  printing.value = true;
+  try {
+    await printIncomingInspectionReport(report);
+  } catch (error) {
+    EMessage.error(error, '打印报告失败，请重试');
+  } finally {
+    printing.value = false;
+  }
 }
 const beforeClose = (): void => {
   void close();

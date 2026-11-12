@@ -34,7 +34,10 @@
             >采购单 <strong class="identity-value">{{ receipt.purchaseNo }}</strong></span
           >
         </div>
-        <div class="receipt-actions">
+        <div
+          v-if="allowAssociation"
+          class="receipt-actions"
+        >
           <el-button
             link
             type="primary"
@@ -119,7 +122,7 @@ import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import ReceiptWorklistReceiptGroup from '../../procurement/components/ReceiptWorklistReceiptGroup.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import type { IncomingInspectionReceiptState } from '../composables/useIncomingInspectionOrders';
+import type { IncomingInspectionReceiptState } from '../composables/useIncomingInspectionReceipts';
 
 defineOptions({ name: 'IncomingInspectionReceipt' });
 defineProps<{
@@ -127,6 +130,8 @@ defineProps<{
   state?: IncomingInspectionReceiptState | null;
   expanded: boolean;
   highlightedLineId?: string;
+  /** @deprecated 仅停用的旧分组目录使用；现行来料入口不提供归属调整。 */
+  allowAssociation?: boolean;
 }>();
 const emit = defineEmits<{
   toggle: [];
@@ -143,14 +148,6 @@ const emit = defineEmits<{
 .incoming-receipt {
   position: relative;
   min-width: 0;
-}
-.incoming-receipt::before {
-  position: absolute;
-  top: 25px;
-  left: -17px;
-  width: 16px;
-  border-top: 1px solid var(--el-border-color);
-  content: '';
 }
 .incoming-receipt + .incoming-receipt {
   margin-top: 12px;

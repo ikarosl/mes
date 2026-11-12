@@ -1,10 +1,10 @@
 # Quality 检验数据库
 
-Quality 拥有来料工作分组、当前到货关联和不可变检查报告。Procurement 拥有报告所引用的到货来源，Inventory 拥有真实库存；报告不提供入库授权或数量额度。业务含义与来源事务边界见[检查报告](unified-inspection-model.md)，分组规则见[分组主单](incoming-inspection-orders.md)。
+Quality 拥有不可变检查报告，以及[已停用分组](incoming-inspection-orders.md)保留的主单和当前到货关联。Procurement 拥有报告所引用的到货来源，Inventory 拥有真实库存；报告不提供入库授权或数量额度。业务含义与来源事务边界见[检查报告](unified-inspection-model.md)。
 
 所有表使用 InnoDB、`utf8mb4_0900_ai_ci`，ID 为 `BIGINT UNSIGNED`，外键使用默认 RESTRICT。除显式 NULL 外均为 NOT NULL，未注明默认值的字段没有显式默认值。公共审计、时间及数量规则见[数据库公共约定](../../../../../../docs/database-conventions.md)。当前结构核验入口为[基线](../../../../../../packages/database/migrations/202611020110-baseline-quality-tables.up.sql)、[独立报告增量](../../../../../../packages/database/migrations/202611110020-independent-incoming-reports.up.sql)及[完整表格转换](../../../../../../packages/database/migrations/202611110060-incoming-report-json-table.up.sql)。
 
-## 来料分组主单 quality_incoming_inspection_order
+## 来料分组主单 quality_incoming_inspection_order （这个表当前分支暂不使用）
 
 本表为完整到货提供稳定工作分组身份，不拥有检查状态、数量或报告内容。来源由 Procurement 编排，本表只由 Quality 修改。
 
@@ -44,10 +44,10 @@ Quality 拥有来料工作分组、当前到货关联和不可变检查报告。
 | receipt_no_snapshot / purchase_no_snapshot | VARCHAR(100) | 登记时的来源单号打印快照 |
 | item_code_snapshot | VARCHAR(100) | 来源材料编码快照 |
 | item_name_snapshot | VARCHAR(200) | 报告生成时材料名称，仅作为报告内容 |
-| material_variant_code_snapshot | VARCHAR(180) | 来源精确版本编码，不代表规格文本 |
+| material_variant_code_snapshot | VARCHAR(180) | 来源精确版本编码，作为报告“规格型号”的显示与打印来源 |
 | unit_snapshot | VARCHAR(20) | 检查数量单位快照 |
 | supplier_name_snapshot | VARCHAR(100) | 来源供应商名称打印快照 |
-| specification | VARCHAR(2000) NULL | 本次报告实际规格型号文本，可手填 |
+| specification | VARCHAR(2000) NULL | 旧报告手填规格原文，仅保留读取；新报告不写入，打印使用版本编码快照 |
 | batch_no | VARCHAR(120) NULL | 保存的打印批次号快照；新报告取可信到货单号，已有报告保留原值 |
 | expires_on | DATE NULL | 有效期纯日期 |
 | inspection_method | VARCHAR(30) | full／sampling |
@@ -78,7 +78,7 @@ Quality 拥有来料工作分组、当前到货关联和不可变检查报告。
 
 来源锁、作废后的历史保留及同池事务边界见[报告协作](unified-inspection-model.md#事务与权限)。报告唯一运行时写入口为本模块 [Repository](../infrastructure/mysql-quality-inbound.repository.ts)，只追加事实；公开输入和查询类型见 [public.ts](../public.ts)。Procurement 的工作列表可按已登记展示字段只读组合来源、当前分组及报告摘要，不扩大表写入所有权。
 
-`202611110010` 先解除旧采购／库存链路引用并建立到货明细组合唯一键；`202611110020` 在任何 DDL 前拒绝非空旧 `quality_inspection_case/quality_inspection_record`，移除旧表并建立本报告表和新编号值域。仅在本实验分支另建的、用户明确授权的空库初始化，不转换或清除原业务库历史。已有分组结构保持当前工作组织职责，不构造历史报告或分组归属。
+`202611110010` 先解除旧采购／库存链路引用并建立到货明细组合唯一键；`202611110020` 在任何 DDL 前拒绝非空旧 `quality_inspection_case/quality_inspection_record`，移除旧表并建立本报告表和新编号值域。仅在本实验分支另建的、用户明确授权的空库初始化，不转换或清除原业务库历史。已有分组结构和关联继续保留，不构造历史报告或分组归属。
 
 `202611110060` 对已经保存的报告增量转换：先核验旧五列记录均为可完整展示的文本字段，再把固定列定义与原 `report_rows` 数组组合为完整表格，并重命名为 `inspection_details`。转换不 trim、不截断或重排行和单元格；旧批次号、来源、数量及更正引用不变。旧记录超过当前通用单元格上限时仍保留原文并可读取／打印，新报告按当前通用规则保存。临时验证快照核对报告数、逐报告原行摘要、行数和批号；不支持的旧形状在 DDL 前拒绝。
 

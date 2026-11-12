@@ -36,12 +36,14 @@ export class IncomingInspectionOrderController {
     private readonly service: IncomingInspectionOrderService,
   ) {}
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限校验。 */
   @Get()
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   list(@Query() query: IncomingInspectionOrderQueryDto) {
     return this.query.list(query);
   }
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限校验。 */
   @Get('targets')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   targets(@Query() query: IncomingInspectionTargetQueryDto) {
@@ -66,18 +68,21 @@ export class IncomingInspectionOrderController {
     return this.query.locate(receiptLineId);
   }
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限校验。 */
   @Get(':orderId/receipts')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   receipts(@Param() { orderId }: IncomingInspectionOrderIdDto, @Query() query: PageQueryDto) {
     return this.query.receipts(orderId, query);
   }
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限校验。 */
   @Get(':orderId')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.view)
   get(@Param() { orderId }: IncomingInspectionOrderIdDto) {
     return this.query.get(orderId);
   }
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限、事务与幂等校验。 */
   @Post()
   @RequirePermission(PERMISSIONS.quality.inboundInspections.manage)
   @AuditInApplication()
@@ -89,6 +94,7 @@ export class IncomingInspectionOrderController {
     return this.service.create(body, context);
   }
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限、事务与幂等校验。 */
   @Post('associations')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.manage)
   @AuditInApplication()
@@ -100,6 +106,7 @@ export class IncomingInspectionOrderController {
     return this.service.changeAssociations(body, context);
   }
 
+  /** @deprecated 来料质检分组已停用；保留接口及原权限、事务与幂等校验。 */
   @Patch(':orderId')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.manage)
   @AuditInApplication()

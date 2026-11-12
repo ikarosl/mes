@@ -108,7 +108,9 @@
             value-format="YYYY-MM-DD HH:mm:ss"
             @update:model-value="receivedAt = fromBeijingDateTimeInputValue($event)"
         /></el-form-item>
-        <el-form-item label="交接凭据（选填）"
+        <el-form-item
+          label="交接凭据（选填）"
+          label-width="auto"
           ><el-input
             v-model="handoverEvidence"
             maxlength="2000"

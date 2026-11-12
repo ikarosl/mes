@@ -33,6 +33,7 @@ const command = <T>(url: string, data: unknown, key: string, method = 'POST'): P
     headers: { [IDEMPOTENCY_KEY_HEADER]: key },
   });
 
+/** @deprecated 来料分组已停用；现行按到货读取使用 incomingInspectionReceiptsApi。 */
 export const incomingInspectionOrdersApi = {
   list: (
     params: QualityIncomingInspectionOrderQuery,

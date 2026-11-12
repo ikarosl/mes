@@ -12,8 +12,6 @@ export interface QualityIncomingInspectionReportSource {
   materialVariantCode: string;
   unit: string;
   supplierName: string;
-  /** Actual specification text; a variant code must not be used as a substitute. */
-  specification: string | null;
 }
 
 export interface QualityIncomingInspectionReportInput {
@@ -21,7 +19,6 @@ export interface QualityIncomingInspectionReportInput {
   qualifiedQuantity: number;
   unqualifiedQuantity: number;
   inspectedAt: string;
-  specification?: string | null;
   expiresOn?: string | null;
   remark?: string | null;
   evidence?: string | null;
@@ -52,6 +49,8 @@ export interface QualityIncomingInspectionReportSummary {
 /** Persisted report content is the source for printing, including its header snapshot. */
 export interface QualityIncomingInspectionReportItem
   extends QualityIncomingInspectionReportSource, QualityIncomingInspectionReportSummary {
+  /** Archived manual text from older reports; printing uses materialVariantCode. */
+  specification: string | null;
   /** Saved print snapshot; new reports use the trusted receipt number. */
   batchNo: string | null;
   expiresOn: string | null;

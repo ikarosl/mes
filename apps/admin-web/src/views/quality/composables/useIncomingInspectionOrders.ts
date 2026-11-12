@@ -39,7 +39,7 @@ interface IncomingInspectionOrdersOptions {
   isNavigating?: () => boolean;
 }
 
-/** The two directory pages own their bounded caches; inspection editors own their drafts. */
+/** @deprecated 来料分组目录已停用；现行页面使用 useIncomingInspectionReceipts。 */
 export function useIncomingInspectionOrders(options: IncomingInspectionOrdersOptions = {}) {
   const keyword = ref('');
   const groups = ref<IncomingInspectionOrderGroup[]>([]);

@@ -17,7 +17,7 @@
 - [库存协作协议](inventory-extraction-design.md)：跨模块来源、事务与锁序
 - [采购管理端设计](../apps/admin-web/docs/procurement-inbound.md)：输入、候选分页、草稿、并发与幂等约束
 - [采购金额契约](../apps/api/src/modules/procurement/docs/purchase-orders.md#明细采购单位单价)：采购单位单价、逐行税率、含税总额推算及下单后更正；不提供税务或结算
-- [到货与来料查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：到货单分页、按需完整明细及精确定位，来料质检可选分组
+- [到货与来料查询](../apps/api/src/modules/procurement/docs/receipt-queries.md)：到货单分页、按需完整明细及来料报告精确定位
 - [前端组件复用审查](frontend-component-reuse-review.md)：入库数量、领料选择与批次摘要的抽离候选及待决边界；未批准实施
 - [用户提示语语义核对](user-facing-copy-review.md)：尚未完成的 DTO 业务字段映射与履约术语核对
 - [审批接入边界](approval-design.md)
@@ -35,7 +35,7 @@
 - [Template](../apps/api/src/modules/template/README.md)：独立系统模板、通用 JSON 表格内容与[数据库设计](../apps/api/src/modules/template/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[跨模块职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)
 - [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货来源、其他处理记录和实际收货编排
-- [Quality](../apps/api/src/modules/quality/README.md)：独立来料检查与不可变进料检验报告；[来料分组主单](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)组织完整到货并保持逐来源检查边界
+- [Quality](../apps/api/src/modules/quality/README.md)：独立来料检查与不可变进料检验报告；[已停用分组](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)的保留边界
 - [Inventory](../apps/api/src/modules/inventory/README.md)：唯一库存账本、批次、入库和盘点
 - [Approval](../apps/api/src/modules/approval/README.md)：[数据库设计](../apps/api/src/modules/approval/docs/database.md)
 - [Notification](../apps/api/src/modules/notification/README.md)：[数据库设计](../apps/api/src/modules/notification/docs/database.md)

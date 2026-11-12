@@ -79,12 +79,6 @@
         />
       </el-form-item>
     </div>
-    <el-form-item label="规格型号（选填）">
-      <el-input
-        v-model="model.specification"
-        :maxlength="QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH"
-      />
-    </el-form-item>
     <el-form-item
       label="检查记录"
       required
@@ -158,7 +152,6 @@ import {
   QUALITY_INBOUND_METHODS,
   QUALITY_INSPECTION_METHOD_LABELS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
-  QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH,
 } from '@company/constants';
 import { normalizeJsonTable } from '@company/utils';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
@@ -171,6 +164,7 @@ import { BusinessTemplatePicker } from '../../template/public';
 import {
   inboundInspectionPreview,
   normalizeInboundInspectionDetails,
+  rememberInboundInspectionTemplateId,
   type InboundInspectionDraft,
 } from '../../quality/inbound-inspection';
 
@@ -205,10 +199,11 @@ function chooseTemplate(): void {
   templateTarget = model.value;
   templatesVisible.value = true;
 }
-async function applyTemplate(content: JsonTableData): Promise<void> {
+async function applyTemplate(content: JsonTableData, templateId: string): Promise<void> {
   const target = templateTarget;
   if (!canUseTemplates.value || !target || target !== model.value || applyingTemplate.value) return;
   const previous = target.inspectionDetails;
+  const previousContent = JSON.stringify(previous);
   const revision = selectionRevision;
   let replacement: JsonTableData;
   try {
@@ -234,17 +229,25 @@ async function applyTemplate(content: JsonTableData): Promise<void> {
       canUseTemplates.value &&
       selectionRevision === revision &&
       model.value === target &&
-      target.inspectionDetails === previous
-    )
+      target.inspectionDetails === previous &&
+      JSON.stringify(target.inspectionDetails) === previousContent
+    ) {
       target.inspectionDetails = replacement;
+      if (!rememberInboundInspectionTemplateId(templateId))
+        EMessage.warning('模板已应用，但浏览器未允许记住上次使用的模板');
+    }
   } finally {
     applyingTemplate.value = false;
   }
 }
-watch(canUseTemplates, (editable) => {
-  if (!editable) invalidateTemplateSelection();
-});
-watch(() => model.value, invalidateTemplateSelection);
+watch(
+  canUseTemplates,
+  (editable) => {
+    if (!editable) invalidateTemplateSelection();
+  },
+  { flush: 'sync' },
+);
+watch(() => model.value, invalidateTemplateSelection, { flush: 'sync' });
 onActivated(() => (lifecycleActive.value = true));
 onDeactivated(() => {
   lifecycleActive.value = false;

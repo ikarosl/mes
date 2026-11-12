@@ -1,6 +1,8 @@
-# 来料质检分组主单
+# 来料质检分组主单（已停用）
 
-Quality 拥有来料质检主单及其当前到货关联。主单按整张到货组织工作，提供稳定质检单号；每份独立检查报告仍以具体到货明细为来源。两表定义见[检验数据库](database.md)，来源锁和资格见[到货办理](../../procurement/docs/receipts.md)，分层查询见[到货查询](../../procurement/docs/receipt-queries.md#来料质检主单查询)，草稿及定位见[管理端来料交互](../../../../../admin-web/docs/incoming-inspection-adoption.md)。整体交付状态由[路线图](../../../../../../docs/roadmap.md)维护。
+来料质检分组已停用，当前页面直接按到货及物料办理检查报告，不再提供分组目录、新建或关联调整入口。分组专用主单列表、目标候选、主单详情及其到货目录、新建、备注和关联命令均保留并标记 `@deprecated`；现有权限、事务和幂等边界不变。共享到货列表、完整明细、精确定位及独立报告接口继续使用，读取范围由[到货查询](../../procurement/docs/receipt-queries.md#来料质检查询)维护。
+
+Quality 继续拥有保留的分组主单及当前到货关联；停用不删除、解除或改写既有关系、编号和报告。两表定义见[检验数据库](database.md)，来源锁和资格见[到货办理](../../procurement/docs/receipts.md)，当前草稿及定位见[管理端来料交互](../../../../../admin-web/docs/incoming-inspection-adoption.md)。以下约束适用于保留的实现与数据，不表示分组仍是当前办理流程。
 
 ## 分组身份与检查事实
 
@@ -26,8 +28,8 @@ Quality 拥有来料质检主单及其当前到货关联。主单按整张到货
 
 ## 模块与权限边界
 
-Procurement 按 Quality 场景权限核验来源，再在同池事务调用 Quality 公开命令。Quality 只写自己的主单及关联，不反向依赖 Procurement，不自行查询或锁定采购表，不为分组建立来源 Registry。固定锁序由[来源编排](../../procurement/docs/receipts.md#质检分组的来源编排)维护。
+Procurement 按 Quality 场景权限核验来源，再在同池事务调用 Quality 公开命令。Quality 只写自己的主单及关联，不反向依赖 Procurement，不自行查询或锁定采购表，不为分组建立来源 Registry。固定锁序由[来源编排](../../procurement/docs/receipts.md#独立检验与分组)维护。
 
 `/quality/inbound-inspection-orders` 由 Procurement 场景 Controller 提供，不改变表所有权。读取要求 `quality:inbound-inspections:view`；新建、备注与关联变更要求 `quality:inbound-inspections:manage`。报告登记使用 `quality:inbound-inspections:inspect`；不额外要求采购或仓储页面权限，也不存在按分组授予检查权限的模型。
 
-版本或归属冲突须重新核对；未知结果按[平台幂等契约](../../../../docs/idempotency.md)保留原请求重试。展示读取范围见[查询契约](../../procurement/docs/receipt-queries.md#来料质检主单查询)。
+版本或归属冲突须重新核对；未知结果按[平台幂等契约](../../../../docs/idempotency.md)保留原请求重试。展示读取范围见[查询契约](../../procurement/docs/receipt-queries.md#来料质检查询)。

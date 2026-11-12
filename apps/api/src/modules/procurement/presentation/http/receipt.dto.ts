@@ -25,7 +25,6 @@ import {
   PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH,
   QUALITY_INBOUND_METHODS,
   QUALITY_INBOUND_TEXT_MAX_LENGTH,
-  QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH,
   RECEIPT_HISTORY_KINDS,
 } from '@company/constants';
 import type {
@@ -101,11 +100,6 @@ export class InspectReceiptDto {
   @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) qualifiedQuantity!: number;
   @IsInt() @Min(0) @Max(PURCHASE_ORDER_MAX_QUANTITY) unqualifiedQuantity!: number;
   @IsISO8601({ strict: true }) @Matches(/(?:Z|[+-]\d{2}:\d{2})$/) inspectedAt!: string;
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MaxLength(QUALITY_INCOMING_INSPECTION_REPORT_HEADER_MAX_LENGTH)
-  specification?: string | null;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) @IsISO8601({ strict: true }) expiresOn?:
     string | null;
   @IsOptional() @Transform(trim) @IsString() @MaxLength(QUALITY_INBOUND_TEXT_MAX_LENGTH) remark?:

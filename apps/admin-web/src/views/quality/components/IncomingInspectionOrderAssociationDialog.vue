@@ -1,3 +1,4 @@
+<!-- @deprecated 来料分组与归属调整已停用，保留旧实现但不再挂载。 -->
 <template>
   <el-dialog
     :model-value="visible"

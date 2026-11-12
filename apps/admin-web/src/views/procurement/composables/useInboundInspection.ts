@@ -1,19 +1,23 @@
-import { computed, ref, watch } from 'vue';
+import { computed, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import { RequestError } from '@company/request';
 import { normalizeJsonTable } from '@company/utils';
+import { BUSINESS_TEMPLATE_STATUS } from '@company/constants';
 import type {
   ProcurementReceiptLine,
   QualityIncomingInspectionReportItem,
   QualityIncomingInspectionReportSummary,
 } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
+import { businessTemplatesApi } from '../../../api/templates';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
+import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import {
   initialInboundInspection,
   correctionInboundInspection,
   inboundInspectionInput,
+  getLastInboundInspectionTemplateId,
 } from '../../quality/inbound-inspection';
 import { useProcurementCommand } from './useProcurementCommand';
 
@@ -27,6 +31,23 @@ export function useInboundInspection(onChanged: () => void) {
     activeTab = ref<'current' | 'history'>('current');
   const form = ref(initialInboundInspection());
   let original = JSON.stringify(form.value);
+  let needsInitialTemplate = true;
+  let editorRevision = 0;
+  let openingRevision = 0;
+  let draftRevision = 0;
+  watch(
+    form,
+    () => {
+      draftRevision += 1;
+      needsInitialTemplate = false;
+    },
+    { deep: true, flush: 'sync' },
+  );
+  const invalidateEditor = (): void => {
+    editorRevision += 1;
+  };
+  onDeactivated(invalidateEditor);
+  onScopeDispose(invalidateEditor);
   const dirty = computed(() => JSON.stringify(form.value) !== original);
   const records = ref<QualityIncomingInspectionReportSummary[]>([]),
     recordsLoading = ref(false),
@@ -39,7 +60,9 @@ export function useInboundInspection(onChanged: () => void) {
     reportLoading = ref(false),
     reportError = ref('');
   const focusedReportId = ref(''),
-    checking = ref(false);
+    checking = ref(false),
+    templateLoading = ref(false);
+  const { canAccessRoute } = useRouteAccess();
   const sourceRead = useLatestReadRequest(() => {
     loading.value = false;
   });
@@ -48,6 +71,9 @@ export function useInboundInspection(onChanged: () => void) {
   });
   const reportRead = useLatestReadRequest(() => {
     reportLoading.value = false;
+  });
+  const templateRead = useLatestReadRequest(() => {
+    templateLoading.value = false;
   });
   const command = useProcurementCommand<QualityIncomingInspectionReportItem>(async (result) => {
     if (!visible.value || result.receiptLineId !== lineId.value) return;
@@ -60,7 +86,7 @@ export function useInboundInspection(onChanged: () => void) {
     onChanged();
     await loadRecords();
   }, '进料检验报告');
-  const locked = computed(() => command.locked.value || checking.value);
+  const locked = computed(() => command.locked.value || checking.value || templateLoading.value);
   const canSave = computed(() =>
     Boolean(
       line.value &&
@@ -73,8 +99,56 @@ export function useInboundInspection(onChanged: () => void) {
     ),
   );
   function resetForm(): void {
+    templateRead.invalidate();
     form.value = initialInboundInspection();
     original = JSON.stringify(form.value);
+    needsInitialTemplate = true;
+  }
+  async function applyLastTemplate(): Promise<void> {
+    if (
+      !needsInitialTemplate ||
+      !visible.value ||
+      activeTab.value !== 'current' ||
+      loading.value ||
+      error.value ||
+      !line.value ||
+      line.value.id !== lineId.value ||
+      line.value.void ||
+      dirty.value ||
+      form.value.previousRecordId ||
+      !templateRead.isActive()
+    )
+      return;
+    needsInitialTemplate = false;
+    const id = getLastInboundInspectionTemplateId();
+    if (!id) return;
+    const target = lineId.value,
+      draft = form.value,
+      revision = draftRevision;
+    const current = templateRead.begin(
+      () =>
+        visible.value &&
+        lineId.value === target &&
+        form.value === draft &&
+        activeTab.value === 'current',
+    );
+    templateLoading.value = true;
+    try {
+      if (!canAccessRoute({ name: 'system-templates' }))
+        throw new Error('无法读取上次使用的检验模板：需系统模板查看权限。已保留默认检查记录。');
+      const item = await businessTemplatesApi.detail(id, current.signal);
+      if (!current.isCurrent() || draftRevision !== revision) return;
+      if (item.id !== id) throw new Error('上次使用的检验模板与读取结果不匹配，请重新应用模板');
+      if (item.status !== BUSINESS_TEMPLATE_STATUS.enabled)
+        throw new Error('上次使用的检验模板已停用，已保留默认检查记录，请重新应用其他模板。');
+      draft.inspectionDetails = normalizeJsonTable(item.content);
+      original = JSON.stringify(draft);
+    } catch (cause) {
+      if (current.isCurrent() && draftRevision === revision)
+        EMessage.error(cause, '上次使用的检验模板读取失败，请重新应用模板');
+    } finally {
+      if (current.isCurrent()) templateLoading.value = false;
+    }
   }
   async function loadDetail(): Promise<ProcurementReceiptLine | null> {
     if (!visible.value || !lineId.value || !sourceRead.isActive()) return null;
@@ -153,8 +227,21 @@ export function useInboundInspection(onChanged: () => void) {
       if (current.isCurrent()) reportLoading.value = false;
     }
   }
-  async function mayReplaceDraft(): Promise<boolean> {
-    if (locked.value) return false;
+  function captureDraft(): () => boolean {
+    const target = lineId.value,
+      draft = form.value,
+      editor = editorRevision,
+      revision = draftRevision;
+    return () =>
+      visible.value &&
+      sourceRead.isActive() &&
+      editorRevision === editor &&
+      lineId.value === target &&
+      form.value === draft &&
+      draftRevision === revision;
+  }
+  async function mayReplaceDraft(isCurrent: () => boolean): Promise<boolean> {
+    if (locked.value || loading.value || !line.value || error.value || !isCurrent()) return false;
     if (!dirty.value) return true;
     try {
       await RouteMessageBox.confirm(
@@ -162,25 +249,31 @@ export function useInboundInspection(onChanged: () => void) {
         '更换报告草稿',
         { type: 'warning', confirmButtonText: '放弃当前填写' },
       );
-      return true;
+      return !locked.value && isCurrent();
     } catch {
       return false;
     }
   }
   async function newReport(): Promise<void> {
-    if (!(await mayReplaceDraft())) return;
+    const isCurrent = captureDraft();
+    if (!(await mayReplaceDraft(isCurrent)) || !isCurrent() || line.value?.void) return;
     resetForm();
     activeTab.value = 'current';
+    await applyLastTemplate();
   }
   async function correctReport(id: string): Promise<void> {
-    if (!(await mayReplaceDraft()) || !(await showReport(id))) return;
-    const record = selectedReport.value;
+    const isCurrent = captureDraft();
+    if (!(await mayReplaceDraft(isCurrent)) || !isCurrent()) return;
+    const record = await showReport(id);
+    if (!record || !isCurrent() || focusedReportId.value !== id) return;
     if (!record || record.id !== id || record.correctedByRecordId || line.value?.void) {
       EMessage.warning('该报告已更正或到货已作废，请查看最新记录');
       return;
     }
+    templateRead.invalidate();
     form.value = correctionInboundInspection(record);
     original = JSON.stringify(form.value);
+    needsInitialTemplate = false;
     activeTab.value = 'current';
   }
   async function save(): Promise<void> {
@@ -246,7 +339,16 @@ export function useInboundInspection(onChanged: () => void) {
     }
   }
   async function open(id: string, reportId = ''): Promise<boolean> {
-    if (visible.value && !(await close())) return false;
+    const opening = ++openingRevision;
+    if (!sourceRead.isActive()) return false;
+    if (visible.value) {
+      const closed = await close();
+      if (opening !== openingRevision || (!closed && visible.value)) return false;
+    }
+    if (!sourceRead.isActive() || opening !== openingRevision) return false;
+    const revision = ++editorRevision;
+    const isCurrent = (): boolean =>
+      visible.value && editorRevision === revision && sourceRead.isActive();
     lineId.value = id;
     line.value = null;
     error.value = '';
@@ -258,30 +360,47 @@ export function useInboundInspection(onChanged: () => void) {
     focusedReportId.value = '';
     page.value = 1;
     total.value = 0;
+    resetForm();
+    activeTab.value = reportId ? 'history' : 'current';
     visible.value = true;
     if (reportId) {
       const loadedReport = await showReport(reportId);
-      if (!loadedReport) return false;
+      if (!loadedReport || !isCurrent()) return false;
       lineId.value = loadedReport.receiptLineId;
     }
     const source = await loadDetail();
-    if (!source) return false;
-    resetForm();
+    if (!source || !isCurrent()) return false;
     activeTab.value = reportId || source.void ? 'history' : 'current';
     if (activeTab.value === 'history') await loadRecords();
-    return true;
+    else await applyLastTemplate();
+    return isCurrent();
   }
   async function close(): Promise<boolean> {
+    const revision = editorRevision,
+      draft = form.value,
+      input = JSON.stringify(draft);
     if (checking.value || !(await command.canClose(dirty.value))) return false;
+    if (
+      editorRevision !== revision ||
+      form.value !== draft ||
+      (JSON.stringify(draft) !== input && dirty.value)
+    )
+      return false;
+    invalidateEditor();
     visible.value = false;
     sourceRead.invalidate();
     historyRead.invalidate();
     reportRead.invalidate();
+    templateRead.invalidate();
     return true;
   }
   async function refresh(): Promise<void> {
     if (locked.value) return;
-    await loadDetail();
+    const revision = editorRevision;
+    const source = await loadDetail();
+    if (!visible.value || editorRevision !== revision || !sourceRead.isActive()) return;
+    if (source && activeTab.value === 'current') await applyLastTemplate();
+    if (!visible.value || editorRevision !== revision || !sourceRead.isActive()) return;
     if (activeTab.value === 'history') await loadRecords();
     if (focusedReportId.value) await showReport(focusedReportId.value);
   }
@@ -294,7 +413,15 @@ export function useInboundInspection(onChanged: () => void) {
     page.value = 1;
     await loadRecords();
   }
+  watch(
+    activeTab,
+    (tab) => {
+      if (tab !== 'current') templateRead.invalidate();
+    },
+    { flush: 'sync' },
+  );
   watch(activeTab, (tab) => {
+    if (tab === 'current') void applyLastTemplate();
     if (visible.value && tab === 'history' && !recordsLoaded.value) void loadRecords();
   });
   return {
@@ -319,6 +446,7 @@ export function useInboundInspection(onChanged: () => void) {
     command,
     locked,
     checking,
+    templateLoading,
     canSave,
     open,
     close,

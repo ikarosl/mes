@@ -94,7 +94,6 @@ export class ReceiptService {
       qualifiedQuantity: payload.qualifiedQuantity,
       unqualifiedQuantity: payload.unqualifiedQuantity,
       inspectedAt: payload.inspectedAt,
-      specification: nullableTrim(payload.specification),
       expiresOn: payload.expiresOn ?? null,
       remark: nullableTrim(payload.remark),
       evidence: nullableTrim(payload.evidence),

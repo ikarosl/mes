@@ -30,8 +30,10 @@ voiding 是同一只读快照的完整行与阻断原因预览；真实入库或
 
 excess-receipt-candidates 和 quality-replacement-candidates 都列出该原采购行的有效到货，支持 keyword 与 receiptLineId；关键词搜索到货单号和供应商批号。候选不要求检验、授权、已入或已退。receiptLinkedSupplements 按同到货、同补因分组统计状态、行数和计划量，包含取消历史且不表示仓库额度。正式创建及下单仍核验同源有效到货，规则见[补单](purchase-orders.md#补单来源与独立物流)。
 
-## 来料质检主单查询
+## 来料质检查询
 
-来料分组及报告数量、最近报告摘要由[Quality 分组契约](../../quality/docs/incoming-inspection-orders.md)维护。GET /quality/inbound-inspections/receipt-lines/:id 复用当前 ProcurementReceiptLine 来源投影；GET /quality/inbound-inspections/:id/reports 独立分页报告，GET /quality/inbound-inspections/reports/:reportId 按历史报告精确读取及打印。均要求 quality:inbound-inspections:view；打印采用报告持久快照。
+当前来料列表复用 GET /quality/inbound-inspection-orders/receipt-candidates 并明确传 `association=all`，按到货 ID 倒序分页，不按保留的分组关系分流；范围包含有效到货及已有分组关系的作废到货。省略 association 仍按原契约返回未关联的有效到货。receipts/:receiptId/lines 读取单张到货完整轻量物料，receipt-lines/:receiptLineId/location 按真实到货行定位；路径均位于 /quality/inbound-inspection-orders 下，继续用于来源读取。[分组专用接口已停用](../../quality/docs/incoming-inspection-orders.md)，不据此停用共享到货查询。
+
+GET /quality/inbound-inspections/receipt-lines/:id 复用当前 ProcurementReceiptLine 来源投影；GET /quality/inbound-inspections/:id/reports 独立分页报告，GET /quality/inbound-inspections/reports/:reportId 按历史报告精确读取及打印。报告数量及最近报告摘要遵守[Quality 报告契约](../../quality/docs/unified-inspection-model.md#事务与权限)。以上读取均要求 quality:inbound-inspections:view；打印采用报告持久快照。
 
 跨模块展示读取只在登记的 infrastructure/queries 中完成，不作为来源写入资格、业务状态或库存数量授权。

@@ -59,7 +59,6 @@ export class MysqlProcurementReceiptRepository extends ProcurementReceiptReposit
             materialVariantCode: line.materialVariantCode,
             unit: line.unit,
             supplierName: line.supplierName,
-            specification: null,
           },
           report: payload,
         },

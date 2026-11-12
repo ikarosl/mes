@@ -1,3 +1,4 @@
+<!-- @deprecated 未分组目录已停用；现行来料页面直接展示全部到货。 -->
 <template>
   <div>
     <div class="query-panel">

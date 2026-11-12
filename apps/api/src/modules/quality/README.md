@@ -4,7 +4,7 @@ Quality 拥有独立来料检查事实及可打印的进料检验报告。Procur
 
 公开入口为 [public.ts](public.ts)。Procurement 先锁定来源并核验存在、归属与未作废，再由 Quality 在同池事务追加报告及成功审计；展示查询不能代替来源资格校验。报告内容保存后不可改写，更正通过同源追加记录引用原报告。完整字段与事务边界见[数据库设计](docs/database.md)和[检验模型](docs/unified-inspection-model.md)。
 
-- [来料分组主单](docs/incoming-inspection-orders.md)：按完整到货组织工作，分组不合并逐来源检查事实或改变办理资格。
+- [已停用的来料分组主单](docs/incoming-inspection-orders.md)：保留接口、主单及既有到货关联的边界。
 - [到货来源与仓库处理](../procurement/docs/receipts.md)：Procurement 编排来源动作，登记检查使用独立 Quality 权限，人员岗位不限制为专职质检。
 - [查询契约](../procurement/docs/receipt-queries.md)：来料工作列表、逐到货明细的报告历史及精确打印读取。
 
