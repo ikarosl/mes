@@ -108,8 +108,6 @@
           @toggle="toggleFocused"
           @retry="refreshLocation"
           @detail="navigate"
-          @quality="goQuality"
-          @inbound="goInbound"
         />
       </section>
       <div
@@ -132,8 +130,6 @@
           @toggle="toggleReceipt(receipt)"
           @retry="loadLines(receipt)"
           @detail="navigate"
-          @quality="goQuality"
-          @inbound="goInbound"
         />
       </div>
       <PaginationFooter
@@ -230,12 +226,12 @@ const finishNavigation = (): void => {
   }
 };
 const release = async (): Promise<boolean> => {
+  if (editor.value?.visible && !(await editor.value.close())) return false;
+  if (detail.value?.visible && !(await detail.value.close())) return false;
   if (editor.value?.locked || detail.value?.locked) {
     EMessage.warning('请先确认当前操作结果再切换到货记录');
     return false;
   }
-  if (editor.value?.visible && !(await editor.value.close())) return false;
-  if (detail.value?.visible && !(await detail.value.close())) return false;
   return true;
 };
 onScopeDispose(useTabsStore().registerCloseGuard('procurement-receipts', release));
@@ -265,29 +261,6 @@ const navigate = async (
     }
     await scrollLocation(id, lineId, isCurrent);
     return isCurrent();
-  } finally {
-    finishNavigation();
-  }
-};
-const goQuality = async (lineId: string): Promise<void> => {
-  if (navigating.value) return;
-  navigating.value = true;
-  try {
-    if (await release())
-      await router.push({ name: 'quality-inbound-inspections', query: { receiptLineId: lineId } });
-  } finally {
-    finishNavigation();
-  }
-};
-const goInbound = async (lineId: string): Promise<void> => {
-  if (navigating.value) return;
-  navigating.value = true;
-  try {
-    if (await release())
-      await router.push({
-        name: 'warehouse-inbound',
-        query: { sourceType: 'purchased', receiptLineId: lineId },
-      });
   } finally {
     finishNavigation();
   }

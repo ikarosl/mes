@@ -48,7 +48,6 @@ const report = z
     unqualifiedQuantity: quantity,
     inspectedQuantity: quantity,
     previousRecordId: id.nullable(),
-    correctedByRecordId: id.nullable(),
     inspectedAt: z.string().datetime({ offset: true }),
     remark: note,
     evidence: note,

@@ -1,4 +1,5 @@
 import type { QualityInspectionMethod } from './inspection.js';
+import type { PageResult } from '../common.js';
 import type { JsonTableData } from '../template.js';
 
 /** Source identity is supplied by Procurement after checking the locked, non-voided receipt. */
@@ -24,7 +25,7 @@ export interface QualityIncomingInspectionReportInput {
   evidence?: string | null;
   /** A complete independent copy; no template identity or live template binding is saved. */
   inspectionDetails: JsonTableData;
-  /** Corrections append a fact referencing the original report for the same receipt line. */
+  /** Empty for first registration; subsequent saves must reference the current report. */
   previousRecordId?: string | null;
   correctionReason?: string | null;
 }
@@ -38,12 +39,15 @@ export interface QualityIncomingInspectionReportSummary {
   unqualifiedQuantity: string;
   inspectedQuantity: string;
   previousRecordId: string | null;
-  /** Derived from the immutable correction reference; no field is updated on the original report. */
-  correctedByRecordId: string | null;
   inspectedAt: string;
   remark: string | null;
   createdBy: string;
   createdAt: string;
+}
+
+export interface QualityIncomingInspectionReportPage extends PageResult<QualityIncomingInspectionReportSummary> {
+  /** Latest registered report for the source, independent of the requested history page. */
+  currentReportId: string | null;
 }
 
 /** Persisted report content is the source for printing, including its header snapshot. */

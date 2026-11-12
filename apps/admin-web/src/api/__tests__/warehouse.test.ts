@@ -41,40 +41,9 @@ describe('warehouseApi', () => {
     });
   });
 
-  it('uses candidate, count, complete and cancel stock-check endpoints', async () => {
-    const { warehouseApi } = await import('../warehouse');
-    await warehouseApi.listStockCheckCandidates({
-      page: 1,
-      pageSize: 10,
-      stockStatus: 'available',
-    });
-    await warehouseApi.saveStockCheckCounts('5', {
-      version: 1,
-      details: [{ detailId: '9', actualQuantity: 10 }],
-    });
-    await warehouseApi.completeStockCheck('5', 2);
-    await warehouseApi.cancelStockCheck('6', { version: 0, reason: '盘点范围错误' });
-
-    expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/warehouse/stock-checks/candidates',
-      params: { page: 1, pageSize: 10, stockStatus: 'available' },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
-      url: '/warehouse/stock-checks/5',
-      method: 'PATCH',
-      data: { version: 1, details: [{ detailId: '9', actualQuantity: 10 }] },
-    });
-    expect(request).toHaveBeenNthCalledWith(3, {
-      url: '/warehouse/stock-checks/5/actions/complete',
-      method: 'POST',
-      data: { version: 2 },
-    });
-    expect(request).toHaveBeenNthCalledWith(4, {
-      url: '/warehouse/stock-checks/6/actions/cancel',
-      method: 'POST',
-      data: { version: 0, reason: '盘点范围错误' },
-    });
-  });
+  // TODO(stock-check-request-contract): 验证盘点候选、实盘数量保存及完成／取消请求保留数量和版本；
+  // 涉及库存调整与乐观锁的高重要性覆盖，盘点页面停用后专属请求封装废弃；
+  // 恢复条件：盘点入口重新获准实现且正式测试获授权后，按现行接口恢复。
 
   it('uses production material-loss list, candidate and versioned action endpoints', async () => {
     const { warehouseApi } = await import('../warehouse');

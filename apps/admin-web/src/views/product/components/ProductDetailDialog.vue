@@ -5,72 +5,78 @@
     :width="DialogWidth.lg"
     @update:model-value="$emit('update:visible', $event)"
   >
-    <el-descriptions
-      v-if="row"
-      :column="2"
-      border
-    >
-      <el-descriptions-item label="产品编码">{{ row.itemCode }}</el-descriptions-item>
-      <el-descriptions-item label="产品名称">{{ row.productName }}</el-descriptions-item>
-      <el-descriptions-item label="对象类型">{{
-        itemKindLabel(row.itemKind)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="产品分类">{{ row.categoryName || '-' }}</el-descriptions-item>
-      <el-descriptions-item label="获取方式">{{
-        acquireMethodLabels[row.acquireMethod]
-      }}</el-descriptions-item>
-      <el-descriptions-item label="单位">{{ row.unit }}</el-descriptions-item>
-      <el-descriptions-item label="物料清单">{{
-        row.materialCount > 0 ? `${row.materialCount} 项` : '未配置'
-      }}</el-descriptions-item>
-      <el-descriptions-item label="BOM 状态">{{ bomStatusLabel(row) }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{
-        row.status === 1 ? '启用' : '停用'
-      }}</el-descriptions-item>
-      <el-descriptions-item
-        label="规格参数"
-        :span="2"
+    <template v-if="row">
+      <el-descriptions
+        :column="2"
+        :label-width="100"
+        border
+        class="product-summary"
       >
+        <el-descriptions-item label="产品编码">{{ row.itemCode }}</el-descriptions-item>
+        <el-descriptions-item label="产品名称">{{ row.productName }}</el-descriptions-item>
+        <el-descriptions-item label="对象类型">{{
+          itemKindLabel(row.itemKind)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="产品分类">{{ row.categoryName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="获取方式">{{
+          acquireMethodLabels[row.acquireMethod]
+        }}</el-descriptions-item>
+        <el-descriptions-item label="单位">{{ row.unit }}</el-descriptions-item>
+        <el-descriptions-item label="物料清单">{{
+          row.materialCount > 0 ? `${row.materialCount} 项` : '未配置'
+        }}</el-descriptions-item>
+        <el-descriptions-item label="BOM 状态">{{ bomStatusLabel(row) }}</el-descriptions-item>
+        <el-descriptions-item
+          label="状态"
+          :span="2"
+          >{{ row.status === 1 ? '启用' : '停用' }}</el-descriptions-item
+        >
+        <el-descriptions-item
+          label="规格书"
+          :span="2"
+        >
+          <div
+            v-if="row.specificationFile"
+            class="file-attachment"
+          >
+            <span>{{ row.specificationFile.originalName }}</span>
+            <el-button
+              v-if="canPreviewFile(row.specificationFile.originalName)"
+              link
+              type="primary"
+              :loading="fileActions.pendingAction.value === 'preview'"
+              :disabled="Boolean(fileActions.pendingAction.value)"
+              @click="fileActions.preview"
+              >预览</el-button
+            >
+            <el-button
+              link
+              type="primary"
+              :loading="fileActions.pendingAction.value === 'download'"
+              :disabled="Boolean(fileActions.pendingAction.value)"
+              @click="fileActions.download"
+              >下载</el-button
+            >
+          </div>
+          <span v-else>未上传规格书</span>
+        </el-descriptions-item>
+        <el-descriptions-item
+          label="备注"
+          :span="2"
+          >{{ row.remark || '-' }}</el-descriptions-item
+        >
+      </el-descriptions>
+      <section
+        class="product-specs"
+        aria-label="规格参数"
+      >
+        <h3>规格参数</h3>
         <JsonTableEditor
           :model-value="row.specValues"
           readonly
         />
-      </el-descriptions-item>
-      <el-descriptions-item
-        label="规格书"
-        :span="2"
-      >
-        <div
-          v-if="row.specificationFile"
-          class="file-attachment"
-        >
-          <span>{{ row.specificationFile.originalName }}</span>
-          <el-button
-            v-if="canPreviewFile(row.specificationFile.originalName)"
-            link
-            type="primary"
-            :loading="fileActions.pendingAction.value === 'preview'"
-            :disabled="Boolean(fileActions.pendingAction.value)"
-            @click="fileActions.preview"
-            >预览</el-button
-          >
-          <el-button
-            link
-            type="primary"
-            :loading="fileActions.pendingAction.value === 'download'"
-            :disabled="Boolean(fileActions.pendingAction.value)"
-            @click="fileActions.download"
-            >下载</el-button
-          >
-        </div>
-        <span v-else>未上传规格书</span>
-      </el-descriptions-item>
-      <el-descriptions-item
-        label="备注"
-        :span="2"
-        >{{ row.remark || '-' }}</el-descriptions-item
-      >
-    </el-descriptions>
+      </section>
+    </template>
   </el-dialog>
 </template>
 
@@ -108,6 +114,21 @@ const bomStatusLabel = (row: ProductListItem): string => {
 </script>
 
 <style scoped>
+.product-summary {
+  overflow-wrap: anywhere;
+}
+.product-summary :deep(.el-descriptions__table) {
+  table-layout: fixed;
+}
+.product-specs {
+  margin-top: 16px;
+}
+.product-specs h3 {
+  margin: 0 0 12px;
+  color: var(--el-text-color-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
 .file-attachment {
   display: flex;
   align-items: center;

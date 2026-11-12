@@ -125,7 +125,7 @@
     </el-form-item>
     <el-form-item
       v-if="model.previousRecordId"
-      label="更正原因"
+      label="修订原因"
       required
     >
       <el-input

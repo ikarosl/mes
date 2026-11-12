@@ -102,11 +102,11 @@ export function normalizeIncomingInspectionReport(
       : requireInspectionIdentifier(input.previousRecordId, '原检验报告');
   const correctionReason = optionalText(
     input.correctionReason,
-    '更正原因',
+    '修订原因',
     QUALITY_INBOUND_TEXT_MAX_LENGTH,
   );
   if (Boolean(previousRecordId) !== Boolean(correctionReason))
-    invalid('更正报告须同时提供原报告和更正原因');
+    invalid('修订报告须同时提供原报告和修订原因');
   return {
     source: {
       receiptId: requireInspectionIdentifier(source.receiptId, '到货单'),

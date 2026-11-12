@@ -1,14 +1,13 @@
 import type {
   PageQuery,
-  PageResult,
   QualityIncomingInspectionReportItem,
-  QualityIncomingInspectionReportSummary,
+  QualityIncomingInspectionReportPage,
 } from '@company/contracts';
 
 export abstract class QualityInboundQuery {
   abstract listReports(
     receiptLineId: string,
     query: PageQuery,
-  ): Promise<PageResult<QualityIncomingInspectionReportSummary>>;
+  ): Promise<QualityIncomingInspectionReportPage>;
   abstract getReport(reportId: string): Promise<QualityIncomingInspectionReportItem | null>;
 }

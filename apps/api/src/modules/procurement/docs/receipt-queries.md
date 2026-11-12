@@ -34,6 +34,6 @@ excess-receipt-candidates 和 quality-replacement-candidates 都列出该原采�
 
 当前来料列表复用 GET /quality/inbound-inspection-orders/receipt-candidates 并明确传 `association=all`，按到货 ID 倒序分页，不按保留的分组关系分流；范围包含有效到货及已有分组关系的作废到货。省略 association 仍按原契约返回未关联的有效到货。receipts/:receiptId/lines 读取单张到货完整轻量物料，receipt-lines/:receiptLineId/location 按真实到货行定位；路径均位于 /quality/inbound-inspection-orders 下，继续用于来源读取。[分组专用接口已停用](../../quality/docs/incoming-inspection-orders.md)，不据此停用共享到货查询。
 
-GET /quality/inbound-inspections/receipt-lines/:id 复用当前 ProcurementReceiptLine 来源投影；GET /quality/inbound-inspections/:id/reports 独立分页报告，GET /quality/inbound-inspections/reports/:reportId 按历史报告精确读取及打印。报告数量及最近报告摘要遵守[Quality 报告契约](../../quality/docs/unified-inspection-model.md#事务与权限)。以上读取均要求 quality:inbound-inspections:view；打印采用报告持久快照。
+GET /quality/inbound-inspections/receipt-lines/:id 复用当前 ProcurementReceiptLine 来源投影；GET /quality/inbound-inspections/:id/reports 独立分页报告，GET /quality/inbound-inspections/reports/:reportId 按历史报告精确读取及打印。记录数量、当前报告及分页快照遵守[Quality 报告契约](../../quality/docs/unified-inspection-model.md#事务与权限)。以上读取均要求 quality:inbound-inspections:view；打印采用报告持久快照。
 
 跨模块展示读取只在登记的 infrastructure/queries 中完成，不作为来源写入资格、业务状态或库存数量授权。

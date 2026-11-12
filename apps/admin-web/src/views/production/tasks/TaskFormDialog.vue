@@ -302,6 +302,7 @@ import type {
   ProductionBatchDetail,
   WorkOrderOption,
 } from '@company/contracts';
+import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import InlineHint from '../../../components/InlineHint.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
@@ -460,7 +461,7 @@ const formatRoute = (route: ProcessRouteOption): string =>
   `${route.routeName}${route.versionNo ? ` / ${route.versionNo}` : ''}`;
 
 const formatWorkOrderOption = (order: WorkOrderOption): string =>
-  workOrderSource.formatOption(order);
+  `${WORK_ORDER_TYPE_LABELS[order.orderType]} / ${workOrderSource.formatOption(order)}`;
 
 /** 路线下拉：合并已选值，候选刷新后已失效路线回显「ID（已失效）」并禁用 */
 const routeChoices = computed(() =>

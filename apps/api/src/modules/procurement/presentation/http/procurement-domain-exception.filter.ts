@@ -28,7 +28,7 @@ export class ProcurementDomainExceptionFilter extends HttpExceptionFilter {
     if (
       exception instanceof QualityCommandError &&
       exception.code === 'INVALID_STATE' &&
-      (message === '检验命令必须位于来源业务事务中' || message === '检验当前读要求来源活动事务')
+      message === '检验命令必须位于来源业务事务中'
     ) {
       const request = host.switchToHttp().getRequest<{ requestId?: string }>();
       const requestId = (request.requestId ??= createRequestId());

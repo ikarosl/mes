@@ -52,7 +52,7 @@ import type {
   RecordReceiptHandlingPayload,
   QualityIncomingInspectionReportInput,
   QualityIncomingInspectionReportItem,
-  QualityIncomingInspectionReportSummary,
+  QualityIncomingInspectionReportPage,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -188,7 +188,7 @@ export const procurementApi = {
     id: string,
     params: PageQuery,
     signal?: AbortSignal,
-  ): Promise<PageResult<QualityIncomingInspectionReportSummary>> =>
+  ): Promise<QualityIncomingInspectionReportPage> =>
     request({
       url: `/quality/inbound-inspections/${id}/reports`,
       params,

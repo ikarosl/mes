@@ -2,8 +2,6 @@ import type {
   CreateReturnOrderPayload,
   CancelReturnOrderPayload,
   CancelMaterialLossPayload,
-  CancelStockCheckPayload,
-  CreateStockCheckPayload,
   CreateMaterialLossPayload,
   MaterialLossBatchOption,
   MaterialLossCandidateItem,
@@ -15,11 +13,6 @@ import type {
   ReturnOrderCandidateItem,
   ReturnOrderItem,
   ReturnOrderQuery,
-  SaveStockCheckCountsPayload,
-  StockCheckCandidateItem,
-  StockCheckCandidateQuery,
-  StockCheckOrderItem,
-  StockCheckOrderQuery,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -111,36 +104,6 @@ export const warehouseApi = {
   cancelReturnOrder: (returnId: string, data: CancelReturnOrderPayload) =>
     request<ReturnOrderItem>({
       url: `/warehouse/return-orders/${returnId}/actions/cancel`,
-      method: 'POST',
-      data,
-    }),
-
-  listStockChecks: (params: StockCheckOrderQuery) =>
-    request<PageResult<StockCheckOrderItem>>({ url: '/warehouse/stock-checks', params }),
-  getStockCheck: (stockCheckId: string) =>
-    request<StockCheckOrderItem>({ url: `/warehouse/stock-checks/${stockCheckId}` }),
-  listStockCheckCandidates: (params: StockCheckCandidateQuery) =>
-    request<PageResult<StockCheckCandidateItem>>({
-      url: '/warehouse/stock-checks/candidates',
-      params,
-    }),
-  createStockCheck: (data: CreateStockCheckPayload) =>
-    request<StockCheckOrderItem>({ url: '/warehouse/stock-checks', method: 'POST', data }),
-  saveStockCheckCounts: (stockCheckId: string, data: SaveStockCheckCountsPayload) =>
-    request<StockCheckOrderItem>({
-      url: `/warehouse/stock-checks/${stockCheckId}`,
-      method: 'PATCH',
-      data,
-    }),
-  completeStockCheck: (stockCheckId: string, version: number) =>
-    request<StockCheckOrderItem>({
-      url: `/warehouse/stock-checks/${stockCheckId}/actions/complete`,
-      method: 'POST',
-      data: { version },
-    }),
-  cancelStockCheck: (stockCheckId: string, data: CancelStockCheckPayload) =>
-    request<StockCheckOrderItem>({
-      url: `/warehouse/stock-checks/${stockCheckId}/actions/cancel`,
       method: 'POST',
       data,
     }),

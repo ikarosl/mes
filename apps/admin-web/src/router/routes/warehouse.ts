@@ -4,7 +4,6 @@ import InboundOrdersPage from '../../views/warehouse/InboundOrdersPage.vue';
 import OutboundOrdersPage from '../../views/warehouse/OutboundOrdersPage.vue';
 import ReturnOrdersPage from '../../views/warehouse/ReturnOrdersPage.vue';
 import ScrapsPage from '../../views/warehouse/ScrapsPage.vue';
-import StockChecksPage from '../../views/warehouse/StockChecksPage.vue';
 import WarehouseInventoryPage from '../../views/warehouse/WarehouseInventoryPage.vue';
 import OtherInboundsPage from '../../views/warehouse/OtherInboundsPage.vue';
 import OtherOutboundsPage from '../../views/warehouse/OtherOutboundsPage.vue';
@@ -107,13 +106,5 @@ export const warehouseRoutes: RouteRecordRaw[] = [
     ScrapsPage,
     PERMISSIONS.warehouse.scraps.view,
     'ScrapsPage',
-  ),
-  page(
-    'warehouse/stock-checks',
-    'warehouse-stock-checks',
-    '盘点管理',
-    StockChecksPage,
-    PERMISSIONS.warehouse.stockChecks.view,
-    'StockChecksPage',
   ),
 ];

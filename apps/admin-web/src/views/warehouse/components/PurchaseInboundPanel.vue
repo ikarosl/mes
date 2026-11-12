@@ -8,9 +8,6 @@
       <el-radio-button value="history">已入库记录</el-radio-button>
     </el-radio-group>
     <template v-if="view === 'sources'">
-      <InlineHint class="inbound-hint">
-        选择有效到货明细，填写本次实际入库数量与库存批次。
-      </InlineHint>
       <section class="query-panel">
         <el-form
           inline
@@ -298,6 +295,14 @@
               </template>
             </el-table-column>
             <el-table-column
+              label="累计已入库"
+              min-width="130"
+              align="right"
+              ><template #default="{ row }"
+                >{{ formatQuantity(row.source.inboundQuantity) }} {{ row.source.unit }}</template
+              ></el-table-column
+            >
+            <el-table-column
               label="本次入库"
               min-width="270"
               ><template #default="{ row }"
@@ -446,15 +451,8 @@ const historyKeyword = ref(''),
   historySize = ref(10);
 const historyExpansion = useInboundHistoryExpansion();
 const currentInboundId = ref<string | null>(null);
-const locationOrigin = ref<'route' | 'confirmed' | null>(null);
 const pageActive = ref(true);
-const sources = usePurchaseInboundSources(async (result) => {
-  if (route.name === 'warehouse-inbound' && (route.query.inboundId || route.query.receiptLineId))
-    await router.replace({
-      query: { ...route.query, inboundId: undefined, receiptLineId: undefined },
-    });
-  await showInbound(result.inboundId, 'confirmed');
-});
+const sources = usePurchaseInboundSources();
 const locatedOnPage = computed(
   () =>
     !!currentInboundId.value &&
@@ -581,7 +579,7 @@ const refreshActive = async (): Promise<void> => {
 const closeConfirmation = () => {
   void sources.close();
 };
-async function showInbound(id: string, origin: 'route' | 'confirmed'): Promise<void> {
+async function showInbound(id: string): Promise<void> {
   view.value = 'history';
   currentInboundId.value = id;
   historyExpansion.retain(
@@ -589,14 +587,12 @@ async function showInbound(id: string, origin: 'route' | 'confirmed'): Promise<v
     id,
   );
   historyExpansion.expand(id);
-  locationOrigin.value = origin;
   history.closeDetail();
   await loadHistory();
 }
 function clearHistoryLocation(): void {
   const oldId = currentInboundId.value;
   currentInboundId.value = null;
-  locationOrigin.value = null;
   historyExpansion.retain(history.rows.value.map((row) => row.inboundId));
   history.closeDetail();
   if (oldId && route.name === 'warehouse-inbound' && route.query.inboundId === oldId)
@@ -622,12 +618,11 @@ async function locate(
   if (!inboundId && !receiptLineId) {
     consumedLocation = token;
     pendingLocation = null;
-    if (locationOrigin.value === 'route') {
+    if (currentInboundId.value) {
       historyLoadSequence += 1;
       history.cancelList();
       history.closeDetail();
       currentInboundId.value = null;
-      locationOrigin.value = null;
       historyExpansion.retain(history.rows.value.map((row) => row.inboundId));
     }
     return;
@@ -676,7 +671,7 @@ async function locate(
     )
       return;
     if (inboundId) {
-      await showInbound(inboundId, 'route');
+      await showInbound(inboundId);
     } else if (receiptLineId) {
       clearHistoryLocation();
       view.value = 'sources';

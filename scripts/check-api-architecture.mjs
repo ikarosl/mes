@@ -72,7 +72,7 @@ const knownIdempotencyScopes = [
   'procurement.purchase-order.update.v8',
   'procurement.receipt.confirm.v3',
   'procurement.receipt.handle.v1',
-  'procurement.receipt.inspect.v5',
+  'procurement.receipt.inspect.v6',
   'procurement.receipt.void.v4',
   'production.batch.create.v15',
   'production.demand-correction.submit.v3',

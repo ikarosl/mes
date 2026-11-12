@@ -14,7 +14,6 @@ export type InspectionReportSummaryRow = RowDataPacket & {
   qualified_quantity: number;
   unqualified_quantity: number;
   previous_record_id: string | null;
-  corrected_by_record_id: string | null;
   inspected_at: Date;
   result_note: string | null;
   created_by: string;
@@ -53,7 +52,6 @@ export function mapInspectionReportSummary(
     unqualifiedQuantity: String(row.unqualified_quantity),
     inspectedQuantity: String(Number(row.qualified_quantity) + Number(row.unqualified_quantity)),
     previousRecordId: nullableId(row.previous_record_id),
-    correctedByRecordId: nullableId(row.corrected_by_record_id),
     inspectedAt: toBeijingISOString(row.inspected_at),
     remark: row.result_note,
     createdBy: String(row.created_by),

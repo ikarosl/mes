@@ -53,13 +53,18 @@
         <col style="width: 160px"
       /></template>
       <template #column-headings
-        ><th scope="col">报告数量</th>
-        <th scope="col">最近检查报告</th>
+        ><th
+          scope="col"
+          title="包含登记和修订历史，不代表检查次数"
+        >
+          报告记录
+        </th>
+        <th scope="col">当前报告</th>
         <th scope="col">合格 / 不合格</th>
         <th scope="col">操作</th></template
       >
       <template #row="{ row: line }"
-        ><td>{{ line.reportCount }} 份</td>
+        ><td>{{ line.reportCount }} 条</td>
         <td>
           <el-button
             v-if="line.latestReport"
@@ -92,7 +97,7 @@
             link
             type="primary"
             @click="emit('open', line.receiptLineId)"
-            >{{ line.void ? '查看报告历史' : '填写 / 查看报告' }}</el-button
+            >{{ inspectionReportActionLabel(line) }}</el-button
           >
         </td></template
       >
@@ -123,6 +128,7 @@ import InlineHint from '../../../components/InlineHint.vue';
 import ReceiptWorklistReceiptGroup from '../../procurement/components/ReceiptWorklistReceiptGroup.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import type { IncomingInspectionReceiptState } from '../composables/useIncomingInspectionReceipts';
+import { inspectionReportActionLabel } from '../incoming-inspection-presentation';
 
 defineOptions({ name: 'IncomingInspectionReceipt' });
 defineProps<{

@@ -34,9 +34,7 @@ const sameBasis = (
   left.receiptLineVersion === right.receiptLineVersion;
 
 /** 列表窗口与跨页已选独立；显式核对只替换同一明细依据，绝不换成拆分后的子明细。 */
-export function usePurchaseInboundSources(
-  onConfirmed: (result: ConfirmProcurementInboundResult) => Promise<void>,
-) {
+export function usePurchaseInboundSources() {
   const query = reactive({ keyword: '', receiptLineId: '' });
   const rows = ref<ProcurementInboundSourceItem[]>([]);
   const page = ref(1),
@@ -56,12 +54,12 @@ export function usePurchaseInboundSources(
   const selectedRead = useLatestReadRequest(() => {
     checking.value = false;
   });
-  const command = useProcurementCommand<ConfirmProcurementInboundResult>(async (result) => {
+  const command = useProcurementCommand<ConfirmProcurementInboundResult>(async () => {
     selected.value = [];
     remark.value = '';
     visible.value = false;
     checkError.value = '';
-    await Promise.all([load(), onConfirmed(result)]);
+    await load();
   }, '入库单');
   const locked = computed(() => command.locked.value || checking.value);
   const batchIdentity = (source: ProcurementInboundSourceItem): string =>

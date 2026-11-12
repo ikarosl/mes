@@ -10,7 +10,10 @@ export interface RecordIncomingInspectionReportInput {
   report: QualityIncomingInspectionReportInput;
 }
 
-/** Procurement first locks and validates the non-voided source; a shared active transaction is required. */
+/**
+ * Procurement must retain the validated, non-voided source lock until the shared transaction ends.
+ * This serializes first registration and revisions before Quality locks and checks the current report.
+ */
 export abstract class QualityInboundCommand {
   abstract recordIncomingInspectionReport(
     input: RecordIncomingInspectionReportInput,

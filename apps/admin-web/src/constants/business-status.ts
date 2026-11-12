@@ -5,8 +5,6 @@ import type {
   InventoryTransactionType,
   ReturnOrderStatus,
   ScrapStatus,
-  StockCheckResult,
-  StockCheckStatus,
   StockStatus,
 } from '@company/contracts';
 import {
@@ -14,8 +12,6 @@ import {
   INVENTORY_SOURCE_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPE_LABELS,
   RETURN_ORDER_STATUS_LABELS,
-  STOCK_CHECK_RESULT_LABELS,
-  STOCK_CHECK_STATUS_LABELS,
 } from '@company/constants';
 
 export const inventoryTransactionTypeLabels = INVENTORY_TRANSACTION_TYPE_LABELS satisfies Record<
@@ -57,16 +53,6 @@ export const scrapStatusLabels = {
   cancelled: '已取消',
 } satisfies Record<ScrapStatus, string>;
 
-export const stockCheckStatusLabels = STOCK_CHECK_STATUS_LABELS satisfies Record<
-  StockCheckStatus,
-  string
->;
-
-export const stockCheckResultLabels = STOCK_CHECK_RESULT_LABELS satisfies Record<
-  StockCheckResult,
-  string
->;
-
 export const inventorySourceTypeLabel = (value: InventorySourceType) =>
   inventorySourceTypeLabels[value];
 export const inventoryBatchStatusLabel = (value: InventoryBatchStatus) =>
@@ -78,5 +64,3 @@ export const inventoryReferenceTypeLabel = (value: InventoryReferenceType) =>
   inventoryReferenceTypeLabels[value];
 export const returnOrderStatusLabel = (value: ReturnOrderStatus) => returnOrderStatusLabels[value];
 export const scrapStatusLabel = (value: ScrapStatus) => scrapStatusLabels[value];
-export const stockCheckStatusLabel = (value: StockCheckStatus) => stockCheckStatusLabels[value];
-export const stockCheckResultLabel = (value: StockCheckResult) => stockCheckResultLabels[value];

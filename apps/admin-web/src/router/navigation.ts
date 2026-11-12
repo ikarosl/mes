@@ -90,7 +90,6 @@ const navigationGroups: readonly NavigationGroup[] = [
       { routeNames: ['warehouse-outbound', 'warehouse-other-outbounds'] },
       { routeNames: ['warehouse-returns'] },
       { routeNames: ['warehouse-scraps'] },
-      { routeNames: ['warehouse-stock-checks'] },
     ],
   },
 ];

@@ -32,7 +32,7 @@
 
 ## 独立检验与分组
 
-`POST /procurement/receipt-lines/:id/inspect` 在锁内核验有效到货，调用 Quality 公开命令保存独立报告。检查或更正不推进到货版本，不影响仓库输入资格。数量、报告更正和打印头快照由 [Quality](../../quality/docs/unified-inspection-model.md)所有。
+`POST /procurement/receipt-lines/:id/inspect` 在锁内核验有效到货，调用 Quality 公开命令登记或修订报告。报告保存不推进到货版本，不影响仓库输入资格。数量、当前报告与修订校验、打印头快照由 [Quality](../../quality/docs/unified-inspection-model.md)所有。
 
 [已停用分组](../../quality/docs/incoming-inspection-orders.md)的保留关系命令先按数值 ID 升序锁全部受影响到货主单，再调用 Quality 公开能力锁定并维护质检主单与关系。未分组且已作废的到货不能首次关联，已有作废关系允许解除或转移。分组不锁采购根或到货行，不影响后续来源资格和版本。
 
@@ -48,6 +48,6 @@
 | /receipt-lines/:id/inspect         | quality:inbound-inspections:inspect |
 | /purchase-inbounds/actions/confirm | warehouse:inbound:confirm-purchase  |
 
-登记采购候选、到货列表和历史要求 warehouse:receipts:view；入库来源候选及已入库历史要求 warehouse:inbound:view。质量来源与报告读取要求 quality:inbound-inspections:view。页面权限不替代每个写接口鉴权。
+登记采购候选、到货列表及到货行的入库／说明历史要求 warehouse:receipts:view；入库管理的来源候选及入库单历史要求 warehouse:inbound:view。质量来源与报告读取要求 quality:inbound-inspections:view。页面权限不替代每个写接口鉴权。
 
 所有写入要求 Idempotency-Key，完整规范化输入与语义 path 参与指纹；实际入库、作废包含各自提交版本，独立说明不携带来源版本。同键同请求重放首次成功结果，后续来源变化不重新执行；错误及未知结果恢复遵守[幂等契约](../../../../docs/idempotency.md)。scope 以[应用代码](../application/idempotency/procurement-idempotency-scopes.contract.ts)为准。

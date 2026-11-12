@@ -34,7 +34,7 @@ Quality 拥有不可变检查报告，以及[已停用分组](incoming-inspectio
 
 ## 独立报告 quality_incoming_inspection_report
 
-本表保存一次实际检查的 G/F 和完整打印内容。可在同一到货明细下追加多次检查；更正通过同源前驱关联保存独立新事实。报告与来源数量、仓库处理、入库及可变分组均无额度关系。
+本表保存到货明细检验报告每次登记或修订的 G/F 和完整打印内容。修订通过同源前驱关联追加不可变记录；当前报告由该明细最新的创建时间及 ID 派生，不另存当前状态或报告指针。报告与来源数量、仓库处理、入库及可变分组均无额度关系；已有多根记录的解释见[登记与修订](unified-inspection-model.md#登记与修订)。
 
 | 字段 | 类型、空值与默认值 | 含义 |
 | --- | --- | --- |
@@ -55,8 +55,8 @@ Quality 拥有不可变检查报告，以及[已停用分组](incoming-inspectio
 | inspected_at | DATETIME(3) | 真实检验时间 |
 | result_note / evidence_reference | TEXT NULL | 可选异常说明与检验凭据 |
 | inspection_details | JSON | 本次报告独立的完整列定义与有序行数据，采用 JsonTableData |
-| previous_record_id | BIGINT UNSIGNED NULL | 本报告更正的原报告，无更正时为空 |
-| correction_reason | TEXT NULL | 有原报告引用时必填的更正原因 |
+| previous_record_id | BIGINT UNSIGNED NULL | 本报告修订的前驱；登记记录为空，新修订必须引用当前报告 |
+| correction_reason | TEXT NULL | 有前驱引用时必填的修订原因 |
 | created_by | BIGINT UNSIGNED | 实际登记人，FK users(id) |
 | created_at | DATETIME(3) DEFAULT CURRENT_TIMESTAMP(3) | 记录创建时间，与检验时间分别保存 |
 
@@ -65,14 +65,14 @@ Quality 拥有不可变检查报告，以及[已停用分组](incoming-inspectio
 键、索引及约束：
 
 - `PRIMARY KEY(id)` 与 `uk_incoming_report_no(report_no)` 保持身份和编号唯一；`uk_incoming_report_source(id,receipt_line_id)` 支撑同源自引用。
-- `idx_incoming_report_line_created(receipt_line_id,created_at,id)` 支撑逐来源历史分页及最近登记报告读取；`idx_incoming_report_receipt_source(receipt_line_id,receipt_id)` 支撑来源 FK。
-- `uk_incoming_report_previous(previous_record_id)` 让一份报告最多有一个直接更正后继；NULL 可重复。`idx_incoming_report_previous_source(previous_record_id,receipt_line_id)` 支撑 `fk_incoming_report_previous_source`，组合外键保证引用同一到货明细。应用锁定原报告并检查后继，拒绝更正已被更正的原记录；继续更正须引用直接后继。
+- `idx_incoming_report_line_created(receipt_line_id,created_at,id)` 支撑逐来源历史分页及当前报告读取；`idx_incoming_report_receipt_source(receipt_line_id,receipt_id)` 支撑来源 FK。
+- `uk_incoming_report_previous(previous_record_id)` 让一份报告最多有一个直接修订后继；NULL 可重复，保留已有独立登记。`idx_incoming_report_previous_source(previous_record_id,receipt_line_id)` 支撑 `fk_incoming_report_previous_source`，组合外键保证引用同一到货明细。在 Procurement 已持有来源锁后，应用锁定读取当前报告，已有报告时仅接受与其 ID 一致的前驱；唯一键不能单独保证当前报告约束。
 - `idx_incoming_report_creator(created_by)` 支撑 `fk_incoming_report_creator`。
 - `chk_incoming_report_header` 要求编号、来源打印文本 trim 后非空，规格与批号允许 NULL；`chk_incoming_report_method` 限定 full／sampling。
 - `chk_incoming_report_quantities` 保证 G/F 各为 0..99999999、合计为 1..99999999；应用在写入前拒绝小数。该数量不与入库量、采购量或其他报告求和比较。
 - `chk_incoming_report_notes` 限定非空说明和凭据为 1..4000 字，允许 NULL；`chk_incoming_report_correction` 要求原报告引用与非空更正原因同时出现或同时为空。
 - `chk_incoming_report_details` 保证 JSON 顶层只有 `columns/rows`，分别为 1..20 列、1..200 行的数组。列键、列名、单元格与未知字段由共享 [JSON 表格规范化](../../../../../../packages/utils/README.md#json-表格)校验；Quality 额外要求至少一列和一行数据，不推导人工表格结果。完整输入形状见[契约](../../../../../../packages/contracts/src/quality/inbound-inspections.ts)，默认项目与打印标签见[常量](../../../../../../packages/constants/src/quality.ts)。报告不保存模板 ID 或模板外键。
-- `trg_incoming_report_no_update` 与 `trg_incoming_report_no_delete` 无条件禁止更新／删除。更正和重复检查均追加记录；直接后继 ID 由查询派生，不更新原报告。
+- `trg_incoming_report_no_update` 与 `trg_incoming_report_no_delete` 无条件禁止更新／删除。登记与修订均追加记录，以新记录的前驱引用保存关系，不更新原报告。
 
 ## 写入、查询与迁移
 

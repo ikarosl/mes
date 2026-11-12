@@ -130,7 +130,6 @@
     <InboundInspectionDetailDialog
       ref="detail"
       @changed="load"
-      @record-focus-cleared="clearRecordLocation"
     />
   </section>
 </template>
@@ -249,16 +248,6 @@ async function openLine(id: string, reportId = '') {
   query.receiptLineId = id;
   if (reportId) query.reportId = reportId;
   else delete query.reportId;
-  await router.replace({ name: 'quality-inbound-inspections', query });
-}
-async function clearRecordLocation() {
-  const id = detail.value?.openedLineId;
-  if (!id) return;
-  accepted = { receiptLineId: id };
-  consumed = JSON.stringify([id, '']);
-  const query = { ...route.query };
-  query.receiptLineId = id;
-  delete query.reportId;
   await router.replace({ name: 'quality-inbound-inspections', query });
 }
 async function locate(): Promise<void> {

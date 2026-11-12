@@ -5,17 +5,18 @@
     :width="DialogWidth.workbench"
     workbench
     :before-close="beforeClose"
+    :show-close="!handling?.busy"
   >
     <div v-loading="loading">
       <el-alert
         v-if="readError"
-        title="详情读取失败，旧内容只供核对；请刷新后再办理。"
+        title="详情读取失败，旧内容只供核对；请刷新后再登记说明。"
         type="error"
         :closable="false"
         class="notice"
       />
-      <template v-if="detail"
-        ><ReceiptVoidNotice
+      <template v-if="detail">
+        <ReceiptVoidNotice
           v-if="detail.void"
           :record="detail.void"
           class="notice"
@@ -24,32 +25,34 @@
           :column="2"
           border
           size="small"
-          ><el-descriptions-item label="采购单"
+        >
+          <el-descriptions-item label="采购单"
             ><strong>{{ detail.purchaseNo }}</strong></el-descriptions-item
-          ><el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item
-          ><el-descriptions-item label="实际到货时间">{{
+          >
+          <el-descriptions-item label="供应商">{{ detail.supplierName }}</el-descriptions-item>
+          <el-descriptions-item label="实际到货时间">{{
             formatDateTimeForDisplay(detail.receivedAt)
-          }}</el-descriptions-item
-          ><el-descriptions-item label="交接凭据">{{
+          }}</el-descriptions-item>
+          <el-descriptions-item label="交接凭据">{{
             detail.handoverEvidence || '—'
-          }}</el-descriptions-item
-          ><el-descriptions-item
+          }}</el-descriptions-item>
+          <el-descriptions-item
             v-if="detail.remark"
             label="备注"
             :span="2"
             >{{ detail.remark }}</el-descriptions-item
-          ></el-descriptions
-        >
+          >
+        </el-descriptions>
         <div class="receipt-workbench">
           <nav
             class="receipt-index"
             aria-label="到货明细"
           >
-            <strong>到货明细 · {{ detail.items.length }} 条</strong
-            ><el-input
+            <strong>到货明细 · {{ detail.items.length }} 条</strong>
+            <el-input
               v-model="lineSearch"
               clearable
-              placeholder="物料 / 编码 / 来料批次"
+              placeholder="物料 / 编码 / 供应商批号"
             />
             <p
               v-if="lineSearch && !filteredLines.some((line) => line.id === activeLine)"
@@ -64,120 +67,225 @@
               class="receipt-index-item"
               :class="{ active: line.id === activeLine }"
               :aria-current="line.id === activeLine ? 'true' : undefined"
-              @click="activeLine = line.id"
+              :disabled="transitioning || Boolean(handling?.busy) || childOpen"
+              @click="selectLine(line.id)"
             >
-              <strong>{{ line.itemName }}</strong
-              ><span>{{ line.itemCode }} · {{ line.materialVariantCode }}</span
-              ><span>到货行 ID {{ line.id }}</span
-              ><span>累计已入库 {{ Number(line.quantities.inboundQuantity) }} {{ line.unit }}</span>
+              <strong>{{ line.itemName }}</strong>
+              <span>{{ line.itemCode }} · {{ line.materialVariantCode }}</span>
+              <span>到货行 ID {{ line.id }}</span>
+              <span
+                >累计已入库 {{ formatQuantity(line.quantities.inboundQuantity) }}
+                {{ line.unit }}</span
+              >
             </button>
           </nav>
           <section
             v-if="selectedLine"
             class="receipt-current"
           >
-            <ReceiptLineSummary :line="selectedLine" /><InlineHint class="notice"
-              >到货、检验报告、实际入库和采购补单分别办理。仓库直接填写实际入库数量，其他处理仅登记文字说明。</InlineHint
-            >
-            <div class="section-actions">
-              <el-button
-                v-if="!selectedLine.void && canViewInbound"
-                type="primary"
-                :disabled="blocked"
-                @click="goInbound"
-                >入库</el-button
-              ><el-button
-                v-if="!selectedLine.void"
-                :disabled="blocked"
-                @click="openHandling"
-                >其他处理</el-button
-              ><el-button
-                v-if="canViewQuality"
-                :disabled="blocked"
-                @click="goQuality"
-                >检验记录 / 报告</el-button
-              ><el-button
-                :disabled="blocked"
-                @click="history?.open(selectedLine.id, 'inbounds', selectedLine)"
-                >入库记录</el-button
-              ><el-button
-                :disabled="blocked"
-                @click="history?.open(selectedLine.id, 'handlings', selectedLine)"
-                >其他处理记录</el-button
-              >
+            <div class="material-heading">
+              <h3>{{ selectedLine.itemName }}</h3>
+              <span>{{ selectedLine.itemCode }} · {{ selectedLine.materialVariantCode }}</span>
+              <span>供应商批号：{{ selectedLine.supplierBatchCode || '未提供' }}</span>
+              <span>采购行 ID：{{ selectedLine.purchaseOrderLineId }}</span>
             </div>
-            <div
-              v-if="!selectedLine.void && canViewPurchases"
-              class="supplement-section"
+            <el-descriptions
+              :column="2"
+              border
+              size="small"
+              class="material-summary"
             >
-              <strong>采购补单</strong>
-              <div class="section-actions">
-                <el-button
-                  :disabled="blocked"
-                  @click="goSupplement('excess_purchase')"
-                  >超量补购</el-button
-                ><el-button
-                  :disabled="blocked"
-                  @click="goSupplement('quality_replacement')"
-                  >质量补发</el-button
+              <el-descriptions-item label="累计已入库">
+                <strong
+                  >{{ formatQuantity(selectedLine.quantities.inboundQuantity) }}
+                  {{ selectedLine.unit }}</strong
                 >
-              </div>
-            </div>
+              </el-descriptions-item>
+              <el-descriptions-item label="报告记录">
+                <span v-if="!canViewQuality || reportSummary.forbidden.value"
+                  >无查看检验报告权限</span
+                >
+                <span v-else-if="reportSummary.loading.value">正在读取…</span>
+                <span
+                  v-else-if="reportSummary.failed.value"
+                  class="read-failed"
+                  >读取失败，请刷新重试</span
+                >
+                <strong v-else-if="reportSummary.total.value !== null"
+                  >{{ reportSummary.total.value }} 条（含历史）</strong
+                >
+                <span v-else>尚未读取成功，请刷新</span>
+              </el-descriptions-item>
+              <el-descriptions-item
+                label="当前报告"
+                :span="2"
+              >
+                <span v-if="!canViewQuality || reportSummary.forbidden.value"
+                  >无查看检验报告权限</span
+                >
+                <span v-else-if="reportSummary.loading.value">正在读取…</span>
+                <span
+                  v-else-if="reportSummary.failed.value"
+                  class="read-failed"
+                  >读取失败，请刷新重试</span
+                >
+                <div
+                  v-else-if="reportSummary.latest.value"
+                  class="latest-report"
+                >
+                  <strong>{{ reportSummary.latest.value.reportNo }}</strong>
+                  <span>{{
+                    QUALITY_INSPECTION_METHOD_LABELS[reportSummary.latest.value.inspectionMethod]
+                  }}</span>
+                  <span
+                    >合格
+                    <strong
+                      :class="{
+                        qualified: Number(reportSummary.latest.value.qualifiedQuantity) > 0,
+                      }"
+                      >{{ formatQuantity(reportSummary.latest.value.qualifiedQuantity) }}</strong
+                    >
+                    / 不合格
+                    <strong
+                      :class="{
+                        unqualified: Number(reportSummary.latest.value.unqualifiedQuantity) > 0,
+                      }"
+                      >{{ formatQuantity(reportSummary.latest.value.unqualifiedQuantity) }}</strong
+                    >
+                    {{ selectedLine.unit }}</span
+                  >
+                  <span
+                    >登记于
+                    {{ formatDateTimeForDisplay(reportSummary.latest.value.createdAt) }}</span
+                  >
+                </div>
+                <span v-else-if="reportSummary.total.value === 0">尚无检验报告</span>
+                <span v-else>尚未读取成功，请刷新</span>
+              </el-descriptions-item>
+              <el-descriptions-item
+                label="其他处理说明"
+                :span="2"
+              >
+                <strong>{{ selectedLine.handlingCount }} 条</strong>
+                <div
+                  v-if="selectedLine.otherHandlingNote"
+                  class="record-text"
+                >
+                  最近说明：{{ selectedLine.otherHandlingNote }}
+                </div>
+                <span v-else-if="selectedLine.handlingCount === 0"> · 暂无其他处理说明</span>
+                <span v-else> · 最近说明未读取完整，请刷新核对</span>
+              </el-descriptions-item>
+            </el-descriptions>
+            <el-tabs
+              v-model="selectedTab"
+              :before-leave="beforeTabLeave"
+              class="record-tabs"
+            >
+              <el-tab-pane
+                label="入库记录"
+                name="inbounds"
+              />
+              <el-tab-pane
+                label="检验报告"
+                name="reports"
+              />
+              <el-tab-pane
+                label="其他处理说明"
+                name="handlings"
+              />
+            </el-tabs>
+            <ReceiptInboundRecords
+              v-show="selectedTab === 'inbounds'"
+              ref="inbounds"
+              :receipt-line-id="selectedLine.id"
+              :unit="selectedLine.unit"
+              :active="visible && selectedTab === 'inbounds'"
+            />
+            <ReceiptInspectionRecords
+              v-if="canViewQuality"
+              v-show="selectedTab === 'reports'"
+              ref="reports"
+              :receipt-line-id="selectedLine.id"
+              :active="visible && selectedTab === 'reports'"
+            />
+            <el-empty
+              v-else-if="selectedTab === 'reports'"
+              description="无查看检验报告权限"
+              :image-size="64"
+            />
+            <ReceiptHandlingRecords
+              v-show="selectedTab === 'handlings'"
+              ref="handling"
+              :source="selectedLine"
+              :active="visible && selectedTab === 'handlings'"
+              :writable="!blocked"
+              @saved="handlingSaved"
+            />
           </section>
         </div>
       </template>
+      <el-empty
+        v-else-if="!loading"
+        :description="readError ? '到货详情读取失败，请刷新重试' : '到货详情尚未读取成功，请刷新'"
+        :image-size="64"
+      />
     </div>
-    <template #footer
-      ><el-button
-        v-if="detail && !detail.void"
-        type="danger"
-        plain
-        :disabled="blocked"
-        @click="openVoid"
-        >作废整单</el-button
-      ><el-button
-        :disabled="loading || childOpen"
-        @click="load"
+    <template #footer>
+      <el-button
+        :disabled="loading || childOpen || transitioning"
+        @click="refresh"
         >刷新</el-button
-      ><el-button @click="close">关闭</el-button></template
-    >
+      >
+      <el-button
+        :disabled="Boolean(handling?.busy)"
+        @click="close"
+        >关闭</el-button
+      >
+    </template>
   </el-dialog>
-  <ReceiptHistoryDialog
-    ref="history"
-    @saved="saved"
-  /><ReceiptVoidDialog
+  <ReceiptVoidDialog
     ref="voidDialog"
-    @saved="saved"
+    @saved="voidSaved"
   />
 </template>
+
 <script setup lang="ts">
-import { computed, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import type { ProcurementReceiptDetail, PurchaseOrderSupplementReason } from '@company/contracts';
+import { computed, nextTick, ref } from 'vue';
+import { QUALITY_INSPECTION_METHOD_LABELS } from '@company/constants';
+import type { ProcurementReceiptDetail, ReceiptHandlingItem } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
-import InlineHint from '../../../components/InlineHint.vue';
+import { formatQuantity } from '../../../utils/quantity';
+import { useReceiptInspectionSummary } from '../composables/useReceiptInspectionSummary';
 import type { ReceiptDetailIntent } from '../receipt-presentation';
-import ReceiptLineSummary from './ReceiptLineSummary.vue';
+import ReceiptHandlingRecords from './ReceiptHandlingRecords.vue';
+import ReceiptInboundRecords from './ReceiptInboundRecords.vue';
+import ReceiptInspectionRecords from './ReceiptInspectionRecords.vue';
 import ReceiptVoidNotice from './ReceiptVoidNotice.vue';
 import ReceiptVoidDialog from './ReceiptVoidDialog.vue';
-import ReceiptHistoryDialog from './ReceiptHistoryDialog.vue';
+
+type ReceiptDetailTab = 'inbounds' | 'reports' | 'handlings';
 const emit = defineEmits<{ changed: [] }>();
-const router = useRouter(),
-  { canAccessRoute } = useRouteAccess();
-const visible = ref(false),
-  id = ref(''),
-  activeLine = ref(''),
-  lineSearch = ref(''),
-  loading = ref(false),
-  readError = ref(false);
+const { canAccessRoute } = useRouteAccess();
+const visible = ref(false);
+const id = ref('');
+const activeLine = ref('');
+const lineSearch = ref('');
+const selectedTab = ref<ReceiptDetailTab>('inbounds');
+const loading = ref(false);
+const readError = ref(false);
+const transitioning = ref(false);
 const detail = ref<ProcurementReceiptDetail | null>(null);
-const history = ref<InstanceType<typeof ReceiptHistoryDialog>>(),
-  voidDialog = ref<InstanceType<typeof ReceiptVoidDialog>>();
+const inbounds = ref<InstanceType<typeof ReceiptInboundRecords>>();
+const reports = ref<InstanceType<typeof ReceiptInspectionRecords>>();
+const handling = ref<InstanceType<typeof ReceiptHandlingRecords>>();
+const voidDialog = ref<InstanceType<typeof ReceiptVoidDialog>>();
+let contextVersion = 0;
 const read = useLatestReadRequest(() => {
   loading.value = false;
 });
@@ -194,23 +302,38 @@ const filteredLines = computed(() => {
       ),
   );
 });
-const canViewInbound = computed(() => canAccessRoute({ name: 'warehouse-inbound' }));
 const canViewQuality = computed(() => canAccessRoute({ name: 'quality-inbound-inspections' }));
-const canViewPurchases = computed(() => canAccessRoute({ name: 'procurement-orders' }));
-const childOpen = computed(() => Boolean(history.value?.visible || voidDialog.value?.visible));
+const childOpen = computed(() => Boolean(voidDialog.value?.visible));
 const blocked = computed(
-  () => loading.value || readError.value || childOpen.value || !read.isActive(),
+  () =>
+    loading.value || readError.value || childOpen.value || transitioning.value || !read.isActive(),
 );
+const reportSummary = useReceiptInspectionSummary(
+  () => selectedLine.value?.id ?? '',
+  () => visible.value,
+  () => canViewQuality.value,
+);
+
 async function load(): Promise<ProcurementReceiptDetail | null> {
   if (!visible.value || !read.isActive()) return null;
   const target = id.value;
-  const current = read.begin(() => visible.value && id.value === target);
+  const version = contextVersion;
+  const current = read.begin(
+    () => visible.value && id.value === target && contextVersion === version,
+  );
   loading.value = true;
   try {
     const result = await procurementApi.getReceipt(target, current.signal);
     if (!current.isCurrent()) return null;
-    if (result.id !== target || result.items.length !== result.lineCount)
+    if (
+      result.id !== target ||
+      result.items.length !== result.lineCount ||
+      new Set(result.items.map((line) => line.id)).size !== result.items.length ||
+      result.items.some((line) => line.receiptId !== target)
+    )
       throw new Error('到货明细不完整，请重新读取');
+    if (selectedLine.value && !result.items.some((line) => line.id === activeLine.value))
+      throw new Error('当前到货明细已变化，输入已保留；请关闭后重新核对来源');
     detail.value = result;
     if (!result.items.some((line) => line.id === activeLine.value))
       activeLine.value = result.items[0]?.id ?? '';
@@ -231,68 +354,96 @@ async function open(
   lineId?: string,
   intent?: ReceiptDetailIntent,
 ): Promise<boolean> {
+  if (transitioning.value || !read.isActive()) return false;
   if (visible.value && !(await close())) return false;
+  const version = ++contextVersion;
   id.value = target;
   activeLine.value = lineId ?? '';
   lineSearch.value = '';
+  selectedTab.value = intent === 'handling' ? 'handlings' : 'inbounds';
   detail.value = null;
   readError.value = false;
   visible.value = true;
   const loadedDetail = await load();
-  if (!loadedDetail) return false;
+  if (!loadedDetail || !visible.value || contextVersion !== version) return false;
   if (lineId && !loadedDetail.items.some((line) => line.id === lineId)) {
     EMessage.warning('指定到货明细不在当前到货单中，请核对来源');
     return false;
   }
   if (intent === 'void') await openVoid();
-  else if (intent === 'handling') await openHandling();
-  return true;
+  else if (intent === 'handling') {
+    await nextTick();
+    if (visible.value && contextVersion === version) handling.value?.beginRecording();
+  }
+  return visible.value && contextVersion === version;
 }
 async function close(): Promise<boolean> {
-  if (voidDialog.value?.visible && !(await voidDialog.value.close())) return false;
-  if (history.value?.visible && !(await history.value.close())) return false;
-  visible.value = false;
-  read.invalidate();
-  return true;
+  if (transitioning.value) return false;
+  transitioning.value = true;
+  try {
+    if (voidDialog.value?.visible && !(await voidDialog.value.close())) return false;
+    if (handling.value && !(await handling.value.canLeave())) return false;
+    contextVersion += 1;
+    visible.value = false;
+    read.invalidate();
+    reportSummary.invalidate();
+    return true;
+  } finally {
+    transitioning.value = false;
+  }
 }
-async function saved(): Promise<void> {
+async function selectLine(lineId: string): Promise<void> {
+  if (
+    lineId === activeLine.value ||
+    transitioning.value ||
+    childOpen.value ||
+    !visible.value ||
+    !read.isActive()
+  )
+    return;
+  const version = contextVersion;
+  transitioning.value = true;
+  try {
+    if (handling.value && !(await handling.value.canLeave())) return;
+    if (visible.value && contextVersion === version) activeLine.value = lineId;
+  } finally {
+    transitioning.value = false;
+  }
+}
+async function beforeTabLeave(next: string | number): Promise<boolean> {
+  if (next === selectedTab.value) return true;
+  if (transitioning.value || childOpen.value || !visible.value || !read.isActive()) return false;
+  const version = contextVersion;
+  const lineId = activeLine.value;
+  transitioning.value = true;
+  try {
+    if (handling.value && !(await handling.value.canLeave())) return false;
+    return visible.value && contextVersion === version && activeLine.value === lineId;
+  } finally {
+    transitioning.value = false;
+  }
+}
+async function refresh(): Promise<void> {
+  if (loading.value || childOpen.value || transitioning.value || !visible.value || !read.isActive())
+    return;
+  let currentRecords: Promise<void> | undefined;
+  if (selectedTab.value === 'inbounds') currentRecords = inbounds.value?.refresh();
+  else if (selectedTab.value === 'reports') currentRecords = reports.value?.refresh();
+  else currentRecords = handling.value?.refresh();
+  await Promise.all([load(), reportSummary.refresh(), currentRecords]);
+}
+async function handlingSaved(record: ReceiptHandlingItem): Promise<void> {
   emit('changed');
+  if (!visible.value || record.receiptLineId !== activeLine.value || !read.isActive()) return;
   await load();
 }
-async function openHandling(): Promise<void> {
-  const line = selectedLine.value;
-  if (!blocked.value && line && !line.void)
-    await history.value?.open(line.id, 'handlings', line, true);
+async function voidSaved(): Promise<void> {
+  emit('changed');
+  await load();
 }
 async function openVoid(): Promise<void> {
   if (!blocked.value && detail.value && !detail.value.void)
     await voidDialog.value?.open(detail.value.id);
-}
-async function goInbound(): Promise<void> {
-  const line = selectedLine.value;
-  if (line && !blocked.value && (await close()))
-    await router.push({
-      name: 'warehouse-inbound',
-      query: { sourceType: 'purchased', receiptLineId: line.id },
-    });
-}
-async function goQuality(): Promise<void> {
-  const line = selectedLine.value;
-  if (line && !blocked.value && (await close()))
-    await router.push({ name: 'quality-inbound-inspections', query: { receiptLineId: line.id } });
-}
-async function goSupplement(reason: PurchaseOrderSupplementReason): Promise<void> {
-  const line = selectedLine.value;
-  if (line && !blocked.value && (await close()))
-    await router.push({
-      name: 'procurement-orders',
-      query: {
-        purchaseOrderId: line.purchaseOrderId,
-        supplementLineId: line.purchaseOrderLineId,
-        supplementReason: reason,
-        receiptLineId: line.id,
-      },
-    });
 }
 const beforeClose = (): void => {
   void close();
@@ -301,9 +452,12 @@ defineExpose({
   open,
   close,
   visible,
-  locked: computed(() => Boolean(voidDialog.value?.locked || history.value?.locked)),
+  locked: computed(() =>
+    Boolean(transitioning.value || voidDialog.value?.locked || handling.value?.locked),
+  ),
 });
 </script>
+
 <style scoped>
 .notice {
   margin: 12px 0;
@@ -336,6 +490,9 @@ defineExpose({
   border-color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
 }
+.receipt-index-item:disabled {
+  cursor: default;
+}
 .receipt-index-item span,
 .secondary {
   color: var(--el-text-color-secondary);
@@ -344,18 +501,58 @@ defineExpose({
 .receipt-current {
   min-width: 0;
 }
-.section-actions {
+.material-heading {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 12px;
+  align-items: baseline;
+  gap: 6px 16px;
+  margin-bottom: 12px;
+  overflow-wrap: anywhere;
 }
-.section-actions :deep(.el-button) {
-  margin-left: 0;
+.material-heading h3 {
+  flex-basis: 100%;
+  margin: 0;
+  color: var(--el-text-color-primary);
+  font-size: 16px;
+  font-weight: 600;
 }
-.supplement-section {
-  margin-top: 24px;
-  padding-top: 16px;
-  border-top: 1px solid var(--el-border-color-lighter);
+.material-heading span {
+  color: var(--el-text-color-regular);
+  font-size: 13px;
+}
+.material-summary {
+  overflow-wrap: anywhere;
+}
+.material-summary :deep(.el-descriptions__label) {
+  width: 112px;
+}
+.latest-report {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.material-summary strong {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.qualified {
+  color: var(--el-color-success);
+}
+.unqualified,
+.read-failed {
+  color: var(--el-color-danger);
+}
+.record-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.record-tabs {
+  margin-top: 16px;
+}
+@media (max-width: 1100px) {
+  .receipt-workbench {
+    grid-template-columns: 220px minmax(0, 1fr);
+    gap: 16px;
+  }
 }
 </style>
