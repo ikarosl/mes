@@ -17,7 +17,7 @@
         >
         <RemoteSearchSelect
           id="workbench-task"
-          v-model="batchId"
+          :model-value="batchId"
           :options="taskSearch.options.value"
           :loading="taskSearch.loading.value"
           :error="taskSearch.error.value"
@@ -106,12 +106,11 @@
             <h2>
               <el-icon><FullScreen /></el-icon> 扫码到站
             </h2>
-            <p>按当前工作工序接收本盘，同时完成上一站交接</p>
           </div>
           <el-tag
             type="info"
             effect="plain"
-            >一盘一码 · 全程流转</el-tag
+            >按当前工作工序接收本盘，同时完成上一站交接</el-tag
           >
         </header>
         <div class="scan-body">
@@ -172,6 +171,7 @@
                   type="primary"
                   :loading="scanning"
                   :disabled="
+                    createLocked ||
                     (!scanRecovery && !canWork) ||
                     scanStatus === 'blocked' ||
                     scanStatus === 'expired'
@@ -200,14 +200,15 @@
             >
           </el-alert>
           <div class="batch-tools">
-            <el-button
-              type="primary"
-              plain
-              :icon="Plus"
-              :disabled="!canWork || setupLocked"
-              @click="openCreate"
-              >建卡 / 生成条形码</el-button
-            >
+            <WorkbenchCreateCardBar
+              ref="createBar"
+              :batch-id="batchId"
+              :personnel-id="personnelId"
+              :can-create="canWork && stepId === context?.steps[0]?.stepRecordId"
+              :disabled="scanning || scanRecovery"
+              @update:locked="createLocked = $event"
+              @created="cardCreated"
+            />
             <el-button
               v-if="context && canAccessRoute({ name: 'production-tracking' })"
               link
@@ -293,13 +294,6 @@
       @action="openDetailAction"
     />
 
-    <WorkbenchCreateCardDialog
-      v-model:visible="createVisible"
-      :batch="context?.batch ?? null"
-      :default-personnel-id="personnelId"
-      :personnel="personnel"
-      @created="cardCreated"
-    />
     <TrackingCardActionDialog
       v-model:visible="actionVisible"
       :action="action"
@@ -319,7 +313,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowRight, FullScreen, InfoFilled, Plus, Refresh } from '@element-plus/icons-vue';
+import { ArrowRight, FullScreen, InfoFilled, Refresh } from '@element-plus/icons-vue';
 import type { InputInstance } from 'element-plus';
 import type {
   PersonnelOption,
@@ -355,7 +349,7 @@ import WorkbenchTaskSummary from './WorkbenchTaskSummary.vue';
 import WorkbenchRouteProgress from './WorkbenchRouteProgress.vue';
 import WorkbenchCurrentCard from './WorkbenchCurrentCard.vue';
 import WorkbenchRecentReports from './WorkbenchRecentReports.vue';
-import WorkbenchCreateCardDialog from './WorkbenchCreateCardDialog.vue';
+import WorkbenchCreateCardBar from './WorkbenchCreateCardBar.vue';
 
 defineOptions({ name: 'ProductionWorkbenchPage' });
 const route = useRoute(),
@@ -429,7 +423,11 @@ async function loadPersonnel(): Promise<void> {
 async function refreshSetup(): Promise<void> {
   await Promise.all([loadContext(), loadPersonnel(), recentReports.load()]);
 }
-async function changeBatch(): Promise<void> {
+async function changeBatch(id: string | null): Promise<void> {
+  if (id === batchId.value || setupLocked.value || !contextReads.isActive()) return;
+  if (createBar.value && !(await createBar.value.allowBatchChange())) return;
+  if (setupLocked.value || !contextReads.isActive()) return;
+  batchId.value = id;
   contextReads.invalidate();
   context.value = null;
   stepId.value = '';
@@ -479,7 +477,9 @@ const scanInput = ref<InputInstance>(),
   scanIntent = useIdempotentIntent('到站与交接'),
   scanStatus = ref<IdempotentIntentStatus>('idle');
 const scanRecovery = computed(() => scanStatus.value !== 'idle');
-const setupLocked = computed(() => scanRecovery.value || scanning.value);
+const createBar = ref<InstanceType<typeof WorkbenchCreateCardBar>>();
+const createLocked = ref(false);
+const setupLocked = computed(() => scanRecovery.value || scanning.value || createLocked.value);
 const currentCard = ref<ProductionTrackingCardDetail | null>(null);
 const scanResultLabel = ref('');
 const scanError = ref('');
@@ -547,7 +547,13 @@ watch(detailVisible, (visible) => {
   if (!visible) detailReads.invalidate();
 });
 async function scan(): Promise<void> {
-  if (scanning.value || !contextReads.isActive() || (!scanRecovery.value && !canWork.value)) return;
+  if (
+    scanning.value ||
+    createLocked.value ||
+    !contextReads.isActive() ||
+    (!scanRecovery.value && !canWork.value)
+  )
+    return;
   const data = {
     cardNo: scanText.value.trim(),
     stepRecordId: stepId.value,
@@ -609,21 +615,12 @@ async function abandonScan(): Promise<void> {
   }
 }
 
-const createVisible = ref(false);
-function openCreate(): void {
-  if (!context.value || createVisible.value || setupLocked.value || !canWork.value) return;
-  if (stepId.value !== context.value.steps[0]?.stepRecordId) {
-    EMessage.warning('请在首工序建卡，切换到首工序后重试');
-    return;
-  }
-  createVisible.value = true;
-}
 async function cardCreated(card: ProductionTrackingCardDetail): Promise<void> {
   if (contextReads.isActive() && batchId.value === card.productionBatchId) {
     currentCard.value = card;
-    scanResultLabel.value = '';
+    scanText.value = '';
+    scanResultLabel.value = '追踪卡已生成，尚未到站。请在首工序扫码到站。';
     scanError.value = '';
-    openLabel(card);
     await loadContext();
   }
 }
@@ -709,7 +706,17 @@ async function locate(): Promise<void> {
   const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
   const step = typeof route.query.stepRecordId === 'string' ? route.query.stepRecordId : '';
   const key = `${id}/${step}`;
-  if (!id || key === consumedLocation || scanRecovery.value || scanning.value) return;
+  if (!id || key === consumedLocation || setupLocked.value) return;
+  if (id !== batchId.value && createBar.value && !(await createBar.value.allowBatchChange()))
+    return;
+  if (
+    !contextReads.isActive() ||
+    setupLocked.value ||
+    route.name !== 'production-workbench' ||
+    route.query.batchId !== id ||
+    (route.query.stepRecordId || '') !== step
+  )
+    return;
   consumedLocation = key;
   batchId.value = id;
   stepId.value = step;

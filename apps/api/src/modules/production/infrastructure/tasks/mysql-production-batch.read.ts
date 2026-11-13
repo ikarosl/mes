@@ -21,11 +21,16 @@ type BatchStartRecordRow = RowDataPacket & {
 export async function selectBatchOverview(db: Db, id: string): Promise<ProductionBatchDetail> {
   const [[row]] = await db.query<BatchOverviewRow[]>(`${BATCH_OVERVIEW_SELECT} WHERE b.id=?`, [id]);
   if (!row) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
+  return mapBatchOverview(row);
+}
+
+export function mapBatchOverview(row: BatchOverviewRow): ProductionBatchDetail {
   return {
     ...mapBatch(row),
     startedById: row.started_by === null ? null : String(row.started_by),
     startedByName: null,
     finishReason: row.finish_reason,
+    finishMode: row.finish_mode,
     completedBy: row.completed_by === null ? null : String(row.completed_by),
     cancelReason: row.cancel_reason,
     cancelledBy: row.cancelled_by === null ? null : String(row.cancelled_by),

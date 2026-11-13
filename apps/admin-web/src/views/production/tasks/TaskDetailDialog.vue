@@ -9,6 +9,14 @@
       <strong>{{ batch?.batchNo || '任务详情' }}</strong>
       <div>
         <el-button
+          v-if="batch"
+          type="primary"
+          plain
+          :disabled="loading || !!error"
+          @click="$emit('outputs', batch)"
+          >产出与成品入库</el-button
+        >
+        <el-button
           v-if="
             batch?.orderType === 'mass_production' &&
             canAccessRoute({ name: 'production-tracking' })
@@ -51,9 +59,15 @@
         <el-descriptions-item label="计划数量">{{
           formatQuantity(batch.plannedQuantity)
         }}</el-descriptions-item
-        ><el-descriptions-item label="实际最终产出"
+        ><el-descriptions-item label="终检产出"
           ><BatchApprovedOutput :output="batch.finalOutput"
         /></el-descriptions-item>
+        <el-descriptions-item label="已入库">{{
+          formatQuantity(batch.finalOutput.inboundQuantity)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="待入库">{{
+          formatQuantity(batch.finalOutput.pendingInboundQuantity)
+        }}</el-descriptions-item>
         <el-descriptions-item label="负责人">{{ batch.ownerName || '未指定' }}</el-descriptions-item
         ><el-descriptions-item label="工艺路线"
           >{{ batch.routeCode || '无路线' }} {{ batch.routeVersion || '' }}</el-descriptions-item
@@ -66,6 +80,9 @@
         }}</el-descriptions-item>
         <el-descriptions-item label="结束时间">{{
           formatDateTimeForDisplay(batch.completedAt, '尚未结束')
+        }}</el-descriptions-item
+        ><el-descriptions-item label="结束方式">{{
+          batch.finishMode ? PRODUCTION_TASK_FINISH_MODE_LABELS[batch.finishMode] : '—'
         }}</el-descriptions-item
         ><el-descriptions-item label="结束原因">{{
           batch.finishReason || batch.cancelReason || '—'
@@ -82,7 +99,7 @@
 </template>
 <script setup lang="ts">
 import { useRouter } from 'vue-router';
-import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
+import { PRODUCTION_TASK_FINISH_MODE_LABELS, WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import type { ProductionBatchDetail } from '@company/contracts';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { DialogWidth } from '../../../utils/dialog';
@@ -96,7 +113,11 @@ const props = defineProps<{
   loading?: boolean;
   error?: string;
 }>();
-defineEmits<{ (event: 'update:visible', value: boolean): void; (event: 'refresh'): void }>();
+defineEmits<{
+  (event: 'update:visible', value: boolean): void;
+  (event: 'refresh'): void;
+  (event: 'outputs', batch: ProductionBatchDetail): void;
+}>();
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
 async function openTracking(): Promise<void> {

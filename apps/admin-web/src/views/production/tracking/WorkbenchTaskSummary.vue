@@ -20,8 +20,17 @@
     </div>
     <div class="summary-item">
       <el-icon><Box /></el-icon>
-      <span>实际可用产出</span>
-      <strong>{{ context ? formatQuantity(context.summary.availableQuantity) : '—' }}</strong>
+      <span>终检产出</span>
+      <strong class="output-summary"
+        >{{ context ? formatQuantity(context.summary.availableQuantity) : '—'
+        }}<small
+          >已入库 {{ context ? formatQuantity(context.batch.finalOutput.inboundQuantity) : '—' }} /
+          待入库
+          {{
+            context ? formatQuantity(context.batch.finalOutput.pendingInboundQuantity) : '—'
+          }}</small
+        ></strong
+      >
     </div>
   </section>
 </template>
@@ -80,6 +89,13 @@ defineProps<{ context: ProductionTrackingWorkbench | null; loading: boolean }>()
   color: var(--el-text-color-regular);
   font-size: 12px;
   font-weight: 400;
+}
+.summary-item .output-summary small {
+  display: block;
+  margin: 4px 0 0;
+  white-space: normal;
+  font-size: 12px;
+  line-height: 1.5;
 }
 @media (max-width: 1100px) {
   .summary-item {

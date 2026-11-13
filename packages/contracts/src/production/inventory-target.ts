@@ -7,4 +7,5 @@ export interface InventoryInboundBatchCandidate {
   unit: string;
   batchStatus: 'available';
   availableQuantity: string;
+  version: number;
 }

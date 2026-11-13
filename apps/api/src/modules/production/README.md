@@ -1,6 +1,6 @@
 ﻿# Production
 
-负责工单、生产任务、正式物料需求与分配、冻结工序、每盘追踪卡、随盘异常和最终确认产出。Production 核验生产来源并通过 [Inventory](../inventory/README.md)公开能力同事务办理领退料及正数产出入库；实际库存仍由 Inventory 唯一记账。公开入口为 [public.ts](public.ts)。
+负责工单、生产任务、正式物料需求与分配、冻结工序、每盘追踪卡、随盘异常和最终确认产出。Production 核验生产来源并通过 [Inventory](../inventory/README.md)公开能力同事务办理领退料及人工确认的成品入库；实际库存仍由 Inventory 唯一记账。公开入口为 [public.ts](public.ts)。
 
 ## 所有者入口
 
@@ -9,9 +9,9 @@
 | 工单、任务、负责人、BOM 选版及研发续轮         | [工单与任务](docs/database/work-orders-and-batches.md)        |
 | 正式需求、预留、分次领料与需求更正审批         | [需求与履约](docs/database/demand-allocation-and-outbound.md) |
 | 每盘到站、交接报工、异常数量结算与最终产出确认 | [追踪卡执行](docs/database/execution-traceability-quality.md) |
-| 任务开始、短产或零产结束及未完安排收口         | [任务生命周期](docs/database/production-termination.md)       |
+| 任务开始、结束、恢复及未完安排收口             | [任务生命周期](docs/database/production-termination.md)       |
 | 余料退回与已领物料损耗                         | [退料与损耗](docs/database/return-scrap-and-stocktake.md)     |
-| 产出与实际入库的同事务协作                     | [成品入库](docs/database/finished-goods-inbound.md)           |
+| 待入库产出与人工合批入库协作                   | [成品入库](docs/database/finished-goods-inbound.md)           |
 | 仓储页面与库存只读宿主                         | [只读入口](docs/database/inventory-ledger-and-inbound.md)     |
 | 跨模块能力、事务和事实边界                     | [跨模块规则](docs/database/cross-module-rules.md)             |
 

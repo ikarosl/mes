@@ -41,7 +41,7 @@
       <InlineHint v-if="editingAction === 'output'">
         本次将以当前剩余盘量
         <strong>{{ formatQuantity(editingCard.quantity) }} {{ editingCard.unit }}</strong>
-        一次完成终检、末站报工和成品入库，确认后不能再次定稿。
+        确认终检产出并完成末站报工。成品入库另行办理；未入库产出可在任务产出记录中填写原因撤销后重新终检。
       </InlineHint>
       <InlineHint v-else-if="editingAction === 'abnormality'"
         >登记后暂停整盘流转。不同问题分别登记，逐条完成处理后才能继续。</InlineHint

@@ -49,9 +49,12 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
       .object({
         availableQuantity: z.string(),
         confirmedOutputCount: z.number().int().nonnegative(),
+        inboundQuantity: z.string(),
+        pendingInboundQuantity: z.string(),
       })
       .strict(),
     finishReason: nullableString,
+    finishMode: z.enum(['normal', 'early']).nullable(),
     ownerId: nullableString,
     ownerName: nullableString,
     completedAt: nullableString,

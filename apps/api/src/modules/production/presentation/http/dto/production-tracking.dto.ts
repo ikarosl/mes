@@ -25,12 +25,14 @@ import type {
   HandleProductionTrackingAbnormalityPayload,
   ProductionTrackingCardQuery,
   ProductionTrackingReportQuery,
+  ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import {
   PRODUCTION_TRACKING_ABNORMALITY_STATUSES,
   PRODUCTION_TRACKING_CARD_STATUSES,
+  PRODUCTION_TASK_FINISH_MODES,
 } from '@company/constants';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 import { VersionedCommandDto } from '../../../../../presentation/http/dto/versioned-command.dto.js';
@@ -134,6 +136,13 @@ export class ConfirmProductionResearchOutputDto
 export class FinishProductionTrackingTaskDto
   extends VersionedCommandDto
   implements FinishProductionTrackingTaskPayload
+{
+  @IsIn(PRODUCTION_TASK_FINISH_MODES) mode!: FinishProductionTrackingTaskPayload['mode'];
+  @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
+}
+export class ReopenProductionTrackingTaskDto
+  extends VersionedCommandDto
+  implements ReopenProductionTrackingTaskPayload
 {
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
 }

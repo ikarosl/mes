@@ -938,6 +938,16 @@ export const PERMISSION_CATALOG = [
     apiMethod: null,
     apiPath: null,
   },
+  {
+    code: PERMISSIONS.warehouse.inbound.confirmFinished,
+    name: '确认成品入库',
+    parentCode: PERMISSIONS.warehouse.inbound.view,
+    type: 'api',
+    routePath: null,
+    sortOrder: 20,
+    apiMethod: null,
+    apiPath: null,
+  },
 
   {
     code: PERMISSIONS.warehouse.otherInbounds.view,
@@ -1271,7 +1281,7 @@ export const PERMISSION_CATALOG = [
   },
   {
     code: PERMISSIONS.production.tracking.confirmOutput,
-    name: '终检产出并入库',
+    name: '终检确认与未入库产出撤销',
     parentCode: PERMISSIONS.production.workbench.view,
     type: 'api',
     routePath: null,

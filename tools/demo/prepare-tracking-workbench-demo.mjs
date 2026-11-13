@@ -104,10 +104,22 @@ async function report(config, request) {
   );
   const details = [];
   for (const card of selected) details.push(await request(`/production/tracking-cards/${card.id}`));
+  const outputs = [];
+  for (let page = 1; page <= 1000; page += 1) {
+    const result = await request(
+      `/production/outputs?batchId=${config.batchId}&page=${page}&pageSize=100`,
+    );
+    if (!Array.isArray(result.items) || !Number.isSafeInteger(result.total))
+      throw new Error('产出分页契约错误');
+    outputs.push(...result.items.filter((output) => output.remark?.startsWith(config.marker)));
+    if (page * 100 >= result.total) break;
+    if (!result.items.length || page === 1000) throw new Error('产出分页未完整返回');
+  }
   return {
     marker: config.marker,
     workbench: await request(`/production/batches/${config.batchId}/tracking-workbench`),
     cards: details,
+    outputs,
   };
 }
 
@@ -148,7 +160,7 @@ async function prepare(config, request) {
     request(`/production/tracking-cards/${card.id}/actions/confirm-output`, {
       version: card.version,
       personnelId: registrant.id,
-      remark: `${config.marker} 登记人员确认完成，按服务器剩余盘量入库`,
+      remark: `${config.marker} 登记人员确认完成，按服务器剩余盘量登记待入库产出`,
     });
   const discover = (card, affectedQuantity, description, stepRecordId) =>
     request(`/production/tracking-cards/${card.id}/abnormalities`, {
@@ -186,7 +198,7 @@ async function prepare(config, request) {
   };
   const observations = [];
 
-  await confirm(await completeRoute(await create('正常流转及按剩余10件入库', 10)));
+  const first = await confirm(await completeRoute(await create('正常流转及待入库10件', 10)));
   let corrected = await completeRoute(await create('交接后改量保留历史', 5));
   corrected = await request(
     `/production/tracking-cards/${corrected.id}/quantity`,
@@ -239,6 +251,82 @@ async function prepare(config, request) {
     cardId: corrected.id,
     outputQuantity: corrected.output.quantity,
     replayQuantity: replay.quantity,
+  });
+
+  if (!first.output?.id || !corrected.output?.id) throw new Error('成品合并入库来源缺失');
+  const pending = await request(
+    `/production/outputs?batchId=${config.batchId}&status=pending_inbound&page=1&pageSize=100`,
+  );
+  if (
+    ![first.output.id, corrected.output.id].every((id) =>
+      pending.items.some((item) => item.id === id),
+    )
+  )
+    throw new Error('终检确认后未留下待入库产出');
+  const inboundBody = {
+    outputIds: [first.output.id, corrected.output.id],
+    target: { mode: 'new_batch' },
+    remark: `${config.marker} 两笔整盘产出合并到一个新成品库批`,
+  };
+  const inboundKey = randomUUID();
+  const grouped = await request(
+    `/production/batches/${config.batchId}/output-inbounds`,
+    inboundBody,
+    'POST',
+    { idempotencyKey: inboundKey },
+  );
+  const groupedReplay = await request(
+    `/production/batches/${config.batchId}/output-inbounds`,
+    inboundBody,
+    'POST',
+    { idempotencyKey: inboundKey },
+  );
+  if (
+    grouped.inboundQuantity !== '15' ||
+    grouped.itemBatchId !== groupedReplay.itemBatchId ||
+    grouped.inboundId !== groupedReplay.inboundId
+  )
+    throw new Error('两笔整盘合并15件或同键入库重放结果不一致');
+  const extra = await confirm(
+    await completeRoute(await create('后续产出4件接收入同一任务已有库批', 4)),
+  );
+  if (!extra.output?.id) throw new Error('后续产出事实缺失');
+  const candidateQuery = new URLSearchParams({
+    productionBatchId: config.batchId,
+    productId: workbench.batch.productId,
+    unit: first.unit,
+    keyword: grouped.batchCode,
+    page: '1',
+    pageSize: '100',
+  });
+  const candidates = await request(
+    `/warehouse/production-output-inbound-batch-candidates?${candidateQuery}`,
+  );
+  const target = candidates.items.find((candidate) => candidate.batchId === grouped.itemBatchId);
+  if (!target) throw new Error('同任务已有成品库批候选缺失');
+  const appended = await request(`/production/batches/${config.batchId}/output-inbounds`, {
+    outputIds: [extra.output.id],
+    target: { mode: 'existing_batch', itemBatchId: target.batchId, version: target.version },
+    remark: `${config.marker} 后续完整4件补入同任务既有库批`,
+  });
+  if (appended.itemBatchId !== grouped.itemBatchId || appended.inboundQuantity !== '4')
+    throw new Error('后续整盘产出未进入同任务既有库批');
+  const waiting = await confirm(await completeRoute(await create('终检完成待仓库选择入库6件', 6)));
+  const revoked = await confirm(
+    await completeRoute(await create('未入库产出撤销后回到末站待重新确认', 2)),
+  );
+  if (!revoked.output?.id) throw new Error('待撤销产出事实缺失');
+  await request(`/production/outputs/${revoked.output.id}/actions/revoke`, {
+    reason: `${config.marker} 终检登记有误，保留原确认与撤销事实，回到末站核实`,
+  });
+  observations.push({
+    scenario:
+      '终检不直接入库；两笔15件合并新库批，后续4件进入同任务既有库批，另留6件待入库及2件撤销历史',
+    groupedInboundId: grouped.inboundId,
+    appendedInboundId: appended.inboundId,
+    itemBatchId: grouped.itemBatchId,
+    pendingOutputId: waiting.output?.id ?? null,
+    revokedOutputId: revoked.output.id,
   });
 
   let paused = await scan(await create('未结异常阻止流转待人工处理', 4), workbench.steps[0]);

@@ -148,7 +148,7 @@ export class ProductionController {
     return this.service.listTaskOwnerOptions();
   }
   @Get('batches/:id')
-  @RequirePermission(PERMISSIONS.production.tasks.view)
+  @RequirePermission([PERMISSIONS.production.tasks.view, PERMISSIONS.warehouse.inbound.view])
   batch(@Param() { id }: IdParamDto) {
     return this.service.getBatch(id);
   }

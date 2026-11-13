@@ -14,6 +14,8 @@ export interface WorkOrderQuery extends PageQuery {
 export interface WorkOrderFinalOutput {
   /** 任务下最终确认产出合计，库存后续补差不回写。 */
   availableQuantity: string;
+  inboundQuantity: string;
+  pendingInboundQuantity: string;
   plannedShortfallQuantity: string;
   finalizedBatchCount: number;
   confirmedOutputCount: number;

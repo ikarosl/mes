@@ -59,6 +59,8 @@ const createdWorkOrderSchema: z.ZodType<WorkOrderDetail> = z
     finalOutput: z
       .object({
         availableQuantity: z.string(),
+        inboundQuantity: z.string(),
+        pendingInboundQuantity: z.string(),
         plannedShortfallQuantity: z.string(),
         finalizedBatchCount: z.number().int().nonnegative(),
         confirmedOutputCount: z.number().int().nonnegative(),

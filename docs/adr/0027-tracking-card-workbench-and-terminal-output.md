@@ -2,6 +2,7 @@
 
 > 仓库简化实验中的来料数量、放行、处置授权与补单门槛按 [ADR-0028](0028-independent-warehouse-receipt-and-inspection.md#取代范围) 的明确范围取代。以下保留本决策的历史理由与其余有效边界。
 
+> 终检即时入库、每产出建批、研发单次产出及任务结束后不恢复的边界由 [ADR-0029](0029-terminal-output-manual-inbound-and-task-reopen.md) 取代；以下相关文字保留为历史选择理由。
 
 状态：Accepted，实验分支。只在独立空库实施，不转换旧生产执行及结案历史；设计获批不代表用户验收或正式测试通过。
 

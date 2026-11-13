@@ -2,6 +2,7 @@ import type { WorkOrderType } from './work-order.js';
 import type { PageQuery, VersionedCommand } from '../common.js';
 import type { ProductionExecutionStartMaterialSnapshot } from './execution.js';
 import type { ProductionBatchStatus } from './statuses.js';
+import type { ProductionTaskFinishMode } from './output.js';
 
 export interface ProductionBatchQuery extends PageQuery {
   keyword?: string;
@@ -13,6 +14,8 @@ export interface ProductionBatchQuery extends PageQuery {
 export interface ProductionBatchFinalOutput {
   availableQuantity: string;
   confirmedOutputCount: number;
+  inboundQuantity: string;
+  pendingInboundQuantity: string;
 }
 
 export interface ProductionBatchItem {
@@ -60,6 +63,7 @@ export interface ProductionBatchDetail extends ProductionBatchItem {
   /** 首次任务开工人的当前显示姓名；未开工或引用无法解析时为 null。 */
   startedByName: string | null;
   finishReason: string | null;
+  finishMode: ProductionTaskFinishMode | null;
   completedBy: string | null;
   cancelReason: string | null;
   cancelledBy: string | null;

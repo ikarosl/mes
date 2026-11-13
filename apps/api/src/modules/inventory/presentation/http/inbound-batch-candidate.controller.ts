@@ -6,6 +6,7 @@ import { InventoryDomainExceptionFilter } from './inventory-domain-exception.fil
 import {
   FinishedInboundBatchCandidateQueryDto,
   MaterialInboundBatchCandidateQueryDto,
+  ProductionOutputInboundBatchCandidateQueryDto,
 } from './dto/inbound-batch-candidate.dto.js';
 
 @Controller('warehouse')
@@ -31,6 +32,19 @@ export class InboundBatchCandidateController {
   listFinished(@Query() query: FinishedInboundBatchCandidateQueryDto) {
     return this.query.listInboundBatchCandidates({
       itemKind: 'finished_product',
+      productId: query.productId,
+      unit: query.unit,
+      keyword: query.keyword?.trim() || undefined,
+      page: query.page,
+      pageSize: query.pageSize,
+    });
+  }
+
+  @Get('production-output-inbound-batch-candidates')
+  @RequirePermission([PERMISSIONS.warehouse.inbound.view, PERMISSIONS.production.tasks.view])
+  listProductionOutput(@Query() query: ProductionOutputInboundBatchCandidateQueryDto) {
+    return this.query.listTrackingInboundBatchCandidates({
+      productionBatchId: query.productionBatchId,
       productId: query.productId,
       unit: query.unit,
       keyword: query.keyword?.trim() || undefined,

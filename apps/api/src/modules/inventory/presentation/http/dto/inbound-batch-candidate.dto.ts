@@ -11,3 +11,6 @@ export class FinishedInboundBatchCandidateQueryDto extends PageQueryDto {
   @IsString() @MaxLength(20) unit!: string;
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
 }
+export class ProductionOutputInboundBatchCandidateQueryDto extends FinishedInboundBatchCandidateQueryDto {
+  @Matches(/^[1-9]\d*$/) productionBatchId!: string;
+}

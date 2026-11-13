@@ -1,11 +1,34 @@
 <template>
   <el-dialog
     :model-value="visible"
-    title="追踪卡条码与打印"
+    title="追踪卡标签预览与打印"
     :width="DialogWidth.md"
     @update:model-value="$emit('update:visible', $event)"
   >
-    <template v-if="card">
+    <p v-if="cardNo && !card">追踪卡 {{ cardNo }}</p>
+    <el-alert
+      v-if="error"
+      type="error"
+      show-icon
+      :closable="false"
+    >
+      <template #title>
+        <span>{{ error }}</span>
+        <el-button
+          link
+          type="primary"
+          :disabled="loading"
+          @click="$emit('refresh')"
+          >重试</el-button
+        >
+      </template>
+    </el-alert>
+    <el-skeleton
+      v-if="loading && !card"
+      :rows="6"
+      animated
+    />
+    <template v-else-if="card">
       <el-tabs v-model="format"
         ><el-tab-pane
           label="内部条码标签"
@@ -46,9 +69,13 @@
     </template>
     <template #footer
       ><el-button @click="$emit('update:visible', false)">关闭</el-button
-      ><el-button @click="download">下载条形码 SVG</el-button
+      ><el-button
+        :disabled="!card || loading || !!error"
+        @click="download"
+        >下载条形码 SVG</el-button
       ><el-button
         type="primary"
+        :disabled="!card || loading || !!error"
         @click="printLabel"
         >打印{{ format === 'internal' ? '内部标签' : '追踪卡' }}</el-button
       ></template
@@ -66,8 +93,20 @@ import { EMessage } from '../../../utils/message';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../../utils/quantity';
 import { code128Svg } from './code128';
-const props = defineProps<{ visible: boolean; card: ProductionTrackingCardDetail | null }>();
-defineEmits<{ (event: 'update:visible', value: boolean): void }>();
+const props = withDefaults(
+  defineProps<{
+    visible: boolean;
+    card: ProductionTrackingCardDetail | null;
+    cardNo?: string;
+    loading?: boolean;
+    error?: string;
+  }>(),
+  { cardNo: '', loading: false, error: '' },
+);
+defineEmits<{
+  (event: 'update:visible', value: boolean): void;
+  (event: 'refresh'): void;
+}>();
 const format = ref('internal');
 const terminalStatusLabel = computed(() => {
   const status = props.card?.status;
@@ -80,7 +119,7 @@ const barcodeUrl = computed(
   () => `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg.value)}`,
 );
 function download(): void {
-  if (!props.card) return;
+  if (!props.visible || !props.card || props.loading || props.error) return;
   const link = document.createElement('a');
   link.href = barcodeUrl.value;
   link.download = `${props.card.cardNo}.svg`;
@@ -94,7 +133,7 @@ const escapeHtml = (value: string): string =>
     .replaceAll('"', '&quot;');
 function printLabel(): void {
   const card = props.card;
-  if (!card) return;
+  if (!props.visible || !card || props.loading || props.error) return;
   const popup = window.open('', '_blank', 'width=760,height=720');
   if (!popup) {
     EMessage.warning('打印窗口被浏览器拦截，请允许弹出窗口后重试');

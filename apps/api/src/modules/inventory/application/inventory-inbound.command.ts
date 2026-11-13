@@ -4,25 +4,23 @@ import type {
   ConfirmPurchaseReceiptResult,
 } from './inventory-purchase-inbound.types.js';
 
-export interface TrackingOutputInput {
+export interface TrackingOutputsInput {
   productionBatchId: string;
   workOrderId: string;
   productId: string;
   productCode: string;
   unit: string;
-  outputId: string;
-  quantity: string;
+  outputs: Array<{ outputId: string; quantity: string }>;
+  target: { mode: 'new_batch' } | { mode: 'existing_batch'; itemBatchId: string; version: number };
   remark?: string | null;
 }
 
-export interface TrackingOutputResult {
+export interface TrackingOutputsResult {
   inboundId: string;
   inboundNo: string;
-  inboundDetailId: string;
-  batchId: string;
-  batchNo: string;
-  transactionId: string;
-  quantity: string;
+  itemBatchId: string;
+  batchCode: string;
+  inboundQuantity: string;
 }
 
 export abstract class InventoryInboundCommand {
@@ -30,9 +28,9 @@ export abstract class InventoryInboundCommand {
     input: ConfirmPurchaseReceiptInput,
     context: CommandContext,
   ): Promise<ConfirmPurchaseReceiptResult>;
-  /** Production has locked and created the final output in the same transaction. */
-  abstract confirmTrackingOutput(
-    input: TrackingOutputInput,
+  /** Production has locked and validated every whole, uncancelled output in this transaction. */
+  abstract postTrackingOutputs(
+    input: TrackingOutputsInput,
     context: CommandContext,
-  ): Promise<TrackingOutputResult>;
+  ): Promise<TrackingOutputsResult>;
 }

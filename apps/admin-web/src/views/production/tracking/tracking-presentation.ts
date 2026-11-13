@@ -24,7 +24,7 @@ export const trackingCardStatus = (status: ProductionTrackingCardStatus) => ({
 export function trackingOutputLabel(
   card: Pick<ProductionTrackingCardItem, 'status' | 'availableQuantity' | 'unit'>,
 ): string {
-  if (card.status === 'scrapped') return '整盘报废，无产出入库';
+  if (card.status === 'scrapped') return '整盘报废，无产出';
   if (card.status === 'voided' && card.availableQuantity === null) return '已作废，未确认产出';
   return card.availableQuantity === null
     ? '尚未定稿'

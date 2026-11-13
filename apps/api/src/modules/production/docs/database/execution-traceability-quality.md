@@ -16,7 +16,7 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 建卡数量为正整数。非终态且当前盘量为正时，可按卡版本更正为另一正整数，必须填写原因并追加更正前量、新量、操作人和时间。手工盘量更正是独立纠错，不能代替异常报废结算；更正影响后续交接和最终确认，已完成站点的报工快照保持原值，不能静默覆盖。
 
-盘量为正的未用卡和已用卡均可填写原因作废；已用卡保留到站、报工、异常和更正历史。作废停止后续流转，不冲销此前交接事实。已确认最终产出或整盘报废的卡不能再办理；后续库存补差由 Inventory 的独立业务处理，不回写原盘最终产出。
+盘量为正的未用卡和已用卡均可填写原因作废；已用卡保留到站、报工、异常和更正历史。作废停止后续流转，不冲销此前交接事实。已确认产出的卡只可通过未入库产出撤销恢复终检办理；整盘报废不恢复。已入库后的库存补差由 Inventory 独立业务处理，不回写原盘产出。
 
 ## 随盘异常
 
@@ -38,20 +38,23 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 确认命令在卡版本锁内复核任务仍在执行、卡位于冻结末站、全部异常已处理，并通过 Identity 公开能力核验所选人员当前启用且未删除。登录账号还必须独立具备最终确认权限，选择登记人员不授予业务权限。
 
-确认事实写入 `production_tracking_output`；末站完成事实、卡 completed 状态、成功审计和正数实际入库在同一数据库事务提交。数量通过 Inventory 公开 `confirmTrackingOutput` 建立成品入库及独立新库批，使用统一 finished_product 来源。任一写入或审计失败全部回滚。产出不可变，工单及任务的实际产出仅汇总本表，不读取旧审批清单或库存后续调整。
+确认事实写入 `production_tracking_output`；末站完成事实、卡 completed 状态及成功审计同事务提交，正数进入待入库，暂不创建库存单据或批次。工单及任务只汇总未撤销产出，不受计划量限制，不读取库存余额或后续调整作为产出依据。人工合批入库见[成品入库](finished-goods-inbound.md)。
 
-研发任务不建追踪卡、路线或到站记录，使用独立 `ConfirmProductionResearchOutputPayload` 在任务级登记现场人员、手填实际产出并确认一次，允许零且不受盘量上限约束；正数同事务入库，零数只保存确认事实，不生成库存单、库批或流水。`tracking_card_id` 为空，生成列对同任务的研发输出建立唯一约束。
+研发任务不建追踪卡、路线或到站记录，在任务级登记现场人员、手填实际产出，可分多次确认。每次记录独立，允许零；正数待入库，零数不生成库存。`tracking_card_id` 为空，不设每任务一次的限制。
 
-| 卡状态转换 | 触发与边界 |
-| --- | --- |
-| unused → in_progress | 首站扫码，只记到站 |
-| in_progress → in_progress | 无 open 异常时按冻结顺序交接到下一站 |
-| unused／in_progress → 原状态 | 登记异常、独立改量、结算后仍有正量或零量未结异常；均推进卡版本 |
-| unused／in_progress → scrapped | 结算后卡量为零且无 open 异常 |
-| in_progress → completed | 已到末站、无 open 异常、正量，登记现场人员并显式确认 |
-| unused／in_progress → voided | 正量卡明确作废或任务结束收口，保留全部已形成事实 |
+尚未入库的有效产出可填写原因撤销；命令在任务、卡及产出锁内核验没有实际入库，追加不可变撤销事实，不改原产出。批量卡回到末站 in_progress，原到站及首次末站完成快照保留；再次确认产生新产出，不能改写旧交接记录。已结束任务须先恢复执行；所属工单已终态时不再撤销生产事实。撤销与入库共享来源锁，二者互斥。
 
-completed、scrapped、voided 均为不可恢复的办理终态。scrapped 卡拒绝再次扫码，包括已到站的重复扫码。
+| 卡状态转换                     | 触发与边界                                                     |
+| ------------------------------ | -------------------------------------------------------------- |
+| unused → in_progress           | 首站扫码，只记到站                                             |
+| in_progress → in_progress      | 无 open 异常时按冻结顺序交接到下一站                           |
+| unused／in_progress → 原状态   | 登记异常、独立改量、结算后仍有正量或零量未结异常；均推进卡版本 |
+| unused／in_progress → scrapped | 结算后卡量为零且无 open 异常                                   |
+| in_progress → completed        | 已到末站、无 open 异常、正量，登记现场人员并显式确认           |
+| unused／in_progress → voided   | 正量卡明确作废，保留全部已形成事实；任务结束不自动作废         |
+| completed → in_progress        | 未入库产出明确撤销，保留原末站到站与完成快照                   |
+
+completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复。scrapped 卡拒绝再次扫码，包括已到站的重复扫码。
 
 ## HTTP、权限与并发边界
 
@@ -141,7 +144,7 @@ CONSTRAINT `chk_batch_step_records_version` CHECK ((`version` >= 0));
 | `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`                                 | 主键，数据库自增                                            |
 | `production_batch_id`     | `bigint unsigned NOT NULL`                                                | 所属生产任务；与其他来源ID通过组合外键保持同源              |
 | `card_no`                 | `varchar(100) NOT NULL`                                                   | 不可修改、永久唯一的服务端追踪卡号                          |
-| `quantity`                | `int NOT NULL`                                                            | 当前剩余盘量；建卡正数，结算可扣为零                         |
+| `quantity`                | `int NOT NULL`                                                            | 当前剩余盘量；建卡正数，结算可扣为零                        |
 | `status`                  | `varchar(20) NOT NULL DEFAULT 'unused'`                                   | 本表的封闭业务状态，值域由下方CHECK限定，转换由应用命令校验 |
 | `current_step_record_id`  | `bigint unsigned DEFAULT NULL`                                            | 当前到站工序，未到站为空；不替代不可变到站历史              |
 | `personnel_id`            | `bigint unsigned NOT NULL`                                                | 登记时选择的现场人员ID，不是登录账号                        |
@@ -196,7 +199,7 @@ uk_tracking_visit_card_step防重复扫码。任务和工序组合外键保证�
 | 字段                      | SQL定义                                       | 含义                                                 |
 | ------------------------- | --------------------------------------------- | ---------------------------------------------------- |
 | `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                                     |
-| `tracking_card_id`        | `bigint unsigned NOT NULL`                    | 所属追踪卡，必填；研发不建立到站事实                  |
+| `tracking_card_id`        | `bigint unsigned NOT NULL`                    | 所属追踪卡，必填；研发不建立到站事实                 |
 | `production_batch_id`     | `bigint unsigned NOT NULL`                    | 所属生产任务；与其他来源ID通过组合外键保持同源       |
 | `batch_step_record_id`    | `bigint unsigned NOT NULL`                    | 涉及的任务冻结工序，组合外键保证属于同一任务         |
 | `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号                 |
@@ -237,15 +240,15 @@ CONSTRAINT `chk_tracking_visit_completion` CHECK ((((`completed_at` is null) and
 
 ### 字段
 
-| 字段                | SQL定义                                       | 含义                                               |
-| ------------------- | --------------------------------------------- | -------------------------------------------------- |
-| `id`                | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                                   |
-| `tracking_card_id`  | `bigint unsigned NOT NULL`                    | 所属追踪卡，必填；研发不建立盘量更正事实            |
-| `previous_quantity` | `int NOT NULL`                                | 更正前的盘量快照                                   |
-| `quantity`          | `int NOT NULL`                                | 该卡当前盘量或本次更正后的盘量，正整数             |
-| `reason`            | `text NOT NULL`                               | 必须保留的更正原因                                 |
-| `created_by`        | `bigint unsigned NOT NULL`                    | 实际登录操作者，引用users.id                       |
-| `created_at`        | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 事实或单据创建时间，北京时间                       |
+| 字段                | SQL定义                                       | 含义                                     |
+| ------------------- | --------------------------------------------- | ---------------------------------------- |
+| `id`                | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                         |
+| `tracking_card_id`  | `bigint unsigned NOT NULL`                    | 所属追踪卡，必填；研发不建立盘量更正事实 |
+| `previous_quantity` | `int NOT NULL`                                | 更正前的盘量快照                         |
+| `quantity`          | `int NOT NULL`                                | 该卡当前盘量或本次更正后的盘量，正整数   |
+| `reason`            | `text NOT NULL`                               | 必须保留的更正原因                       |
+| `created_by`        | `bigint unsigned NOT NULL`                    | 实际登录操作者，引用users.id             |
+| `created_at`        | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 事实或单据创建时间，北京时间             |
 
 ### 约束与索引
 
@@ -272,10 +275,10 @@ CONSTRAINT `chk_tracking_quantity_previous` CHECK ((`previous_quantity` between 
 | 字段                      | SQL定义                                                                   | 含义                                                        |
 | ------------------------- | ------------------------------------------------------------------------- | ----------------------------------------------------------- |
 | `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`                                 | 主键，数据库自增                                            |
-| `tracking_card_id`        | `bigint unsigned NOT NULL`                                                | 所属追踪卡，必填；研发不建立随盘异常                         |
+| `tracking_card_id`        | `bigint unsigned NOT NULL`                                                | 所属追踪卡，必填；研发不建立随盘异常                        |
 | `production_batch_id`     | `bigint unsigned NOT NULL`                                                | 所属生产任务；与其他来源ID通过组合外键保持同源              |
 | `batch_step_record_id`    | `bigint unsigned DEFAULT NULL`                                            | 涉及的任务冻结工序，组合外键保证属于同一任务                |
-| `affected_quantity`       | `int NOT NULL`                                                            | 登记时影响数量，正整数且锁内不得超过当时盘量                  |
+| `affected_quantity`       | `int NOT NULL`                                                            | 登记时影响数量，正整数且锁内不得超过当时盘量                |
 | `status`                  | `varchar(20) NOT NULL DEFAULT 'open'`                                     | 本表的封闭业务状态，值域由下方CHECK限定，转换由应用命令校验 |
 | `description`             | `text NOT NULL`                                                           | 原始异常发现说明，不由处理记录覆盖                          |
 | `personnel_id`            | `bigint unsigned NOT NULL`                                                | 登记时选择的现场人员ID，不是登录账号                        |
@@ -324,10 +327,10 @@ CONSTRAINT `chk_tracking_abnormality_version` CHECK ((`version` >= 0));
 | `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                       |
 | `abnormality_id`          | `bigint unsigned NOT NULL`                    | 所属原始异常；处理记录追加于此ID       |
 | `content`                 | `text NOT NULL`                               | 本次处理说明，不覆盖原始发现或之前处理 |
-| `repaired_quantity`       | `int NOT NULL`                                | 返修数量，不增加卡量                    |
-| `scrapped_quantity`       | `int NOT NULL`                                | 本次实际新增报废，唯一扣减卡量的部分    |
-| `previous_card_quantity`  | `int NOT NULL`                                | 本次处理前锁定的剩余盘量                |
-| `remaining_card_quantity` | `int NOT NULL`                                | 本次处理后盘量，等于前量减新增报废      |
+| `repaired_quantity`       | `int NOT NULL`                                | 返修数量，不增加卡量                   |
+| `scrapped_quantity`       | `int NOT NULL`                                | 本次实际新增报废，唯一扣减卡量的部分   |
+| `previous_card_quantity`  | `int NOT NULL`                                | 本次处理前锁定的剩余盘量               |
+| `remaining_card_quantity` | `int NOT NULL`                                | 本次处理后盘量，等于前量减新增报废     |
 | `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号   |
 | `personnel_code_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员编码快照                 |
 | `personnel_name_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员姓名快照                 |
@@ -356,12 +359,12 @@ CONSTRAINT `chk_tracking_handling_card_quantities` CHECK (previous_card_quantity
 
 ### 字段
 
-| 字段 | SQL定义 | 含义 |
-| --- | --- | --- |
-| `handling_id` | `bigint unsigned NOT NULL` | 本次异常最终结算ID，与来源组成主键 |
-| `referenced_handling_id` | `bigint unsigned NOT NULL` | 其他异常已完成结算的新增报废来源ID |
-| `quantity` | `int NOT NULL` | 本次归因数量，正整数，不扣卡量 |
-| `created_at` | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 关联事实建立时间；操作者沿所属handling追溯 |
+| 字段                     | SQL定义                                       | 含义                                       |
+| ------------------------ | --------------------------------------------- | ------------------------------------------ |
+| `handling_id`            | `bigint unsigned NOT NULL`                    | 本次异常最终结算ID，与来源组成主键         |
+| `referenced_handling_id` | `bigint unsigned NOT NULL`                    | 其他异常已完成结算的新增报废来源ID         |
+| `quantity`               | `int NOT NULL`                                | 本次归因数量，正整数，不扣卡量             |
+| `created_at`             | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 关联事实建立时间；操作者沿所属handling追溯 |
 
 ### 约束与索引
 
@@ -378,34 +381,31 @@ CONSTRAINT chk_tracking_scrap_reference_other CHECK (handling_id<>referenced_han
 
 ## production_tracking_output
 
-唯一不可变最终可用产出事实。批量每卡一笔，数量等于锁定卡的正数剩余量；研发每任务一笔，手填实际数量且允许0。正数与 Inventory 实际入库同事务，整盘报废不建立本表记录。
+不可变产出确认事实。批量同一卡最多一条未撤销产出，数量等于锁定卡的正数剩余量；研发同任务可多笔，手填实际数量且允许0。正数待人工入库，整盘报废不建立本表记录。
 
-卡唯一键限制每盘一次；research_batch_id生成列及唯一键限制无卡的研发任务一次。组合外键保证任务、工单、成品及卡归属一致。quality资格、末站、异常清零及批量数量等于当前剩余盘量由应用锁内核验。Inventory使用本表ID追溯，后续库存调整不能改写本表。
+组合外键保证任务、工单、成品及卡归属一致。202611120010 移除旧卡唯一键、研发唯一键和 research_batch_id 生成列，保留原 fk_tracking_output_card 卡／任务索引支持历史查询；有效产出唯一性由任务／卡锁及插入守卫核验，撤销后允许再次确认。末站、异常清零、人员资格及当前剩余盘量由命令复核。Inventory 使用本表 ID 追溯整笔原始入库，后续库存调整不能改写本表。
 
 ### 字段
 
-| 字段                      | SQL定义                                                                                                                        | 含义                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------- |
-| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`                                                                                      | 主键，数据库自增                                                             |
-| `production_batch_id`     | `bigint unsigned NOT NULL`                                                                                                     | 所属生产任务；与其他来源ID通过组合外键保持同源                               |
-| `tracking_card_id`        | `bigint unsigned DEFAULT NULL`                                                                                                 | 所属追踪卡，批量事实使用该ID；研发最终产出允许为空                           |
-| `research_batch_id`       | `bigint unsigned GENERATED ALWAYS AS ((case when (`tracking_card_id`is null) then`production_batch_id` else NULL end)) STORED` | tracking_card_id为空时生成所属任务ID，否则为空；唯一键约束研发每任务最多一次 |
-| `work_order_id`           | `bigint unsigned NOT NULL`                                                                                                     | 所属任务的工单ID，组合外键保证与任务及成品同源                               |
-| `product_id`              | `bigint unsigned NOT NULL`                                                                                                     | 最终产出的成品ID，固定沿所属任务和工单，不接受自由拼接                       |
-| `quantity`                | `int NOT NULL`                                                                                                                 | 显式确认的最终可用产出，允许0，不是交接报工累计                              |
-| `personnel_id`            | `bigint unsigned NOT NULL`                                                                                                     | 登记时选择的现场人员ID，不是登录账号                                         |
-| `personnel_code_snapshot` | `varchar(100) NOT NULL`                                                                                                        | 登记时现场人员编码快照                                                       |
-| `personnel_name_snapshot` | `varchar(100) NOT NULL`                                                                                                        | 登记时现场人员姓名快照                                                       |
-| `confirmed_by`            | `bigint unsigned NOT NULL`                                                                                                     | 执行最终产出确认的登录账号                                                   |
-| `confirmed_at`            | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP`                                                                                  | 最终确认时间，不可改写                                                       |
-| `remark`                  | `text`                                                                                                                         | 原始备注，与后续处理或作废说明分别保存                                       |
+| 字段                      | SQL定义                                       | 含义                                                   |
+| ------------------------- | --------------------------------------------- | ------------------------------------------------------ |
+| `id`                      | `bigint unsigned NOT NULL AUTO_INCREMENT`     | 主键，数据库自增                                       |
+| `production_batch_id`     | `bigint unsigned NOT NULL`                    | 所属生产任务；与其他来源ID通过组合外键保持同源         |
+| `tracking_card_id`        | `bigint unsigned DEFAULT NULL`                | 所属追踪卡，批量事实使用该ID；研发最终产出允许为空     |
+| `work_order_id`           | `bigint unsigned NOT NULL`                    | 所属任务的工单ID，组合外键保证与任务及成品同源         |
+| `product_id`              | `bigint unsigned NOT NULL`                    | 最终产出的成品ID，固定沿所属任务和工单，不接受自由拼接 |
+| `quantity`                | `int NOT NULL`                                | 显式确认的最终可用产出，允许0，不是交接报工累计        |
+| `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号                   |
+| `personnel_code_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员编码快照                                 |
+| `personnel_name_snapshot` | `varchar(100) NOT NULL`                       | 登记时现场人员姓名快照                                 |
+| `confirmed_by`            | `bigint unsigned NOT NULL`                    | 执行最终产出确认的登录账号                             |
+| `confirmed_at`            | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP` | 最终确认时间，不可改写                                 |
+| `remark`                  | `text`                                        | 原始备注，与后续处理或作废说明分别保存                 |
 
 ### 约束与索引
 
 ```sql
 PRIMARY KEY (`id`);
-UNIQUE KEY `uk_tracking_output_card` (`tracking_card_id`);
-UNIQUE KEY `uk_tracking_output_research` (`research_batch_id`);
 KEY `idx_tracking_output_work_order` (`work_order_id`,`confirmed_at`,`id`);
 KEY `idx_tracking_output_batch` (`production_batch_id`,`confirmed_at`,`id`);
 KEY `fk_tracking_output_batch` (`production_batch_id`,`work_order_id`,`product_id`);
@@ -419,4 +419,18 @@ CONSTRAINT `fk_tracking_output_personnel` FOREIGN KEY (`personnel_id`) REFERENCE
 CONSTRAINT `chk_tracking_output_quantity` CHECK ((`quantity` between 0 and 99999999));
 ```
 
-数据库触发器：trg_tracking_output_no_update、trg_tracking_output_no_delete。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。
+数据库触发器：trg_tracking_output_insert_guard、trg_tracking_output_no_update、trg_tracking_output_no_delete。插入守卫核验执行中任务、末站剩余量及当前有效产出唯一性；原确认内容保持不可变。旧有触发器来源为基线 production-triggers，新追踪与损耗保护来源为追加的202611090040；触发器用于上述不可变／字段保护，业务资格与数量跨行比较仍由命令事务保证。
+
+## production_tracking_output_cancellation
+
+追加产出撤销事实，保留原确认内容，避免用更新或删除抹去历史。每条产出最多撤销一次；取消后不恢复原记录，需要重新确认。生产产出统计排除此表引用的记录。
+
+| 字段                 | SQL 定义                                    | 含义                                                 |
+| -------------------- | ------------------------------------------- | ---------------------------------------------------- |
+| id                   | BIGINT UNSIGNED NOT NULL AUTO_INCREMENT     | 主键                                                 |
+| production_output_id | BIGINT UNSIGNED NOT NULL                    | 被撤销的产出，唯一引用 production_tracking_output.id |
+| reason               | TEXT NOT NULL                               | 必填非空白原因                                       |
+| created_by           | BIGINT UNSIGNED NOT NULL                    | 实际操作者，引用 users.id                            |
+| created_at           | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 撤销时间                                             |
+
+由 202611120010 新建。主键 id，production_output_id 唯一；产出和账号外键均 RESTRICT，created_by 具有外键支撑索引，chk_tracking_output_cancellation_reason 限制去除空白后的原因长度为 1–5000。插入守卫取得来源任务／卡／产出锁并拒绝已经关联入库明细的产出；更新和删除触发器拒绝改写。恢复卡状态、撤销、任务版本及成功审计同事务提交，不创建库存反向流水。

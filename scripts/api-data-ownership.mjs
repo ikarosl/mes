@@ -96,6 +96,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'production_tracking_abnormality_handling',
     'production_tracking_scrap_reference',
     'production_tracking_output',
+    'production_tracking_output_cancellation',
     'production_batches',
     'production_batch_termination', // Retired; historical migrations retain ownership.
     'production_output_inspection', // Retired name; Quality owns the renamed finished inspection table.
@@ -234,6 +235,7 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
         'reference_detail_id',
         'created_at',
         'remark',
+        'reversal_of_transaction_id',
       ],
       inventory_batch_balance: [
         'batch_id',

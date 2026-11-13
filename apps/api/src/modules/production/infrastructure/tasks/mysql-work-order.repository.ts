@@ -368,14 +368,10 @@ export class MysqlWorkOrderRepository {
       const activeBatches = batches.filter((batch) => batch.status !== 'cancelled');
       const unfinishedBatches = activeBatches.filter((batch) => batch.status !== 'completed');
       const approvedPlannedQuantity = sumApprovedPlannedQuantity(activeBatches);
-      if (
-        activeBatches.length === 0 ||
-        unfinishedBatches.length > 0 ||
-        integerQuantity(approvedPlannedQuantity) < integerQuantity(before.planned_quantity)
-      ) {
+      if (activeBatches.length === 0 || unfinishedBatches.length > 0) {
         throw new ProductionDomainError(
           'WORK_ORDER_COMPLETION_NOT_ALLOWED',
-          '工单仍有未结束任务或最终确认产出不足，请核对任务与追踪卡',
+          '工单须有已结束任务，且所有未取消任务均已结束后才能完工',
           workOrderBatchDetails(
             before.planned_quantity,
             approvedPlannedQuantity,
@@ -480,7 +476,7 @@ export class MysqlWorkOrderRepository {
   ): Promise<WorkOrderBatchSummaryRow[]> {
     const [rows] = await connection.query<WorkOrderBatchSummaryRow[]>(
       `SELECT b.id,b.batch_no,b.status,b.planned_quantity,
-        CAST(COALESCE((SELECT SUM(o.quantity) FROM production_tracking_output o WHERE o.production_batch_id=b.id),0) AS CHAR) approved_available_quantity
+        CAST(COALESCE((SELECT SUM(o.quantity) FROM production_tracking_output o WHERE o.production_batch_id=b.id AND NOT EXISTS(SELECT 1 FROM production_tracking_output_cancellation x WHERE x.production_output_id=o.id)),0) AS CHAR) approved_available_quantity
        FROM production_batches b WHERE b.work_order_id=? ORDER BY b.id FOR UPDATE`,
       [workOrderId],
     );

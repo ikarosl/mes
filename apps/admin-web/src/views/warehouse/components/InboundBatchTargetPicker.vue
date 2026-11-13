@@ -74,7 +74,7 @@ const props = defineProps<{
   disabled?: boolean;
 }>();
 const emit = defineEmits<{ 'update:modelValue': [value: InventoryInboundTarget] }>();
-const candidates = ref<InventoryInboundBatchCandidate[]>([]);
+const candidates = ref<Omit<InventoryInboundBatchCandidate, 'version'>[]>([]);
 const loading = ref(false);
 const error = ref('');
 const keyword = ref('');

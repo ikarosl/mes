@@ -12,13 +12,13 @@ import type {
   ProductionTrackingCardQuery,
   ProductionTrackingPersonnelSnapshot,
   ProductionTrackingReportQuery,
+  ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
 import { allocateBusinessNumber } from '../../../../infrastructure/numbering/mysql-business-number.js';
-import { InventoryInboundCommand } from '../../../inventory/public.js';
 import { ProductionTrackingRepository } from '../../application/ports/production-tracking.repository.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import { requireTrackingAffectedQuantity } from '../../domain/production-tracking-disposition.policy.js';
@@ -29,6 +29,7 @@ import {
   listTrackingCards,
   listTrackingReports,
   selectTrackingCard,
+  selectTrackingOutput,
   selectTrackingWorkbench,
 } from './mysql-production-tracking.read.js';
 import { MysqlProductionTrackingTaskRepository } from './mysql-production-tracking-task.repository.js';
@@ -52,7 +53,6 @@ type StepRow = RowDataPacket & { id: string; step_order: number };
 export class MysqlProductionTrackingRepository extends ProductionTrackingRepository {
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
-    private readonly inventory: InventoryInboundCommand,
     private readonly tasks: MysqlProductionTrackingTaskRepository,
   ) {
     super();
@@ -69,6 +69,9 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
   }
   reports(query: ProductionTrackingReportQuery) {
     return listTrackingReports(this.pool, query);
+  }
+  startCheck(batchId: string) {
+    return this.tasks.startCheck(batchId);
   }
   async withBatchTransaction<T>(batchId: string, action: () => Promise<T>): Promise<T> {
     return withTransaction(this.pool, async (db) => {
@@ -273,6 +276,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       const card = await this.card(db, cardId);
       this.requireMutableCard(card);
       this.requireVersion(card.version, payload.version);
+      this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
       await db.execute(
         `UPDATE production_tracking_card SET status='voided',void_reason=?,voided_by=?,voided_at=NOW(),version=version+1,updated_by=? WHERE id=? AND version=?`,
         [payload.reason, context.actorId, context.actorId, cardId, payload.version],
@@ -375,9 +379,10 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         throw new ProductionDomainError('CONFLICT', '该盘尚未到达末站，不能确认最终产出');
       if ((await this.openAbnormalityCount(db, cardId)) > 0)
         throw new ProductionDomainError('CONFLICT', '请先处理该盘全部异常，再确认最终可用产出');
+      if (await selectTrackingOutput(db, card.production_batch_id, cardId, true))
+        throw new ProductionDomainError('CONFLICT', '该追踪卡已经确认有效产出');
       await insertTrackingOutput(
         db,
-        this.inventory,
         card.production_batch_id,
         cardId,
         Number(card.quantity),
@@ -403,7 +408,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
     context: CommandContext,
   ) {
     return withTransaction(this.pool, (db) =>
-      confirmResearchTrackingOutput(db, this.inventory, batchId, payload, person, context),
+      confirmResearchTrackingOutput(db, batchId, payload, person, context),
     );
   }
   startTask(batchId: string, version: number, reason: string | null, context: CommandContext) {
@@ -415,6 +420,13 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
     context: CommandContext,
   ) {
     return this.tasks.finish(batchId, payload, context);
+  }
+  reopenTask(
+    batchId: string,
+    payload: ReopenProductionTrackingTaskPayload,
+    context: CommandContext,
+  ) {
+    return this.tasks.reopen(batchId, payload, context);
   }
   async sopReference(batchId: string, recordId: string) {
     const [[row]] = await this.pool.query<

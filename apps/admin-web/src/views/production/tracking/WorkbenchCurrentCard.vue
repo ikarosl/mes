@@ -107,7 +107,7 @@
         :disabled="disabled || card.openAbnormalityCount > 0"
         @click="$emit('action', 'output')"
       >
-        终检确认产出并入库
+        终检确认产出
       </el-button>
       <el-button
         v-if="canReportAbnormality"
@@ -173,7 +173,7 @@ const attention = computed<{ type: 'error' | 'warning' | 'info'; message: string
   if (card.status === 'voided')
     return { type: 'info', message: `本盘已人工作废：${card.voidReason || '—'}` };
   if (card.status === 'scrapped')
-    return { type: 'error', message: '本盘已整盘报废，异常已全部结算，无产出入库。' };
+    return { type: 'error', message: '本盘已整盘报废，异常已全部结算，无产出、无需入库。' };
   if (card.openAbnormalityCount)
     return {
       type: 'error',
@@ -197,7 +197,7 @@ const flowHint = computed(() => {
     return `实际可用产出已确认：${formatQuantity(card.availableQuantity)} ${card.unit}。`;
   if (card.status === 'unused') return '追踪卡已生成。建卡与打印不登记到站，请在首工序扫码。';
   if (canConfirmOutput.value)
-    return '本盘已到达末站。加工完成并处理全部异常后，以当前剩余盘量一次确认产出并入库。';
+    return '本盘已到达末站。加工完成并处理全部异常后，以当前剩余盘量确认终检产出；后续单独办理成品入库。';
   return '本盘已到站。流转至下一工序后，由下一站扫码完成本站交接，无需再次确认。';
 });
 function stepState(step: ProductionTrackingStep): 'is-completed' | 'is-current' | '' {

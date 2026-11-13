@@ -1,100 +1,113 @@
 <template>
   <section class="finished-history">
-    <InlineHint
-      >终检确认正数产出时同时完成入库。这里按成品库存批次查询入库记录，库存补差不会改写原始终检产出。</InlineHint
+    <el-radio-group
+      v-model="view"
+      aria-label="成品入库视图"
+      ><el-radio-button value="pending">待入库产出</el-radio-button
+      ><el-radio-button value="history">已入库记录</el-radio-button></el-radio-group
     >
-    <el-form
-      :inline="true"
-      class="query-form"
-      @submit.prevent="search"
-      ><el-form-item label="关键字"
-        ><el-input
-          v-model="keyword"
-          clearable
-          placeholder="成品编码 / 名称 / 批次"
-          @keyup.enter="search" /></el-form-item
-      ><el-form-item
-        ><el-button
-          type="primary"
-          :loading="loading"
-          @click="search"
-          >查询</el-button
-        ><el-button @click="reset">重置</el-button></el-form-item
-      ></el-form
+    <FinishedGoodsOutputPanel
+      v-show="view === 'pending'"
+      @changed="load"
+    />
+    <div
+      v-show="view === 'history'"
+      class="finished-history"
     >
-    <div class="table-panel">
-      <TableToolbar
-        ><template #actions><span>成品入库记录</span></template
-        ><template #tools
+      <InlineHint>这里按成品库存批次查询已确认入库记录，库存补差不会改写原始终检产出。</InlineHint>
+      <el-form
+        :inline="true"
+        class="query-form"
+        @submit.prevent="search"
+        ><el-form-item label="关键字"
+          ><el-input
+            v-model="keyword"
+            clearable
+            placeholder="成品编码 / 名称 / 批次"
+            @keyup.enter="search" /></el-form-item
+        ><el-form-item
           ><el-button
-            :icon="Refresh"
-            text
+            type="primary"
             :loading="loading"
-            @click="load"
-            >刷新</el-button
-          ></template
-        ></TableToolbar
-      ><el-alert
-        v-if="error"
-        :title="error"
-        type="error"
-        show-icon
-        :closable="false"
-      />
-      <el-table
-        v-loading="loading"
-        :data="items"
-        row-key="itemBatchId"
-        ><el-table-column
-          prop="batchCode"
-          label="成品库存批次"
-          min-width="190"
-        /><el-table-column
-          label="成品"
-          min-width="210"
-          ><template #default="{ row }"
-            ><strong>{{ row.itemName }}</strong>
-            <div class="secondary">{{ row.itemCode }}</div></template
-          ></el-table-column
-        ><el-table-column
-          prop="sourceProductionBatchNo"
-          label="来源任务"
-          min-width="170"
-        /><el-table-column
-          label="入库累计"
-          width="130"
-          align="right"
-          ><template #default="{ row }"
-            >{{ formatQuantity(inboundQuantity(row)) }} {{ row.unit }}</template
-          ></el-table-column
-        ><el-table-column
-          label="当前可用库存"
-          width="150"
-          align="right"
-          ><template #default="{ row }"
-            >{{ formatQuantity(row.onHandAvailableQuantity) }} {{ row.unit }}</template
-          ></el-table-column
-        ><el-table-column
-          label="操作"
-          width="120"
-          fixed="right"
-          ><template #default="{ row }"
-            ><el-button
-              link
-              type="primary"
-              @click="openDetail(row.itemBatchId)"
-              >入库记录</el-button
-            ></template
-          ></el-table-column
-        ></el-table
+            @click="search"
+            >查询</el-button
+          ><el-button @click="reset">重置</el-button></el-form-item
+        ></el-form
       >
-      <PaginationFooter
-        :total="total"
-        :current-page="page"
-        :page-size="pageSize"
-        @page-change="changePage"
-        @update:page-size="changePageSize"
-      />
+      <div class="table-panel">
+        <TableToolbar
+          ><template #actions><span>成品入库记录</span></template
+          ><template #tools
+            ><el-button
+              :icon="Refresh"
+              text
+              :loading="loading"
+              @click="load"
+              >刷新</el-button
+            ></template
+          ></TableToolbar
+        ><el-alert
+          v-if="error"
+          :title="error"
+          type="error"
+          show-icon
+          :closable="false"
+        />
+        <el-table
+          v-loading="loading"
+          :data="items"
+          row-key="itemBatchId"
+          ><el-table-column
+            prop="batchCode"
+            label="成品库存批次"
+            min-width="190"
+          /><el-table-column
+            label="成品"
+            min-width="210"
+            ><template #default="{ row }"
+              ><strong>{{ row.itemName }}</strong>
+              <div class="secondary">{{ row.itemCode }}</div></template
+            ></el-table-column
+          ><el-table-column
+            prop="sourceProductionBatchNo"
+            label="来源任务"
+            min-width="170"
+          /><el-table-column
+            label="入库累计"
+            width="130"
+            align="right"
+            ><template #default="{ row }"
+              >{{ formatQuantity(inboundQuantity(row)) }} {{ row.unit }}</template
+            ></el-table-column
+          ><el-table-column
+            label="当前可用库存"
+            width="150"
+            align="right"
+            ><template #default="{ row }"
+              >{{ formatQuantity(row.onHandAvailableQuantity) }} {{ row.unit }}</template
+            ></el-table-column
+          ><el-table-column
+            label="操作"
+            width="120"
+            fixed="right"
+            ><template #default="{ row }"
+              ><el-button
+                link
+                type="primary"
+                @click="openDetail(row.itemBatchId)"
+                >入库记录</el-button
+              ></template
+            ></el-table-column
+          ></el-table
+        >
+        <PaginationFooter
+          :total="total"
+          :current-page="page"
+          :page-size="pageSize"
+          @page-change="changePage"
+          @update:page-size="changePageSize"
+        />
+      </div>
     </div>
     <el-dialog
       v-model="detailVisible"
@@ -150,12 +163,12 @@
               ></el-table-column
             ></el-table
           ><el-button
-            v-if="detail.sourceProductionBatchId && canAccessRoute({ name: 'production-tracking' })"
+            v-if="detail.sourceProductionBatchId"
             class="tracking-link"
             type="primary"
             plain
-            @click="openTracking"
-            >查看任务工序追踪</el-button
+            @click="openTaskOutputs"
+            >查看任务产出记录</el-button
           ></template
         >
       </div>
@@ -163,11 +176,16 @@
         ><el-button @click="detailVisible = false">关闭</el-button></template
       ></el-dialog
     >
+    <TaskOutputDialog
+      v-model:visible="outputsVisible"
+      :batch="outputsBatch"
+      route-name="warehouse-inbound"
+      @changed="load"
+    />
   </section>
 </template>
 <script setup lang="ts">
 import { onActivated, ref, watch } from 'vue';
-import { useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
 import type { InventoryBatchDetailItem, InventoryBatchItem } from '@company/contracts';
 import { productionInventoryApi } from '../../../api/production/inventory';
@@ -176,14 +194,16 @@ import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
-import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../../utils/quantity';
+import FinishedGoodsOutputPanel from './FinishedGoodsOutputPanel.vue';
+import { TaskOutputDialog } from '../../production/public';
 defineOptions({ name: 'FinishedGoodsInboundPanel' });
 const props = defineProps<{ active: boolean; requestedInventoryBatchId?: string | null }>();
-const router = useRouter();
-const { canAccessRoute } = useRouteAccess();
+const view = ref<'pending' | 'history'>('pending');
+const outputsVisible = ref(false),
+  outputsBatch = ref<{ id: string } | null>(null);
 const items = ref<InventoryBatchItem[]>([]),
   total = ref(0),
   page = ref(1),
@@ -250,6 +270,7 @@ let selectedId = '';
 async function openDetail(id: string): Promise<void> {
   if (!props.active || !detailReads.isActive()) return;
   selectedId = id;
+  view.value = 'history';
   detailVisible.value = true;
   detail.value = null;
   detailError.value = '';
@@ -277,9 +298,12 @@ function locate(): void {
 }
 watch(() => [props.active, props.requestedInventoryBatchId], locate);
 onActivated(locate);
-async function openTracking(): Promise<void> {
+function openTaskOutputs(): void {
   const id = detail.value?.sourceProductionBatchId;
-  if (id) await router.push({ name: 'production-tracking', query: { batchId: id } });
+  if (id) {
+    outputsBatch.value = { id };
+    outputsVisible.value = true;
+  }
 }
 usePageInitialLoad(async () => {
   await load();

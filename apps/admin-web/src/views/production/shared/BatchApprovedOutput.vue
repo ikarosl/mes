@@ -3,7 +3,8 @@
     v-if="output && output.confirmedOutputCount > 0"
     class="approved-output"
   >
-    <strong>可用 {{ formatQuantity(approvedUsableQuantity(output)) }}</strong>
+    <strong>可用 {{ formatQuantity(approvedUsableQuantity(output)) }}</strong
+    ><span v-if="approvedUsableQuantity(output) === 0">（已确认零产出）</span>
   </div>
   <span
     v-else

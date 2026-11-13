@@ -171,6 +171,7 @@ export const PERMISSIONS = {
     inbound: {
       view: 'warehouse:inbound:view',
       confirmPurchase: 'warehouse:inbound:confirm-purchase',
+      confirmFinished: 'warehouse:inbound:confirm-finished',
     },
     outbound: {
       view: 'warehouse:outbound:view',

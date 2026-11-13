@@ -33,7 +33,7 @@ const { canAccessRoute } = useRouteAccess();
 const categories = computed(() =>
   [
     { name: 'warehouse-inbound', label: '外购物料入库' },
-    { name: 'warehouse-inbound-finished', label: '成品入库记录' },
+    { name: 'warehouse-inbound-finished', label: '成品入库' },
     { name: 'warehouse-other-inbounds', label: '其他入库' },
   ].filter((category) => canAccessRoute({ name: category.name })),
 );

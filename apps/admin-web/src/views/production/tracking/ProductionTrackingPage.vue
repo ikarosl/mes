@@ -164,7 +164,7 @@
           ><el-radio-group
             v-model="view"
             @change="search"
-            ><el-radio-button value="cards">追踪卡</el-radio-button
+            ><el-radio-button value="cards">追踪卡管理</el-radio-button
             ><el-radio-button value="history">报工历史</el-radio-button></el-radio-group
           ></template
         ><template #tools
@@ -274,7 +274,7 @@
         />
         <el-table-column
           label="操作"
-          width="185"
+          width="270"
           fixed="right"
           ><template #default="{ row }"
             ><el-button
@@ -282,6 +282,13 @@
               type="primary"
               @click.stop="selectCard(row)"
               >查看详情</el-button
+            ><el-button
+              link
+              type="primary"
+              :loading="labelLoading && labelTarget?.id === row.id"
+              :disabled="labelVisible"
+              @click.stop="openCardLabel(row)"
+              >标签 / 打印</el-button
             ><el-button
               v-if="canCorrectQuantity(row)"
               link
@@ -371,6 +378,10 @@
     <TrackingLabelDialog
       v-model:visible="labelVisible"
       :card="labelCard"
+      :card-no="labelTarget?.cardNo"
+      :loading="labelLoading"
+      :error="labelError"
+      @refresh="loadLabel"
     />
   </div>
 </template>
@@ -619,11 +630,52 @@ async function selectCard(card: ProductionTrackingCardItem): Promise<void> {
 }
 const labelVisible = ref(false),
   labelCard = ref<ProductionTrackingCardDetail | null>(null),
+  labelTarget = ref<Pick<ProductionTrackingCardItem, 'id' | 'cardNo'> | null>(null),
+  labelLoading = ref(false),
+  labelError = ref(''),
   actionVisible = ref(false),
   actionCard = ref<ProductionTrackingCardDetail | null>(null),
   action = ref<TrackingCardAction>('abnormality'),
   abnormality = ref<ProductionTrackingAbnormality | null>(null);
-function openLabel(): void {
+const labelReads = useLatestReadRequest(() => {
+  if (labelLoading.value) labelError.value = '标签预览加载已中断，请重试';
+  labelLoading.value = false;
+});
+async function openCardLabel(
+  card: Pick<ProductionTrackingCardItem, 'id' | 'cardNo'>,
+): Promise<void> {
+  if (labelVisible.value || !labelReads.isActive()) return;
+  cancelQuantityAction();
+  labelTarget.value = { id: card.id, cardNo: card.cardNo };
+  labelCard.value = null;
+  labelError.value = '';
+  labelVisible.value = true;
+  await loadLabel();
+}
+async function loadLabel(): Promise<void> {
+  const target = labelTarget.value;
+  if (!target || !labelVisible.value || labelCard.value || !labelReads.isActive()) return;
+  const read = labelReads.begin(() => labelVisible.value && labelTarget.value === target);
+  labelLoading.value = true;
+  labelError.value = '';
+  try {
+    const card = await productionTrackingApi.detail(target.id, {
+      signal: read.signal,
+      skipErrorHandling: true,
+    });
+    if (!read.isCurrent()) return;
+    if (card.id !== target.id) throw new Error('标签与所选追踪卡不一致，请重新加载');
+    updateCardFacts(card);
+    // 打开后的标签快照不随详情浏览、列表刷新或盘量更正替换。
+    labelCard.value = { ...card };
+  } catch (error) {
+    if (read.isCurrent())
+      labelError.value = error instanceof Error ? error.message : '标签预览加载失败，请重试';
+  } finally {
+    if (read.isCurrent()) labelLoading.value = false;
+  }
+}
+async function openLabel(): Promise<void> {
   const card = selectedCard.value;
   if (
     !card ||
@@ -634,8 +686,7 @@ function openLabel(): void {
     !detailReads.isActive()
   )
     return;
-  labelCard.value = { ...card };
-  labelVisible.value = true;
+  await openCardLabel(card);
 }
 function openAction(value: TrackingCardAction, item?: ProductionTrackingAbnormality): void {
   const card = selectedCard.value;
@@ -708,6 +759,13 @@ async function loadQuantityAction(): Promise<void> {
 }
 watch(detailVisible, (visible) => {
   if (!visible) detailReads.invalidate();
+});
+watch(labelVisible, (visible) => {
+  if (visible) return;
+  labelReads.invalidate();
+  labelTarget.value = null;
+  labelCard.value = null;
+  labelError.value = '';
 });
 function updateCardFacts(card: ProductionTrackingCardDetail): void {
   cards.value = cards.value.map((item) => (item.id === card.id ? card : item));

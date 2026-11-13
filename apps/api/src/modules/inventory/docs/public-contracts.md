@@ -18,9 +18,9 @@
 
 InventoryInboundCommand.confirmPurchaseReceipt 接收 Procurement 已锁定并核验的有效到货物料。输入只含 receiptLineId、供应商名称快照、物料精确身份与单位、实际正整数数量和 target，不带检验、实收修订或分配。采购支持多到货、多供应商合单、同来源拆多个目标和共用新批次键，目标精确身份及单位必须一致，规则见 [InventoryInboundTarget](../../../../../../packages/contracts/src/production/inventory-target.ts)。其他处理说明由 Procurement 的到货行独立命令保存，不通过实际入库确认提交，也不调用库存命令。
 
-`confirmTrackingOutput` 接收 Production 在同池事务中锁定并创建的 `production_tracking_output`，输入包括 outputId、任务／工单／成品身份、编码、单位和正数产出。每次终检产出一次性创建一个成品库存批次、一张已完成入库单和一条库存流水；不选择已有批次、不分次消费，也不经过结案审批。研发零产出由 Production 保存，不调用库存命令；过程报废及整盘报废也不调用库存。批量产出按剩余盘量确定，来源数量计算由 Production 负责。
+`postTrackingOutputs` 接收 Production 在同池事务中锁定并核验的多条正数有效产出，来源必须同任务、同工单、同成品，数量取整笔产出。明确选择共建一个新批次或追加本任务已有批次；Inventory 核验历史身份、单位、批次状态、版本及原始同任务入库来源，保留逐产出明细。研发零产出、过程报废及整盘报废不调用库存。`getTrackingOutputReceipts` 提供已有入库事实当前读，供来源模块核验防重复及撤销资格。
 
-确认按 pending 主单 → 来源明细 → 库存流水 → completed 主单顺序同事务提交；结果保存真实 inboundId、inboundNo、inboundDetailId、batchId、batchNo、transactionId 和 quantity。来源明细以 outputId 唯一，数据库守卫核对同任务／工单／成品、单位和整笔产出数量。来源业务门禁由 Production 负责，Inventory 只办理其库存事实，不写来源表。HTTP 幂等由终检命令承担，未知提交结果使用原请求恢复。
+确认按 pending 主单 → 来源明细 → 库存流水 → completed 主单顺序同事务提交；分组结果保存真实 inboundId、inboundNo、itemBatchId、batchCode 和 inboundQuantity；逐来源明细与流水保留在实际单据及审计。来源明细以 outputId 唯一，数据库守卫核对同任务／工单／成品、单位和整笔产出数量。来源业务门禁由 Production 负责，Inventory 只办理其库存事实，不写来源表。HTTP 幂等由人工确认入库命令承担，未知提交结果使用原请求恢复；终检确认使用独立幂等作用域且不写库存。
 
 InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds}) 只累计已完成采购入库明细与匹配原始正流水，逐笔返回 inboundDetailId/quantity。它不关联检验或授权，也不从说明推算退回。采购与终检分别记 purchase_inbound 和 production_inbound，库存只以 inventory_transaction 为事实来源。
 
@@ -45,6 +45,8 @@ Inventory 定义 `InventoryReservationReadPort.currentAllocations(batchIds)`，A
 Inventory 用该事实及自己当前已完成生产领料核对未预留量，不取得预留所有权。调用位置、批次保护和 NOWAIT 冲突见[公共锁序与预留例外](../../../../../../docs/inventory-extraction-design.md#其他出库保护生产预留的窄例外)，不扩展其他来源业务回调。
 
 ## 只读展示
+
+`GET /warehouse/production-output-inbound-batch-candidates` 供任务产出与仓库成品入库选择同任务已有批次，要求任务、成品及单位，按 warehouse:inbound:view 或 production:tasks:view 授权；结果带当前版本，确认须重核。此入口与其他入库的通用成品候选分开，不改变通用候选范围。
 
 库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、来源单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 

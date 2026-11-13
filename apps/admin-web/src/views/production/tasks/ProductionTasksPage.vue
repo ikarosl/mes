@@ -88,7 +88,7 @@
           }}</template></el-table-column
         >
         <el-table-column
-          label="实际最终产出"
+          label="终检产出"
           min-width="135"
           align="right"
           ><template #default="{ row }"
@@ -96,6 +96,15 @@
               :output="row.finalOutput"
               compact /></template
         ></el-table-column>
+        <el-table-column
+          label="已入库 / 待入库"
+          min-width="150"
+          align="right"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.finalOutput.inboundQuantity) }} /
+            {{ formatQuantity(row.finalOutput.pendingInboundQuantity) }}</template
+          ></el-table-column
+        >
         <el-table-column
           label="状态"
           min-width="130"
@@ -129,14 +138,10 @@
                 @click="openDetail(row)"
                 >详情</el-button
               ><el-button
-                v-if="
-                  row.orderType === 'mass_production' &&
-                  canAccessRoute({ name: 'production-tracking' })
-                "
                 link
                 type="primary"
-                @click="openTracking(row)"
-                >工序追踪</el-button
+                @click="openOutputs(row)"
+                >产出与入库</el-button
               ><el-button
                 v-if="canStartBatch(row)"
                 link
@@ -158,12 +163,23 @@
                   ><el-dropdown-menu
                     ><el-dropdown-item
                       v-if="
-                        row.orderType === 'research' &&
-                        row.status === 'doing' &&
-                        !row.finalOutput.confirmedOutputCount
+                        row.orderType === 'mass_production' &&
+                        canAccessRoute({ name: 'production-tracking' })
                       "
+                      @click="openTracking(row)"
+                      >工序追踪</el-dropdown-item
+                    ><el-dropdown-item
+                      v-if="row.orderType === 'research' && row.status === 'doing'"
                       @click="openLifecycle(row, 'research-output')"
                       >登记研发产出</el-dropdown-item
+                    ><el-dropdown-item
+                      v-if="row.status === 'completed'"
+                      @click="openLifecycle(row, 'reopen')"
+                      >重新打开任务</el-dropdown-item
+                    ><el-dropdown-item
+                      v-if="canStartBatch(row)"
+                      @click="openLifecycle(row, 'finish', 'early')"
+                      >提前结束任务</el-dropdown-item
                     ><el-dropdown-item
                       v-if="row.status === 'pending'"
                       @click="openMaterialDemandConfiguration(row)"
@@ -219,11 +235,18 @@
       :error="detailError"
       @update:visible="handleDetailVisibility"
       @refresh="refreshTaskDetail"
+      @outputs="openOutputs"
+    />
+    <TaskOutputDialog
+      v-model:visible="outputsVisible"
+      :batch="outputsBatch"
+      @changed="taskPhaseChanged"
     />
     <TaskLifecycleDialog
       v-model:visible="lifecycleVisible"
       :batch="lifecycleBatch"
       :mode="lifecycleMode"
+      :initial-finish-mode="lifecycleFinishMode"
       @changed="taskPhaseChanged"
     />
     <MaterialDemandConfigurationDialog
@@ -301,6 +324,7 @@ import type {
   CreateMaterialOutboundPayload,
   ProductionMaterialAllocationItem,
   ProductionMaterialDemandItem,
+  ProductionTaskFinishMode,
 } from '@company/contracts';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';
@@ -321,6 +345,7 @@ import { useProductionTaskEditor } from './use-production-task-editor';
 import TaskFormDialog from './TaskFormDialog.vue';
 import TaskDetailDialog from './TaskDetailDialog.vue';
 import TaskLifecycleDialog, { type TaskLifecycleMode } from './TaskLifecycleDialog.vue';
+import TaskOutputDialog from './TaskOutputDialog.vue';
 import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
 import ProductionBatchCancelDialog from './ProductionBatchCancelDialog.vue';
 import MaterialDemandAllocationDialog from '../materials/MaterialDemandAllocationDialog.vue';
@@ -373,11 +398,24 @@ const { beginRow, endRow } = useRowPending();
 const taskTypeLabel = (row: ProductionBatchItem): string => WORK_ORDER_TYPE_LABELS[row.orderType];
 const lifecycleVisible = ref(false),
   lifecycleBatch = ref<ProductionBatchItem | null>(null),
-  lifecycleMode = ref<TaskLifecycleMode>('start');
-function openLifecycle(batch: ProductionBatchItem, mode: TaskLifecycleMode): void {
+  lifecycleMode = ref<TaskLifecycleMode>('start'),
+  lifecycleFinishMode = ref<ProductionTaskFinishMode>('normal');
+const outputsVisible = ref(false),
+  outputsBatch = ref<ProductionBatchItem | null>(null);
+function openOutputs(batch: ProductionBatchItem): void {
+  if (outputsVisible.value) return;
+  outputsBatch.value = { ...batch };
+  outputsVisible.value = true;
+}
+function openLifecycle(
+  batch: ProductionBatchItem,
+  mode: TaskLifecycleMode,
+  finishMode: ProductionTaskFinishMode = 'normal',
+): void {
   if (lifecycleVisible.value) return;
   lifecycleBatch.value = { ...batch };
   lifecycleMode.value = mode;
+  lifecycleFinishMode.value = finishMode;
   lifecycleVisible.value = true;
 }
 async function openTracking(batch: ProductionBatchItem): Promise<void> {

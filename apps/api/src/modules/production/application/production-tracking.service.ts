@@ -11,6 +11,7 @@ import type {
   ProductionTrackingCardQuery,
   ProductionTrackingPersonnelSnapshot,
   ProductionTrackingReportQuery,
+  ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
@@ -50,6 +51,9 @@ export class ProductionTrackingService {
   }
   reports(query: ProductionTrackingReportQuery) {
     return this.repository.reports(query);
+  }
+  startCheck(batchId: string) {
+    return this.repository.startCheck(batchId);
   }
 
   create(
@@ -208,6 +212,18 @@ export class ProductionTrackingService {
     return this.execute('task.finish', { batchId }, body, context, productionBatchResultCodec, () =>
       this.repository.withBatchTransaction(batchId, () =>
         this.repository.finishTask(batchId, body, context),
+      ),
+    );
+  }
+  reopenTask(
+    batchId: string,
+    payload: ReopenProductionTrackingTaskPayload,
+    context: IdempotentCommandContext,
+  ) {
+    const body = { version: payload.version, reason: this.reason(payload.reason) };
+    return this.execute('task.reopen', { batchId }, body, context, productionBatchResultCodec, () =>
+      this.repository.withBatchTransaction(batchId, () =>
+        this.repository.reopenTask(batchId, body, context),
       ),
     );
   }

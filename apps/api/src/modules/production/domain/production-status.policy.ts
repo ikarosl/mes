@@ -32,7 +32,7 @@ const batchTransitions: Readonly<Record<ProductionBatchStatus, readonly Producti
     material_partially_outbound: ['material_outbound', 'doing', 'completed'],
     material_outbound: ['doing', 'completed'],
     doing: ['completed'],
-    completed: [],
+    completed: ['doing', 'pending', 'material_pending'],
     cancelled: [],
   };
 

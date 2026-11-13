@@ -8,6 +8,7 @@ import type {
   HandleProductionTrackingAbnormalityPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionExecutionStartCheck,
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
@@ -16,6 +17,7 @@ import type {
   ProductionTrackingScanResult,
   ProductionTrackingVisit,
   ProductionTrackingWorkbench,
+  ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
@@ -33,6 +35,11 @@ export const productionTrackingApi = {
     request({ ...options, url: `/production/tracking-cards/${id}` }),
   workbench: (id: string, options: ReadRequestOptions = {}): Promise<ProductionTrackingWorkbench> =>
     request({ ...options, url: `/production/batches/${id}/tracking-workbench` }),
+  startCheck: (
+    id: string,
+    options: ReadRequestOptions = {},
+  ): Promise<ProductionExecutionStartCheck> =>
+    request({ ...options, url: `/production/batches/${id}/start-check` }),
   reports: (
     params: ProductionTrackingReportQuery,
     options: ReadRequestOptions = {},
@@ -144,6 +151,17 @@ export const productionTrackingApi = {
   ): Promise<ProductionTrackingOutput> =>
     request({
       url: `/production/batches/${batchId}/actions/confirm-research-output`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  reopen: (
+    batchId: string,
+    data: ReopenProductionTrackingTaskPayload,
+    key: string,
+  ): Promise<ProductionBatchDetail> =>
+    request({
+      url: `/production/batches/${batchId}/actions/reopen`,
       method: 'POST',
       data,
       headers: headers(key),

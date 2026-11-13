@@ -20,6 +20,10 @@ import { ProductionDemandCorrectionApprovalHandler } from './application/product
 import { ProductionProcurementQuery } from './application/production-procurement.query.js';
 import { ProductionReservationQuery } from './application/production-reservation.query.js';
 import { ProductionTrackingService } from './application/production-tracking.service.js';
+import { ProductionOutputService } from './application/production-output.service.js';
+import { ProductionOutputRepository } from './application/ports/production-output.repository.js';
+import { MysqlProductionOutputRepository } from './infrastructure/tracking/mysql-production-output.repository.js';
+import { ProductionOutputController } from './presentation/http/production-output.controller.js';
 import { ProductionRepository } from './application/ports/production.repository.js';
 import { ProductionMaterialRepository } from './application/ports/production-material.repository.js';
 import { ProductionMaterialDemandConfigurationRepository } from './application/ports/production-material-demand-configuration.repository.js';
@@ -70,6 +74,7 @@ import { ProductionTrackingController } from './presentation/http/production-tra
     ProductionInboundController,
     ProductionDemandCorrectionController,
     ProductionTrackingController,
+    ProductionOutputController,
   ],
   providers: [
     ProductionService,
@@ -85,6 +90,9 @@ import { ProductionTrackingController } from './presentation/http/production-tra
     ProductionDemandCorrectionService,
     ProductionDemandCorrectionApprovalHandler,
     ProductionTrackingService,
+    ProductionOutputService,
+    MysqlProductionOutputRepository,
+    { provide: ProductionOutputRepository, useExisting: MysqlProductionOutputRepository },
     MysqlWorkOrderRepository,
     MysqlProductionBatchRepository,
     MysqlProductionRepository,

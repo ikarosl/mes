@@ -7,12 +7,15 @@ export {
 } from './application/inventory-stock.command.js';
 export {
   InventoryInboundCommand,
-  type TrackingOutputInput,
-  type TrackingOutputResult,
+  type TrackingOutputsInput,
+  type TrackingOutputsResult,
 } from './application/inventory-inbound.command.js';
 export { InventoryInboundRepository } from './application/ports/inventory-inbound.repository.js';
 export { InventoryCommandError } from './inventory-command.error.js';
-export { InventoryInboundQuery } from './application/inventory-inbound.query.js';
+export {
+  InventoryInboundQuery,
+  type TrackingOutputReceipt,
+} from './application/inventory-inbound.query.js';
 export type {
   PurchaseReceiptInboundLine,
   ConfirmPurchaseReceiptInput,

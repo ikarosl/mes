@@ -1,5 +1,7 @@
 import type { PageQuery, VersionedCommand } from '../common.js';
 import type { ProductionBatchItem } from './batch.js';
+import type { ProductionTaskFinishMode } from './output.js';
+import type { WorkOrderStatus } from './statuses.js';
 
 export type ProductionTrackingCardStatus =
   'unused' | 'in_progress' | 'completed' | 'scrapped' | 'voided';
@@ -126,6 +128,7 @@ export interface ProductionTrackingStep {
 
 export interface ProductionTrackingWorkbench {
   batch: ProductionBatchItem;
+  workOrderStatus: WorkOrderStatus;
   steps: ProductionTrackingStep[];
   summary: {
     totalCardCount: number;
@@ -193,6 +196,11 @@ export interface ConfirmProductionResearchOutputPayload extends ConfirmProductio
 }
 
 export interface FinishProductionTrackingTaskPayload extends VersionedCommand {
+  mode: ProductionTaskFinishMode;
+  reason: string;
+}
+
+export interface ReopenProductionTrackingTaskPayload extends VersionedCommand {
   reason: string;
 }
 

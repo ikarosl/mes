@@ -30,7 +30,7 @@
 
 工单保持 draft/released/doing/completed/cancelled/closed。草稿可编辑、取消或直接下达；取消须原因且尚无任务。首次任务实际开始同事务把 released 工单推进 doing，创建任务和物料分配不表示开工。
 
-管理员显式确认工单完工时，事务核验所有非取消任务均已 completed，且最终确认可用产出合计不少于工单计划，才进入 completed；超计划产出如实计入，不拆计划内外类型。数量不足时可以先结束所有任务，再填写原因提前关闭工单；没有任务或只有取消任务也可按未生产关闭。completed 后关闭属于归档。
+管理员显式确认工单完工时，事务核验所有非取消任务均已 completed，不要求产出达到计划；短产、零产出和超计划产出均如实计入。提前停止仍可填写原因关闭工单；没有任务或只有取消任务也可按未生产关闭。completed 后关闭属于归档。已完工或关闭的工单不允许恢复其任务执行，待入库产出仍可入库。
 
 下达后不再允许取消。提前关闭不得自动结束或取消任务，存在未结束任务即返回摘要要求先办理。close_type 只区分 unproduced、underproduced、completed_archive；关闭／取消原因、账号、时间和版本同事务保存，不覆盖原 remark，也不从操作日志还原业务事实。
 
@@ -40,11 +40,11 @@
 
 [开始与结束](production-termination.md)维护开工前提、短产／零产、提前结束及原子收口。任务不按数量自动完成，不再进入收尾审批状态。取消仅用于未开始且未实际领料的任务；当前读摘要和提交均校验需求更正在途、待领料单和真实领料，不能由前端状态绕过。
 
-任务与工单 finalOutput 都从不可变 production_tracking_output 汇总，库存后续调整不回写。任务返回 availableQuantity、confirmedOutputCount；无确认事实为 0 和 0，显式零产出则数量仍为 0、确认笔数大于 0。工单另返回已结束任务数和计划缺口，缺口允许负值表示超产。工序交接历史按站表达，不汇总成第二份任务产出。
+任务与工单 finalOutput 从 production_tracking_output 排除明确撤销后汇总；availableQuantity 表示终检产出，inboundQuantity 为关联实际入库，pendingInboundQuantity 为尚未入库，confirmedOutputCount 为有效确认笔数。无确认事实与显式零产出用确认笔数区分。库存后续调整不回写这些累计；工单同时返回已结束任务数和计划缺口，缺口允许负值。工序交接历史不汇总成第二份任务产出。
 
 任务列表分页；详情、首次开工记录、取消影响摘要和追踪工作台按用途读取，不在概览中携带全部卡或事实。查询和命令结构以[contracts](../../../../../../../packages/contracts/src/production/index.ts)为准。
 
-GET /production/batches 同时服务任务页、现场工作台和追踪卡页的任务定位，按 production:tasks:view、production:workbench:view、production:tracking:view 任一权限放行。该列表不携带负责人候选或可变业务明细，不授予任务详情、编辑、开始、结束或建卡权限，各命令继续独立鉴权。
+GET /production/batches 同时服务任务页、现场工作台、追踪卡页及仓库成品入库的任务定位，按 production:tasks:view、production:workbench:view、production:tracking:view、warehouse:inbound:view 任一权限放行。该列表不携带负责人候选或可变业务明细。仓库成品入库可用 warehouse:inbound:view 读取任务详情及产出上下文，首次开工物料快照仍仅供任务页；读取不授予编辑、开始、结束、恢复、建卡或确认入库权限，各命令独立鉴权。
 
 ## 工单审批接入目标结构（尚未实施）
 
@@ -137,7 +137,7 @@ CONSTRAINT `chk_work_orders_version` CHECK ((`version` >= 0));
 
 将工单计划拆为任务，保存冻结路线身份、负责人、计划、首次开始快照及人工结束原因。任务不保存执行数量或实际产出累计。
 
-同工单／产品组合外键保证来源；uk_tracking_batch_source供最终产出保持三者一致。完成并不表示足量，开始／结束和物料收口由应用事务完成。finish_reason与completed状态由CHECK绑定。
+同工单／产品组合外键保证来源；uk_tracking_batch_source供最终产出保持三者一致。完成并不表示足量，开始／结束和物料收口由应用事务完成。finish_reason 与 completed 状态由 CHECK 绑定。202611120010 新增 finish_mode 及 chk_tracking_task_finish_mode，限制非空值只可为 completed 下的 normal／early；历史完成方式不推测，保持 NULL。trg_tracking_task_lifecycle_guard 保护首次开工事实、状态版本、显式新结束方式及仅在开放工单内恢复，恢复清空当前结束字段，历史原因沿操作日志保留。
 
 ### 字段
 
@@ -171,6 +171,7 @@ CONSTRAINT `chk_work_orders_version` CHECK ((`version` >= 0));
 | `updated_by`              | `bigint unsigned DEFAULT NULL`                                            | 最近修改人                                                         |
 | `updated_at`              | `datetime NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近修改时间                                                       |
 | `finish_reason`           | `text`                                                                    | 人工结束任务原因；completed状态必须非空且去空白后有内容            |
+| `finish_mode`             | `varchar(20) DEFAULT NULL`                                                | normal 正常完工、early 提前结束；历史方式未知为空，恢复后清空      |
 
 ### 约束与索引
 

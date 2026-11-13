@@ -72,7 +72,7 @@
         />
         <el-alert
           v-if="card.status === 'scrapped'"
-          title="本盘已整盘报废，异常已全部结算，无产出入库；不能继续流转或更改盘量。"
+          title="本盘已整盘报废，异常已全部结算，无产出、无需入库；不能继续流转或更改盘量。"
           type="error"
           show-icon
           :closable="false"
@@ -117,7 +117,10 @@
         >
           终检登记人 {{ card.output.personnelName }} ·
           {{ formatDateTimeForDisplay(card.output.confirmedAt) }} ·
-          {{ Number(card.output.quantity) > 0 ? '已同次确认成品入库' : '已确认零产出，未产生入库'
+          {{
+            Number(card.output.quantity) > 0
+              ? '终检产出已登记，入库状态请在任务产出记录中核对'
+              : '已确认零产出，无需入库'
           }}<span v-if="card.output.remark"> · {{ card.output.remark }}</span>
         </div>
         <div
@@ -129,7 +132,7 @@
             type="primary"
             :disabled="actionsDisabled || card.openAbnormalityCount > 0"
             @click="$emit('action', 'output')"
-            >终检确认产出并入库</el-button
+            >终检确认产出</el-button
           >
           <el-button
             v-if="canChangeCard"

@@ -6,7 +6,7 @@
 
 ## 仓库简化实验分支
 
-本分支 `experiment/warehouse-simplification` 基于追踪卡实验，采用[仓库独立办理方案](docs/adr/0028-independent-warehouse-receipt-and-inspection.md)。到货登记、检查报告、仓库实际入库与补单独立办理。仅使用新建独立空库，不保留或迁移旧业务数据；原业务库不要执行本分支迁移，已有基线文件保持不可变。
+本分支 `experiment/warehouse-simplification` 基于追踪卡实验，采用[仓库独立办理方案](docs/adr/0028-independent-warehouse-receipt-and-inspection.md)。到货登记、检查报告、仓库实际入库与补单独立办理。首次切换实验模型使用新建独立空库，不转换实验之前的旧业务模型；此后实验库已有数据通过增量迁移保留升级。原业务库不要执行破坏性的实验初始迁移，已有基线文件保持不可变。
 
 在 PowerShell 为本次命令指定独立库，连接及凭据仍从本机 `.env` 读取：
 
@@ -31,7 +31,7 @@ corepack pnpm exec turbo watch dev:serve --filter=@company/api --env-mode=loose
 4. 启动 API：`pnpm dev:api`。
 5. 启动管理端：`pnpm dev:admin`。
 
-常规主线已有业务库通过增量 migration 保留数据升级；本实验分支仅支持上方独立空库，重置授权边界见 [AGENTS.md](AGENTS.md#数据库与交付约定)。数据库集成测试使用隔离的专用测试库，配置与门禁见[测试策略](docs/testing-strategy.md)。
+常规主线已有业务库通过增量 migration 保留数据升级；本实验最初从上方独立空库建立，此后已有实验库同样保留数据增量升级，不能再次清空或重跑 demo 替代迁移。重置授权边界见 [AGENTS.md](AGENTS.md#数据库与交付约定)。数据库集成测试使用隔离的专用测试库，配置与门禁见[测试策略](docs/testing-strategy.md)。
 
 ## 数据库命令
 

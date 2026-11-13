@@ -32,6 +32,7 @@ import {
   HandleProductionTrackingAbnormalityDto,
   ProductionTrackingCardQueryDto,
   ProductionTrackingReportQueryDto,
+  ReopenProductionTrackingTaskDto,
   ScanProductionTrackingCardDto,
   StartProductionTrackingTaskDto,
   TrackingAbnormalityParamDto,
@@ -166,6 +167,11 @@ export class ProductionTrackingController {
   ) {
     return this.service.startTask(batchId, body, context);
   }
+  @Get('batches/:batchId/start-check')
+  @RequirePermission(PERMISSIONS.production.tasks.view)
+  startCheck(@Param() { batchId }: TrackingBatchParamDto) {
+    return this.service.startCheck(batchId);
+  }
   @Post('batches/:batchId/actions/finish')
   @RequirePermission(PERMISSIONS.production.batches.transition)
   @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['task.finish'] })
@@ -176,6 +182,17 @@ export class ProductionTrackingController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.finishTask(batchId, body, context);
+  }
+  @Post('batches/:batchId/actions/reopen')
+  @RequirePermission(PERMISSIONS.production.batches.transition)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['task.reopen'] })
+  @AuditInApplication()
+  reopen(
+    @Param() { batchId }: TrackingBatchParamDto,
+    @Body() body: ReopenProductionTrackingTaskDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.reopenTask(batchId, body, context);
   }
   @Get('batches/:batchId/step-records/:recordId/sop')
   @RequirePermission([

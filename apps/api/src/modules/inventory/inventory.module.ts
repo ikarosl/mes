@@ -23,6 +23,7 @@ import { MysqlInventoryStockCommand } from './infrastructure/mysql-inventory-sto
 import { MysqlInventoryInboundCommand } from './infrastructure/mysql-inventory-inbound.command.js';
 import { MysqlInventoryInboundQuery } from './infrastructure/mysql-inventory-inbound.query.js';
 import { MysqlInventoryPurchaseInboundWriter } from './infrastructure/mysql-inventory-purchase-inbound.writer.js';
+import { MysqlInventoryTrackingInboundWriter } from './infrastructure/mysql-inventory-tracking-inbound.writer.js';
 import { MysqlInventoryInboundRepository } from './infrastructure/mysql-inventory-inbound.repository.js';
 import { MysqlInventoryStockCheckRepository } from './infrastructure/mysql-inventory-stock-check.repository.js';
 import { InventoryStockCheckController } from './presentation/http/inventory-stock-check.controller.js';
@@ -45,6 +46,7 @@ import { InboundBatchCandidateController } from './presentation/http/inbound-bat
       useClass: MysqlInventoryProductionDocumentCommand,
     },
     MysqlInventoryPurchaseInboundWriter,
+    MysqlInventoryTrackingInboundWriter,
     InventoryStockCheckService,
     { provide: InventoryStockCommand, useClass: MysqlInventoryStockCommand },
     { provide: InventoryInboundCommand, useClass: MysqlInventoryInboundCommand },

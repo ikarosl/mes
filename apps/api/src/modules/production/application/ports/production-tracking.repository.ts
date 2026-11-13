@@ -8,6 +8,7 @@ import type {
   HandleProductionTrackingAbnormalityPayload,
   PageResult,
   ProductionBatchDetail,
+  ProductionExecutionStartCheck,
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
@@ -17,6 +18,7 @@ import type {
   ProductionTrackingScanResult,
   ProductionTrackingVisit,
   ProductionTrackingWorkbench,
+  ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
@@ -32,6 +34,7 @@ export abstract class ProductionTrackingRepository {
     query: ProductionTrackingReportQuery,
   ): Promise<PageResult<ProductionTrackingVisit>>;
   abstract withBatchTransaction<T>(batchId: string, action: () => Promise<T>): Promise<T>;
+  abstract startCheck(batchId: string): Promise<ProductionExecutionStartCheck>;
   abstract withCardTransaction<T>(
     identifier: string,
     byNumber: boolean,
@@ -93,6 +96,11 @@ export abstract class ProductionTrackingRepository {
   abstract finishTask(
     batchId: string,
     payload: FinishProductionTrackingTaskPayload,
+    context: CommandContext,
+  ): Promise<ProductionBatchDetail>;
+  abstract reopenTask(
+    batchId: string,
+    payload: ReopenProductionTrackingTaskPayload,
     context: CommandContext,
   ): Promise<ProductionBatchDetail>;
   abstract sopReference(
