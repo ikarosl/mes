@@ -352,6 +352,7 @@
       @update:visible="detailVisible = $event"
     />
     <ProductMaterialDialog
+      ref="bomDialogRef"
       :visible="bomVisible"
       :product="activeProduct"
       :submitting="submitting"
@@ -569,6 +570,7 @@ watch(products.products, (rows) => {
   if (detail) detailRow.value = detail;
 });
 const productFormRef = ref<InstanceType<typeof ProductFormDialog>>();
+const bomDialogRef = ref<InstanceType<typeof ProductMaterialDialog>>();
 const materialFormRef = ref<InstanceType<typeof MaterialFormDialog>>();
 const formatSpecSummary = (table: ProductListItem['specValues']) =>
   table.rows.length
@@ -662,22 +664,20 @@ const saveProduct = (d: ProductFormValue) =>
     '产品已保存',
     '产品保存失败',
   );
-const saveBom = (rows: MaterialRow[]) =>
-  activeProduct.value
-    ? runSave(
-        async () => {
-          await productApi.replaceMaterials(
-            activeProduct.value!.id,
-            rows,
-            activeProduct.value!.version,
-          );
-          bomVisible.value = false;
-          await products.load();
-        },
-        'BOM 已保存',
-        'BOM 保存失败',
-      )
-    : undefined;
+const saveBom = (rows: MaterialRow[]) => {
+  const product = activeProduct.value;
+  if (!product || submitting.value) return;
+  const savedRows = rows.map((row) => ({ ...row }));
+  return runSave(
+    async () => {
+      await productApi.replaceMaterials(product.id, savedRows, product.version);
+      bomDialogRef.value?.markSaved(product.id, product.version, savedRows);
+      await products.load();
+    },
+    'BOM 已保存',
+    'BOM 保存失败',
+  );
+};
 const submitBomApproval = () =>
   activeProduct.value
     ? runSave(

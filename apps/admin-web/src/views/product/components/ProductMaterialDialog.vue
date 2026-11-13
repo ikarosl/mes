@@ -277,6 +277,14 @@ const setRows = (initial: MaterialRow[]): void => {
   savedFingerprint.value = fingerprint(initial);
 };
 
+const markSaved = (productId: string, version: number, rows: MaterialRow[]): void => {
+  if (!props.visible || props.product?.id !== productId || props.product.version !== version)
+    return;
+  savedFingerprint.value = fingerprint(rows);
+  // 保存后须等产品版本刷新并重新读取明细，才能继续保存或送审。
+  loadedProductVersion.value = null;
+};
+
 /** 加载当前产品 BOM 明细并写入 localRows；失败/过期不覆盖为可保存空数据 */
 const loadRows = async (productId: string): Promise<void> => {
   const version = props.product?.version;
@@ -426,7 +434,7 @@ const handleSubmitApproval = (): void => {
   emit('submit-approval');
 };
 
-defineExpose({ setRows });
+defineExpose({ setRows, markSaved });
 </script>
 
 <style scoped>
