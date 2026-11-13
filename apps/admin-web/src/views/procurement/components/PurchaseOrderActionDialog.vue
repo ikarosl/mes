@@ -15,11 +15,13 @@
         type="error"
         :closable="false"
       />
-      <el-alert
-        v-if="command.status.value !== 'idle'"
-        title="操作结果尚未确认，保留原请求，请重试原操作或先核对记录。"
-        type="warning"
-        :closable="false"
+      <SubmissionRecoveryNotice
+        :status="command.status.value"
+        :busy="command.busy.value"
+        records-label="采购单记录"
+        allow-restart
+        @retry="command.retry"
+        @restart="command.discard"
       />
       <template v-if="detail">
         <el-descriptions
@@ -229,15 +231,9 @@
         @click="retryLoad"
         >刷新依据</el-button
       >
+
       <el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        @click="command.retry"
-        >重试原操作</el-button
-      >
-      <el-button
-        v-else
+        v-if="command.status.value === 'idle'"
         type="primary"
         :disabled="!actionValid"
         :loading="command.busy.value"
@@ -248,6 +244,7 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, ref, watch } from 'vue';
 import type { PurchaseOrderDetail, PurchaseOrderLine } from '@company/contracts';
 import { PURCHASE_ORDER_STATUS_LABELS } from '@company/constants';

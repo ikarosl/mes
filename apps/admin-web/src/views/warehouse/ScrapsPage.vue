@@ -50,6 +50,7 @@
           ><el-button
             type="primary"
             :icon="Plus"
+            :disabled="writesBusy"
             @click="openCreate"
             >申报领料损耗</el-button
           ></template
@@ -63,6 +64,15 @@
             @click="loadRows"
         /></template>
       </TableToolbar>
+      <SubmissionRecoveryNotice
+        :status="confirmCommand.status.value"
+        :busy="confirmCommand.busy.value"
+        :retry-disabled="writesBusy && !confirmCommand.busy.value"
+        :records-label="`损耗单 ${confirmingNo}`"
+        allow-restart
+        @retry="confirmCommand.retry"
+        @restart="restartConfirmation"
+      />
       <el-table
         v-loading="loading"
         :data="rows"
@@ -144,7 +154,8 @@
               v-if="row.status === 'pending'"
               link
               type="success"
-              :loading="pendingAction === `confirm:${row.id}`"
+              :loading="confirmCommand.busy.value && confirmingId === row.id"
+              :disabled="confirmationLocked"
               @click="confirmLoss(row)"
               >确认损耗</el-button
             >
@@ -152,6 +163,9 @@
               v-if="row.status === 'pending'"
               link
               :loading="pendingAction === `cancel:${row.id}`"
+              :disabled="
+                writesBusy || (confirmCommand.status.value !== 'idle' && confirmingId === row.id)
+              "
               @click="cancelLoss(row)"
               >取消</el-button
             >
@@ -172,15 +186,25 @@
       title="申报生产领料损耗"
       width="980px"
       :close-on-click-modal="false"
+      :before-close="closeCreate"
     >
       <el-alert
         title="请选择已确认领料的物料，记录实际损坏数量。确认损耗不会新建或回退需求；需要补充用料时另行手工提需。"
         type="warning"
         :closable="false"
       />
+      <SubmissionRecoveryNotice
+        :status="createCommand.status.value"
+        :busy="createCommand.busy.value"
+        records-label="领料损耗列表"
+        allow-restart
+        @retry="createCommand.retry"
+        @restart="createCommand.discard"
+      />
       <el-form
         class="loss-form"
         label-width="100px"
+        :disabled="createCommand.locked.value || optionsLoading || candidatesLoading"
       >
         <el-form-item
           label="生产批次"
@@ -268,10 +292,14 @@
         /></el-form-item>
       </el-form>
       <template #footer
-        ><el-button @click="createVisible = false">取消</el-button
+        ><el-button
+          :disabled="createCommand.busy.value"
+          @click="closeCreate"
+          >取消</el-button
         ><el-button
           type="primary"
-          :loading="submitting"
+          :loading="createCommand.busy.value"
+          :disabled="createCommand.locked.value || optionsLoading || candidatesLoading"
           @click="submitCreate"
           >提交损耗申报</el-button
         ></template
@@ -281,7 +309,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
+import { computed, onMounted, onScopeDispose, reactive, ref } from 'vue';
 import { Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   MaterialLossBatchOption,
@@ -291,8 +319,10 @@ import type {
 } from '@company/contracts';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import TableToolbar from '../../components/TableToolbar.vue';
+import SubmissionRecoveryNotice from '../../components/SubmissionRecoveryNotice.vue';
 import { warehouseApi } from '../../api/warehouse';
-import { useIdempotentIntent } from '../../composables/idempotency/useIdempotentIntent';
+import { useIdempotentCommand } from '../../composables/idempotency/use-idempotent-command';
+import { useTabsStore } from '../../stores/tabs';
 import { scrapStatusLabel, scrapStatusLabels } from '../../constants/business-status';
 import { EMessage } from '../../utils/message';
 import { RouteMessageBox } from '../../utils/route-message-box';
@@ -309,7 +339,6 @@ const total = ref(0);
 const loading = ref(false);
 const pendingAction = ref('');
 const createVisible = ref(false);
-const submitting = ref(false);
 const optionsLoading = ref(false);
 const candidatesLoading = ref(false);
 const batchOptions = ref<MaterialLossBatchOption[]>([]);
@@ -321,8 +350,25 @@ const form = reactive({
   reasonType: '',
   remark: '',
 });
-const createIntent = useIdempotentIntent();
-const confirmIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
+const draftSignature = () => JSON.stringify(form);
+let draftBaseline = draftSignature();
+const confirmingId = ref('');
+const confirmingNo = ref('');
+const createCommand = useIdempotentCommand<MaterialLossItem>(async () => {
+  createVisible.value = false;
+  draftBaseline = draftSignature();
+  query.page = 1;
+  await loadRows();
+}, '领料损耗申报');
+const confirmCommand = useIdempotentCommand<MaterialLossItem>(async () => {
+  confirmingId.value = '';
+  confirmingNo.value = '';
+  await loadRows();
+}, '确认领料损耗');
+const writesBusy = computed(
+  () => createCommand.busy.value || confirmCommand.busy.value || !!pendingAction.value,
+);
+const confirmationLocked = computed(() => writesBusy.value || confirmCommand.locked.value);
 const selectedCandidate = computed(() =>
   candidates.value.find((item) => item.allocationId === form.allocationId),
 );
@@ -350,6 +396,11 @@ async function loadRows() {
   }
 }
 async function openCreate() {
+  if (writesBusy.value || createVisible.value) return;
+  if (createCommand.status.value !== 'idle') {
+    createVisible.value = true;
+    return;
+  }
   Object.assign(form, {
     productionBatchId: '',
     allocationId: '',
@@ -357,6 +408,7 @@ async function openCreate() {
     reasonType: '',
     remark: '',
   });
+  draftBaseline = draftSignature();
   candidates.value = [];
   createVisible.value = true;
   optionsLoading.value = true;
@@ -369,6 +421,7 @@ async function openCreate() {
   }
 }
 async function batchChanged(batchId: string) {
+  if (createCommand.locked.value) return;
   form.allocationId = '';
   candidates.value = [];
   if (!batchId) return;
@@ -382,6 +435,7 @@ async function batchChanged(batchId: string) {
   }
 }
 async function submitCreate() {
+  if (createCommand.locked.value || optionsLoading.value || candidatesLoading.value) return;
   if (!form.productionBatchId || !selectedCandidate.value)
     return EMessage.warning('请选择生产批次和领料明细');
   if (
@@ -398,44 +452,34 @@ async function submitCreate() {
     reasonType: form.reasonType.trim(),
     remark: form.remark.trim() || null,
   };
-  submitting.value = true;
-  try {
-    await createIntent.execute(
-      { intentType: 'production.material-loss.create', params: {}, query: {}, body: payload },
-      (key) => warehouseApi.createMaterialLoss(payload, key),
-    );
-    createVisible.value = false;
-    query.page = 1;
-    EMessage.success('生产领料损耗已提交，等待管理员确认');
-    await loadRows();
-  } catch (error) {
-    EMessage.error(error, '生产领料损耗提交失败');
-  } finally {
-    submitting.value = false;
-  }
+  await createCommand.run(
+    { intentType: 'production.material-loss.create', params: {}, query: {}, body: payload },
+    (key) => warehouseApi.createMaterialLoss(payload, key),
+    '生产领料损耗已提交，等待管理员确认',
+  );
 }
 async function confirmLoss(row: MaterialLossItem) {
+  if (confirmationLocked.value) return;
+  pendingAction.value = `confirm:${row.id}`;
+  const { id, version, scrapNo } = row;
   try {
     await RouteMessageBox.confirm(
       `确认 ${row.itemCode} 损耗 ${quantity(row.scrapQuantity)} ${row.unit}？确认后记录损坏事实并扣减可退额度，需要补料时请另行提需。`,
       '确认生产领料损耗',
       { type: 'warning', confirmButtonText: '确认损耗' },
     );
-    pendingAction.value = `confirm:${row.id}`;
-    const intent = confirmIntents.get(row.id) ?? useIdempotentIntent();
-    confirmIntents.set(row.id, intent);
-    await intent.execute(
+    confirmingId.value = id;
+    confirmingNo.value = scrapNo;
+    await confirmCommand.run(
       {
         intentType: 'production.material-loss.confirm',
-        params: { scrapId: row.id },
+        params: { scrapId: id },
         query: {},
-        body: { version: row.version },
+        body: { version },
       },
-      (key) => warehouseApi.confirmMaterialLoss(row.id, row.version, key),
+      (key) => warehouseApi.confirmMaterialLoss(id, version, key),
+      '损耗已确认，如需补充物料请另行提需',
     );
-    confirmIntents.delete(row.id);
-    EMessage.success('损耗已确认，如需补充物料请另行提需');
-    await loadRows();
   } catch (error) {
     if (error !== 'cancel' && error !== 'close') EMessage.error(error, '确认损耗失败');
   } finally {
@@ -443,6 +487,9 @@ async function confirmLoss(row: MaterialLossItem) {
   }
 }
 async function cancelLoss(row: MaterialLossItem) {
+  if (writesBusy.value || (confirmCommand.status.value !== 'idle' && confirmingId.value === row.id))
+    return;
+  pendingAction.value = `cancel:${row.id}`;
   try {
     const { value } = await RouteMessageBox.prompt(
       `确认取消损耗单 ${row.scrapNo}？请输入取消原因。`,
@@ -466,6 +513,29 @@ async function cancelLoss(row: MaterialLossItem) {
     pendingAction.value = '';
   }
 }
+
+async function closeCreate(): Promise<void> {
+  if (!(await createCommand.canClose(draftSignature() !== draftBaseline))) return;
+  createCommand.discard();
+  createVisible.value = false;
+}
+function restartConfirmation(): void {
+  if (confirmCommand.busy.value) return;
+  confirmCommand.discard();
+  confirmingId.value = '';
+  confirmingNo.value = '';
+}
+const unregister = useTabsStore().registerCloseGuard('warehouse-scraps', async () => {
+  if (pendingAction.value || createCommand.busy.value || confirmCommand.busy.value) return false;
+  if (!(await createCommand.canClose(createVisible.value && draftSignature() !== draftBaseline)))
+    return false;
+  if (!(await confirmCommand.canClose())) return false;
+  createCommand.discard();
+  confirmCommand.discard();
+  createVisible.value = false;
+  return true;
+});
+onScopeDispose(unregister);
 
 const cancellationReasonValidator = (input: string) =>
   input.trim() ? input.trim().length <= 5000 || '取消原因不能超过 5000 个字符' : '请填写取消原因';

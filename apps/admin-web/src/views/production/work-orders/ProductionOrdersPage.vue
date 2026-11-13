@@ -291,9 +291,12 @@
       :product-options="productSource.options.value"
       :product-options-status="productSource.status.value"
       :submitting="submitting"
+      :intent-status="orderIntentStatus"
       @update:visible="handleOrderFormDialogClose"
       @refresh-products="productSource.refresh"
       @save="submitOrder"
+      @retry="retryOrder"
+      @restart="restartOrder"
     />
 
     <!-- 工单详情弹窗 -->
@@ -395,6 +398,7 @@ const {
   orderDialogVisible,
   editingOrderId,
   submitting,
+  orderIntentStatus,
   workOrderFormDialogRef,
   activeOrder,
   detailDialogVisible,
@@ -406,6 +410,8 @@ const {
   handleDetailDialogClose,
   openCreate,
   submitOrder,
+  retryOrder,
+  restartOrder,
   handleOrderFormDialogClose,
 } = useWorkOrderEditor({ loadOrders, beginRow, endRow });
 

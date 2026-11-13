@@ -20,35 +20,27 @@
         type="primary"
         plain
         :loading="creating"
-        :disabled="
-          disabled ||
-          (!createRecovery && !canCreate) ||
-          createStatus === 'blocked' ||
-          createStatus === 'expired'
-        "
+        :disabled="disabled || locked || !canCreate"
       >
-        {{ createRecovery ? '重试本次建卡' : '生成并到站' }}
+        生成并到站
       </el-button>
     </form>
     <span class="create-hint">现场建卡并登记首站到站，沿用上方登记人员。</span>
-    <el-alert
+    <SubmissionRecoveryNotice
       v-if="createRecovery"
-      :title="submissionRecoveryMessage(createStatus, '追踪卡列表')"
-      type="warning"
-      show-icon
-      :closable="false"
-    >
-      <el-button
-        link
-        :disabled="creating"
-        @click="abandonCreate"
-        >核对后放弃本次建卡</el-button
-      >
-    </el-alert>
+      :status="createStatus"
+      :busy="creating"
+      records-label="追踪卡列表"
+      :retry-disabled="disabled || !active"
+      allow-restart
+      @retry="createCard"
+      @restart="restartCreate"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import type {
   CreateProductionTrackingCardPayload,
@@ -56,7 +48,6 @@ import type {
 } from '@company/contracts';
 import { productionTrackingApi } from '../../../api/production/tracking';
 import {
-  submissionRecoveryMessage,
   useIdempotentIntent,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
@@ -73,6 +64,7 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   (event: 'update:locked', locked: boolean): void;
+  (event: 'update:busy', busy: boolean): void;
   (event: 'created', card: ProductionTrackingCardDetail): void;
 }>();
 const active = ref(true);
@@ -89,6 +81,7 @@ const createStatus = ref<IdempotentIntentStatus>('idle');
 const createRecovery = computed(() => createStatus.value !== 'idle');
 const locked = computed(() => creating.value || createRecovery.value);
 watch(locked, (value) => emit('update:locked', value), { immediate: true, flush: 'sync' });
+watch(creating, (value) => emit('update:busy', value), { immediate: true, flush: 'sync' });
 let submission: { batchId: string; body: CreateProductionTrackingCardPayload } | null = null;
 // 已成功生成的盘量作为本任务下一盘默认，不再计作未保存草稿。
 let quantityBaseline = 1;
@@ -130,9 +123,11 @@ async function allowClose(): Promise<boolean> {
   if (createQuantity.value === quantityBaseline) return true;
   return confirmDiscard('本盘数量尚未用于建卡，确认放弃并关闭工作台？');
 }
-async function abandonCreate(): Promise<void> {
-  if (!active.value || !createRecovery.value || creating.value) return;
-  await confirmDiscard('请先核对追踪卡列表，确认本次建卡是否已成功。确认放弃本次未确认提交？');
+function restartCreate(): void {
+  if (!active.value || creating.value) return;
+  createIntent.reset();
+  createStatus.value = 'idle';
+  submission = null;
 }
 async function createCard(): Promise<void> {
   if (creating.value || !active.value || props.disabled) return;

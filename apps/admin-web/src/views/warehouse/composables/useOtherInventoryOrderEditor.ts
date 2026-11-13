@@ -390,6 +390,12 @@ export function useOtherInventoryOrderEditor(
     if (!retainedCommand || submitting.value || status !== 'pending' || !reader.isActive()) return;
     await run(retainedCommand);
   }
+  function restart(): void {
+    if (submitting.value) return;
+    intent.reset();
+    intentStatus.value = 'idle';
+    retainedCommand = null;
+  }
   const unregister = useTabsStore().registerCloseGuard(
     routeName,
     async () => !visible.value || (await canDiscard()),
@@ -430,5 +436,6 @@ export function useOtherInventoryOrderEditor(
     confirm,
     cancel,
     retry,
+    restart,
   };
 }

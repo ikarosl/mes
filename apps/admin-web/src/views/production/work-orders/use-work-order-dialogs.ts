@@ -59,11 +59,12 @@ export const useWorkOrderDialogs = (options: {
   };
 
   const openForm = async (row: WorkOrderItem, nextRound: boolean) => {
+    if (options.orderDialogVisible.value) return;
     if (!options.beginRow(row.id)) return;
     const request = ++generation;
     try {
       const response = await productionWorkOrdersApi.getOrder(row.id);
-      if (request !== generation) return;
+      if (request !== generation || options.orderDialogVisible.value) return;
       const detail = requireWorkOrderDetail(response, row.id);
       if (nextRound) {
         if (!canStartNextResearchRound(detail)) {

@@ -12,8 +12,16 @@
     :title="`人工追加需求${batch ? ` · ${batch.batchNo}` : ''}`"
     :width="DialogWidth.xl"
     :close-on-click-modal="false"
-    @update:model-value="handleVisibleChange"
+    :before-close="() => close()"
   >
+    <SubmissionRecoveryNotice
+      :status="intentStatus"
+      :busy="submitting"
+      records-label="物料需求记录"
+      allow-restart
+      @retry="submit"
+      @restart="restartSubmission"
+    />
     <div v-loading="loading">
       <el-alert
         :title="policyDescription"
@@ -118,7 +126,7 @@
       <el-button
         type="primary"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="unresolved || !canSubmit"
         @click="submit"
       >
         确认追加
@@ -129,8 +137,10 @@
 
 <script setup lang="ts">
 import ResearchMaterialDemandDialog from './ResearchMaterialDemandDialog.vue';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import type {
+  AddManualMaterialDemandsPayload,
   MaterialDemandManagementRow,
   MaterialDemandManagementVariant,
   ProductionBatchItem,
@@ -138,7 +148,10 @@ import type {
 import { useTabsStore } from '../../../stores/tabs';
 import { productionMaterialDemandsApi } from '../../../api/production/material-demands';
 import { loadBatchMaterialDemands } from './load-batch-material-demands';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import {
+  useIdempotentIntent,
+  type IdempotentIntentStatus,
+} from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
@@ -157,7 +170,15 @@ const intent = useIdempotentIntent();
 
 const policyDescription =
   '可一次追加多种冻结 BOM 物料；每种物料固定使用本任务初始需求锁定的唯一版本。';
-const unresolved = ref(false);
+const intentStatus = ref<IdempotentIntentStatus>('idle');
+const unresolved = computed(() => intentStatus.value !== 'idle');
+let pendingSubmission: { batchId: string; body: AddManualMaterialDemandsPayload } | null = null;
+function restartSubmission(): void {
+  if (submitting.value) return;
+  intent.reset();
+  intentStatus.value = 'idle';
+  pendingSubmission = null;
+}
 const selectedRows = computed(() => rows.value.filter((row) => row.selected));
 const canSubmit = computed(
   () =>
@@ -212,34 +233,41 @@ const load = async (): Promise<void> => {
   }
 };
 const submit = async (): Promise<void> => {
-  if (!props.batch || !canSubmit.value || submitting.value) return;
-  const body = {
-    reason: reason.value.trim(),
-    requirements: selectedRows.value.map((row) => ({
-      materialId: row.materialId,
-      splits: row.splits.map((split) => ({ ...split })),
-    })),
-  };
+  if (submitting.value) return;
+  if (!pendingSubmission) {
+    if (!props.batch || !canSubmit.value) return;
+    pendingSubmission = {
+      batchId: props.batch.id,
+      body: {
+        reason: reason.value.trim(),
+        requirements: selectedRows.value.map((row) => ({
+          materialId: row.materialId,
+          splits: row.splits.map((split) => ({ ...split })),
+        })),
+      },
+    };
+  }
+  const { batchId, body } = pendingSubmission;
   submitting.value = true;
   try {
     const result = await intent.execute(
       {
         intentType: 'production.material-demands.add-manual',
-        params: { batchId: props.batch.id },
+        params: { batchId },
         query: {},
         body,
       },
-      (key) => productionMaterialDemandsApi.addManualMaterialDemands(props.batch!.id, body, key),
+      (key) => productionMaterialDemandsApi.addManualMaterialDemands(batchId, body, key),
     );
     intent.reset();
-    unresolved.value = false;
     EMessage.success(`人工追加需求 ${result.additionNo} 已生成`);
     emit('update:visible', false);
     emit('added');
   } catch (error) {
-    unresolved.value = intent.getStatus() !== 'idle';
     EMessage.error(error, '人工追加需求生成失败');
   } finally {
+    intentStatus.value = intent.getStatus();
+    if (intentStatus.value === 'idle') pendingSubmission = null;
     submitting.value = false;
   }
 };
@@ -258,16 +286,11 @@ const close = async (): Promise<boolean> => {
       return false;
     }
   }
-  intent.reset();
-  unresolved.value = false;
+  restartSubmission();
   emit('update:visible', false);
   return true;
 };
 onScopeDispose(useTabsStore().registerCloseGuard('production-tasks', () => close()));
-const handleVisibleChange = (visible: boolean): void => {
-  if (visible) emit('update:visible', true);
-  else void close();
-};
 
 watch(
   () => [props.visible, props.batch?.id] as const,

@@ -3,9 +3,17 @@
     :model-value="visible"
     :title="dialogTitle"
     :width="DialogWidth.lg"
-    @update:model-value="$emit('update:visible', $event)"
+    :before-close="() => emit('update:visible', false)"
     @open="onOpen"
   >
+    <SubmissionRecoveryNotice
+      :status="intentStatus"
+      :busy="submitting"
+      records-label="工单列表"
+      allow-restart
+      @retry="emit('retry')"
+      @restart="emit('restart')"
+    />
     <el-alert
       v-if="previousResearchOrder"
       type="info"
@@ -29,7 +37,7 @@
       class="dialog-form"
       label-width="108px"
       :model="form"
-      :disabled="submitting"
+      :disabled="submitting || intentStatus !== 'idle'"
     >
       <div class="form-grid">
         <el-form-item label="工单号">
@@ -202,6 +210,7 @@
       <el-button
         type="primary"
         :loading="submitting"
+        :disabled="intentStatus !== 'idle'"
         @click="handleSubmit"
         >保存工单</el-button
       >
@@ -218,6 +227,8 @@ import type {
   ResearchWorkOrderReference,
 } from '@company/contracts';
 import { WORK_ORDER_TYPE_LABELS } from '@company/constants';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
+import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { toDateInputValue } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
@@ -232,12 +243,15 @@ const props = defineProps<{
   productOptions: ProductOption[];
   productOptionsStatus: RefreshableStatus;
   submitting: boolean;
+  intentStatus: IdempotentIntentStatus;
 }>();
 
 const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'refresh-products'): void;
   (e: 'save', data: WorkOrderFormValue): void;
+  (e: 'retry'): void;
+  (e: 'restart'): void;
 }>();
 
 /** 工单负责人采用表单自己的完整候选，打开和显式刷新时核验。 */
@@ -277,6 +291,7 @@ const initialForm = (): WorkOrderFormValue => ({
 });
 
 const form = reactive<WorkOrderFormValue>(initialForm());
+let initialSignature = JSON.stringify(form);
 const dialogTitle = computed(() => {
   if (props.editingOrderId) return '编辑工单';
   if (form.previousResearchOrderId) return '开启下一轮研发';
@@ -323,6 +338,7 @@ const resetForm = (): void => {
   displayedWorkOrderNo.value = '';
   previousResearchOrder.value = null;
   originalOwner.value = null;
+  initialSignature = JSON.stringify(form);
 };
 
 const setForm = (row: WorkOrderDetail): void => {
@@ -344,6 +360,7 @@ const setForm = (row: WorkOrderDetail): void => {
     externalOrderNo: row.externalOrderNo ?? '',
     remark: row.remark ?? '',
   });
+  initialSignature = JSON.stringify(form);
 };
 
 const startNextRound = (row: WorkOrderDetail): void => {
@@ -369,9 +386,11 @@ const startNextRound = (row: WorkOrderDetail): void => {
     externalOrderNo: row.externalOrderNo ?? '',
     remark: row.remark ?? '',
   });
+  initialSignature = JSON.stringify(form);
 };
 
 const handleSubmit = (): void => {
+  if (props.submitting || props.intentStatus !== 'idle') return;
   if (!form.productId || !Number.isInteger(form.plannedQuantity) || form.plannedQuantity <= 0) {
     EMessage.warning('请选择产品并填写计划数量');
     return;
@@ -405,7 +424,12 @@ const handleSubmit = (): void => {
   emit('save', { ...form });
 };
 
-defineExpose({ setForm, resetForm, startNextRound });
+defineExpose({
+  setForm,
+  resetForm,
+  startNextRound,
+  isDirty: () => JSON.stringify(form) !== initialSignature,
+});
 </script>
 
 <style scoped>

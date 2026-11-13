@@ -40,7 +40,7 @@ interface DemandCorrectionEditor {
   submitting: Ref<boolean>;
   confirming: Ref<boolean>;
   unresolved: ComputedRef<boolean>;
-  unresolvedMessage: ComputedRef<string>;
+  intentStatus: Ref<IdempotentIntentStatus>;
   error: Ref<string>;
   writeError: Ref<string>;
   kind: Ref<DemandCorrectionKind>;
@@ -57,6 +57,7 @@ interface DemandCorrectionEditor {
   load(): Promise<boolean>;
   adoptCurrentBasis(): Promise<void>;
   submit(): Promise<void>;
+  restart(): void;
   close(done?: () => void): Promise<boolean>;
 }
 
@@ -112,13 +113,6 @@ export function useDemandCorrection(
     basis.value?.demandType === 'manual_additional' ? ['quantity', 'close'] : ['quantity'],
   );
   const unresolved = computed(() => intentStatus.value !== 'idle');
-  const unresolvedMessage = computed(() => {
-    if (intentStatus.value === 'blocked')
-      return '暂时无法确认本次操作结果，已暂停提交。请先在需求追溯中核对审批结果，仍无法确认时请联系管理员。';
-    if (intentStatus.value === 'expired')
-      return '本次提交已超过可重试时限。请先在需求追溯中核对审批结果，确认后再重新办理。';
-    return '暂时无法确认本次操作是否成功，本次填写内容已保留，暂不能修改。请重试本次提交或先在需求追溯中核对审批结果。';
-  });
   const dirty = computed(
     () =>
       !!basis.value &&
@@ -281,6 +275,15 @@ export function useDemandCorrection(
     initialTarget = '';
     reason.value = '';
   }
+  function restart(): void {
+    if (submitting.value || confirming.value) return;
+    intent.reset();
+    intentStatus.value = 'idle';
+    pending = null;
+    writeError.value = '';
+    needsRecheck.value = true;
+    ready.value = false;
+  }
 
   async function submit(): Promise<void> {
     if (!canSubmit.value) return;
@@ -426,7 +429,7 @@ export function useDemandCorrection(
     submitting,
     confirming,
     unresolved,
-    unresolvedMessage,
+    intentStatus,
     error,
     writeError,
     kind,
@@ -443,6 +446,7 @@ export function useDemandCorrection(
     load,
     adoptCurrentBasis,
     submit,
+    restart,
     close,
   };
 }

@@ -66,6 +66,14 @@
           </el-tooltip>
         </template>
       </TableToolbar>
+      <SubmissionRecoveryNotice
+        :status="orders.confirmIntentStatus.value"
+        :busy="orders.confirmSubmitting.value"
+        :records-label="`出库单 ${orders.confirmingNo.value} 的出库记录`"
+        allow-restart
+        @retry="confirmOrder()"
+        @restart="orders.resetConfirmIntent"
+      />
 
       <el-table
         v-loading="orders.loading.value"
@@ -176,6 +184,11 @@
               link
               type="success"
               :loading="isPending('confirm', row.outboundId)"
+              :disabled="
+                orders.confirmSubmitting.value ||
+                orders.confirmIntentStatus.value !== 'idle' ||
+                isPending('cancel', row.outboundId)
+              "
               @click="confirmOrder(row)"
               >确认出库</el-button
             >
@@ -184,6 +197,10 @@
               link
               type="danger"
               :loading="isPending('cancel', row.outboundId)"
+              :disabled="
+                row.outboundId === orders.confirmingId.value &&
+                (orders.confirmSubmitting.value || orders.confirmIntentStatus.value !== 'idle')
+              "
               @click="cancelOrder(row)"
               >取消</el-button
             >
@@ -208,11 +225,12 @@
       :option-loading="orders.optionLoading.value"
       :candidate-loading="orders.candidateLoading.value"
       :submitting="createSubmitting"
-      :intent-status="orders.getCreateIntentStatus()"
+      :intent-status="orders.createIntentStatus.value"
       @load-candidates="loadCandidates"
       @reset-intent="orders.resetCreateIntent"
       @resolve-batch="resolveBlockedBatch"
       @submit="submitCreate"
+      @retry="submitCreate()"
     />
 
     <MaterialOutboundOrderDetailDialog
@@ -236,6 +254,7 @@ import type {
 } from '@company/contracts';
 import { OUTBOUND_ORDER_STATUSES, OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import TableToolbar from '../../../components/TableToolbar.vue';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { useTabsStore } from '../../../stores/tabs';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
@@ -294,6 +313,7 @@ const handlePageChange = (value: number) => {
 };
 
 const openCreate = async (): Promise<void> => {
+  if (createVisible.value || createSubmitting.value) return;
   createVisible.value = true;
   try {
     await orders.loadBatchOptions();
@@ -309,23 +329,25 @@ const loadCandidates = async (batchId: string): Promise<void> => {
   }
 };
 const submitCreate = async (
-  batchId: string,
-  payload: CreateMaterialOutboundPayload,
+  batchId?: string,
+  payload?: CreateMaterialOutboundPayload,
 ): Promise<void> => {
   if (createSubmitting.value) return;
   createSubmitting.value = true;
+  let outbound: MaterialOutboundItem;
   try {
-    const outbound = await orders.create(batchId, payload);
+    outbound = await orders.create(batchId, payload);
     EMessage.success(`待出库单 ${outbound.outboundNo} 已创建，库存尚未扣减`);
     createVisible.value = false;
-    if (pageActive.value) {
-      await loadRows();
-      if (pageActive.value) await openDetail(outbound.outboundId);
-    }
   } catch (error) {
     EMessage.error(error, '待出库单创建失败');
+    return;
   } finally {
     createSubmitting.value = false;
+  }
+  if (pageActive.value) {
+    await loadRows();
+    if (pageActive.value) await openDetail(outbound.outboundId);
   }
 };
 
@@ -337,25 +359,36 @@ const openDetail = async (outboundId: string): Promise<void> => {
     EMessage.error(error, '出库单详情加载失败');
   }
 };
-const confirmOrder = async (row: MaterialOutboundItem): Promise<void> => {
+const confirmOrder = async (row?: MaterialOutboundItem): Promise<void> => {
+  if (orders.confirmSubmitting.value) return;
+  if (row && orders.confirmIntentStatus.value !== 'idle') return;
+  let result: MaterialOutboundItem | null;
   try {
-    await ElMessageBox.confirm(
-      `将确认整张单据 ${row.outboundNo}。确认后每条明细立即生成负库存流水；已确认单当前不能直接取消或修改。若库存不足或分配状态变化，整单失败且不会部分扣减。`,
-      '确认生产领料出库',
-      { type: 'warning', confirmButtonText: '确认整单出库', cancelButtonText: '返回核对' },
-    );
-    const result = await orders.confirm(row);
+    if (row)
+      await ElMessageBox.confirm(
+        `将确认整张单据 ${row.outboundNo}。确认后每条明细立即生成负库存流水；已确认单当前不能直接取消或修改。若库存不足或分配状态变化，整单失败且不会部分扣减。`,
+        '确认生产领料出库',
+        { type: 'warning', confirmButtonText: '确认整单出库', cancelButtonText: '返回核对' },
+      );
+    result = await orders.confirm(row);
+    if (!result) return;
     EMessage.success(`${result.outboundNo} 已确认，库存流水已生成`);
-    await loadRows();
-    if (
-      pageActive.value &&
-      detailVisible.value &&
-      orders.detail.value?.outboundId === row.outboundId
-    )
-      await orders.loadDetail(row.outboundId);
   } catch (error) {
     if (error === 'cancel' || error === 'close') return;
-    EMessage.error(error, '整单确认失败，未产生部分库存扣减');
+    EMessage.error(error, '整单出库确认未完成');
+    return;
+  }
+  await loadRows();
+  if (
+    pageActive.value &&
+    detailVisible.value &&
+    orders.detail.value?.outboundId === result.outboundId
+  ) {
+    try {
+      await orders.loadDetail(result.outboundId);
+    } catch (error) {
+      EMessage.error(error, '整单出库已确认，详情刷新失败，请刷新核对');
+    }
   }
 };
 const cancelOrder = async (row: MaterialOutboundItem): Promise<void> => {
@@ -482,14 +515,14 @@ onScopeDispose(
   useTabsStore().registerCloseGuard('warehouse-outbound', async () => {
     if (createSubmitting.value || orders.pendingKeys.value.size) return false;
     if (createVisible.value && !(await createDialog.value?.canDiscard())) return false;
-    if (orders.hasUnconfirmedConfirm()) {
+    if (orders.confirmIntentStatus.value !== 'idle') {
       try {
         await ElMessageBox.confirm(
           '上次整单出库结果尚未确认。请先核对出库单列表；关闭标签将放弃原请求的安全重试标识。',
           '放弃未确认出库',
           { type: 'warning', confirmButtonText: '核对后仍要关闭', cancelButtonText: '继续保留' },
         );
-        orders.resetConfirmIntents();
+        orders.resetConfirmIntent();
       } catch {
         return false;
       }

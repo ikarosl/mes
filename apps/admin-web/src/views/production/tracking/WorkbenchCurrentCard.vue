@@ -15,7 +15,6 @@
         </div>
         <el-button
           link
-          :disabled="disabled"
           @click="$emit('clear')"
           >清空当前显示</el-button
         >
@@ -61,7 +60,6 @@
             v-if="card.openAbnormalityCount"
             link
             type="danger"
-            :disabled="disabled"
             @click="$emit('detail')"
           >
             {{ card.openAbnormalityCount }} 条{{
@@ -117,11 +115,7 @@
         @click="$emit('action', 'abnormality')"
         >上报异常</el-button
       >
-      <el-button
-        :disabled="disabled"
-        @click="$emit('detail')"
-        >查看追踪</el-button
-      >
+      <el-button @click="$emit('detail')">查看追踪</el-button>
     </div>
   </div>
 </template>

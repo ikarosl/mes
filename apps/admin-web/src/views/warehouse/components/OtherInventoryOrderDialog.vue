@@ -15,12 +15,14 @@
       class="order-dialog"
     >
       <InlineHint> 草稿不影响库存；确认后整单生效且不可修改。 </InlineHint>
-      <el-alert
+      <SubmissionRecoveryNotice
         v-if="editor.intentStatus.value !== 'idle'"
-        type="warning"
-        :closable="false"
-        show-icon
-        :title="submissionRecoveryMessage(editor.intentStatus.value, '单据列表')"
+        :status="editor.intentStatus.value"
+        :busy="editor.submitting.value"
+        records-label="单据列表"
+        allow-restart
+        @retry="editor.retry"
+        @restart="editor.restart"
       />
       <el-alert
         v-if="editor.readError.value"
@@ -280,14 +282,8 @@
         @click="editor.refresh"
         >刷新单据</el-button
       >
-      <el-button
-        v-if="editor.intentStatus.value === 'pending'"
-        type="warning"
-        :loading="editor.submitting.value"
-        @click="editor.retry"
-        >重试本次提交</el-button
-      >
-      <template v-else-if="editor.intentStatus.value === 'idle'">
+
+      <template v-if="editor.intentStatus.value === 'idle'">
         <el-button
           v-if="editor.isEditing.value"
           type="primary"
@@ -325,7 +321,7 @@
 </template>
 
 <script setup lang="ts">
-import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed } from 'vue';
 import {
   INVENTORY_ITEM_KIND_LABELS,

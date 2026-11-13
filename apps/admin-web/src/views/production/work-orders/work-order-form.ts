@@ -18,4 +18,5 @@ export interface WorkOrderFormHandle {
   setForm: (order: WorkOrderDetail) => void;
   resetForm: () => void;
   startNextRound: (order: WorkOrderDetail) => void;
+  isDirty: () => boolean;
 }

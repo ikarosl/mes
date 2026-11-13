@@ -3,12 +3,14 @@
     <InlineHint class="records-notice">
       其他处理只登记文字说明；退回、报废或暂存等线下处理是否完成不在系统追踪。
     </InlineHint>
-    <el-alert
-      v-if="command.status.value !== 'idle'"
-      :title="submissionRecoveryMessage(command.status.value, '其他处理说明')"
-      type="warning"
-      :closable="false"
-      class="records-notice"
+    <SubmissionRecoveryNotice
+      :status="command.status.value"
+      :busy="command.busy.value"
+      records-label="其他处理说明"
+      allow-restart
+      :retry-disabled="!active || !read.isActive()"
+      @retry="command.retry"
+      @restart="command.discard"
     />
     <el-form
       v-if="recording"
@@ -32,15 +34,7 @@
       </el-form-item>
     </el-form>
     <div class="handling-actions">
-      <el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        :disabled="!active || !read.isActive()"
-        @click="command.retry"
-        >重试本次提交</el-button
-      >
-      <template v-else-if="command.status.value === 'idle'">
+      <template v-if="command.status.value === 'idle'">
         <el-button
           v-if="!recording"
           type="primary"
@@ -116,6 +110,7 @@
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, ref, watch } from 'vue';
 import { RequestError } from '@company/request';
 import { PROCUREMENT_RECEIPT_HANDLING_NOTE_MAX_LENGTH } from '@company/constants';
@@ -127,7 +122,6 @@ import type {
 import { procurementApi } from '../../../api/procurement';
 import InlineHint from '../../../components/InlineHint.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
-import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';

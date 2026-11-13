@@ -22,22 +22,38 @@
           >{{ editingCard.batchNo }} · {{ editingCard.productName }}</el-descriptions-item
         >
       </el-descriptions>
-      <el-alert
+      <SubmissionRecoveryNotice
         v-if="recovery"
-        :title="submissionRecoveryMessage(intentStatus, '追踪卡详情')"
-        type="warning"
-        show-icon
-        :closable="false"
-        class="context"
+        :status="intentStatus"
+        :busy="submitting"
+        records-label="追踪卡详情"
+        :retry-disabled="!reads.isActive()"
+        allow-restart
+        @retry="submit"
+        @restart="resetIntent"
       />
       <el-alert
         v-else-if="basisChanged"
-        title="追踪卡数量或状态已更新，本次输入仍保留。请关闭后重新打开，核对当前盘量与异常后再办理。"
+        title="追踪卡数量或状态已更新，本次输入仍保留。请刷新核对办理依据，再检查当前盘量与异常后提交。"
         type="warning"
         show-icon
         :closable="false"
         class="context"
       />
+      <el-alert
+        v-if="basisError"
+        :title="basisError"
+        type="error"
+        :closable="false"
+        class="context"
+      />
+      <el-button
+        :loading="basisLoading"
+        :disabled="submitting || recovery"
+        @click="refreshBasis"
+        >刷新核对办理依据</el-button
+      >
+      <InlineHint>刷新后采用当前追踪卡与异常资料，保留本次填写；请核对后再提交。</InlineHint>
       <InlineHint v-if="editingAction === 'output'">
         本次将以当前剩余盘量
         <strong>{{ formatQuantity(editingCard.quantity) }} {{ editingCard.unit }}</strong>
@@ -125,7 +141,7 @@
             <el-input-number
               v-model="form.affectedQuantity"
               :min="1"
-              :max="Number(editingCard.quantity)"
+              :max="Math.max(Number(editingCard.quantity), form.affectedQuantity ?? 0)"
               :precision="0"
               :step="1"
               placeholder="填写受影响数量"
@@ -152,9 +168,12 @@
                 v-model="form.repairedQuantity"
                 :min="0"
                 :max="
-                  Math.min(
-                    Number(editingAbnormality.affectedQuantity),
-                    Number(editingCard.quantity),
+                  Math.max(
+                    form.repairedQuantity ?? 0,
+                    Math.min(
+                      Number(editingAbnormality.affectedQuantity),
+                      Number(editingCard.quantity),
+                    ),
                   )
                 "
                 :precision="0"
@@ -169,9 +188,12 @@
                 v-model="form.scrappedQuantity"
                 :min="0"
                 :max="
-                  Math.min(
-                    Number(editingAbnormality.affectedQuantity),
-                    Number(editingCard.quantity),
+                  Math.max(
+                    form.scrappedQuantity ?? 0,
+                    Math.min(
+                      Number(editingAbnormality.affectedQuantity),
+                      Number(editingCard.quantity),
+                    ),
                   )
                 "
                 :precision="0"
@@ -215,7 +237,12 @@
                 <el-input-number
                   v-model="reference.quantity"
                   :min="1"
-                  :max="Number(scrapSource(reference.handlingId)?.handling.scrappedQuantity ?? 0)"
+                  :max="
+                    Math.max(
+                      reference.quantity ?? 0,
+                      Number(scrapSource(reference.handlingId)?.handling.scrappedQuantity ?? 0),
+                    )
+                  "
                   :precision="0"
                   :step="1"
                   :disabled="!reference.handlingId"
@@ -286,27 +313,18 @@
         >取消</el-button
       >
       <el-button
-        v-if="recovery"
-        @click="abandonIntent"
-        >核对后放弃本次提交</el-button
-      >
-      <el-button
         :type="editingAction === 'void' ? 'danger' : 'primary'"
         :loading="submitting"
-        :disabled="
-          succeeded ||
-          (!recovery && basisChanged) ||
-          intentStatus === 'blocked' ||
-          intentStatus === 'expired'
-        "
+        :disabled="succeeded || recovery || basisChanged || basisLoading || Boolean(basisError)"
         @click="submit"
-        >{{ recovery ? '重试本次提交' : TRACKING_ACTION_LABELS[editingAction] }}</el-button
+        >{{ TRACKING_ACTION_LABELS[editingAction] }}</el-button
       >
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onScopeDispose, reactive, ref, watch } from 'vue';
 import type {
   ConfirmProductionTrackingOutputPayload,
@@ -323,7 +341,6 @@ import { productionTrackingApi } from '../../../api/production/tracking';
 import InlineHint from '../../../components/InlineHint.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import {
-  submissionRecoveryMessage,
   useIdempotentIntent,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
@@ -402,7 +419,7 @@ const basisChanged = computed(() =>
   Boolean(
     editingCard.value &&
     props.card?.id === editingCard.value.id &&
-    props.card.version !== editingCard.value.version,
+    props.card.version > editingCard.value.version,
   ),
 );
 const involvedSteps = computed(() => {
@@ -474,6 +491,40 @@ const textLabel = computed(
 const reads = useLatestReadRequest(() => {
   personnelLoading.value = false;
 });
+const basisLoading = ref(false),
+  basisError = ref('');
+const basisReads = useLatestReadRequest(() => {
+  basisLoading.value = false;
+});
+async function refreshBasis(): Promise<void> {
+  const cardId = editingCard.value?.id;
+  if (!cardId || !props.visible || submitting.value || recovery.value || !basisReads.isActive())
+    return;
+  const read = basisReads.begin(() => props.visible && editingCard.value?.id === cardId);
+  basisLoading.value = true;
+  basisError.value = '';
+  try {
+    const card = await productionTrackingApi.detail(cardId, {
+      signal: read.signal,
+      skipErrorHandling: true,
+    });
+    if (!read.isCurrent()) return;
+    if (card.id !== cardId) throw new Error('追踪卡资料与当前目标不一致，请重新核对');
+    editingCard.value = card;
+    if (editingAbnormality.value) {
+      editingAbnormality.value =
+        card.abnormalities.find((item) => item.id === editingAbnormality.value?.id) ?? null;
+      if (!editingAbnormality.value)
+        basisError.value = '原异常已不在当前追踪卡资料中，请核对异常记录';
+    }
+  } catch (error) {
+    if (read.isCurrent())
+      basisError.value =
+        error instanceof Error ? error.message : '追踪卡办理依据读取失败，请刷新重试';
+  } finally {
+    if (read.isCurrent()) basisLoading.value = false;
+  }
+}
 let initialSignature = '';
 async function loadPersonnel(): Promise<void> {
   if (!props.visible || !reads.isActive()) return;
@@ -495,11 +546,13 @@ watch(
   (visible) => {
     if (!visible) {
       reads.invalidate();
+      basisReads.invalidate();
       return;
     }
     editingCard.value = props.card ? { ...props.card } : null;
     editingAbnormality.value = props.abnormality ? { ...props.abnormality } : null;
     editingAction.value = props.action;
+    basisError.value = '';
     Object.assign(form, {
       personnelId: props.defaultPersonnelId || '',
       quantity: Number(props.card?.quantity ?? 1),
@@ -522,6 +575,7 @@ watch(
   },
 );
 function resetIntent(): void {
+  if (submitting.value) return;
   intent.reset();
   intentStatus.value = 'idle';
   pendingSubmission = null;
@@ -550,9 +604,6 @@ async function requestClose(value: boolean): Promise<void> {
 }
 async function beforeClose(done: () => void): Promise<void> {
   if (await allowClose()) done();
-}
-async function abandonIntent(): Promise<void> {
-  if (await allowClose()) emit('update:visible', false);
 }
 function createSubmission(card: ProductionTrackingCardDetail): TrackingActionSubmission | null {
   const action = editingAction.value;
@@ -703,7 +754,7 @@ async function submit(): Promise<void> {
     submitting.value ||
     succeeded.value ||
     !reads.isActive() ||
-    (!recovery.value && basisChanged.value)
+    (!recovery.value && (basisChanged.value || basisLoading.value || Boolean(basisError.value)))
   )
     return;
   const submission = pendingSubmission ?? createSubmission(card);

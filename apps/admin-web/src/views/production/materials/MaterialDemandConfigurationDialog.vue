@@ -5,8 +5,16 @@
     :width="DialogWidth.workbench"
     workbench
     :close-on-click-modal="false"
-    @update:model-value="handleVisibleChange"
+    :before-close="() => close()"
   >
+    <SubmissionRecoveryNotice
+      :status="intentStatus"
+      :busy="submitting"
+      records-label="物料需求记录"
+      allow-restart
+      @retry="submit"
+      @restart="restartSubmission"
+    />
     <div v-loading="loading">
       <el-alert
         v-if="loadError"
@@ -179,7 +187,7 @@
       <el-button
         type="primary"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="unresolved || !canSubmit"
         @click="submit"
       >
         确认生成需求
@@ -190,7 +198,9 @@
 
 <script setup lang="ts">
 import { computed, onScopeDispose, ref, watch } from 'vue';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import type {
+  ConfigureMaterialDemandsPayload,
   MaterialDemandManagementRow,
   MaterialDemandManagementVariant,
   ProductionBatchItem,
@@ -198,7 +208,10 @@ import type {
 import { useTabsStore } from '../../../stores/tabs';
 import { productionMaterialDemandsApi } from '../../../api/production/material-demands';
 import { loadBatchMaterialDemands } from './load-batch-material-demands';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import {
+  useIdempotentIntent,
+  type IdempotentIntentStatus,
+} from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
@@ -215,7 +228,15 @@ const loadError = ref(false);
 let loadVersion = 0;
 const submitting = ref(false);
 const intent = useIdempotentIntent();
-const unresolved = ref(false);
+const intentStatus = ref<IdempotentIntentStatus>('idle');
+const unresolved = computed(() => intentStatus.value !== 'idle');
+let pendingSubmission: { batchId: string; body: ConfigureMaterialDemandsPayload } | null = null;
+function restartSubmission(): void {
+  if (submitting.value) return;
+  intent.reset();
+  intentStatus.value = 'idle';
+  pendingSubmission = null;
+}
 const keyword = ref('');
 const viewMode = ref<'all' | 'pending'>('all');
 const expandedHints = ref<string[]>([]);
@@ -316,36 +337,43 @@ const load = async (): Promise<void> => {
   }
 };
 const submit = async (): Promise<void> => {
-  if (!props.batch || !canSubmit.value || submitting.value) return;
-  const body = {
-    requirements: rows.value.map((row) => ({
-      productMaterialId: row.productMaterialId!,
-      splits: row.splits.map((split) => ({
-        ...split,
-        supplierHint: row.supplierHint?.trim() || null,
-      })),
-    })),
-  };
+  if (submitting.value) return;
+  if (!pendingSubmission) {
+    if (!props.batch || !canSubmit.value) return;
+    pendingSubmission = {
+      batchId: props.batch.id,
+      body: {
+        requirements: rows.value.map((row) => ({
+          productMaterialId: row.productMaterialId!,
+          splits: row.splits.map((split) => ({
+            ...split,
+            supplierHint: row.supplierHint?.trim() || null,
+          })),
+        })),
+      },
+    };
+  }
+  const { batchId, body } = pendingSubmission;
   submitting.value = true;
   try {
     await intent.execute(
       {
         intentType: 'production.material-demands.configure',
-        params: { batchId: props.batch.id },
+        params: { batchId },
         query: {},
         body,
       },
-      (key) => productionMaterialDemandsApi.configureMaterialDemands(props.batch!.id, body, key),
+      (key) => productionMaterialDemandsApi.configureMaterialDemands(batchId, body, key),
     );
     intent.reset();
-    unresolved.value = false;
     EMessage.success('初始物料需求已完整生成');
     emit('update:visible', false);
     emit('configured');
   } catch (error) {
-    unresolved.value = intent.getStatus() !== 'idle';
     EMessage.error(error, '初始物料需求生成失败');
   } finally {
+    intentStatus.value = intent.getStatus();
+    if (intentStatus.value === 'idle') pendingSubmission = null;
     submitting.value = false;
   }
 };
@@ -374,16 +402,11 @@ const close = async (): Promise<boolean> => {
       return false;
     }
   }
-  intent.reset();
-  unresolved.value = false;
+  restartSubmission();
   emit('update:visible', false);
   return true;
 };
 onScopeDispose(useTabsStore().registerCloseGuard('production-tasks', () => close()));
-const handleVisibleChange = (visible: boolean): void => {
-  if (visible) emit('update:visible', true);
-  else void close();
-};
 
 watch(
   () => [props.visible, props.batch?.id] as const,

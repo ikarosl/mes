@@ -13,12 +13,14 @@
         type="info"
         :closable="false"
       />
-      <el-alert
-        v-if="intentStatus !== 'idle'"
+      <SubmissionRecoveryNotice
+        :status="intentStatus"
+        :busy="submitting"
         class="blocked-summary"
-        type="warning"
-        :closable="false"
-        title="制单结果尚未确认，原任务、明细和数量已保留；请重试原制单或核对出库单列表。"
+        records-label="生产领料出库单列表"
+        allow-restart
+        @retry="emit('retry')"
+        @restart="restartSubmission"
       />
       <el-form
         class="create-form"
@@ -88,6 +90,12 @@
         v-loading="candidateLoading"
         class="candidate-groups"
       >
+        <el-alert
+          v-if="!controlsLocked && unavailableSelection"
+          title="部分已选分配当前不可制单，原选择与数量仍保留；请重新核对，或取消这些行后再提交。"
+          type="warning"
+          :closable="false"
+        />
         <el-empty
           v-if="candidateGroups.length === 0"
           description="请选择生产批次，或当前批次没有可制单分配行"
@@ -103,12 +111,14 @@
           </div>
           <el-table
             :data="group.rows"
+            row-key="allocationId"
             @selection-change="handleGroupSelection(group.generationGroupKey, $event)"
           >
             <el-table-column
               type="selection"
               width="50"
               :selectable="() => !controlsLocked"
+              :reserve-selection="true"
             />
             <el-table-column
               label="物料"
@@ -167,7 +177,12 @@
                 <el-input-number
                   v-model="quantities[row.allocationId]"
                   :min="1"
-                  :max="Number(row.availableToOrderQuantity)"
+                  :max="
+                    Math.max(
+                      Number(row.availableToOrderQuantity),
+                      quantities[row.allocationId] ?? 0,
+                    )
+                  "
                   :step="1"
                   :precision="0"
                   :disabled="controlsLocked"
@@ -188,10 +203,10 @@
       <el-button
         type="primary"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="controlsLocked || !canSubmit"
         @click="submit"
       >
-        {{ intentStatus === 'pending' ? '重试原制单' : '创建待出库单' }}
+        创建待出库单
       </el-button>
     </template>
   </el-dialog>
@@ -199,6 +214,7 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import type {
   CreateMaterialOutboundPayload,
   MaterialOutboundBatchOption,
@@ -227,6 +243,7 @@ const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   loadCandidates: [batchId: string];
   resetIntent: [];
+  retry: [];
   resolveBatch: [batchNo: string];
   submit: [batchId: string, payload: CreateMaterialOutboundPayload];
 }>();
@@ -238,7 +255,16 @@ const selectedByGroup = reactive<Record<string, MaterialOutboundCandidateItem[]>
 const controlsLocked = computed(() => props.submitting || props.intentStatus !== 'idle');
 const chosenCandidates = computed(() => Object.values(selectedByGroup).flat());
 const candidateGroups = computed(() =>
-  groupMaterialDemandRows(controlsLocked.value ? chosenCandidates.value : props.candidates),
+  groupMaterialDemandRows(
+    controlsLocked.value
+      ? chosenCandidates.value
+      : [
+          ...props.candidates,
+          ...chosenCandidates.value.filter(
+            (row) => !props.candidates.some((current) => current.allocationId === row.allocationId),
+          ),
+        ],
+  ),
 );
 const eligibleBatchOptions = computed(() =>
   props.batchOptions.filter((option) => option.outboundEligibility.eligible),
@@ -249,8 +275,13 @@ const blockedBatchOptions = computed(() =>
 const selectedCandidates = computed(() => {
   if (controlsLocked.value) return chosenCandidates.value;
   const currentRows = new Map(props.candidates.map((row) => [row.allocationId, row]));
-  return chosenCandidates.value.flatMap((row) => currentRows.get(row.allocationId) ?? []);
+  return chosenCandidates.value.map((row) => currentRows.get(row.allocationId) ?? row);
 });
+const unavailableSelection = computed(() =>
+  selectedCandidates.value.some(
+    (row) => !props.candidates.some((current) => current.allocationId === row.allocationId),
+  ),
+);
 const selectedGroupCount = computed(
   () => new Set(selectedCandidates.value.map((row) => row.generationGroupKey)).size,
 );
@@ -263,6 +294,7 @@ const canSubmit = computed(
       (props.intentStatus === 'idle' &&
         eligibleBatchOptions.value.some((option) => option.productionBatchId === batchId.value))) &&
     selectedCandidates.value.length > 0 &&
+    !unavailableSelection.value &&
     selectedCandidates.value.every((row) => {
       const quantity = quantities[row.allocationId];
       return (
@@ -278,14 +310,11 @@ const dirty = computed(() =>
 const variantCode = (row: { materialVariantCode?: string | null }): string =>
   row.materialVariantCode || '未记录版本';
 
-watch(
-  () => props.candidates,
-  (candidates) => {
-    if (controlsLocked.value) return;
-    for (const row of candidates)
-      quantities[row.allocationId] ??= Number(row.availableToOrderQuantity);
-  },
-);
+watch([() => props.candidates, controlsLocked], ([candidates, locked]) => {
+  if (locked) return;
+  for (const row of candidates)
+    quantities[row.allocationId] ??= Number(row.availableToOrderQuantity);
+});
 watch(
   () => props.modelValue,
   (visible) => {
@@ -306,7 +335,7 @@ const handleGroupSelection = (
   selectedByGroup[generationGroupKey] = rows;
 };
 const submit = (): void => {
-  if (!canSubmit.value || props.submitting) return;
+  if (!canSubmit.value || controlsLocked.value) return;
   emit('submit', batchId.value, {
     details: selectedCandidates.value.map((row) => ({
       allocationId: row.allocationId,
@@ -314,6 +343,9 @@ const submit = (): void => {
     })),
     remark: remark.value,
   });
+};
+const restartSubmission = (): void => {
+  if (!props.submitting) emit('resetIntent');
 };
 const resolveBatch = async (batchNo: string): Promise<void> => {
   if (await canDiscard()) emit('resolveBatch', batchNo);

@@ -1,5 +1,5 @@
 import { RequestError } from '@company/request';
-import { IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
+import { CONCURRENCY_ERROR_CODES, IDEMPOTENCY_RESULT_CORRUPT } from '@company/constants';
 
 /**
  * 客户端业务输入快照（idempotency.md §9）：
@@ -21,7 +21,7 @@ interface PendingIntent {
   signature: string;
   /** 第一次正式提交（生成 K1）的时刻（ms），用于判定意图是否超出服务端重放保证窗口。 */
   firstAttemptAt: number;
-  /** 服务端幂等结果损坏（IDEMPOTENCY_RESULT_CORRUPT）后置位：阻止继续提交，直到用户显式 reset。 */
+  /** 结果损坏或服务端指纹冲突：阻止继续提交，直到核对结果后显式 reset。 */
   blocked?: boolean;
 }
 
@@ -55,7 +55,7 @@ export const submissionRecoveryMessage = (
     return `暂时无法确认本次操作结果，已暂停提交。请先核对${recordsLabel}，仍无法确认时请联系管理员。`;
   if (status === 'expired')
     return `本次提交已超过可重试时限，不能继续重试。请先核对${recordsLabel}中是否已成功，确认后再重新办理。`;
-  return `暂时无法确认本次操作是否成功，本次操作内容已保留，暂不能修改。请重试本次提交或先核对${recordsLabel}。`;
+  return `提交结果待确认，已保留本次内容。请重试或核对${recordsLabel}。`;
 };
 
 /**
@@ -96,12 +96,15 @@ export const isCorruptFailure = (error: unknown): boolean =>
   error instanceof RequestError && error.code === IDEMPOTENCY_RESULT_CORRUPT;
 
 /**
- * 模糊失败：无响应/断网（status 0）或按契约可重试的 5xx，重试应复用原键；
+ * 模糊失败：未分类异常、无响应/断网、超时或 5xx，恢复应复用原键；
  * 结果损坏（IDEMPOTENCY_RESULT_CORRUPT）除外——它需要人工处理而非自动重试。
  */
 export const isAmbiguousFailure = (error: unknown): boolean => {
-  if (!(error instanceof RequestError)) return false;
-  return (error.status === 0 || error.status >= 500) && !isCorruptFailure(error);
+  // 未分类异常也可能发生在服务端已提交之后，不能据此释放原键。
+  if (!(error instanceof RequestError)) return true;
+  return (
+    (error.status === 0 || error.status === 408 || error.status >= 500) && !isCorruptFailure(error)
+  );
 };
 
 interface CryptoWithRandomUuid {
@@ -134,7 +137,7 @@ const createUuid = (): string => {
  * 业务意图幂等键生命周期：
  *  - 实例由页面/弹窗局部持有，不得放入 Pinia Store；
  *  - 第一次正式提交才生成键；模糊失败（断网/无响应/可重试 5xx）复用原键；
- *  - 业务内容变化、明确成功或明确失败后清除；
+ *  - 明确成功或首次尝试明确被拒绝后清除；未知结果只能恢复原提交或核对后显式放弃；
  *  - 意图超出服务端 12 小时重放保证窗口后不再发送旧键、也不自动换新键，提示核对业务结果后由用户
  *    显式 reset 放弃（见 IDEMPOTENT_INTENT_TTL_MS / isIntentExpired）；
  *  - API wrapper 只接收并转发键，不生成、不保存。
@@ -142,12 +145,15 @@ const createUuid = (): string => {
  */
 export const useIdempotentIntent = (entityLabel = '批次') => {
   let intent: PendingIntent | null = null;
+  let inFlight = false;
 
   const execute = async <TResult>(
     snapshot: ClientIntentSnapshot,
     submit: (key: string) => Promise<TResult>,
   ): Promise<TResult> => {
+    if (inFlight) throw new Error('当前操作正在提交，请稍候');
     const signature = stableClientSignature(snapshot); // 归一化快照生成稳定签名
+    const recovering = intent !== null;
     if (!intent) {
       // 从未提交的草稿（idle）：第一次正式提交才生成 K1，12 小时窗口从此刻起算。
       intent = { key: createUuid(), signature, firstAttemptAt: Date.now() };
@@ -170,28 +176,36 @@ export const useIdempotentIntent = (entityLabel = '批次') => {
     }
     if (current.signature !== signature) {
       // 模糊失败（pending）后修改表单：不换键、不盲发，提示核对结果后由用户显式放弃。
-      //todo:这里幂等键的判断需要看一下上下文，我发现问题的场景是，当上一次某窗口提交失败后，在窗口内的操作中切换表单再次提交，百分百触发该提示，但实际是该接口前后端联调有问题，状态码是500
       throw new Error(
         `暂时无法确认上次${entityLabel}操作是否成功，请勿修改后重复提交。请先核对相关记录`,
       );
     }
     const key = current.key;
+    inFlight = true;
     try {
       const result = await submit(key);
       intent = null;
       return result;
     } catch (error) {
-      if (isCorruptFailure(error)) {
-        // 结果损坏：阻塞当前意图并保留原键供人工处理，不重试、不自动换新键。
+      if (
+        isCorruptFailure(error) ||
+        (error instanceof RequestError &&
+          error.code === CONCURRENCY_ERROR_CODES.idempotencyConflict)
+      ) {
         current.blocked = true;
-      } else if (!isAmbiguousFailure(error)) {
+      } else if (!recovering && !isAmbiguousFailure(error)) {
+        // 只在首次尝试明确被拒绝时结束意图。重试的鉴权/DTO等拒绝发生在重放前，
+        // 无法证明先前结果未知的请求没有提交，必须保留原键及请求。
         intent = null;
       }
       throw error;
+    } finally {
+      inFlight = false;
     }
   };
 
   const reset = (): void => {
+    if (inFlight) return;
     intent = null;
   };
 

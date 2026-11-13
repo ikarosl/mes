@@ -33,12 +33,13 @@
         :closable="false"
         class="notice"
       />
-      <el-alert
-        v-if="command.status.value !== 'idle'"
-        :title="submissionRecoveryMessage(command.status.value, '采购单金额')"
-        type="warning"
-        :closable="false"
-        class="notice"
+      <SubmissionRecoveryNotice
+        :status="command.status.value"
+        :busy="command.busy.value"
+        records-label="采购单金额"
+        allow-restart
+        @retry="command.retry"
+        @restart="command.discard"
       />
       <template v-if="order">
         <el-descriptions
@@ -315,15 +316,9 @@
         @click="load"
         >重新读取</el-button
       >
+
       <el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        @click="command.retry"
-        >重试本次提交</el-button
-      >
-      <el-button
-        v-else-if="eligible"
+        v-if="command.status.value === 'idle' && eligible"
         type="primary"
         :disabled="!canSave"
         :loading="command.busy.value"
@@ -335,6 +330,7 @@
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onScopeDispose } from 'vue';
 import type {
   PurchaseFulfillmentMode,
@@ -349,7 +345,6 @@ import {
   PURCHASE_ORDER_STATUS_LABELS,
   PURCHASE_ORDER_SUPPLEMENT_REASON_LABELS,
 } from '@company/constants';
-import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { useTabsStore } from '../../../stores/tabs';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { DialogWidth } from '../../../utils/dialog';

@@ -22,12 +22,13 @@
         :closable="false"
         class="notice"
       />
-      <el-alert
-        v-if="command.status.value !== 'idle'"
-        :title="submissionRecoveryMessage(command.status.value, '到货记录')"
-        type="warning"
-        :closable="false"
-        class="notice"
+      <SubmissionRecoveryNotice
+        :status="command.status.value"
+        :busy="command.busy.value"
+        records-label="到货记录"
+        allow-restart
+        @retry="command.retry"
+        @restart="command.discard"
       />
       <template v-if="detail">
         <el-descriptions
@@ -122,15 +123,9 @@
         @click="load"
         >重新核对</el-button
       >
+
       <el-button
-        v-if="command.status.value === 'pending'"
-        type="danger"
-        :loading="command.busy.value"
-        @click="command.retry"
-        >重试原操作</el-button
-      >
-      <el-button
-        v-else
+        v-if="command.status.value === 'idle'"
         type="danger"
         :disabled="!canConfirm"
         :loading="command.busy.value"
@@ -141,9 +136,9 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import type { VoidProcurementReceiptCommandResult } from '@company/contracts';
 import InlineHint from '../../../components/InlineHint.vue';
-import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { useReceiptVoid } from '../composables/useReceiptVoid';
 

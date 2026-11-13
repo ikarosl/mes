@@ -39,7 +39,9 @@
         <el-select
           id="workbench-step"
           v-model="stepId"
-          :disabled="!context || contextLoading || setupLocked"
+          :disabled="
+            !context || contextLoading || scanning || scanRecovery || createBusy || bulkVisible
+          "
           :placeholder="context ? '选择任务工序' : '请先选择任务'"
         >
           <el-option
@@ -69,7 +71,7 @@
         <el-button
           :icon="Refresh"
           :loading="contextLoading || personnelLoading"
-          :disabled="setupLocked"
+          :disabled="scanning || createBusy"
           text
           circle
           aria-label="刷新任务和人员准备信息"
@@ -155,7 +157,7 @@
                   ref="scanInput"
                   v-model="scanText"
                   size="large"
-                  :disabled="!canWork || setupLocked"
+                  :disabled="!canWork || scanning || scanRecovery || createBusy || bulkVisible"
                   placeholder="扫描追踪卡或输入追踪码"
                   maxlength="160"
                   clearable
@@ -170,15 +172,9 @@
                   size="large"
                   type="primary"
                   :loading="scanning"
-                  :disabled="
-                    createLocked ||
-                    bulkVisible ||
-                    (!scanRecovery && !canWork) ||
-                    scanStatus === 'blocked' ||
-                    scanStatus === 'expired'
-                  "
+                  :disabled="scanning || scanRecovery || createBusy || bulkVisible || !canWork"
                 >
-                  {{ scanRecovery ? '重试本次登记' : '扫码到站' }}
+                  扫码到站
                 </el-button>
               </div>
             </div>
@@ -195,7 +191,7 @@
               link
               type="primary"
               :loading="personnelLoading"
-              :disabled="setupLocked"
+              :disabled="scanning || createBusy"
               @click="loadPersonnel"
               >重新加载人员</el-button
             >
@@ -206,12 +202,13 @@
               :batch-id="batchId"
               :personnel-id="personnelId"
               :can-create="canWork && stepId === context?.steps[0]?.stepRecordId"
-              :disabled="scanning || scanRecovery || bulkVisible"
+              :disabled="scanning || bulkVisible"
               @update:locked="createLocked = $event"
+              @update:busy="createBusy = $event"
               @created="cardCreated"
             />
             <el-button
-              :disabled="!canWork || setupLocked"
+              :disabled="!canWork || scanning || createBusy || bulkVisible"
               @click="bulkVisible = true"
               >批量预生成</el-button
             >
@@ -223,21 +220,16 @@
               >查看全部追踪卡 <el-icon><ArrowRight /></el-icon
             ></el-button>
           </div>
-          <el-alert
+          <SubmissionRecoveryNotice
             v-if="scanRecovery"
-            :title="submissionRecoveryMessage(scanStatus, '追踪卡到站与交接记录')"
-            type="warning"
-            show-icon
-            :closable="false"
-            class="scan-notice"
-          >
-            <el-button
-              link
-              :disabled="scanning"
-              @click="abandonScan"
-              >核对后放弃本次提交</el-button
-            >
-          </el-alert>
+            :status="scanStatus"
+            :busy="scanning"
+            records-label="追踪卡到站与交接记录"
+            :retry-disabled="createBusy || bulkVisible || !contextReads.isActive()"
+            allow-restart
+            @retry="scan"
+            @restart="restartScan"
+          />
           <el-alert
             v-else-if="scanError"
             :title="scanError"
@@ -252,7 +244,7 @@
             :step-id="stepId"
             :personnel-name="selectedPersonnel?.name || ''"
             :result-label="scanResultLabel"
-            :disabled="setupLocked"
+            :disabled="scanning || createBusy || bulkVisible"
             @clear="clearCurrentCard"
             @detail="openCurrentDetail"
             @action="openCurrentAction"
@@ -327,11 +319,13 @@
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowRight, FullScreen, InfoFilled, Refresh } from '@element-plus/icons-vue';
 import type { InputInstance } from 'element-plus';
 import type {
+  ScanProductionTrackingCardPayload,
   PersonnelOption,
   ProductionTrackingAbnormality,
   ProductionTrackingCardDetail,
@@ -346,7 +340,6 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import {
-  submissionRecoveryMessage,
   useIdempotentIntent,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
@@ -409,7 +402,11 @@ async function loadContext(): Promise<void> {
     if (!read.isCurrent()) return;
     context.value = value;
     contextVerified.value = true;
-    if (!value.steps.some((step) => step.stepRecordId === stepId.value))
+    if (
+      !scanRecovery.value &&
+      !scanning.value &&
+      !value.steps.some((step) => step.stepRecordId === stepId.value)
+    )
       stepId.value = value.steps[0]?.stepRecordId ?? '';
   } catch (error) {
     if (read.isCurrent())
@@ -496,6 +493,7 @@ const scanInput = ref<InputInstance>(),
 const scanRecovery = computed(() => scanStatus.value !== 'idle');
 const createBar = ref<InstanceType<typeof WorkbenchCreateCardBar>>();
 const createLocked = ref(false);
+const createBusy = ref(false);
 const bulkVisible = ref(false);
 const setupLocked = computed(
   () => scanRecovery.value || scanning.value || createLocked.value || bulkVisible.value,
@@ -503,13 +501,13 @@ const setupLocked = computed(
 const currentCard = ref<ProductionTrackingCardDetail | null>(null);
 const scanResultLabel = ref('');
 const scanError = ref('');
+let scanSubmission: { batchId: string; body: ScanProductionTrackingCardPayload } | null = null;
 function clearCurrentCard(): void {
-  if (setupLocked.value) return;
   currentCard.value = null;
   scanResultLabel.value = '';
 }
 function scanInputChanged(): void {
-  if (setupLocked.value) return;
+  if (scanning.value || scanRecovery.value) return;
   clearCurrentCard();
   scanError.value = '';
 }
@@ -558,7 +556,7 @@ async function openDetail(cardId: string, targetBatchId: string): Promise<void> 
 }
 async function openCurrentDetail(): Promise<void> {
   const card = currentCard.value;
-  if (card && !setupLocked.value) await openDetail(card.id, card.productionBatchId);
+  if (card) await openDetail(card.id, card.productionBatchId);
 }
 async function openReportDetail(report: ProductionTrackingVisit): Promise<void> {
   await openDetail(report.trackingCardId, report.productionBatchId);
@@ -569,31 +567,35 @@ watch(detailVisible, (visible) => {
 async function scan(): Promise<void> {
   if (
     scanning.value ||
-    createLocked.value ||
+    createBusy.value ||
     bulkVisible.value ||
     !contextReads.isActive() ||
     (!scanRecovery.value && !canWork.value)
   )
     return;
-  const data = {
-    cardNo: scanText.value.trim(),
-    stepRecordId: stepId.value,
-    personnelId: personnelId.value,
-  };
-  if (!data.cardNo) {
-    EMessage.warning('请扫描或输入追踪码');
-    return;
+  if (!scanSubmission) {
+    if (!batchId.value || !canWork.value) return;
+    const cardNo = scanText.value.trim();
+    if (!cardNo) {
+      EMessage.warning('请扫描或输入追踪码');
+      return;
+    }
+    scanSubmission = {
+      batchId: batchId.value,
+      body: { cardNo, stepRecordId: stepId.value, personnelId: personnelId.value },
+    };
   }
+  const submission = scanSubmission;
   if (!scanRecovery.value) clearCurrentCard();
   scanError.value = '';
   let shouldFocus = false;
   scanning.value = true;
   try {
     const result = await scanIntent.execute(
-      { intentType: 'production.tracking.scan', params: {}, query: {}, body: data },
-      (key) => productionTrackingApi.scan(data, key),
+      { intentType: 'production.tracking.scan', params: {}, query: {}, body: submission.body },
+      (key) => productionTrackingApi.scan(submission.body, key),
     );
-    if (contextReads.isActive()) {
+    if (contextReads.isActive() && batchId.value === submission.batchId) {
       currentCard.value = result.card;
       scanText.value = '';
       if (result.duplicate) {
@@ -614,6 +616,7 @@ async function scan(): Promise<void> {
     EMessage.error(error, '到站与交接登记失败');
   } finally {
     scanStatus.value = scanIntent.getStatus();
+    if (scanStatus.value === 'idle') scanSubmission = null;
     scanning.value = false;
     if (shouldFocus && contextReads.isActive()) {
       await nextTick();
@@ -621,19 +624,12 @@ async function scan(): Promise<void> {
     }
   }
 }
-async function abandonScan(): Promise<void> {
-  try {
-    await RouteMessageBox.confirm(
-      '请先核对本盘到站与交接记录。确认放弃本次未确认提交？',
-      '放弃提交',
-      { type: 'warning' },
-    );
-    scanIntent.reset();
-    scanStatus.value = 'idle';
-    scanError.value = '';
-  } catch {
-    /* 用户保留本次提交。 */
-  }
+function restartScan(): void {
+  if (scanning.value) return;
+  scanIntent.reset();
+  scanStatus.value = 'idle';
+  scanSubmission = null;
+  scanError.value = '';
 }
 
 async function cardCreated(card: ProductionTrackingCardDetail): Promise<void> {
@@ -686,7 +682,8 @@ function openAction(
   actionVisible.value = true;
 }
 function openCurrentAction(value: TrackingCardAction): void {
-  if (currentCard.value && !setupLocked.value) openAction(currentCard.value, value);
+  if (currentCard.value && !scanning.value && !createBusy.value && !bulkVisible.value)
+    openAction(currentCard.value, value);
 }
 function openDetailAction(value: TrackingCardAction, item?: ProductionTrackingAbnormality): void {
   if (

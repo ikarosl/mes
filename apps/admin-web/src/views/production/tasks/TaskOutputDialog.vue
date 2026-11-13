@@ -27,12 +27,15 @@
       <InlineHint
         >终检只登记产出。选择同一任务的待入库记录，按整条产出合并入库；本次入库将增加库存，已入库记录不能撤销。任务结束后仍可入库。</InlineHint
       >
-      <el-alert
+      <SubmissionRecoveryNotice
         v-if="recovery"
-        :title="submissionRecoveryMessage(intentStatus, '产出记录与成品入库记录')"
-        type="warning"
-        :closable="false"
-        show-icon
+        :status="intentStatus"
+        :busy="submitting"
+        records-label="产出记录与成品入库记录"
+        :retry-disabled="!reads.isActive() || revokeSubmitting || Boolean(revokingOutput)"
+        allow-restart
+        @retry="submitInbound"
+        @restart="restartInbound"
       />
       <el-alert
         v-if="error"
@@ -43,7 +46,7 @@
       />
       <el-form
         :inline="true"
-        :disabled="controlsLocked"
+        :disabled="submitting || revokeSubmitting"
         class="query-form"
       >
         <el-form-item label="产出状态">
@@ -183,7 +186,7 @@
           :page-size="20"
           :total="total"
           layout="prev, pager, next"
-          :disabled="controlsLocked"
+          :disabled="submitting || revokeSubmitting"
           @current-change="changePage"
         />
       </div>
@@ -299,9 +302,9 @@
       ><el-button
         type="primary"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="recovery || !canSubmit"
         @click="submitInbound"
-        >{{ recovery ? '重试本次入库' : '确认成品入库' }}</el-button
+        >确认成品入库</el-button
       ></template
     >
   </el-dialog>
@@ -325,12 +328,15 @@
       <InlineHint
         >撤销会保留原记录和原因。追踪卡产出撤销后回到末站待终检，后续须重新确认产出；已入库产出不可撤销。</InlineHint
       >
-      <el-alert
+      <SubmissionRecoveryNotice
         v-if="revokeStatus !== 'idle'"
-        :title="submissionRecoveryMessage(revokeStatus, '产出记录')"
-        type="warning"
-        :closable="false"
-        show-icon
+        :status="revokeStatus"
+        :busy="revokeSubmitting"
+        records-label="产出记录"
+        :retry-disabled="!reads.isActive()"
+        allow-restart
+        @retry="submitRevoke"
+        @restart="restartRevoke"
       />
       <el-form
         label-width="96px"
@@ -353,15 +359,16 @@
       ><el-button
         type="danger"
         :loading="revokeSubmitting"
-        :disabled="revokeStatus === 'blocked' || revokeStatus === 'expired'"
+        :disabled="revokeStatus !== 'idle'"
         @click="submitRevoke"
-        >{{ revokeStatus === 'pending' ? '重试本次撤销' : '确认撤销产出' }}</el-button
+        >确认撤销产出</el-button
       ></template
     >
   </el-dialog>
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { TableInstance } from 'element-plus';
@@ -380,7 +387,6 @@ import InlineHint from '../../../components/InlineHint.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import {
   useIdempotentIntent,
-  submissionRecoveryMessage,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
@@ -424,6 +430,12 @@ const submitting = ref(false),
   intentStatus = ref<IdempotentIntentStatus>('idle');
 const intent = useIdempotentIntent('成品入库');
 let pendingInbound: { batchId: string; body: CreateProductionOutputInboundPayload } | null = null;
+function restartInbound(): void {
+  if (submitting.value) return;
+  intent.reset();
+  intentStatus.value = 'idle';
+  pendingInbound = null;
+}
 const recovery = computed(() => intentStatus.value !== 'idle');
 const controlsLocked = computed(() => submitting.value || recovery.value || !!revokingOutput.value);
 const selectedQuantity = computed(() =>
@@ -709,6 +721,12 @@ const revokingOutput = ref<ProductionOutputItem | null>(null),
   revokeStatus = ref<IdempotentIntentStatus>('idle');
 const revokeIntent = useIdempotentIntent('产出撤销');
 let pendingRevoke: { outputId: string; batchId: string; reason: string } | null = null;
+function restartRevoke(): void {
+  if (revokeSubmitting.value) return;
+  revokeIntent.reset();
+  revokeStatus.value = 'idle';
+  pendingRevoke = null;
+}
 let closeApproved = false,
   revokeCloseApproved = false;
 function openRevoke(item: ProductionOutputItem): void {

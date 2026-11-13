@@ -23,11 +23,13 @@
         type="error"
         :closable="false"
       />
-      <el-alert
-        v-if="command.status.value !== 'idle'"
-        title="创建结果尚未确认，输入已锁定。请重试原操作或先核对采购单记录。"
-        type="warning"
-        :closable="false"
+      <SubmissionRecoveryNotice
+        :status="command.status.value"
+        :busy="command.busy.value"
+        records-label="采购单记录"
+        allow-restart
+        @retry="command.retry"
+        @restart="command.discard"
       />
       <div class="order-context">
         <template v-if="order">
@@ -299,15 +301,9 @@
         @click="close"
         >取消</el-button
       >
+
       <el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        @click="command.retry"
-        >重试原操作</el-button
-      >
-      <el-button
-        v-else-if="!isExcessSource"
+        v-if="command.status.value === 'idle' && !isExcessSource"
         type="primary"
         :disabled="!canSave"
         :loading="command.busy.value || submittingCheck"
@@ -334,6 +330,7 @@
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, nextTick, onScopeDispose, ref, watch } from 'vue';
 import type { PurchaseOrderSupplementReason } from '@company/contracts';
 import {

@@ -21,12 +21,13 @@
       :closable="false"
       class="notice"
     />
-    <el-alert
-      v-if="command.status.value !== 'idle'"
-      title="操作结果尚未确认，当前输入已锁定。请重试原操作或核对列表记录。"
-      type="warning"
-      :closable="false"
-      class="notice"
+    <SubmissionRecoveryNotice
+      :status="command.status.value"
+      :busy="command.busy.value"
+      records-label="采购单列表"
+      allow-restart
+      @retry="command.retry"
+      @restart="command.discard"
     />
     <el-alert
       v-if="supplement"
@@ -297,15 +298,9 @@
         @click="close"
         >关闭</el-button
       >
+
       <el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        @click="command.retry"
-        >重试原操作</el-button
-      >
-      <el-button
-        v-else
+        v-if="command.status.value === 'idle'"
         type="primary"
         :disabled="!canSave"
         :loading="command.busy.value"
@@ -332,6 +327,7 @@
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { onScopeDispose, ref, watch } from 'vue';
 import type { TableInstance } from 'element-plus';
 import {

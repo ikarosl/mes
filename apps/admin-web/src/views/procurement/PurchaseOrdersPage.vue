@@ -251,18 +251,6 @@
                 @click="handleAction(row.id, 'close-order')"
                 >结束整单</el-button
               >
-              <el-button
-                v-if="
-                  row.status === 'ordered' &&
-                  row.supplementReason !== 'excess_purchase' &&
-                  auth.can(PERMISSIONS.warehouse.receipts.view)
-                "
-                link
-                type="primary"
-                :disabled="blocked"
-                @click="goReceipts(row.id)"
-                >记录到货</el-button
-              >
             </div>
           </template>
         </el-table-column>
@@ -317,7 +305,6 @@ import type {
   PurchaseOrderSupplementReason,
 } from '@company/contracts';
 import {
-  PERMISSIONS,
   PURCHASE_ORDER_SOURCE_TYPES,
   PURCHASE_ORDER_SOURCE_TYPE_LABELS,
   PURCHASE_ORDER_STATUSES,
@@ -343,14 +330,12 @@ import RelatedSupplementsDialog from './components/RelatedSupplementsDialog.vue'
 import PurchaseOrderSupplementDialog from './components/PurchaseOrderSupplementDialog.vue';
 import PurchaseOrderLineReceiptRecordsDialog from './components/PurchaseOrderLineReceiptRecordsDialog.vue';
 import { usePurchaseOrderExpansion } from './composables/usePurchaseOrderExpansion';
-import { useAuthStore } from '../../stores/auth';
 import { useRouteAccess } from '../../composables/useRouteAccess';
 import { useTableActionColumn } from '../../composables/useTableActionColumn';
 
 defineOptions({ name: 'PurchaseOrdersPage' });
 const route = useRoute(),
   router = useRouter();
-const auth = useAuthStore();
 const { canAccessRoute } = useRouteAccess();
 const expansion = usePurchaseOrderExpansion();
 const hasExplicitEntry = (): boolean =>
@@ -720,10 +705,6 @@ const openReceiptRecords = async (orderId: string, lineId: string): Promise<void
   } finally {
     finishNavigation();
   }
-};
-const goReceipts = async (id: string) => {
-  if (auth.can(PERMISSIONS.warehouse.receipts.view) && (await releaseDialogs()))
-    await router.push({ name: 'procurement-receipts', query: { purchaseOrderId: id } });
 };
 const goSourceReceipt = async (id: string) => {
   if (canAccessRoute({ name: 'procurement-receipts' }) && (await releaseDialogs()))

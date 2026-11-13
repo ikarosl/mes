@@ -7,12 +7,13 @@
     :before-close="beforeClose"
     :show-close="!command.busy.value"
   >
-    <el-alert
-      v-if="command.status.value !== 'idle'"
-      :title="submissionRecoveryMessage(command.status.value, '到货记录')"
-      type="warning"
-      :closable="false"
-      class="notice"
+    <SubmissionRecoveryNotice
+      :status="command.status.value"
+      :busy="command.busy.value"
+      records-label="到货记录"
+      allow-restart
+      @retry="command.retry"
+      @restart="command.discard"
     />
     <el-alert
       v-if="stale"
@@ -173,13 +174,7 @@
         @click="close"
         >关闭</el-button
       ><el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        @click="command.retry"
-        >重试本次提交</el-button
-      ><el-button
-        v-else
+        v-if="command.status.value === 'idle'"
         type="primary"
         :loading="command.busy.value"
         :disabled="!canConfirm"
@@ -190,9 +185,9 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { fromBeijingDateTimeInputValue, toBeijingDateTimeInputValue } from '../../../utils/date';
-import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import { useReceiptEditor } from '../composables/useReceiptEditor';

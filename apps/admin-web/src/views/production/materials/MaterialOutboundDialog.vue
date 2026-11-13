@@ -6,7 +6,7 @@
     :close-on-click-modal="false"
     :show-close="!submitting"
     :close-on-press-escape="!submitting"
-    @update:model-value="$emit('update:visible', $event)"
+    :before-close="() => emit('update:visible', false)"
   >
     <div class="dialog-body">
       <el-alert
@@ -14,14 +14,34 @@
         type="info"
         :closable="false"
       />
-      <el-alert
-        v-if="intentStatus !== 'idle'"
+      <SubmissionRecoveryNotice
+        :status="intentStatus"
+        :busy="submitting"
         class="outbound-groups"
+        records-label="领料出库单列表"
+        allow-restart
+        @retry="emit('retry')"
+        @restart="emit('restart')"
+      />
+      <el-button
+        :loading="loadingDemands || loadingOutbounds"
+        class="outbound-groups"
+        @click="emit('refresh')"
+        >刷新领料数据</el-button
+      >
+      <el-alert
+        v-if="(!demandsReady || !outboundsReady) && !loadingDemands && !loadingOutbounds"
+        title="领料数据尚未读取成功，请刷新后再创建新的出库单。"
         type="warning"
         :closable="false"
-        title="上次制单结果尚未确认，原明细与数量已保留；请重试原操作或先核对出库单列表。"
       />
       <div class="outbound-groups">
+        <el-alert
+          v-if="!controlsLocked && unavailableSelection"
+          title="部分已选分配当前不可制单，原选择与数量仍保留；请刷新核对，或取消这些行后再提交。"
+          type="warning"
+          :closable="false"
+        />
         <section
           v-for="group in allocationGroups"
           :key="group.generationGroupKey"
@@ -33,12 +53,14 @@
           </div>
           <el-table
             :data="group.rows"
+            row-key="allocationId"
             @selection-change="handleGroupSelection(group.generationGroupKey, $event)"
           >
             <el-table-column
               type="selection"
               width="50"
               :selectable="() => !controlsLocked"
+              :reserve-selection="true"
             />
             <el-table-column
               prop="itemName"
@@ -93,7 +115,12 @@
                 <el-input-number
                   v-model="quantities[row.allocationId]"
                   :min="1"
-                  :max="Number(row.availableToOrderQuantity)"
+                  :max="
+                    Math.max(
+                      Number(row.availableToOrderQuantity),
+                      quantities[row.allocationId] ?? 0,
+                    )
+                  "
                   :step="1"
                   :precision="0"
                   :disabled="controlsLocked"
@@ -158,7 +185,7 @@
         :loading="submitting"
         :disabled="submitting || !canSubmit"
         @click="submit"
-        >{{ intentStatus === 'pending' ? '重试原制单' : '创建待出库单' }}</el-button
+        >创建待出库单</el-button
       ></template
     >
   </el-dialog>
@@ -177,6 +204,7 @@ import { formatQuantity } from '../../../utils/quantity';
 import { OUTBOUND_ORDER_STATUS_LABELS } from '@company/constants';
 import { groupMaterialDemandRows } from './material-demand-group-presentation';
 import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 type OutboundAllocation = ProductionMaterialAllocationItem & {
   itemName: string;
   generationGroupKey: string;
@@ -190,10 +218,15 @@ const props = defineProps<{
   loadingOutbounds: boolean;
   submitting: boolean;
   loadingDemands: boolean;
+  demandsReady: boolean;
+  outboundsReady: boolean;
   intentStatus: IdempotentIntentStatus;
 }>();
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
+  (e: 'retry'): void;
+  (e: 'restart'): void;
+  (e: 'refresh'): void;
   (
     e: 'submit',
     payload: {
@@ -225,11 +258,27 @@ const availableAllocations = computed<OutboundAllocation[]>(() =>
 const selection = computed(() => {
   if (controlsLocked.value) return chosenAllocations.value;
   const currentRows = new Map(availableAllocations.value.map((row) => [row.allocationId, row]));
-  return chosenAllocations.value.flatMap((row) => currentRows.get(row.allocationId) ?? []);
+  return chosenAllocations.value.map((row) => currentRows.get(row.allocationId) ?? row);
 });
+const unavailableSelection = computed(() =>
+  selection.value.some(
+    (row) =>
+      !availableAllocations.value.some((current) => current.allocationId === row.allocationId),
+  ),
+);
 const allocationGroups = computed(() =>
   groupMaterialDemandRows(
-    controlsLocked.value ? chosenAllocations.value : availableAllocations.value,
+    controlsLocked.value
+      ? chosenAllocations.value
+      : [
+          ...availableAllocations.value,
+          ...chosenAllocations.value.filter(
+            (row) =>
+              !availableAllocations.value.some(
+                (current) => current.allocationId === row.allocationId,
+              ),
+          ),
+        ],
   ),
 );
 const selectedGroupCount = computed(
@@ -237,10 +286,13 @@ const selectedGroupCount = computed(
 );
 const canSubmit = computed(
   () =>
+    props.demandsReady &&
+    props.outboundsReady &&
     !props.loadingDemands &&
     !props.loadingOutbounds &&
-    (props.intentStatus === 'pending' || props.intentStatus === 'idle') &&
+    props.intentStatus === 'idle' &&
     selection.value.length > 0 &&
+    !unavailableSelection.value &&
     selection.value.every((row) => {
       const quantity = quantities[row.allocationId];
       return (
@@ -250,14 +302,14 @@ const canSubmit = computed(
       );
     }),
 );
-watch(availableAllocations, (rows) => {
-  if (controlsLocked.value) return;
+watch([availableAllocations, controlsLocked], ([rows, locked]) => {
+  if (locked) return;
   for (const row of rows) quantities[row.allocationId] ??= Number(row.availableToOrderQuantity);
 });
 watch(
   () => props.visible,
   (visible) => {
-    if (!visible) return;
+    if (!visible || props.intentStatus !== 'idle') return;
     clearSelections();
     remark.value = '';
     for (const row of availableAllocations.value)

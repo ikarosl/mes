@@ -27,12 +27,14 @@
       type="warning"
       :closable="false"
       class="notice"
-    /><el-alert
-      v-if="command.status.value !== 'idle'"
-      :title="submissionRecoveryMessage(command.status.value, '检验报告历史')"
-      type="warning"
-      :closable="false"
-      class="notice"
+    /><SubmissionRecoveryNotice
+      :status="command.status.value"
+      :busy="command.busy.value"
+      records-label="检验报告历史"
+      allow-restart
+      :retry-disabled="!canRead"
+      @retry="command.retry"
+      @restart="command.discard"
     />
     <div v-loading="loading || templateLoading">
       <ReceiptVoidNotice
@@ -273,14 +275,7 @@
         :disabled="!canRead || loading || recordsLoading || currentReportLoading"
         @click="refresh"
         >刷新</el-button
-      ><el-button
-        v-if="command.status.value === 'pending'"
-        type="primary"
-        :loading="command.busy.value"
-        :disabled="!canRead"
-        @click="command.retry"
-        >重试本次提交</el-button
-      ><template v-else-if="command.status.value === 'idle'"
+      ><template v-if="command.status.value === 'idle'"
         ><el-button
           v-if="currentReportId && (focusedReportId !== currentReportId || reportError)"
           :disabled="!canRead || recordsLoading || currentReportLoading"
@@ -311,12 +306,12 @@
   </el-dialog>
 </template>
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { QualityInspectionMethod } from '@company/contracts';
 import { QUALITY_INSPECTION_METHOD_LABELS } from '@company/constants';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
-import { submissionRecoveryMessage } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';

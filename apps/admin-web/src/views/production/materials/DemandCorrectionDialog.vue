@@ -23,15 +23,17 @@
         :closable="false"
         show-icon
       />
-      <el-alert
-        v-if="unresolved"
-        type="warning"
-        :title="unresolvedMessage"
-        :closable="false"
-        show-icon
+      <SubmissionRecoveryNotice
+        :status="intentStatus"
+        :busy="submitting || confirming"
+        records-label="需求追溯与审批记录"
+        :retry-disabled="!canSubmit"
+        allow-restart
+        @retry="editor.submit()"
+        @restart="editor.restart()"
       />
       <el-alert
-        v-if="writeError"
+        v-if="writeError && !unresolved"
         type="error"
         :title="writeError"
         :closable="false"
@@ -167,10 +169,10 @@
         v-if="check?.canCorrect || unresolved || dirty"
         type="primary"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="unresolved || !canSubmit"
         @click="editor.submit()"
       >
-        {{ unresolved ? '重试原提交' : '提交更正审批' }}
+        提交更正审批
       </el-button>
     </template>
   </el-dialog>
@@ -178,6 +180,7 @@
 
 <script setup lang="ts">
 import { DEMAND_CORRECTION_KIND_LABELS } from '@company/constants';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity as quantity } from '../../../utils/quantity';
@@ -200,7 +203,7 @@ const {
   submitting,
   confirming,
   unresolved,
-  unresolvedMessage,
+  intentStatus,
   error,
   writeError,
   kind,

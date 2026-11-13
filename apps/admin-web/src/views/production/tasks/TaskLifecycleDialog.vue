@@ -18,10 +18,10 @@
         :closable="false"
       />
       <el-button
-        v-if="error"
+        :loading="loading"
         :disabled="submitting || recovery"
         @click="load"
-        >重试核对</el-button
+        >刷新核对</el-button
       >
       <template v-if="context">
         <el-descriptions
@@ -116,12 +116,15 @@
             >
           </el-table>
         </template>
-        <el-alert
+        <SubmissionRecoveryNotice
           v-if="recovery"
-          :title="submissionRecoveryMessage(status, '任务状态与产出')"
-          type="warning"
-          show-icon
-          :closable="false"
+          :status="status"
+          :busy="submitting"
+          records-label="任务状态与产出"
+          :retry-disabled="!reads.isActive()"
+          allow-restart
+          @retry="submit"
+          @restart="restartSubmission"
         />
         <el-form
           label-width="100px"
@@ -211,14 +214,15 @@
       ><el-button
         :type="mode === 'finish' ? 'warning' : 'primary'"
         :loading="submitting"
-        :disabled="!canSubmit"
+        :disabled="recovery || !canSubmit"
         @click="submit"
-        >{{ recovery ? '重试本次提交' : title }}</el-button
+        >{{ title }}</el-button
       ></template
     >
   </el-dialog>
 </template>
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onScopeDispose, ref, watch } from 'vue';
 import { PRODUCTION_TASK_FINISH_MODE_LABELS } from '@company/constants';
 import type {
@@ -237,7 +241,6 @@ import InlineHint from '../../../components/InlineHint.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import {
   useIdempotentIntent,
-  submissionRecoveryMessage,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
 import { useTabsStore } from '../../../stores/tabs';
@@ -294,6 +297,12 @@ type Submission =
   | { mode: 'finish'; batchId: string; body: FinishProductionTrackingTaskPayload }
   | { mode: 'research-output'; batchId: string; body: ConfirmProductionResearchOutputPayload };
 let pendingSubmission: Submission | null = null;
+function restartSubmission(): void {
+  if (submitting.value) return;
+  intent.reset();
+  status.value = 'idle';
+  pendingSubmission = null;
+}
 let closeApproved = false;
 const unfinishedCards = computed(
   () =>

@@ -57,20 +57,16 @@
         >本次分盘总量由现场填写，不计完成量或库存。生成后可选择全部或部分标签打印。</InlineHint
       >
     </el-form>
-    <el-alert
+    <SubmissionRecoveryNotice
       v-if="recovery"
-      :title="submissionRecoveryMessage(status, '追踪卡管理')"
-      type="warning"
-      show-icon
-      :closable="false"
-    >
-      <el-button
-        link
-        :disabled="creating"
-        @click="abandon"
-        >核对后放弃本次生成</el-button
-      >
-    </el-alert>
+      :status="status"
+      :busy="creating"
+      records-label="追踪卡管理"
+      :retry-disabled="!active || !visible"
+      allow-restart
+      @retry="submit"
+      @restart="restartSubmission"
+    />
     <template v-if="result.length">
       <el-alert
         title="本批追踪卡已生成，尚未到站"
@@ -123,15 +119,16 @@
         v-else
         type="primary"
         :loading="creating"
-        :disabled="status === 'blocked' || status === 'expired' || (!recovery && !valid)"
+        :disabled="locked || !valid"
         @click="submit"
-        >{{ recovery ? '重试本次生成' : '生成追踪卡' }}</el-button
+        >生成追踪卡</el-button
       >
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import { PRODUCTION_TRACKING_CARD_BATCH_LIMIT } from '@company/constants';
 import type {
@@ -141,7 +138,6 @@ import type {
 import { productionTrackingApi } from '../../../api/production/tracking';
 import InlineHint from '../../../components/InlineHint.vue';
 import {
-  submissionRecoveryMessage,
   useIdempotentIntent,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
@@ -248,18 +244,9 @@ async function allowClose(): Promise<boolean> {
 async function requestClose(): Promise<void> {
   if (await allowClose()) emit('update:visible', false);
 }
-async function abandon(): Promise<void> {
-  if (!active.value || creating.value || !recovery.value) return;
-  try {
-    await RouteMessageBox.confirm(
-      '请先核对追踪卡管理，确认本批是否已生成。确认放弃本次未确认提交？',
-      '放弃本次生成',
-      { type: 'warning' },
-    );
-    resetIntent();
-  } catch {
-    /* 保留原提交，供再次核对和重试。 */
-  }
+function restartSubmission(): void {
+  if (!active.value || creating.value) return;
+  resetIntent();
 }
 async function submit(): Promise<void> {
   if (!active.value || !props.visible || creating.value || result.value.length) return;

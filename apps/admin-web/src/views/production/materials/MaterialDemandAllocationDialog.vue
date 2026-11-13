@@ -3,9 +3,22 @@
     :model-value="visible"
     title="物料需求与分配"
     :width="DialogWidth.xl"
-    @update:model-value="$emit('update:visible', $event)"
+    :before-close="() => emit('update:visible', false)"
   >
+    <SubmissionRecoveryNotice
+      :status="intentStatus"
+      :busy="submitting"
+      records-label="物料需求与分配记录"
+      allow-restart
+      @retry="emit('retry')"
+      @restart="emit('restart')"
+    />
     <div class="demand-toolbar">
+      <el-button
+        :loading="loadingDemands"
+        @click="emit('refresh-demands')"
+        >刷新需求</el-button
+      >
       <el-button
         :disabled="!hasCollapsedGroups"
         @click="expandAllGroups"
@@ -17,12 +30,18 @@
         >全部收起</el-button
       >
     </div>
+    <el-alert
+      v-if="!demandsReady && !loadingDemands"
+      title="物料需求尚未读取成功，请刷新后再办理新的分配。"
+      type="warning"
+      :closable="false"
+    />
     <div
       v-loading="loadingDemands"
       class="dialog-body"
     >
       <el-empty
-        v-if="demandGroups.length === 0 && !loadingDemands"
+        v-if="demandsReady && demandGroups.length === 0 && !loadingDemands"
         description="当前任务没有物料需求"
       />
       <MaterialDemandGroupSection
@@ -51,6 +70,7 @@
                 v-model="selectedDemandId"
                 :value="row.demandId"
                 :aria-label="`选择需求 ${row.itemCode}`"
+                :disabled="controlsLocked"
                 @change="selectDemand(row)"
               />
             </template>
@@ -115,6 +135,7 @@
           v-if="selectedDemandCanAllocate"
           :inline="true"
           class="allocation-form"
+          :disabled="controlsLocked"
         >
           <el-form-item label="库存批次">
             <el-select
@@ -144,7 +165,7 @@
             ><el-button
               type="primary"
               :loading="submitting"
-              :disabled="!canAllocate"
+              :disabled="controlsLocked || !canAllocate"
               @click="submitAllocation"
               >确认分配</el-button
             ></el-form-item
@@ -201,6 +222,8 @@
                 type="danger"
                 :loading="releasePendingIds.has(row.allocationId)"
                 :disabled="
+                  !demandsReady ||
+                  controlsLocked ||
                   selectedDemand?.businessStatus !== 'active' ||
                   Boolean(selectedDemand?.correction?.pendingCorrectionId) ||
                   row.allocationStatus !== 'active' ||
@@ -228,6 +251,8 @@ import type {
   ProductionMaterialDemandItem,
 } from '@company/contracts';
 import { ALLOCATION_STATUS_LABELS, DEMAND_GENERATION_GROUP_TYPE_LABELS } from '@company/constants';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
+import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
 import { DialogWidth } from '../../../utils/dialog';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { formatDateForDisplay } from '../../../utils/date';
@@ -249,12 +274,16 @@ const props = defineProps<{
   availableItemBatches: AvailableItemBatchItem[];
   loadingDemands: boolean;
   loadingAvailable: boolean;
+  demandsReady: boolean;
+  availableReady: boolean;
   submitting: boolean;
+  intentStatus: IdempotentIntentStatus;
   releasePendingIds: Set<string>;
 }>();
 const emit = defineEmits<{
   (e: 'update:visible', value: boolean): void;
   (e: 'load-available', demandId: string): void;
+  (e: 'refresh-demands'): void;
   (
     e: 'allocate',
     payload: {
@@ -262,7 +291,12 @@ const emit = defineEmits<{
     },
   ): void;
   (e: 'release', allocation: ProductionMaterialAllocationItem): void;
+  (e: 'retry'): void;
+  (e: 'restart'): void;
 }>();
+const controlsLocked = computed(
+  () => props.submitting || props.intentStatus !== 'idle' || props.releasePendingIds.size > 0,
+);
 const selectedDemandId = ref<string | null>(null);
 const form = reactive({ itemBatchId: '', assignedQuantity: 1 });
 const selectedDemand = computed(
@@ -338,6 +372,10 @@ const selectedDemandCanAllocate = computed(() => {
 });
 const canAllocate = computed(() =>
   Boolean(
+    props.demandsReady &&
+    props.availableReady &&
+    !props.loadingDemands &&
+    !props.loadingAvailable &&
     selectedDemandCanAllocate.value &&
     selectedBatchMatchesDemand.value &&
     form.itemBatchId &&
@@ -350,6 +388,7 @@ const canAllocate = computed(() =>
 watch(
   () => props.visible,
   (visible) => {
+    if (controlsLocked.value) return;
     collapsedGroupKeys.value = new Set();
     if (visible) selectDefaultDemand();
   },
@@ -357,6 +396,7 @@ watch(
 watch(
   () => props.demands,
   () => {
+    if (controlsLocked.value) return;
     if (selectedDemandId.value && !selectedDemand.value) selectedDemandId.value = null;
     if (props.visible && !selectedDemandId.value) selectDefaultDemand();
   },
@@ -381,7 +421,7 @@ const selectDefaultDemand = (): void => {
   if (demand) selectDemand(demand);
 };
 const selectDemand = (row: ProductionMaterialDemandItem | null) => {
-  if (!row) return;
+  if (!row || controlsLocked.value) return;
   selectedDemandId.value = row.demandId;
   form.itemBatchId = '';
   form.assignedQuantity = Math.max(1, Number(row.remainingQuantity));
@@ -393,7 +433,7 @@ const selectDemand = (row: ProductionMaterialDemandItem | null) => {
     emit('load-available', row.demandId);
 };
 const submitAllocation = () => {
-  if (!selectedDemand.value || !canAllocate.value) return;
+  if (controlsLocked.value || !selectedDemand.value || !canAllocate.value) return;
   emit('allocate', {
     allocations: [
       {
@@ -409,13 +449,14 @@ const handleAvailableVisible = (visible: boolean) => {
     emit('load-available', selectedDemand.value.demandId);
 };
 const confirmRelease = async (row: ProductionMaterialAllocationItem) => {
+  if (controlsLocked.value || !props.demandsReady) return;
   try {
     await RouteMessageBox.confirm(`确认释放库存批次 ${row.batchCode} 的未出库分配？`, '释放分配', {
       type: 'warning',
       confirmButtonText: '确认释放',
       cancelButtonText: '取消',
     });
-    emit('release', row);
+    if (!controlsLocked.value && props.demandsReady) emit('release', row);
   } catch {
     /* 用户取消 */
   }

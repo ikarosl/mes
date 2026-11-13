@@ -371,12 +371,13 @@
             show-word-limit
             :disabled="sources.locked.value" /></el-form-item
       ></el-form>
-      <el-alert
-        v-if="sources.command.status.value !== 'idle'"
-        title="上次确认结果尚未确定，已保留原数量和依据。请核对入库历史后按原操作重试，勿重复发起新入库。"
-        type="warning"
-        show-icon
-        :closable="false"
+      <SubmissionRecoveryNotice
+        :status="sources.command.status.value"
+        :busy="sources.command.busy.value"
+        records-label="入库历史"
+        allow-restart
+        @retry="sources.command.retry"
+        @restart="sources.command.discard"
       />
       <template #footer>
         <el-button
@@ -384,15 +385,9 @@
           @click="sources.close"
           >{{ sources.command.status.value === 'idle' ? '收起并保留' : '核对后关闭' }}</el-button
         >
+
         <el-button
-          v-if="sources.command.status.value === 'pending'"
-          type="primary"
-          :loading="sources.command.busy.value"
-          @click="sources.command.retry"
-          >按原操作重试</el-button
-        >
-        <el-button
-          v-else
+          v-if="sources.command.status.value === 'idle'"
           type="primary"
           :loading="sources.command.busy.value"
           :disabled="sources.locked.value || !sources.canSubmit.value"
@@ -405,6 +400,7 @@
 </template>
 
 <script setup lang="ts">
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, onActivated, onDeactivated, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';

@@ -1,4 +1,4 @@
-import { onScopeDispose, ref } from 'vue';
+import { ref } from 'vue';
 import type {
   CreateProductionBatchPayload,
   ProductionBatchDetail,
@@ -11,15 +11,17 @@ import {
   useIdempotentIntent,
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
-import { useTabsStore } from '../../../stores/tabs';
+import { confirmSubmissionClose } from '../../../composables/idempotency/submission-recovery';
 import { EMessage } from '../../../utils/message';
-import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
 import type { TaskFormValue } from './task-form';
 
 export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
   const createBatchIntent = useIdempotentIntent();
   const taskIntentStatus = ref<IdempotentIntentStatus>('idle');
-  let submittedCreateDraft: TaskFormValue | null = null;
+  let submittedCreateCommand: {
+    workOrderId: string;
+    payload: ReturnType<typeof normalizeCreateBatchPayload>;
+  } | null = null;
   const taskDialogVisible = ref(false),
     detailDialogVisible = ref(false),
     editingTaskId = ref<string | null>(null),
@@ -46,58 +48,36 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
     taskFormDialogRef.value?.resetForm();
     createBatchIntent.reset();
     taskIntentStatus.value = 'idle';
-    submittedCreateDraft = null;
+    submittedCreateCommand = null;
     taskDialogVisible.value = true;
   };
 
-  const batchCreationIntentMessage = (state: string): string => {
-    if (state === 'blocked')
-      return '暂时无法确认批次是否已创建，当前不能继续提交。请先核对批次列表并联系管理员；关闭后重新办理可能重复创建，确认关闭？';
-    if (state === 'expired')
-      return '本次提交已超过可重试时限。请先核对批次列表；关闭后重新办理可能重复创建，确认关闭？';
-    return '暂时无法确认批次是否已创建。关闭后无法继续重试本次提交，重新办理可能重复创建；请先核对批次列表，确认关闭？';
+  const restartTask = (): void => {
+    if (submitting.value) return;
+    createBatchIntent.reset();
+    taskIntentStatus.value = 'idle';
+    submittedCreateCommand = null;
   };
-
-  /**
-   * 任务弹窗关闭守卫：意图结果未知（网络模糊失败/提交在途/结果损坏/超时）时不得静默丢弃 K1，
-   * 否则重新提交可能生成第二个自动编号批次。必须提示后由用户显式确认才 reset（放弃）。
-   * idle 状态直接关闭；程序化关闭（提交成功后置 visible=false）不会触发 update:visible，走不到这里。
-   */
+  const discardTaskDialog = (): void => {
+    if (submitting.value) return;
+    editRead.invalidate();
+    taskDialogVisible.value = false;
+    restartTask();
+  };
+  const canCloseTaskDialog = async (): Promise<boolean> => {
+    if (submitting.value) return false;
+    if (!taskDialogVisible.value && createBatchIntent.getStatus() === 'idle') return true;
+    return confirmSubmissionClose(createBatchIntent.getStatus(), {
+      entityLabel: '任务',
+      dirty: taskDialogVisible.value && taskFormDialogRef.value?.isDirty(),
+    });
+  };
   const handleTaskDialogClose = async (visible: boolean): Promise<void> => {
     if (visible) {
       taskDialogVisible.value = true;
       return;
     }
-    if (!taskDialogVisible.value) return;
-    if (submitting.value) return;
-    editRead.invalidate();
-    const state = createBatchIntent.getStatus();
-    if (state === 'idle') {
-      if (taskFormDialogRef.value?.isDirty()) {
-        try {
-          await ElMessageBox.confirm('任务填写尚未保存，确认放弃本次修改？', '关闭确认', {
-            type: 'warning',
-          });
-        } catch {
-          return;
-        }
-      }
-      taskDialogVisible.value = false;
-      createBatchIntent.reset();
-      return;
-    }
-    const message = batchCreationIntentMessage(state);
-    try {
-      await ElMessageBox.confirm(message, '关闭确认', {
-        confirmButtonText: '仍要关闭',
-        cancelButtonText: '继续保留',
-        type: 'warning',
-      });
-      taskDialogVisible.value = false;
-      createBatchIntent.reset();
-    } catch {
-      // 用户选择保留：不关闭弹窗、不丢弃意图，K1 继续保留以便安全重试
-    }
+    if (await canCloseTaskDialog()) discardTaskDialog();
   };
 
   const openEdit = async (row: ProductionBatchItem): Promise<void> => {
@@ -119,14 +99,14 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
     }
   };
 
-  const submitTask = async (data: TaskFormValue): Promise<void> => {
+  const saveTask = async (data?: TaskFormValue): Promise<void> => {
     if (submitting.value || !editRead.isActive()) return;
-    if (!editingTaskId.value && createBatchIntent.getStatus() === 'idle')
-      submittedCreateDraft = { ...data };
     submitting.value = true;
+    let saved = false;
     try {
       const editId = editingTaskId.value;
       if (editId) {
+        if (!data) return;
         const version = editingTaskVersion.value;
         if (version === null) throw new Error('任务编辑依据缺失，请关闭后重新打开');
         await productionTasksApi.updateBatch(editId, {
@@ -138,36 +118,52 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
         });
         EMessage.success('任务已更新');
       } else {
-        const payload: CreateProductionBatchPayload = {
-          routeId: data.routeId || null,
-          plannedQuantity: data.plannedQuantity,
-          ownerId: data.ownerId,
-          planStartDate: data.planStartDate,
-          planEndDate: data.planEndDate,
-          remark: data.remark || null,
-        };
-        const workOrderId = data.workOrderId;
-        const normalizedPayload = normalizeCreateBatchPayload(payload);
+        if (createBatchIntent.getStatus() === 'idle' && data) {
+          const payload: CreateProductionBatchPayload = {
+            routeId: data.routeId || null,
+            plannedQuantity: data.plannedQuantity,
+            ownerId: data.ownerId,
+            planStartDate: data.planStartDate,
+            planEndDate: data.planEndDate,
+            remark: data.remark || null,
+          };
+          submittedCreateCommand = {
+            workOrderId: data.workOrderId,
+            payload: normalizeCreateBatchPayload(payload),
+          };
+        }
+        const command = submittedCreateCommand;
+        if (!command) throw new Error('原任务提交内容缺失，请先核对任务列表');
         await createBatchIntent.execute(
           {
             intentType: 'production.batch.create',
-            params: { workOrderId },
+            params: { workOrderId: command.workOrderId },
             query: {},
-            body: normalizedPayload,
+            body: command.payload,
           },
-          (key) => productionTasksApi.createOrderBatch(workOrderId, normalizedPayload, key),
+          (key) => productionTasksApi.createOrderBatch(command.workOrderId, command.payload, key),
         );
+        submittedCreateCommand = null;
         EMessage.success('任务已新增');
       }
       taskDialogVisible.value = false;
-      await loadTasks();
+      saved = true;
     } catch (error) {
+      if (createBatchIntent.getStatus() === 'idle') submittedCreateCommand = null;
       EMessage.error(error, '任务保存失败');
     } finally {
       taskIntentStatus.value = createBatchIntent.getStatus();
       submitting.value = false;
     }
+    if (saved) {
+      try {
+        await loadTasks();
+      } catch (error) {
+        EMessage.error(error, '任务已保存，列表刷新失败，请刷新列表核对');
+      }
+    }
   };
+  const submitTask = (data: TaskFormValue): Promise<void> => saveTask(data);
 
   async function refreshTaskDetail(): Promise<void> {
     const id = detailBatchId.value;
@@ -205,15 +201,7 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
   };
 
   const canLocateDetail = (): boolean => detailRead.isActive();
-  async function retryTask(): Promise<void> {
-    if (submittedCreateDraft) await submitTask(submittedCreateDraft);
-  }
-  const unregister = useTabsStore().registerCloseGuard('production-tasks', async () => {
-    if (submitting.value) return false;
-    await handleTaskDialogClose(false);
-    return !taskDialogVisible.value;
-  });
-  onScopeDispose(unregister);
+  const retryTask = (): Promise<void> => saveTask();
   return {
     taskDialogVisible,
     detailDialogVisible,
@@ -226,6 +214,8 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
     taskFormDialogRef,
     openCreate,
     handleTaskDialogClose,
+    canCloseTaskDialog,
+    discardTaskDialog,
     openEdit,
     submitTask,
     refreshTaskDetail,
@@ -234,5 +224,6 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
     canLocateDetail,
     taskIntentStatus,
     retryTask,
+    restartTask,
   };
 }

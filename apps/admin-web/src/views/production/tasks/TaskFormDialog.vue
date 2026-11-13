@@ -3,14 +3,15 @@
     :model-value="visible"
     :title="editingTaskId ? '编辑任务' : '新增任务'"
     :width="DialogWidth.lg"
-    @update:model-value="$emit('update:visible', $event)"
+    :before-close="() => emit('update:visible', false)"
   >
-    <el-alert
-      v-if="intentStatus !== 'idle'"
-      :title="submissionRecoveryMessage(intentStatus, '生产任务列表')"
-      type="warning"
-      :closable="false"
-      show-icon
+    <SubmissionRecoveryNotice
+      :status="intentStatus"
+      :busy="submitting"
+      records-label="生产任务列表"
+      allow-restart
+      @retry="emit('retry')"
+      @restart="emit('restart')"
     />
     <el-form
       class="dialog-form"
@@ -279,12 +280,11 @@
         type="primary"
         :loading="submitting"
         :disabled="
-          intentStatus === 'blocked' ||
-          intentStatus === 'expired' ||
+          intentStatus !== 'idle' ||
           (intentStatus === 'idle' && !editingTaskId && workOrderSource.status.value !== 'ready')
         "
-        @click="intentStatus === 'idle' ? handleSubmit() : emit('retry')"
-        >{{ intentStatus === 'idle' ? '保存任务' : '重试本次提交' }}</el-button
+        @click="handleSubmit"
+        >保存任务</el-button
       >
     </template>
   </el-dialog>
@@ -293,10 +293,8 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from 'vue';
 import { Refresh } from '@element-plus/icons-vue';
-import {
-  submissionRecoveryMessage,
-  type IdempotentIntentStatus,
-} from '../../../composables/idempotency/useIdempotentIntent';
+import type { IdempotentIntentStatus } from '../../../composables/idempotency/useIdempotentIntent';
+import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import type {
   ProcessRouteOption,
   ProductionBatchDetail,
@@ -325,6 +323,7 @@ const emit = defineEmits<{
   (e: 'update:visible', val: boolean): void;
   (e: 'save', data: TaskFormValue): void;
   (e: 'retry'): void;
+  (e: 'restart'): void;
 }>();
 
 const existingBatchNo = ref('');
@@ -530,6 +529,7 @@ const setForm = (row: {
 };
 
 const handleSubmit = (): void => {
+  if (props.submitting || props.intentStatus !== 'idle') return;
   if (!form.ownerId) {
     EMessage.warning('请选择任务负责人');
     return;

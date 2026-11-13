@@ -225,6 +225,7 @@
       :submitting="submitting"
       :intent-status="taskIntentStatus"
       @retry="retryTask"
+      @restart="restartTask"
       @update:visible="handleTaskDialogClose"
       @save="submitTask"
     />
@@ -282,11 +283,17 @@
       :available-item-batches="materials.availableItemBatches.value"
       :loading-demands="materials.loadingDemands.value"
       :loading-available="materials.loadingAvailable.value"
+      :demands-ready="materials.demandsReady.value"
+      :available-ready="materials.availableReady.value"
       :submitting="materials.submitting.value"
+      :intent-status="materials.allocationIntentStatus.value"
       :release-pending-ids="materials.releasePendingIds.value"
       @update:visible="handleMaterialAllocationClose"
-      @load-available="materials.loadAvailable"
+      @load-available="loadAvailableMaterialBatches"
+      @refresh-demands="refreshMaterialDemands"
       @allocate="handleMaterialAllocate"
+      @retry="handleMaterialAllocate()"
+      @restart="materials.resetAllocationIntent"
       @release="handleMaterialRelease"
     />
 
@@ -296,10 +303,15 @@
       :outbounds="materials.outbounds.value"
       :loading-outbounds="materials.loadingOutbounds.value"
       :loading-demands="materials.loadingDemands.value"
-      :intent-status="materials.getOutboundIntentStatus()"
+      :demands-ready="materials.demandsReady.value"
+      :outbounds-ready="materials.outboundsReady.value"
+      :intent-status="materials.outboundIntentStatus.value"
       :submitting="materials.submitting.value"
       @update:visible="handleMaterialOutboundClose"
       @submit="handleMaterialOutbound"
+      @retry="handleMaterialOutbound()"
+      @restart="materials.resetOutboundIntent"
+      @refresh="refreshMaterialOutboundData"
     />
 
     <ProductionBatchCancelDialog
@@ -314,7 +326,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onMounted, ref, watch } from 'vue';
+import { computed, onActivated, onMounted, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ArrowDown, Plus, Refresh } from '@element-plus/icons-vue';
 import type {
@@ -331,12 +343,13 @@ import TableToolbar from '../../../components/TableToolbar.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
+import { confirmSubmissionClose } from '../../../composables/idempotency/submission-recovery';
+import { useTabsStore } from '../../../stores/tabs';
 import { productionMaterialDemandsApi } from '../../../api/production/material-demands';
 import { productionTasksApi } from '../../../api/production/tasks';
 import { useRowPending } from '../../../composables/use-row-pending';
 import { formatDateForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
-import { RouteMessageBox as ElMessageBox } from '../../../utils/route-message-box';
 import { formatQuantity } from '../../../utils/quantity';
 import { BATCH_STATUS_META, batchStatusMeta } from '../shared/production-status';
 import { taskTypeTagType } from '../shared/production-task-presentation';
@@ -385,6 +398,8 @@ const {
   taskFormDialogRef,
   openCreate,
   handleTaskDialogClose,
+  canCloseTaskDialog,
+  discardTaskDialog,
   openEdit,
   submitTask,
   refreshTaskDetail,
@@ -393,6 +408,7 @@ const {
   canLocateDetail,
   taskIntentStatus,
   retryTask,
+  restartTask,
 } = useProductionTaskEditor(loadTasks);
 const { beginRow, endRow } = useRowPending();
 const taskTypeLabel = (row: ProductionBatchItem): string => WORK_ORDER_TYPE_LABELS[row.orderType];
@@ -458,128 +474,156 @@ const batchCancelDialogVisible = ref(false),
   batchCancellationCheck = ref<ProductionBatchCancellationCheck | null>(null);
 const materials = useProductionMaterials();
 const visibleMaterialDemands = computed(() => materials.demands.value);
-const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
-  if (!(await prepareMaterialBatch(row.id))) return;
-  materials.setBatch(row.id);
-  materialAllocationVisible.value = true;
+const materialWriting = (): boolean =>
+  materials.submitting.value || materials.releasePendingIds.value.size > 0;
+const refreshMaterialViews = async (includeOutbounds = false): Promise<void> => {
+  const updates = [materials.loadDemands(), loadTasks()];
+  if (includeOutbounds) updates.push(materials.loadOutbounds());
+  const results = await Promise.allSettled(updates);
+  for (const result of results)
+    if (result.status === 'rejected')
+      EMessage.error(result.reason, '操作已完成，物料或任务数据刷新失败，请刷新后核对');
+};
+const refreshMaterialDemands = async (): Promise<void> => {
   try {
     await materials.loadDemands();
   } catch (error) {
     EMessage.error(error, '物料需求查询失败');
   }
 };
-const handleMaterialAllocate = async (payload: CreateMaterialAllocationsPayload): Promise<void> => {
+const loadAvailableMaterialBatches = async (demandId: string): Promise<void> => {
   try {
-    await materials.allocate(payload);
-    EMessage.success('物料分配已完成');
-    await loadTasks();
+    await materials.loadAvailable(demandId);
+  } catch (error) {
+    EMessage.error(error, '可分配库存批次查询失败');
+  }
+};
+const openMaterialAllocation = async (row: ProductionBatchItem): Promise<void> => {
+  if (materialAllocationVisible.value || materialOutboundVisible.value) return;
+  if (!(await prepareMaterialBatch(row.id))) return;
+  if (!materials.setBatch(row.id)) return;
+  materialAllocationVisible.value = true;
+  await refreshMaterialDemands();
+};
+const handleMaterialAllocate = async (
+  payload?: CreateMaterialAllocationsPayload,
+): Promise<void> => {
+  try {
+    if (!(await materials.allocate(payload))) return;
   } catch (error) {
     EMessage.error(error, materialErrorFallback(error, '物料分配失败'));
+    return;
   }
+  materialAllocationVisible.value = false;
+  EMessage.success('物料分配已完成');
+  await refreshMaterialViews();
 };
 const handleMaterialRelease = async (
   allocation: ProductionMaterialAllocationItem,
 ): Promise<void> => {
   try {
-    await materials.release(allocation.allocationId, allocation.version);
-    EMessage.success('未出库分配已释放');
-    await loadTasks();
+    if (!(await materials.release(allocation.allocationId, allocation.version))) return;
   } catch (error) {
     EMessage.error(error, materialErrorFallback(error, '物料分配释放失败'));
+    return;
   }
+  EMessage.success('未出库分配已释放');
+  await refreshMaterialViews();
 };
 const openMaterialOutbound = async (row: ProductionBatchItem): Promise<void> => {
+  if (materialAllocationVisible.value || materialOutboundVisible.value) return;
   if (!(await prepareMaterialBatch(row.id))) return;
-  materials.setBatch(row.id);
+  if (!materials.setBatch(row.id)) return;
   materialOutboundVisible.value = true;
+  await refreshMaterialOutboundData();
+};
+const refreshMaterialOutboundData = async (): Promise<void> => {
   try {
     await Promise.all([materials.loadDemands(), materials.loadOutbounds()]);
   } catch (error) {
     EMessage.error(error, '生产领料数据查询失败');
   }
 };
-const handleMaterialOutbound = async (payload: CreateMaterialOutboundPayload): Promise<void> => {
+const handleMaterialOutbound = async (payload?: CreateMaterialOutboundPayload): Promise<void> => {
   try {
-    await materials.outbound(payload);
-    EMessage.success('待出库单已创建，请打印并完成线下拣货后再整单确认');
-    await loadTasks();
+    if (!(await materials.outbound(payload))) return;
   } catch (error) {
     EMessage.error(error, materialErrorFallback(error, '待出库单创建失败'));
+    return;
   }
+  materialOutboundVisible.value = false;
+  EMessage.success('待出库单已创建，请打印并完成线下拣货后再整单确认');
+  await refreshMaterialViews(true);
 };
-const materialIntentMessage = (operation: string, state: string): string => {
-  if (state === 'blocked')
-    return `暂时无法确认${operation}是否成功，当前不能继续提交。请先核对需求、出库记录和库存，并联系管理员；确认关闭当前操作？`;
-  if (state === 'expired')
-    return `${operation}已超过可重试时限。请先核对需求、出库记录和库存；重新办理可能重复提交，确认关闭当前操作？`;
-  return `暂时无法确认${operation}是否成功。关闭后无法继续重试本次提交，重新办理可能重复操作；请先核对需求、出库记录和库存，确认关闭？`;
-};
-const confirmMaterialIntentReset = async (
-  operation: string,
-  status: 'idle' | 'pending' | 'blocked' | 'expired',
-  reset: () => void,
-): Promise<boolean> => {
-  if (status === 'idle') {
-    reset();
-    return true;
-  }
-  try {
-    await ElMessageBox.confirm(materialIntentMessage(operation, status), '确认关闭当前操作', {
-      confirmButtonText: '核对后仍要放弃',
-      cancelButtonText: '继续保留',
-      type: 'warning',
-    });
-    reset();
-    return true;
-  } catch {
-    return false;
-  }
-};
-const prepareMaterialBatch = async (nextBatchId: string): Promise<boolean> => {
-  if (!materials.batchId.value || materials.batchId.value === nextBatchId) return true;
+const canCloseMaterialIntents = async (): Promise<boolean> => {
+  if (materialWriting()) return false;
   if (
-    !(await confirmMaterialIntentReset(
-      '物料分配',
-      materials.getAllocationIntentStatus(),
-      materials.resetAllocationIntent,
-    ))
+    !(await confirmSubmissionClose(materials.getAllocationIntentStatus(), {
+      entityLabel: '物料分配',
+    }))
   )
     return false;
-  return confirmMaterialIntentReset(
-    '生产领料出库',
-    materials.getOutboundIntentStatus(),
-    materials.resetOutboundIntent,
-  );
+  return confirmSubmissionClose(materials.getOutboundIntentStatus(), {
+    entityLabel: '生产领料出库',
+  });
+};
+const discardMaterialIntents = (): void => {
+  materials.resetAllocationIntent();
+  materials.resetOutboundIntent();
+};
+const prepareMaterialBatch = async (nextBatchId: string): Promise<boolean> => {
+  if (materialWriting()) return false;
+  if (!materials.batchId.value || materials.batchId.value === nextBatchId) return true;
+  if (!(await canCloseMaterialIntents()) || materialWriting()) return false;
+  discardMaterialIntents();
+  return true;
 };
 const handleMaterialAllocationClose = async (visible: boolean): Promise<void> => {
+  if (materialWriting()) return;
   if (visible) {
     materialAllocationVisible.value = true;
     return;
   }
   if (
-    await confirmMaterialIntentReset(
-      '物料分配',
-      materials.getAllocationIntentStatus(),
-      materials.resetAllocationIntent,
-    )
-  )
+    (await confirmSubmissionClose(materials.getAllocationIntentStatus(), {
+      entityLabel: '物料分配',
+    })) &&
+    !materialWriting()
+  ) {
+    materials.resetAllocationIntent();
     materialAllocationVisible.value = false;
+  }
 };
 const handleMaterialOutboundClose = async (visible: boolean): Promise<void> => {
-  if (materials.submitting.value) return;
+  if (materialWriting()) return;
   if (visible) {
     materialOutboundVisible.value = true;
     return;
   }
   if (
-    await confirmMaterialIntentReset(
-      '生产领料出库',
-      materials.getOutboundIntentStatus(),
-      materials.resetOutboundIntent,
-    )
-  )
+    (await confirmSubmissionClose(materials.getOutboundIntentStatus(), {
+      entityLabel: '生产领料出库',
+    })) &&
+    !materialWriting()
+  ) {
+    materials.resetOutboundIntent();
     materialOutboundVisible.value = false;
+  }
 };
+const unregisterMaterialCloseGuard = useTabsStore().registerCloseGuard(
+  'production-tasks',
+  async () => {
+    if (submitting.value || materialWriting()) return false;
+    if (!(await canCloseTaskDialog()) || !(await canCloseMaterialIntents())) return false;
+    if (submitting.value || materialWriting()) return false;
+    discardTaskDialog();
+    discardMaterialIntents();
+    materialAllocationVisible.value = false;
+    materialOutboundVisible.value = false;
+    return true;
+  },
+);
+onScopeDispose(unregisterMaterialCloseGuard);
 const materialErrorFallback = (error: unknown, fallback: string): string => {
   const code =
     typeof error === 'object' && error !== null && 'code' in error ? String(error.code) : '';

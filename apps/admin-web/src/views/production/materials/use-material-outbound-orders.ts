@@ -8,7 +8,10 @@ import type {
 } from '@company/contracts';
 import { normalizeMaterialOutboundPayload } from '@company/utils';
 import { productionMaterialOutboundsApi } from '../../../api/production/material-outbounds';
-import { useIdempotentIntent } from '../../../composables/idempotency/useIdempotentIntent';
+import {
+  useIdempotentIntent,
+  type IdempotentIntentStatus,
+} from '../../../composables/idempotency/useIdempotentIntent';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 
 export const useMaterialOutboundOrders = () => {
@@ -23,11 +26,18 @@ export const useMaterialOutboundOrders = () => {
   const candidateLoading = ref(false);
   const pendingKeys = ref(new Set<string>());
   const createIntent = useIdempotentIntent();
+  const createIntentStatus = ref<IdempotentIntentStatus>('idle');
+  let createInFlight = false;
   let createRequest: {
     batchId: string;
     payload: ReturnType<typeof normalizeMaterialOutboundPayload>;
   } | null = null;
-  const confirmIntents = new Map<string, ReturnType<typeof useIdempotentIntent>>();
+  const confirmIntent = useIdempotentIntent('整单出库确认');
+  const confirmIntentStatus = ref<IdempotentIntentStatus>('idle');
+  const confirmSubmitting = ref(false),
+    confirmingId = ref(''),
+    confirmingNo = ref('');
+  let confirmRequest: { outboundId: string; version: number } | null = null;
   const listRead = useLatestReadRequest(() => (loading.value = false));
   const detailRead = useLatestReadRequest(() => (detailLoading.value = false));
   const optionRead = useLatestReadRequest(() => (optionLoading.value = false));
@@ -109,12 +119,17 @@ export const useMaterialOutboundOrders = () => {
   };
 
   const create = async (
-    batchId: string,
-    payload: CreateMaterialOutboundPayload,
+    batchId?: string,
+    payload?: CreateMaterialOutboundPayload,
   ): Promise<MaterialOutboundItem> => {
-    createRequest ??= { batchId, payload: normalizeMaterialOutboundPayload(payload) };
+    if (createInFlight) throw new Error('当前出库单正在创建，请稍候');
+    if (!createRequest && batchId && payload)
+      createRequest = { batchId, payload: normalizeMaterialOutboundPayload(payload) };
     const command = createRequest;
-    if (command.batchId !== batchId) throw new Error('请先核对原任务的制单结果，再切换任务');
+    if (!command) throw new Error('原出库单提交内容缺失，请先核对出库单列表');
+    if (batchId && command.batchId !== batchId)
+      throw new Error('请先核对原任务的制单结果，再切换任务');
+    createInFlight = true;
     try {
       const result = await createIntent.execute(
         {
@@ -135,35 +150,66 @@ export const useMaterialOutboundOrders = () => {
     } catch (error) {
       if (createIntent.getStatus() === 'idle') createRequest = null;
       throw error;
+    } finally {
+      createIntentStatus.value = createIntent.getStatus();
+      createInFlight = false;
     }
   };
   const resetCreateIntent = (): void => {
+    if (createInFlight) return;
     createIntent.reset();
+    createIntentStatus.value = 'idle';
     createRequest = null;
   };
 
-  const confirm = async (row: MaterialOutboundItem): Promise<MaterialOutboundItem> => {
-    const pendingKey = `confirm:${row.outboundId}`;
-    if (pendingKeys.value.has(pendingKey)) return row;
+  const confirm = async (row?: MaterialOutboundItem): Promise<MaterialOutboundItem | null> => {
+    if (confirmSubmitting.value) return null;
+    if (!confirmRequest && row) {
+      confirmRequest = { outboundId: row.outboundId, version: row.version };
+      confirmingId.value = row.outboundId;
+      confirmingNo.value = row.outboundNo;
+    }
+    const command = confirmRequest;
+    if (!command) throw new Error('原出库确认内容缺失，请先核对出库单记录');
+    if (row && command.outboundId !== row.outboundId)
+      throw new Error('请先处理上次出库确认，再确认其他单据');
+    const pendingKey = `confirm:${command.outboundId}`;
     pendingKeys.value = new Set(pendingKeys.value).add(pendingKey);
-    const intent = confirmIntents.get(row.outboundId) ?? useIdempotentIntent();
-    confirmIntents.set(row.outboundId, intent);
+    confirmSubmitting.value = true;
     try {
-      const result = await intent.execute(
+      const result = await confirmIntent.execute(
         {
           intentType: 'production.material-outbound.confirm',
-          params: { outboundId: row.outboundId },
+          params: { outboundId: command.outboundId },
           query: {},
-          body: { version: row.version },
+          body: { version: command.version },
         },
         (key) =>
-          productionMaterialOutboundsApi.confirmMaterialOutbound(row.outboundId, row.version, key),
+          productionMaterialOutboundsApi.confirmMaterialOutbound(
+            command.outboundId,
+            command.version,
+            key,
+          ),
       );
-      confirmIntents.delete(row.outboundId);
       return result.outbound;
     } finally {
+      confirmIntentStatus.value = confirmIntent.getStatus();
+      if (confirmIntentStatus.value === 'idle') {
+        confirmRequest = null;
+        confirmingId.value = '';
+        confirmingNo.value = '';
+      }
+      confirmSubmitting.value = false;
       removePending(pendingKey);
     }
+  };
+  const resetConfirmIntent = (): void => {
+    if (confirmSubmitting.value) return;
+    confirmIntent.reset();
+    confirmIntentStatus.value = 'idle';
+    confirmRequest = null;
+    confirmingId.value = '';
+    confirmingNo.value = '';
   };
 
   const cancel = async (
@@ -201,10 +247,13 @@ export const useMaterialOutboundOrders = () => {
     candidateLoading,
     pendingKeys,
     getCreateIntentStatus: createIntent.getStatus,
+    createIntentStatus,
     resetCreateIntent,
-    hasUnconfirmedConfirm: () =>
-      [...confirmIntents.values()].some((intent) => intent.getStatus() !== 'idle'),
-    resetConfirmIntents: () => confirmIntents.clear(),
+    confirmIntentStatus,
+    confirmSubmitting,
+    confirmingId,
+    confirmingNo,
+    resetConfirmIntent,
     cancelDetailRead: detailRead.invalidate,
     load,
     loadDetail,
