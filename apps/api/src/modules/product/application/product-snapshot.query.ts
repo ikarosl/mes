@@ -53,6 +53,13 @@ export interface ProcessRouteSnapshot {
   steps: ProcessRouteStepSnapshot[];
 }
 
+/** 草稿显示所选路线身份，不授予当前下达资格。 */
+export interface ProcessRouteDisplayReference {
+  id: string;
+  routeCode: string;
+  versionNo: string;
+}
+
 export interface EnabledSopFileSnapshot {
   id: string;
   fileName: string;
@@ -72,6 +79,9 @@ export type ProductQueryResult<T> = { status: 'success'; value: T } | ProductQue
 
 /** 生产编排的公共读取边界。返回稳定的结果联合，绝不返回模块内部错误。 */
 export abstract class ProductSnapshotQuery {
+  abstract listProcessRouteDisplayReferencesByIds(
+    routeIds: string[],
+  ): Promise<ProcessRouteDisplayReference[]>;
   abstract listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]>;
   abstract listInventoryItemDisplayReferencesByIds(
     itemIds: string[],
@@ -79,12 +89,10 @@ export abstract class ProductSnapshotQuery {
   abstract getProductionProduct(
     productId: string,
   ): Promise<ProductQueryResult<ProductionProductSnapshot>>;
-  abstract getBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>>;
   /** 工单选版资格：已批准 BOM 的当前读；不依赖工艺路线。 */
   abstract getApprovedBomSnapshot(
     productId: string,
   ): Promise<ProductQueryResult<ProductBomSnapshot>>;
-  abstract getRouteSnapshot(routeId: string): Promise<ProductQueryResult<ProcessRouteSnapshot>>;
   abstract getEnabledSopFileSnapshot(
     fileId: string,
   ): Promise<ProductQueryResult<EnabledSopFileSnapshot>>;

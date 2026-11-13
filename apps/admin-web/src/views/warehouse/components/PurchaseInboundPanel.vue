@@ -272,11 +272,14 @@
               }}</template></el-table-column
             >
             <el-table-column
-              label="供应商批号"
+              label="计划采购量"
               min-width="150"
-              ><template #default="{ row }">{{
-                row.source.supplierBatchCode || '未提供'
-              }}</template></el-table-column
+              align="right"
+              ><template #default="{ row }"
+                ><template v-if="row.source.plannedQuantity"
+                  >{{ formatQuantity(row.source.plannedQuantity) }} {{ row.source.unit }}</template
+                ><span v-else>—</span></template
+              ></el-table-column
             >
             <el-table-column
               label="目标库存批次"

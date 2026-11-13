@@ -4,7 +4,7 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 ## 执行身份与顺序
 
-批量任务创建时冻结所选路线的工序顺序、编码、名称及 SOP。工序定义本身不再拥有派工、开工、完工或数量状态，每张卡分别流转。中间的检验工序与普通工序采用相同扫码操作；路线最后一道工序统一承担最终产出确认，不设置另一套成品检验轮次。
+批量任务正式下达时一次保存所选路线的工序顺序、编码、名称及 SOP 快照，之后不更换；草稿只保存路线引用，不生成工序。阶段与编辑边界见[工单与任务](work-orders-and-batches.md)。工序定义本身不再拥有派工、开工、完工或数量状态，每张卡分别流转。中间的检验工序与普通工序采用相同扫码操作；路线最后一道工序统一承担最终产出确认，不设置另一套成品检验轮次。
 
 扫码输入是卡号、目标工序和现场登记人员。人员来自 Identity 的统一现场人员目录，扫码、报工、异常及最终产出确认均使用当前启用且未删除的人员，资格由[人员目录](../../../identity/docs/database.md#110-personnel)所有。业务事实保存所选人员 ID、编码、姓名快照，并独立保存实际登录操作者。
 
@@ -97,9 +97,9 @@ completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复�
 
 ## batch_step_records
 
-仅保存创建批量任务时冻结的路线工序及SOP快照。每张卡独立流转，本表不承担派工、工序状态或数量。
+保存批量任务正式下达时一次生成的路线工序及 SOP 快照，草稿没有本表记录，下达后不可替换。每张卡独立流转，本表不承担派工、工序状态或数量。
 
-一任务同一路线步骤唯一，id+production_batch_id供追踪事实组合引用。actual_sop_*仅表示创建时显式覆盖；下载优先该快照，否则使用默认SOP快照。当前主数据变化不回写历史。
+一任务同一路线步骤唯一，id+production_batch_id供追踪事实组合引用。actual_sop_*表示生成快照时显式覆盖的 SOP，既有创建快照保持原样；下载优先该快照，否则使用默认 SOP 快照。当前主数据变化不回写历史。
 
 ### 字段
 
@@ -115,10 +115,10 @@ completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复�
 | `sop_file_name_snapshot`         | `varchar(255) DEFAULT NULL`                                               | 路线默认 SOP 文件名快照                              |
 | `sop_object_key_snapshot`        | `varchar(500) DEFAULT NULL`                                               | 路线默认 SOP 对象键快照                              |
 | `sop_version_no_snapshot`        | `varchar(64) DEFAULT NULL`                                                | 路线默认 SOP 版本号快照                              |
-| `actual_sop_file_id`             | `bigint unsigned DEFAULT NULL`                                            | 创建任务时显式覆盖的 SOP 文件 ID；为空时使用默认快照 |
-| `actual_sop_file_name_snapshot`  | `varchar(255) DEFAULT NULL`                                               | 创建任务时覆盖的 SOP 文件名快照                      |
-| `actual_sop_object_key_snapshot` | `varchar(500) DEFAULT NULL`                                               | 创建任务时覆盖的 SOP 对象键快照                      |
-| `actual_sop_version_no_snapshot` | `varchar(64) DEFAULT NULL`                                                | 创建任务时覆盖的 SOP 版本号快照                      |
+| `actual_sop_file_id`             | `bigint unsigned DEFAULT NULL`                                            | 下达任务时显式覆盖的 SOP 文件 ID；为空时使用默认快照 |
+| `actual_sop_file_name_snapshot`  | `varchar(255) DEFAULT NULL`                                               | 下达任务时覆盖的 SOP 文件名快照                      |
+| `actual_sop_object_key_snapshot` | `varchar(500) DEFAULT NULL`                                               | 下达任务时覆盖的 SOP 对象键快照                      |
+| `actual_sop_version_no_snapshot` | `varchar(64) DEFAULT NULL`                                                | 下达任务时覆盖的 SOP 版本号快照                      |
 | `unit_snapshot`                  | `varchar(20) NOT NULL`                                                    | 该任务逐站交接数量的单位快照                         |
 | `remark`                         | `text`                                                                    | 冻结工序备注，不是单盘交接事实                       |
 | `version`                        | `int NOT NULL DEFAULT '0'`                                                | 乐观锁版本号，默认 `0`                               |

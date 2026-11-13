@@ -95,8 +95,8 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
   ) {
     return withTransaction(this.pool, async (db) => {
       const batch = await this.lockBatch(db, batchId);
-      if (batch.status === 'cancelled')
-        throw new ProductionDomainError('INVALID_STATE', '取消任务不能办理成品入库');
+      if (batch.status === 'draft' || batch.status === 'cancelled')
+        throw new ProductionDomainError('INVALID_STATE', '任务草稿或取消任务不能办理成品入库');
       const order = await findWorkOrder(db, String(batch.work_order_id), true);
       const outputs = [];
       for (const outputId of payload.outputIds) {

@@ -145,7 +145,7 @@ export class MysqlProductionDemandPlanWriter {
       `UPDATE production_batches
        SET status='cancelled',
            cancel_reason=?,cancelled_by=?,cancelled_at=NOW(),version=version+1,updated_by=?
-       WHERE id=? AND status IN ('pending','material_pending','material_assigned') AND version=?`,
+       WHERE id=? AND status IN ('draft','pending','material_pending','material_assigned') AND version=?`,
       [params.reason, params.actorId, params.actorId, params.batchId, params.expectedBatchVersion],
     );
     this.requireBatchUpdated(updated);

@@ -29,10 +29,10 @@ export interface WorkOrderOption {
   productCode: string;
   productName: string;
   plannedQuantity: string;
-  /** 有效任务计划合计，排除 cancelled。 */
+  /** 非取消任务计划合计，含正常完工和提前结束任务，与实际产出独立。 */
   assignedQuantity: string;
   finalOutput: WorkOrderFinalOutput;
-  /** 剩余可分配数量 = 计划数量 - 有效任务已分配数量。 */
+  /** 工单计划减非取消任务计划合计；允许负值，仅作计划差额提示。 */
   remainingQuantity: string;
   planStartDate: string | null;
   planEndDate: string | null;
@@ -57,7 +57,7 @@ export interface WorkOrderItem {
   ownerName: string | null;
   planStartDate: string | null;
   planEndDate: string | null;
-  /** 有效任务计划合计，排除 cancelled。 */
+  /** 非取消任务计划合计，含正常完工和提前结束任务，与实际产出独立。 */
   assignedQuantity: string;
   status: WorkOrderStatus;
   releasedAt: string | null;

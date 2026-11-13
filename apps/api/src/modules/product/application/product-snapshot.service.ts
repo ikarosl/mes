@@ -3,7 +3,7 @@ import { ProductDomainError } from '../domain/product.errors.js';
 import {
   ProductSnapshotQuery,
   type EnabledSopFileSnapshot,
-  type ProcessRouteSnapshot,
+  type ProcessRouteDisplayReference,
   type ProductBomSnapshot,
   type ProductQueryFailure,
   type ProductQueryResult,
@@ -19,6 +19,12 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
     super();
   }
 
+  listProcessRouteDisplayReferencesByIds(
+    routeIds: string[],
+  ): Promise<ProcessRouteDisplayReference[]> {
+    return this.snapshots.listProcessRouteDisplayReferencesByIds(routeIds);
+  }
+
   listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
     return this.snapshots.listInventoryItemReferencesByIds(itemIds);
   }
@@ -32,14 +38,8 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
   getProductionProduct(productId: string): Promise<ProductQueryResult<ProductionProductSnapshot>> {
     return this.toResult(() => this.snapshots.getProductionProduct(productId));
   }
-  getBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>> {
-    return this.toResult(() => this.snapshots.getBomSnapshot(productId));
-  }
   getApprovedBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>> {
     return this.toResult(() => this.snapshots.getApprovedBomSnapshot(productId));
-  }
-  getRouteSnapshot(routeId: string): Promise<ProductQueryResult<ProcessRouteSnapshot>> {
-    return this.toResult(() => this.snapshots.getRouteSnapshot(routeId));
   }
   getEnabledSopFileSnapshot(fileId: string): Promise<ProductQueryResult<EnabledSopFileSnapshot>> {
     return this.toResult(() => this.snapshots.getEnabledSopFileSnapshot(fileId));

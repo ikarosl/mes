@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import { PRODUCTION_BATCH_STATUSES } from '@company/constants';
-
 import { ProductionDomainError } from '../production.errors.js';
 import { requireBatchTransition, requireWorkOrderTransition } from '../production-status.policy.js';
 
@@ -38,12 +36,7 @@ describe('production status policy', () => {
     ).not.toThrow();
   });
 
-  it('never permits an existing production batch to transition back to initial pending', () => {
-    for (const status of PRODUCTION_BATCH_STATUSES) {
-      if (status === 'pending') continue;
-      expect(() => requireBatchTransition(status, 'pending')).toThrow(ProductionDomainError);
-    }
-  });
+  // TODO(production-draft-release-transitions): 验证只有草稿正式下达及已结束任务恢复时可进入 pending，已下达任务不能回退草稿；高重要性：状态与历史快照边界，创建即 pending 的旧全值域断言已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按独立下达与恢复执行契约恢复完整状态覆盖。
 
   // TODO(production-tracking-status): 验证任务状态完整性及结束阻断；高重要性，旧复杂结案状态已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按追踪卡与简化结束规则恢复。
 

@@ -70,7 +70,7 @@ describe('Production date-only DTO fields', () => {
 });
 
 describe('Production batch creation DTO', () => {
-  it('transforms and validates route-generated step overrides on batch creation', async () => {
+  it('validates legacy creation step overrides for successful-request replay', async () => {
     const dto = plainToInstance(CreateProductionBatchDto, {
       plannedQuantity: '10',
       ownerId: '3',

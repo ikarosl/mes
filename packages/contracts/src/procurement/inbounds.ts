@@ -26,6 +26,7 @@ export interface ProcurementInboundSourceItem {
   materialVariantId: string;
   materialVariantCode: string;
   unit: string;
+  plannedQuantity: string;
   supplierBatchCode: string | null;
   inboundQuantity: string;
   handlingCount: number;

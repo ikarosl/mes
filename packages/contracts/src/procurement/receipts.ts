@@ -50,6 +50,7 @@ export interface ProcurementReceiptLineOverview {
   materialVariantId: string;
   materialVariantCode: string;
   unit: string;
+  plannedQuantity: string;
   supplierBatchCode: string | null;
   version: number;
   stage: ReceiptLineStage;
@@ -58,9 +59,7 @@ export interface ProcurementReceiptLineOverview {
   otherHandlingNote: string | null;
   void: ProcurementReceiptVoidItem | null;
 }
-export interface ProcurementReceiptLine extends ProcurementReceiptLineOverview {
-  plannedQuantity: string;
-}
+export type ProcurementReceiptLine = ProcurementReceiptLineOverview;
 export type ProcurementReceiptLineIndexItem = ProcurementReceiptLineOverview;
 export type ProcurementReceiptLineListItem = ProcurementReceiptLineOverview;
 export interface ProcurementReceiptWorklistLines {

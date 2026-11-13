@@ -48,17 +48,16 @@
           >
         </div></template
       >
-      <template #material-detail="{ row }"
-        ><div class="secondary">供应商批号 {{ row.supplierBatchCode || '未填写' }}</div></template
-      >
       <template #column-widths
         ><col style="width: 130px" />
+        <col style="width: 130px" />
         <col style="width: 150px" />
         <col style="width: 240px" />
         <col style="width: 165px"
       /></template>
       <template #column-headings
-        ><th scope="col">累计已入库</th>
+        ><th scope="col">计划采购量</th>
+        <th scope="col">累计已入库</th>
         <th
           scope="col"
           title="记录数包含登记和修订历史，不代表检查次数"
@@ -74,7 +73,8 @@
         </th></template
       >
       <template #row="{ row }"
-        ><td>
+        ><td>{{ Number(row.plannedQuantity) }} {{ row.unit }}</td>
+        <td>
           <strong>{{ Number(row.quantities.inboundQuantity) }}</strong> {{ row.unit }}
         </td>
         <td>
@@ -286,6 +286,9 @@ watch(
 }
 .purchase-receipt :deep(.receipt-table-scroll) {
   border-top: 1px solid var(--el-border-color-lighter);
+}
+.purchase-receipt :deep(.receipt-table) {
+  min-width: 1115px;
 }
 .receipt-actions {
   display: flex;

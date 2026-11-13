@@ -110,14 +110,23 @@
             </template>
           </el-table-column>
           <el-table-column
-            label="供应商 / 批号"
+            label="供应商"
             min-width="120"
           >
             <template #default="{ row }">
               <div class="cell-wrap">{{ row.supplierName }}</div>
-              <div class="muted cell-wrap">批号 {{ row.supplierBatchCode || '未提供' }}</div>
             </template>
           </el-table-column>
+          <el-table-column
+            label="计划采购量"
+            min-width="130"
+            align="right"
+            ><template #default="{ row }"
+              ><template v-if="row.plannedQuantity"
+                >{{ formatQuantity(row.plannedQuantity) }} {{ row.unit }}</template
+              ><span v-else>—</span></template
+            ></el-table-column
+          >
           <el-table-column
             label="累计已入库"
             min-width="130"

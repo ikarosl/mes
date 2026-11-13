@@ -1,6 +1,7 @@
 export type WorkOrderStatus = 'draft' | 'released' | 'doing' | 'completed' | 'cancelled' | 'closed';
 
 export type ProductionBatchStatus =
+  | 'draft'
   | 'pending'
   | 'material_pending'
   | 'material_assigned'

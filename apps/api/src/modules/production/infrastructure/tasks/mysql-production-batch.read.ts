@@ -9,6 +9,7 @@ import {
 } from './mysql-production-batch.persistence.js';
 import { readStartMaterialSnapshot } from './mysql-production-start-material-snapshot.js';
 import { type Db } from '../shared/mysql-production-db.js';
+import { isUnusedBatchDraft } from './mysql-production-batch-plan.js';
 
 type BatchStartRecordRow = RowDataPacket & {
   id: number;
@@ -18,10 +19,21 @@ type BatchStartRecordRow = RowDataPacket & {
   start_material_snapshot: unknown;
 };
 
-export async function selectBatchOverview(db: Db, id: string): Promise<ProductionBatchDetail> {
+export async function selectBatchOverview(
+  db: Db,
+  id: string,
+  includePlanCapability = false,
+): Promise<ProductionBatchDetail> {
   const [[row]] = await db.query<BatchOverviewRow[]>(`${BATCH_OVERVIEW_SELECT} WHERE b.id=?`, [id]);
   if (!row) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
-  return mapBatchOverview(row);
+  const batch = mapBatchOverview(row);
+  return includePlanCapability
+    ? {
+        ...batch,
+        canEditPlan: row.status !== 'completed' && row.status !== 'cancelled',
+        canEditRoute: row.order_type === 'mass_production' && (await isUnusedBatchDraft(db, row)),
+      }
+    : batch;
 }
 
 export function mapBatchOverview(row: BatchOverviewRow): ProductionBatchDetail {

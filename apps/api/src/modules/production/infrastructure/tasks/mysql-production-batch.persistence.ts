@@ -1,5 +1,9 @@
 ﻿import type { RowDataPacket } from 'mysql2/promise';
-import type { ProductionBatchItem, ProductionTaskFinishMode } from '@company/contracts';
+import type {
+  ProductionBatchItem,
+  ProductionTaskFinishMode,
+  WorkOrderItem,
+} from '@company/contracts';
 import { toDateOnlyString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import type { Db } from '../shared/mysql-production-db.js';
@@ -11,6 +15,7 @@ export type BatchRow = RowDataPacket & {
   work_order_id: number;
   work_order_no: string;
   order_type: ProductionBatchItem['orderType'];
+  work_order_status: WorkOrderItem['status'];
   product_id: number;
   product_code_snapshot: string;
   product_name_snapshot: string;
@@ -44,7 +49,7 @@ export type BatchRow = RowDataPacket & {
 };
 export type BatchSummaryRow = BatchRow;
 export type BatchOverviewRow = BatchRow;
-const COLUMNS = `b.id,b.work_order_id,wo.work_order_no,wo.order_type,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,
+const COLUMNS = `b.id,b.work_order_id,wo.work_order_no,wo.order_type,wo.status work_order_status,b.product_id,wo.product_code_snapshot,wo.product_name_snapshot,
  b.batch_no,b.route_id,b.route_code_snapshot,b.route_version_snapshot,b.planned_quantity,b.plan_start_date,b.plan_end_date,
  b.started_at,b.started_by,b.start_reason,b.start_material_snapshot,b.status,b.finish_reason,b.finish_mode,
  b.batch_owner_id owner_id,b.completed_at,b.completed_by,b.cancel_reason,b.cancelled_by,b.cancelled_at,b.remark,b.version,b.created_at,b.updated_at`;
@@ -93,6 +98,11 @@ export const mapBatch = (row: BatchSummaryRow): ProductionBatchItem => ({
   version: row.version,
 });
 export const batchAudit = (row: BatchRow) => ({
+  status: row.status,
+  plannedQuantity: String(row.planned_quantity),
+  routeId: row.route_id === null ? null : String(row.route_id),
+  routeCode: row.route_code_snapshot,
+  routeVersion: row.route_version_snapshot,
   ownerId: row.owner_id === null ? null : String(row.owner_id),
   planStartDate: toDateOnlyString(row.plan_start_date),
   planEndDate: toDateOnlyString(row.plan_end_date),

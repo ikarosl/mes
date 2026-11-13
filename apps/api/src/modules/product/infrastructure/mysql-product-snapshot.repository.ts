@@ -1,11 +1,11 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
-import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import type {
   ProcessRouteSnapshot,
+  ProcessRouteDisplayReference,
   ProductBomSnapshot,
   ProductionProductSnapshot,
   EnabledSopFileSnapshot,
@@ -56,6 +56,21 @@ export class MysqlProductSnapshotRepository
 {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
+  async listProcessRouteDisplayReferencesByIds(
+    routeIds: string[],
+  ): Promise<ProcessRouteDisplayReference[]> {
+    if (routeIds.length === 0) return [];
+    const [rows] = await this.pool.query<RouteRow[]>(
+      `SELECT id,route_code,version_no FROM process_routes WHERE id IN (${routeIds.map(() => '?').join(',')})`,
+      routeIds,
+    );
+    return rows.map((row) => ({
+      id: String(row.id),
+      routeCode: row.route_code,
+      versionNo: row.version_no,
+    }));
+  }
+
   async listInventoryItemReferencesByIds(itemIds: string[]): Promise<InventoryItemReference[]> {
     if (itemIds.length === 0) return [];
     const [rows] = await this.pool.query<ProductRow[]>(
@@ -99,10 +114,20 @@ export class MysqlProductSnapshotRepository
     );
   }
 
+  async requireRouteForProductionDraft(routeId: string): Promise<{ id: string }> {
+    return withTransaction(this.pool, async (connection) => {
+      const [[route]] = await connection.query<(RowDataPacket & { id: number })[]>(
+        "SELECT id FROM process_routes WHERE id=? AND status='enabled' AND is_deleted=0 FOR SHARE",
+        [routeId],
+      );
+      if (!route) throw new ProductDomainError('NOT_FOUND', '已启用的生产工艺路线不存在');
+      return { id: String(route.id) };
+    });
+  }
+
   async requireApprovedBomForProductionTask(
     productId: string,
     requestedRouteId: string | null,
-    _audit: CommandContext,
   ): Promise<ProcessRouteSnapshot> {
     if (!requestedRouteId) {
       throw new ProductDomainError('INVALID_ROUTE', '请先选择工艺路线');
@@ -133,7 +158,7 @@ export class MysqlProductSnapshotRepository
         [productId],
       );
       if (bomLines.length === 0) {
-        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM，不能创建生产任务');
+        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM，不能下达生产任务');
       }
       if (
         bomLines.some(
@@ -148,11 +173,11 @@ export class MysqlProductSnapshotRepository
       ) {
         throw new ProductDomainError(
           'INVALID_MATERIAL',
-          'BOM 包含不可用物料或用量单位与物料基础单位不一致，不能创建生产任务',
+          'BOM 包含不可用物料或用量单位与物料基础单位不一致，不能下达生产任务',
         );
       }
 
-      return this.routeSnapshot(connection, requestedRouteId, true);
+      return this.routeSnapshot(connection, requestedRouteId);
     });
   }
 
@@ -186,12 +211,12 @@ export class MysqlProductSnapshotRepository
     ) {
       throw new ProductDomainError(
         'INVALID_MATERIAL',
-        'BOM 尚未审批通过，不能配置用料或创建生产任务',
+        'BOM 尚未审批通过，不能配置用料或下达生产任务',
       );
     }
   }
 
-  async getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
+  private async getBomSnapshot(productId: string): Promise<ProductBomSnapshot> {
     return withTransaction(this.pool, async (connection) => {
       const product = await this.productionProduct(connection, productId);
       const [rows] = await connection.query<BomRow[]>(
@@ -233,12 +258,6 @@ export class MysqlProductSnapshotRepository
     });
   }
 
-  async getRouteSnapshot(routeId: string): Promise<ProcessRouteSnapshot> {
-    return withTransaction(this.pool, async (connection) =>
-      this.routeSnapshot(connection, routeId),
-    );
-  }
-
   async getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
     return withTransaction(this.pool, async (connection) => {
       const [[file]] = await connection.query<
@@ -263,15 +282,11 @@ export class MysqlProductSnapshotRepository
     });
   }
 
-  private async routeSnapshot(
-    db: Db,
-    routeId: string,
-    lock = false,
-  ): Promise<ProcessRouteSnapshot> {
+  private async routeSnapshot(db: Db, routeId: string): Promise<ProcessRouteSnapshot> {
     const [[route]] = await db.query<RouteRow[]>(
       `SELECT r.id,r.route_code,r.route_name,r.version_no
          FROM process_routes r
-        WHERE r.id=? AND r.status='enabled' AND r.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
+        WHERE r.id=? AND r.status='enabled' AND r.is_deleted=0 FOR UPDATE`,
       [routeId],
     );
     if (!route) throw new ProductDomainError('NOT_FOUND', '已启用的生产工艺路线不存在');
@@ -283,7 +298,7 @@ export class MysqlProductSnapshotRepository
          FROM process_route_steps rs
          LEFT JOIN technical_files tf ON tf.id=rs.sop_file_id AND tf.file_type='sop'
         WHERE rs.route_id=? AND rs.status=1 AND rs.is_deleted=0
-        ORDER BY rs.step_order${lock ? ' FOR UPDATE' : ''}`,
+        ORDER BY rs.step_order FOR UPDATE`,
       [routeId],
     );
     if (steps.length === 0)

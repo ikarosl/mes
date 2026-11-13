@@ -15,6 +15,7 @@ import {
 import {
   CREATE_BATCH_IDEMPOTENCY_SCOPE,
   CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+  RELEASE_BATCH_IDEMPOTENCY_SCOPE,
 } from '../../application/idempotency/production-idempotency-scopes.contract.js';
 import { ProductionService } from '../../application/production.service.js';
 import {
@@ -25,6 +26,7 @@ import {
   CreateWorkOrderDto,
   IdParamDto,
   ProductionBatchQueryDto,
+  ReleaseProductionBatchDto,
   UpdateProductionBatchDto,
   UpdateWorkOrderDto,
   WorkOrderIdParamDto,
@@ -42,7 +44,7 @@ export class ProductionController {
   workOrders(@Query() query: WorkOrderQueryDto) {
     return this.service.listWorkOrders({ ...query, keyword: query.keyword?.trim() || undefined });
   }
-  // 任务表单工单候选：完整返回全部已下达/生产中且仍有可分配余量的工单。
+  // 任务表单工单候选：完整返回全部已下达/生产中的工单，计划差额仅作提示。
   // 当前候选规模具有明确小上限，不分页、不截断，前端本地筛选。
   @Get('work-orders/options')
   @RequirePermission([PERMISSIONS.production.tasks.view])
@@ -185,5 +187,17 @@ export class ProductionController {
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.cancelBatch(id, body.version, body.reason, audit);
+  }
+
+  @Post('batches/:id/actions/release')
+  @RequirePermission(PERMISSIONS.production.batches.transition)
+  @IdempotentEndpoint({ scope: RELEASE_BATCH_IDEMPOTENCY_SCOPE })
+  @AuditInApplication()
+  releaseBatch(
+    @Param() { id }: IdParamDto,
+    @Body() body: ReleaseProductionBatchDto,
+    @CurrentIdempotentCommandContext() audit: IdempotentCommandContext,
+  ) {
+    return this.service.releaseBatch(id, body, audit);
   }
 }

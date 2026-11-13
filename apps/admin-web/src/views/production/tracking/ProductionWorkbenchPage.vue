@@ -88,7 +88,13 @@
       :closable="false"
     />
     <el-alert
-      v-if="context?.batch.orderType === 'research'"
+      v-if="context?.batch.status === 'draft'"
+      title="任务草稿尚未下达，请在生产任务中下达后配置物料并明确开工。"
+      type="info"
+      :closable="false"
+    />
+    <el-alert
+      v-else-if="context?.batch.orderType === 'research'"
       title="研发任务不使用工序追踪卡，请在生产任务中办理实际产出与结束。"
       type="info"
       :closable="false"

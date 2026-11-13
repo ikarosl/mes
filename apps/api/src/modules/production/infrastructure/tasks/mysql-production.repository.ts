@@ -126,11 +126,9 @@ export class MysqlProductionRepository extends ProductionRepository {
   createBatch(
     workOrderId: string,
     payload: CreateProductionBatchPayload,
-    route: ProcessRouteSnapshot | null,
-    stepOverrides: ResolvedBatchStepOverride[],
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
-    return this.batches.create(workOrderId, payload, route, stepOverrides, audit);
+    return this.batches.create(workOrderId, payload, audit);
   }
   withBatchUpdateTransaction<T>(
     batchId: string,
@@ -145,6 +143,15 @@ export class MysqlProductionRepository extends ProductionRepository {
   ): Promise<ProductionBatchDetail> {
     return this.batches.update(id, payload, audit);
   }
+  releaseBatch(
+    id: string,
+    version: number,
+    route: ProcessRouteSnapshot | null,
+    stepOverrides: ResolvedBatchStepOverride[],
+    audit: CommandContext,
+  ): Promise<ProductionBatchDetail> {
+    return this.batches.release(id, version, route, stepOverrides, audit);
+  }
   cancelBatch(
     id: string,
     version: number,
@@ -152,11 +159,5 @@ export class MysqlProductionRepository extends ProductionRepository {
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return this.batches.cancel(id, version, reason, audit);
-  }
-  getBatchProductId(batchId: string): Promise<string> {
-    return this.batches.getProductId(batchId);
-  }
-  getWorkOrderProductId(workOrderId: string): Promise<string> {
-    return this.workOrders.getProductId(workOrderId);
   }
 }

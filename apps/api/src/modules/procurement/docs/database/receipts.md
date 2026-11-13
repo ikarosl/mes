@@ -36,10 +36,12 @@ FK：purchase_order_id→procurement_order，created_by/updated_by/voided_by→u
 | purchase_order_line_id         | ID NOT NULL                                 | 本次来货的原采购行               |
 | line_no                        | INT NOT NULL                                | CHECK >0；固定到货行号           |
 | item_id / material_variant_id  | ID NOT NULL                                 | 原采购行的物料精确身份           |
-| supplier_batch_code            | VARCHAR(100) NULL                           | 人工供应商批号                   |
+| supplier_batch_code            | VARCHAR(100) NULL                           | 供应商批号，暂不使用，保留已有值 |
 | created_by / updated_by        | ID NOT NULL                                 | 创建与最近修改人员               |
 | created_at / updated_at        | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 后者 ON UPDATE CURRENT_TIMESTAMP |
 | version                        | INT NOT NULL DEFAULT 0                      | CHECK >=0；实际入库或作废时递增  |
+
+供应商批号字段暂不在管理端采集或展示；管理端新到货登记不提交该字段，落库为 NULL。保留数据库列、已有值及现有 API 字段与查询能力，不清空历史值，也不将其转换为到货单号、报告来料批次号或库存批号。
 
 组合 FK：(receipt_id,purchase_order_id)→receipt(id,purchase_order_id)，(purchase_order_line_id,purchase_order_id)→order_line(id,purchase_order_id)，(purchase_order_line_id,item_id,material_variant_id)→order_line(id,item_id,material_variant_id)。人员列引用 users。组合 FK 防止冗余根与物料身份成为独立事实。
 

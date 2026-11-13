@@ -127,6 +127,7 @@ const routeDescription = computed(() => {
 });
 const emptyDescription = computed(() => {
   if (props.loading) return '正在读取任务工序';
+  if (props.context?.batch.status === 'draft') return '任务草稿尚未下达，暂未生成工序';
   if (props.context?.batch.orderType === 'research') return '研发任务不使用工序追踪卡';
   return props.context ? '当前任务没有工序' : '选择任务后查看工序进度';
 });

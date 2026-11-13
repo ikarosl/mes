@@ -38,7 +38,7 @@
             type="primary"
             :icon="Plus"
             @click="openCreate"
-            >新增任务</el-button
+            >新增任务草稿</el-button
           ></template
         ><template #tools
           ><el-button
@@ -138,10 +138,17 @@
                 @click="openDetail(row)"
                 >详情</el-button
               ><el-button
+                v-if="row.status !== 'draft'"
                 link
                 type="primary"
                 @click="openOutputs(row)"
                 >产出与入库</el-button
+              ><el-button
+                v-if="row.status === 'draft'"
+                link
+                type="primary"
+                @click="openRelease(row)"
+                >下达任务</el-button
               ><el-button
                 v-if="canStartBatch(row)"
                 link
@@ -164,6 +171,7 @@
                     ><el-dropdown-item
                       v-if="
                         row.orderType === 'mass_production' &&
+                        row.status !== 'draft' &&
                         canAccessRoute({ name: 'production-tracking' })
                       "
                       @click="openTracking(row)"
@@ -184,7 +192,9 @@
                       v-if="row.status === 'pending'"
                       @click="openMaterialDemandConfiguration(row)"
                       >配置物料需求</el-dropdown-item
-                    ><el-dropdown-item @click="openMaterialDemandOverview(row)"
+                    ><el-dropdown-item
+                      v-if="row.status !== 'draft'"
+                      @click="openMaterialDemandOverview(row)"
                       >物料需求</el-dropdown-item
                     ><el-dropdown-item
                       v-if="canHandleMaterials(row)"
@@ -198,9 +208,11 @@
                       v-if="canEditBatch(row)"
                       divided
                       @click="openEdit(row)"
-                      >编辑任务</el-dropdown-item
+                      >{{
+                        row.status === 'draft' ? '编辑草稿' : '调整计划与负责人'
+                      }}</el-dropdown-item
                     ><el-dropdown-item
-                      v-if="canStartBatch(row)"
+                      v-if="canCancelBatch(row)"
                       @click="openBatchCancellation(row)"
                       >取消任务</el-dropdown-item
                     ></el-dropdown-menu
@@ -248,6 +260,11 @@
       :batch="lifecycleBatch"
       :mode="lifecycleMode"
       :initial-finish-mode="lifecycleFinishMode"
+      @changed="taskPhaseChanged"
+    />
+    <TaskReleaseDialog
+      v-model:visible="releaseVisible"
+      :batch="releaseBatch"
       @changed="taskPhaseChanged"
     />
     <MaterialDemandConfigurationDialog
@@ -358,6 +375,7 @@ import { useProductionTaskEditor } from './use-production-task-editor';
 import TaskFormDialog from './TaskFormDialog.vue';
 import TaskDetailDialog from './TaskDetailDialog.vue';
 import TaskLifecycleDialog, { type TaskLifecycleMode } from './TaskLifecycleDialog.vue';
+import TaskReleaseDialog from './TaskReleaseDialog.vue';
 import TaskOutputDialog from './TaskOutputDialog.vue';
 import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
 import ProductionBatchCancelDialog from './ProductionBatchCancelDialog.vue';
@@ -418,8 +436,15 @@ const lifecycleVisible = ref(false),
   lifecycleFinishMode = ref<ProductionTaskFinishMode>('normal');
 const outputsVisible = ref(false),
   outputsBatch = ref<ProductionBatchItem | null>(null);
+const releaseVisible = ref(false),
+  releaseBatch = ref<ProductionBatchItem | null>(null);
+function openRelease(batch: ProductionBatchItem): void {
+  if (releaseVisible.value || batch.status !== 'draft') return;
+  releaseBatch.value = { ...batch };
+  releaseVisible.value = true;
+}
 function openOutputs(batch: ProductionBatchItem): void {
-  if (outputsVisible.value) return;
+  if (outputsVisible.value || batch.status === 'draft') return;
   outputsBatch.value = { ...batch };
   outputsVisible.value = true;
 }
@@ -428,13 +453,14 @@ function openLifecycle(
   mode: TaskLifecycleMode,
   finishMode: ProductionTaskFinishMode = 'normal',
 ): void {
-  if (lifecycleVisible.value) return;
+  if (lifecycleVisible.value || batch.status === 'draft') return;
   lifecycleBatch.value = { ...batch };
   lifecycleMode.value = mode;
   lifecycleFinishMode.value = finishMode;
   lifecycleVisible.value = true;
 }
 async function openTracking(batch: ProductionBatchItem): Promise<void> {
+  if (batch.status === 'draft') return;
   await router.push({ name: 'production-tracking', query: { batchId: batch.id } });
 }
 async function taskPhaseChanged(batchId: string): Promise<void> {
@@ -688,11 +714,15 @@ const canStartBatch = (row: ProductionBatchItem): boolean =>
     'material_partially_outbound',
     'material_outbound',
   ].includes(row.status);
-const canEditBatch = (row: ProductionBatchItem): boolean => row.status === 'pending';
+const canEditBatch = (row: ProductionBatchItem): boolean =>
+  row.status !== 'completed' && row.status !== 'cancelled';
+const canCancelBatch = (row: ProductionBatchItem): boolean =>
+  row.status === 'draft' || canStartBatch(row);
 const closeMaterialDemandOverview = async (): Promise<boolean> =>
   !materialDemandOverviewVisible.value ||
   (await materialDemandOverviewDialog.value?.close()) === true;
 const openMaterialDemandConfiguration = async (row: ProductionBatchItem): Promise<void> => {
+  if (row.status === 'draft') return;
   if (!(await closeMaterialDemandOverview())) return;
   materialDemandBatch.value = row;
   if (row.orderType === 'research') manualMaterialDemandVisible.value = true;
@@ -727,6 +757,7 @@ const loadMaterialDemandOverview = async (): Promise<void> => {
   }
 };
 const openMaterialDemandOverview = async (row: ProductionBatchItem): Promise<void> => {
+  if (row.status === 'draft') return;
   if (!(await closeMaterialDemandOverview())) return;
   materialDemandBatch.value = row;
   materialOverviewDemands.value = [];
@@ -735,6 +766,7 @@ const openMaterialDemandOverview = async (row: ProductionBatchItem): Promise<voi
   void loadMaterialDemandOverview();
 };
 const openManualMaterialDemand = (): void => {
+  if (materialDemandBatch.value?.status === 'draft') return;
   manualMaterialDemandVisible.value = true;
 };
 const handleMaterialDemandsConfigured = async (): Promise<void> => {

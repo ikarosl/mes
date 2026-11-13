@@ -15,10 +15,10 @@ describe('MysqlProductionBatchRepository persistence', () => {
   });
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  // TODO(production-test-recovery): opens the batch-creation transaction before invoking route snapshot orchestration；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
+  // TODO(production-test-recovery): 验证草稿创建的资格核验与写入同事务，独立下达先锁工单及任务再读取路线快照；高重要性：事务与锁序，旧创建快照夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按草稿创建及下达契约恢复。
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
-  // TODO(production-test-recovery): locks capacity inputs and persists route and step snapshots before its success audit；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
+  // TODO(production-test-recovery): 验证下达锁定工单和草稿、一次保存路线工序快照及成功审计；高重要性：快照与事务原子性，旧创建快照及容量拒绝行为已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按独立下达契约恢复。
 
   it('rolls back and does not audit a stale batch update', async () => {
     const connection = transactionConnection();
@@ -47,26 +47,7 @@ describe('MysqlProductionBatchRepository persistence', () => {
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
   // TODO(production-test-recovery): rejects creation dates outside the locked work-order plan window；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。
 
-  it('rejects update dates outside the locked work-order plan window', async () => {
-    const connection = transactionConnection();
-    connection.query
-      .mockResolvedValueOnce([[batchRow], []])
-      .mockResolvedValueOnce([[releasedWorkOrder], []])
-      .mockResolvedValueOnce([[batchRow], []]);
-    const repository = new MysqlProductionBatchRepository(
-      {
-        getConnection: vi.fn().mockResolvedValue(connection),
-      } as never,
-      {} as never,
-    );
-
-    await expect(
-      repository.update('21', { version: 2, planEndDate: '2026-09-01' }, audit),
-    ).rejects.toMatchObject({ code: 'INVALID_INPUT' });
-
-    expect(connection.execute).not.toHaveBeenCalled();
-    expect(connection.rollback).toHaveBeenCalledOnce();
-  });
+  // TODO(production-draft-plan-window): 验证草稿日期不越过锁定工单区间，失败不写任务或成功审计；高重要性：排程与事务边界，下达后修改日期的旧行为已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按草稿可编辑、已下达仅数量和负责人的边界恢复。
 
   // TODO(test-migration): 高重要性：任务创建及取消事务；正式测试获准后按自动编号和公共单据恢复。
   // TODO(production-test-recovery): previews every side effect before a pre-start cancellation；高重要性覆盖，旧结构或夹具已失效且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按当前所有者契约恢复。

@@ -82,7 +82,7 @@
           <el-descriptions-item label="计划数量"
             ><strong>{{ formatQuantity(order.plannedQuantity) }}</strong></el-descriptions-item
           >
-          <el-descriptions-item label="已分配"
+          <el-descriptions-item label="累计已分配"
             ><strong>{{ formatQuantity(order.assignedQuantity) }}</strong></el-descriptions-item
           >
           <el-descriptions-item label="实际最终产出"
@@ -97,7 +97,7 @@
           >
         </el-descriptions>
         <InlineHint class="output-note"
-          >已分配按非取消任务的计划量合计；实际最终产出按终检确认事实合计。</InlineHint
+          >累计已分配按任务计划量合计，包含已结束任务（含提前结束），取消任务不计入；实际最终产出按终检确认事实独立合计。</InlineHint
         >
       </section>
 

@@ -52,7 +52,7 @@
             <el-input
               v-model="lineSearch"
               clearable
-              placeholder="物料 / 编码 / 供应商批号"
+              placeholder="物料 / 编码 / 版本"
             />
             <p
               v-if="lineSearch && !filteredLines.some((line) => line.id === activeLine)"
@@ -86,7 +86,6 @@
             <div class="material-heading">
               <h3>{{ selectedLine.itemName }}</h3>
               <span>{{ selectedLine.itemCode }} · {{ selectedLine.materialVariantCode }}</span>
-              <span>供应商批号：{{ selectedLine.supplierBatchCode || '未提供' }}</span>
               <span>采购行 ID：{{ selectedLine.purchaseOrderLineId }}</span>
             </div>
             <el-descriptions
@@ -297,8 +296,8 @@ const filteredLines = computed(() => {
   return (detail.value?.items ?? []).filter(
     (line) =>
       !query ||
-      [line.itemName, line.itemCode, line.materialVariantCode, line.supplierBatchCode ?? ''].some(
-        (value) => value.toLocaleLowerCase().includes(query),
+      [line.itemName, line.itemCode, line.materialVariantCode].some((value) =>
+        value.toLocaleLowerCase().includes(query),
       ),
   );
 });

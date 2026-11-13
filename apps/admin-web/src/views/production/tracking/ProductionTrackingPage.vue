@@ -101,7 +101,9 @@
             }}</el-tag>
           </div>
           <el-button
-            v-if="canAccessRoute({ name: 'production-workbench' })"
+            v-if="
+              context.batch.status !== 'draft' && canAccessRoute({ name: 'production-workbench' })
+            "
             type="primary"
             plain
             @click="openWorkbench"
@@ -126,7 +128,16 @@
             >{{ context.summary.scrappedCardCount }} 盘</el-descriptions-item
           ></el-descriptions
         >
-        <div class="step-grid">
+        <el-alert
+          v-if="context.batch.status === 'draft'"
+          title="任务草稿尚未下达，暂未生成工序或追踪卡；请在生产任务中下达后办理。"
+          type="info"
+          :closable="false"
+        />
+        <div
+          v-else
+          class="step-grid"
+        >
           <button
             v-for="(step, index) in context.steps"
             :key="step.stepRecordId"

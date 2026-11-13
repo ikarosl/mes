@@ -4,11 +4,21 @@
 
 ## 工单类型与物料版本规则
 
-批量工单和研发工单共用计划与负责人规则，下达后类型固定。批量任务必须显式选择 Product 当前启用路线，且成品 BOM 已批准并永久锁定；任务创建冻结路线、工序及 SOP，不从默认路线或首条候选猜选。研发只要求有效自制成品，不读取 BOM、不选择路线、不创建工序。
+批量工单和研发工单共用计划与负责人规则，下达后类型固定。批量任务草稿显式选择 Product 当前启用路线，只保存路线 ID；任务正式下达时核验有效成品、已批准并永久锁定的 BOM 和当前启用路线，再保存路线、工序及 SOP 快照，不从默认路线或首条候选猜选。研发只要求有效自制成品，不读取 BOM、不选择路线、不创建工序。
 
 批量任务初配完整覆盖 BOM，每种基础物料在本任务只选一个精确版本，单耗乘任务计划量形成初始需求；确认后的需求基础及供应商提示冻结。后续人工追加仍使用原基础及版本，不同任务可以独立选版。研发每次手工提需明确有效物料、版本、正整数数量和可选供应商提示，不保存 BOM 基础。供应商提示仅供采购参考，不限制实际供应商。更多用料须独立人工提需，不由异常或损耗自动生成。
 
-创建任务仅允许 released/doing 工单。任务计划加已有非取消任务计划不得超过工单计划量；人工结束的任务仍占用原计划，取消任务释放计划额度。任务计划日期必须在工单日期范围内，创建后不可改计划数量或替换冻结路线。当前路线后来停用不改写历史任务，也不阻止对 pending 任务编辑负责人、日期和备注。
+创建任务仅允许 released/doing 工单，候选不因计划已分配完或超额而排除。累计已分配实时汇总所有非取消任务的当前计划量，包含草稿、正常完工和提前结束任务，取消任务不计入；累计分配与实际产出独立，不按产出回补或扣减。工单计划减累计已分配得到计划差额，允许为负；新增或调整任务超计划仅提示。计划修改不回写汇总表，也不自动改变已生成需求及其计划量快照、BOM 需求基础、预留、领料或实际产出；初配按确认当时的任务计划量生成需求，之后的物料增减仍走人工追加或需求更正。
+
+## 任务草稿、下达与编辑
+
+新任务保存为 draft，所属工单和产品身份固定，计划数量、路线、负责人、计划日期和备注可编辑；日期仍须在工单区间内。草稿不生成工序快照，不允许配置物料、提需、开工、报工、产出或人工结束，只能编辑、下达或取消。草稿更换路线只改变引用，不删除或重建历史工序。
+
+显式下达使用任务版本和 Idempotency-Key，要求 production:batches:transition。在工单根锁、任务锁下复核工单开放、任务仍为草稿、负责人及 Product 当前资格，原子保存路线／工序／SOP 快照、将任务转为 pending 并记录成功审计；不要求物料已配置或齐套，也不表示实际开工。工序 SOP 覆盖参数在下达时明确提供；新草稿创建不接受非空 stepOverrides，已有成功创建请求仍按原键重放原结果。
+
+下达后未结束任务只允许修改计划数量和负责人，路线、工序快照、计划日期和备注固定；原路线后来停用不阻止这两项调整。completed/cancelled 只读，已结束任务恢复执行后按活动状态编辑。详情能力只供界面提示，命令仍复核状态、资格和版本，实际前后数量及负责人同事务审计；编辑累计分配用新计划替换本任务原计划，不重复累加。
+
+升级保留已有任务状态和路线／工序快照，不倒退为草稿，不补造历史下达时间或动作。下达事实通过实际操作审计追溯，不另建下达历史表。
 
 ## 研发轮次关联与资料带出
 
@@ -20,7 +30,7 @@
 
 工单负责人使用 Identity 受控场景 production.work_order_owner，任务负责人使用独立场景 production.task_owner。角色配置和资格规则由[Identity](../../../identity/docs/user-candidates.md)唯一拥有；无配置或无有效角色默认无候选，不回退到管理员、当前用户、通用目录或其他场景。
 
-工单草稿允许暂缺负责人；非空时创建及编辑均在写事务内复核保留的最终负责人，下达要求非空且当前合格。下达后不提供负责人转交。任务创建必须选合格负责人，编辑只允许 pending，不能清空，未改负责人也重新复核；其他任务命令不因候选配置后来变化自动改派。
+工单草稿允许暂缺负责人；非空时创建及编辑均在写事务内复核保留的最终负责人，下达要求非空且当前合格。下达后不提供工单负责人转交。任务创建、下达及编辑须核验最终任务负责人，不能清空，未改负责人也重新复核；可编辑阶段见上文，变更不改历史执行人员。其他任务命令不因候选配置后来变化自动改派。
 
 工单和任务 owner-options 分别固定上述场景，返回完整 UserOption[]、不分页或截断，仅接受本场景消费权限：工单页 production:orders:view，任务页 production:tasks:view。历史姓名通过 Identity 历史引用批量解析，停用或软删除不抹去历史显示；无法解析或未选择时为空。负责人仍是管理账号身份，与现场人员目录的扫码登记人分别建模。
 
@@ -36,7 +46,7 @@
 
 ## 生产任务状态与查询
 
-任务准备阶段为 pending、material_pending、material_assigned、material_partially_outbound、material_outbound；明确开始后 doing，人工结束后 completed，未执行取消后 cancelled。材料阶段只表达安排和实际领料进度，不代表现场库存；doing 后领料不回退准备阶段。
+任务先为 draft，明确下达后进入 pending，再按物料安排进入 material_pending、material_assigned、material_partially_outbound、material_outbound；明确开始后 doing，人工结束后 completed，未执行取消后 cancelled。材料阶段只表达安排和实际领料进度，不代表现场库存；doing 后领料不回退准备阶段，任何已下达或已结束任务都不能退回草稿。
 
 [开始与结束](production-termination.md)维护开工前提、短产／零产、提前结束及原子收口。任务不按数量自动完成，不再进入收尾审批状态。取消仅用于未开始且未实际领料的任务；当前读摘要和提交均校验需求更正在途、待领料单和真实领料，不能由前端状态绕过。
 
@@ -50,7 +60,7 @@ GET /production/batches 同时服务任务页、现场工作台、追踪卡页�
 
 [ADR-0006](../../../../../../../docs/adr/0006-approval-workflow-boundaries.md)中工单下达审批的未来范围保留，当前仍直接下达。拟新增可空 release_approval_instance_id 并复用工单 version：draft 且关联申请时禁止普通编辑、取消和直通下达，驳回／撤回清空当前关联并递增版本；最终批准保留依据并进入 released。
 
-送审需冻结全部可编辑工单资料，包括成品身份、数量、客户、质量要求、日期、负责人和备注。最终批准在同事务核对当前关联、申请结果、冻结版本和成品资格，不能替换受审身份。下达审批不要求 BOM 已批准，批量任务创建仍独立核验 BOM 与路线；接入时须关闭平行直通入口。目标约束需追加 migration，并明确已有工单批准依据的处理，不伪造历史审批。
+送审需冻结全部可编辑工单资料，包括成品身份、数量、客户、质量要求、日期、负责人和备注。最终批准在同事务核对当前关联、申请结果、冻结版本和成品资格，不能替换受审身份。工单下达审批不要求 BOM 已批准，批量任务正式下达仍独立核验 BOM 与路线；接入时须关闭平行直通入口。目标约束需追加 migration，并明确已有工单批准依据的处理，不伪造历史审批。
 
 ## 数据库逐表设计
 
@@ -135,7 +145,7 @@ CONSTRAINT `chk_work_orders_version` CHECK ((`version` >= 0));
 
 ## production_batches
 
-将工单计划拆为任务，保存冻结路线身份、负责人、计划、首次开始快照及人工结束原因。任务不保存执行数量或实际产出累计。
+将工单计划拆为任务，草稿保存选定路线引用，下达后保存冻结路线身份，以及负责人、计划、首次开始快照和人工结束原因。任务不保存执行数量或实际产出累计。202611130020 只扩展状态 CHECK 支持 draft，数据库默认 pending 保留；新应用创建显式写 draft，已有任务不转换。
 
 同工单／产品组合外键保证来源；uk_tracking_batch_source供最终产出保持三者一致。完成并不表示足量，开始／结束和物料收口由应用事务完成。finish_reason 与 completed 状态由 CHECK 绑定。202611120010 新增 finish_mode 及 chk_tracking_task_finish_mode，限制非空值只可为 completed 下的 normal／early；历史完成方式不推测，保持 NULL。trg_tracking_task_lifecycle_guard 保护首次开工事实、状态版本、显式新结束方式及仅在开放工单内恢复，恢复清空当前结束字段，历史原因沿操作日志保留。
 
@@ -148,8 +158,8 @@ CONSTRAINT `chk_work_orders_version` CHECK ((`version` >= 0));
 | `product_id`              | `bigint unsigned NOT NULL`                                                | 冗余产品 ID，与工单组合外键约束                                    |
 | `batch_no`                | `varchar(100) NOT NULL`                                                   | 生产批号                                                           |
 | `route_id`                | `bigint unsigned DEFAULT NULL`                                            | 工艺路线 ID，可为空                                                |
-| `route_code_snapshot`     | `varchar(64) DEFAULT NULL`                                                | 路线编码快照                                                       |
-| `route_version_snapshot`  | `varchar(64) DEFAULT NULL`                                                | 路线版本快照                                                       |
+| `route_code_snapshot`     | `varchar(64) DEFAULT NULL`                                                | 下达时冻结的路线编码；草稿为空                                     |
+| `route_version_snapshot`  | `varchar(64) DEFAULT NULL`                                                | 下达时冻结的路线版本；草稿为空                                     |
 | `planned_quantity`        | `int NOT NULL`                                                            | 本批次计划生产数量                                                 |
 | `plan_start_date`         | `date DEFAULT NULL`                                                       | 本批次计划开始日期，可为空                                         |
 | `plan_end_date`           | `date DEFAULT NULL`                                                       | 本批次计划完工日期，可为空                                         |
@@ -205,7 +215,7 @@ CONSTRAINT `chk_production_batches_completed` CHECK (((`status` <> 'completed') 
 CONSTRAINT `chk_production_batches_plan_dates` CHECK (((`plan_start_date` is null) or (`plan_end_date` is null) or (`plan_end_date` >= `plan_start_date`)));
 CONSTRAINT `chk_production_batches_quantities_integer` CHECK ((`planned_quantity` = truncate(`planned_quantity`,0)));
 CONSTRAINT `chk_production_batches_quantity` CHECK ((`planned_quantity` > 0));
-CONSTRAINT `chk_production_batches_status` CHECK ((`status` in ('pending','material_pending','material_assigned','material_partially_outbound','material_outbound','doing','completed','cancelled')));
+CONSTRAINT `chk_production_batches_status` CHECK ((`status` in ('draft','pending','material_pending','material_assigned','material_partially_outbound','material_outbound','doing','completed','cancelled')));
 CONSTRAINT `chk_production_batches_version` CHECK ((`version` >= 0));
 CONSTRAINT `chk_tracking_task_finish` CHECK ((((`status` = 'completed') and (`finish_reason` is not null) and (char_length(trim(`finish_reason`)) > 0)) or ((`status` <> 'completed') and (`finish_reason` is null))));
 ```

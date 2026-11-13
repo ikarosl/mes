@@ -59,6 +59,10 @@ export interface ProductionBatchCancellationCheck {
 }
 
 export interface ProductionBatchDetail extends ProductionBatchItem {
+  /** GET 任务详情提供当前计划数量编辑能力；命令成功响应不携带。 */
+  canEditPlan?: boolean;
+  /** GET 任务详情提供草稿路线编辑能力；下达后保持冻结路线。 */
+  canEditRoute?: boolean;
   startedById: string | null;
   /** 首次任务开工人的当前显示姓名；未开工或引用无法解析时为 null。 */
   startedByName: string | null;
@@ -93,6 +97,7 @@ export interface CreateProductionBatchPayload {
   planStartDate?: string | null;
   planEndDate?: string | null;
   remark?: string | null;
+  /** 仅供旧创建请求成功重放；新任务的覆盖参数在下达时提交。 */
   stepOverrides?: CreateBatchStepOverridePayload[];
 }
 
@@ -102,11 +107,18 @@ export interface CreateBatchStepOverridePayload {
 }
 
 export interface UpdateProductionBatchPayload extends VersionedCommand {
+  plannedQuantity?: number;
+  /** 仅草稿批量任务可换线；研发任务不得配置路线。 */
+  routeId?: string | null;
   /** 省略时保留并复核当前负责人；不能清空。 */
   ownerId?: string;
   planStartDate?: string | null;
   planEndDate?: string | null;
   remark?: string | null;
+}
+
+export interface ReleaseProductionBatchPayload extends VersionedCommand {
+  stepOverrides?: CreateBatchStepOverridePayload[];
 }
 
 export interface CancelProductionBatchPayload extends VersionedCommand {

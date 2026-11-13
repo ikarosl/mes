@@ -2,17 +2,6 @@ import { describe, expect, it, vi } from 'vitest';
 import { MysqlWorkOrderRepository } from '../mysql-work-order.repository.js';
 
 describe('MysqlWorkOrderRepository data ownership', () => {
-  it('reads a work-order product id only from Production-owned data', async () => {
-    const query = vi.fn().mockResolvedValue([[{ product_id: 8 }], []]);
-    const repository = new MysqlWorkOrderRepository({ query } as never);
-
-    await expect(repository.getProductId('6')).resolves.toBe('8');
-
-    const sql = String(query.mock.calls[0]?.[0]);
-    expect(sql).toContain('FROM work_orders');
-    expect(sql).not.toContain('products');
-  });
-
   it('rejects clearing required work-order plan dates', async () => {
     const connection = transactionConnection();
     connection.query
@@ -415,7 +404,7 @@ describe('MysqlWorkOrderRepository data ownership', () => {
 });
 
 describe('MysqlWorkOrderRepository work-order options', () => {
-  it('returns released or doing work orders that still have remaining quantity', async () => {
+  it('returns released or doing work orders', async () => {
     const query = vi.fn().mockResolvedValue([[], []]);
     const repository = new MysqlWorkOrderRepository({ query } as never);
 
@@ -424,7 +413,6 @@ describe('MysqlWorkOrderRepository work-order options', () => {
     const sql = String(query.mock.calls[0]?.[0]);
     expect(sql).toContain('FROM work_orders wo');
     expect(sql).toContain("wo.status IN ('released','doing')");
-    expect(sql).toContain('> 0');
   });
 
   // TODO(test-migration): 高重要性：工单产出与额度；正式测试获准后按批准清单恢复。

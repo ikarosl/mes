@@ -33,6 +33,11 @@ export interface WorkOrderUpdateContext {
 
 export interface ProductionBatchUpdateContext {
   ownerId: string | null;
+  productId: string;
+  orderType: ProductionBatchItem['orderType'];
+  routeId: string | null;
+  isUnusedDraft: boolean;
+  version: number;
 }
 
 export abstract class ProductionRepository {
@@ -92,8 +97,6 @@ export abstract class ProductionRepository {
   abstract createBatch(
     workOrderId: string,
     payload: CreateProductionBatchPayload,
-    route: ProcessRouteSnapshot | null,
-    stepOverrides: ResolvedBatchStepOverride[],
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
   abstract withBatchUpdateTransaction<T>(
@@ -105,12 +108,17 @@ export abstract class ProductionRepository {
     payload: UpdateProductionBatchPayload,
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
+  abstract releaseBatch(
+    id: string,
+    version: number,
+    route: ProcessRouteSnapshot | null,
+    stepOverrides: ResolvedBatchStepOverride[],
+    audit: CommandContext,
+  ): Promise<ProductionBatchDetail>;
   abstract cancelBatch(
     id: string,
     version: number,
     reason: string,
     audit: CommandContext,
   ): Promise<ProductionBatchDetail>;
-  abstract getBatchProductId(batchId: string): Promise<string>;
-  abstract getWorkOrderProductId(workOrderId: string): Promise<string>;
 }

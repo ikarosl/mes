@@ -9,7 +9,7 @@
       <strong>{{ batch?.batchNo || '任务详情' }}</strong>
       <div>
         <el-button
-          v-if="batch"
+          v-if="batch && batch.status !== 'draft'"
           type="primary"
           plain
           :disabled="loading || !!error"
@@ -19,6 +19,7 @@
         <el-button
           v-if="
             batch?.orderType === 'mass_production' &&
+            batch.status !== 'draft' &&
             canAccessRoute({ name: 'production-tracking' })
           "
           type="primary"
@@ -39,6 +40,15 @@
       :closable="false"
       show-icon
     />
+    <InlineHint
+      v-if="batch?.status === 'draft'"
+      class="draft-notice"
+    >
+      任务尚未下达，可继续编辑计划；下达后再配置物料需求并明确开工。<template
+        v-if="batch.orderType === 'mass_production'"
+        >工序将于下达时生成。</template
+      >
+    </InlineHint>
     <div v-loading="loading">
       <el-descriptions
         v-if="batch"
@@ -107,6 +117,7 @@ import { formatDateForDisplay, formatDateTimeForDisplay } from '../../../utils/d
 import { formatQuantity } from '../../../utils/quantity';
 import { batchStatusMeta } from '../shared/production-status';
 import BatchApprovedOutput from '../shared/BatchApprovedOutput.vue';
+import InlineHint from '../../../components/InlineHint.vue';
 const props = defineProps<{
   visible: boolean;
   batch: ProductionBatchDetail | null;
@@ -121,7 +132,7 @@ defineEmits<{
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
 async function openTracking(): Promise<void> {
-  if (props.batch)
+  if (props.batch && props.batch.status !== 'draft')
     await router.push({ name: 'production-tracking', query: { batchId: props.batch.id } });
 }
 </script>
@@ -135,5 +146,8 @@ async function openTracking(): Promise<void> {
 }
 .detail-toolbar > strong {
   font-size: 16px;
+}
+.draft-notice {
+  margin-bottom: 16px;
 }
 </style>

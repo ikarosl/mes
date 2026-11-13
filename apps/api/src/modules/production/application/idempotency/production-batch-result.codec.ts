@@ -5,7 +5,10 @@ import type {
   IdempotencyResultCodec,
   JsonValue,
 } from '../../../../common/idempotency/idempotency-executor.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from './production-idempotency-scopes.contract.js';
+import {
+  CREATE_BATCH_IDEMPOTENCY_SCOPE,
+  RELEASE_BATCH_IDEMPOTENCY_SCOPE,
+} from './production-idempotency-scopes.contract.js';
 
 /**
  * createBatch 幂等结果 codec，scope 与当前请求及结果结构绑定。
@@ -89,4 +92,12 @@ export const productionBatchResultCodec: IdempotencyResultCodec<ProductionBatchD
   decode(stored) {
     return productionBatchDetailSchema.parse(stored);
   },
+};
+
+export const productionBatchReleaseResultCodec: IdempotencyResultCodec<ProductionBatchDetail> & {
+  readonly scope: typeof RELEASE_BATCH_IDEMPOTENCY_SCOPE;
+} = {
+  scope: RELEASE_BATCH_IDEMPOTENCY_SCOPE,
+  encode: productionBatchResultCodec.encode,
+  decode: productionBatchResultCodec.decode,
 };

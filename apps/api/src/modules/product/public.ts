@@ -20,6 +20,7 @@ export {
   type ProductQueryFailure,
   type ProductQueryResult,
   type ProcessRouteSnapshot,
+  type ProcessRouteDisplayReference,
   type ProcessRouteStepSnapshot,
   type ProductBomLineSnapshot,
   type ProductBomSnapshot,

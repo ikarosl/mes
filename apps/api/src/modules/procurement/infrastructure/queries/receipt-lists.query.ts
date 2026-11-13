@@ -73,6 +73,7 @@ export async function listInboundSources(
       materialVariantId: line.materialVariantId,
       materialVariantCode: line.materialVariantCode,
       unit: line.unit,
+      plannedQuantity: line.plannedQuantity,
       supplierBatchCode: line.supplierBatchCode,
       inboundQuantity: line.quantities.inboundQuantity,
       handlingCount: line.handlingCount,

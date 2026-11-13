@@ -6,6 +6,7 @@ import type {
   ProductionBatchItem,
   ProductionBatchQuery,
   UpdateProductionBatchPayload,
+  ReleaseProductionBatchPayload,
   CancelProductionBatchPayload,
   UserOption,
 } from '@company/contracts';
@@ -53,6 +54,18 @@ export const productionTasksApi = {
   /** 更新生产批次 */
   updateBatch: (id: string, data: UpdateProductionBatchPayload): Promise<ProductionBatchDetail> =>
     request<ProductionBatchDetail>({ url: `/production/batches/${id}`, method: 'PATCH', data }),
+
+  releaseBatch: (
+    id: string,
+    data: ReleaseProductionBatchPayload,
+    idempotencyKey: string,
+  ): Promise<ProductionBatchDetail> =>
+    request<ProductionBatchDetail>({
+      url: `/production/batches/${id}/actions/release`,
+      method: 'POST',
+      data,
+      headers: { [IDEMPOTENCY_KEY_HEADER]: idempotencyKey },
+    }),
 
   cancelBatch: (id: string, data: CancelProductionBatchPayload): Promise<ProductionBatchDetail> =>
     request<ProductionBatchDetail>({

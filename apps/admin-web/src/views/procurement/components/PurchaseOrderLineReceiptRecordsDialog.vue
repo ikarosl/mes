@@ -42,7 +42,7 @@
             v-model="keyword"
             clearable
             maxlength="100"
-            placeholder="到货单号 / 到货行 ID / 供应商批号"
+            placeholder="到货单号 / 到货行 ID"
             class="records-keyword"
           />
         </el-form-item>
@@ -101,12 +101,6 @@
           width="180"
         >
           <template #default="{ row }">{{ formatDateTimeForDisplay(row.receivedAt) }}</template>
-        </el-table-column>
-        <el-table-column
-          label="供应商批号"
-          min-width="150"
-        >
-          <template #default="{ row }">{{ row.supplierBatchCode || '—' }}</template>
         </el-table-column>
         <el-table-column
           label="已入库数量"

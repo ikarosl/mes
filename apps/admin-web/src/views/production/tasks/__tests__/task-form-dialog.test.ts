@@ -58,6 +58,7 @@ const openDialog = async (
       visible: false,
       editingTaskId: overrides.editingTaskId ?? null,
       submitting: false,
+      intentStatus: 'idle',
     },
     global: {
       stubs: {
@@ -112,6 +113,7 @@ const emitSubmit = async (wrapper: DialogWrapper): Promise<void> => {
 const releasedOrder = (id: string): Record<string, unknown> => ({
   id,
   workOrderNo: 'WO-1',
+  orderType: 'mass_production',
   productId: 'p1',
   productCode: 'P001',
   productName: '环形器',
@@ -217,7 +219,7 @@ describe('TaskFormDialog', () => {
   });
 
   it('edit mode: work order not in released candidates still saves', async () => {
-    // 编辑工单可能不在 released 候选内（已全部分配 / 状态变化）
+    // 编辑工单可能因状态变化不在 released 候选内。
     workOrderOptions.mockResolvedValue([]);
     routeOptions.mockResolvedValue(defaultRoutes);
 
@@ -235,6 +237,10 @@ describe('TaskFormDialog', () => {
           planStartDate: string;
           planEndDate: string;
           remark: string | null;
+          orderType: 'mass_production';
+          status: 'pending';
+          canEditPlan: boolean;
+          canEditRoute: boolean;
         }) => void;
       }
     ).setForm({
@@ -247,6 +253,10 @@ describe('TaskFormDialog', () => {
       planStartDate: '2026-08-01',
       planEndDate: '2026-08-31',
       remark: null,
+      orderType: 'mass_production',
+      status: 'pending',
+      canEditPlan: true,
+      canEditRoute: false,
     });
     await flushPromises();
 

@@ -1,4 +1,3 @@
-import { workOrderAssignedQuantitySql } from './mysql-work-order-allocation.sql.js';
 import { lockWorkOrderForBatch } from './mysql-work-order-material-version.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { allocateBusinessNumber } from '../../../../infrastructure/numbering/mysql-business-number.js';
@@ -38,6 +37,7 @@ import {
 } from './mysql-production-batch.persistence.js';
 import { ensureNoDuplicate } from '../shared/mysql-production-db.js';
 import { findWorkOrder } from './mysql-work-order.persistence.js';
+import { isUnusedBatchDraft } from './mysql-production-batch-plan.js';
 
 import {
   buildBatchCancellationCheck,
@@ -97,7 +97,7 @@ export class MysqlProductionBatchRepository {
   }
 
   async get(id: string): Promise<ProductionBatchDetail> {
-    return selectBatchOverview(this.pool, id);
+    return selectBatchOverview(this.pool, id, true);
   }
 
   getStartRecord(id: string): Promise<ProductionBatchStartRecord | null> {
@@ -108,15 +108,6 @@ export class MysqlProductionBatchRepository {
     const batch = await findBatch(this.pool, id);
     const state = await loadBatchCancellationState(this.pool, id, false, this.documents);
     return buildBatchCancellationCheck(id, batch, state);
-  }
-
-  async getProductId(id: string): Promise<string> {
-    const [[row]] = await this.pool.query<(RowDataPacket & { product_id: number })[]>(
-      'SELECT product_id FROM production_batches WHERE id=?',
-      [id],
-    );
-    if (!row) throw new ProductionDomainError('NOT_FOUND', '生产批次不存在');
-    return String(row.product_id);
   }
 
   async withBatchCreationTransaction<T>(
@@ -137,8 +128,6 @@ export class MysqlProductionBatchRepository {
   async create(
     workOrderId: string,
     payload: CreateProductionBatchPayload,
-    route: ProcessRouteSnapshot | null,
-    stepOverrides: ResolvedBatchStepOverride[],
     audit: CommandContext,
   ): Promise<ProductionBatchDetail> {
     return withTransaction(this.pool, async (connection) => {
@@ -149,30 +138,20 @@ export class MysqlProductionBatchRepository {
           '只有已下达或生产中的工单可以创建生产批次',
         );
       const batchNo = await allocateBusinessNumber(connection, 'production_batch');
-      const [[assigned]] = await connection.query<(RowDataPacket & { quantity: string })[]>(
-        `SELECT ${workOrderAssignedQuantitySql('?', true)} quantity`,
-        [workOrderId],
-      );
-      if (
-        integerQuantity(assigned?.quantity ?? 0) + integerQuantity(payload.plannedQuantity) >
-        integerQuantity(order.planned_quantity)
-      )
-        throw new ProductionDomainError('INVALID_INPUT', '生产批次计划数量超过工单剩余数量');
       this.assertPlanWithinWorkOrder(
         payload.planStartDate ?? null,
         payload.planEndDate ?? null,
         order,
       );
+      const routeId = order.order_type === 'research' ? null : (payload.routeId ?? null);
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO production_batches (work_order_id,product_id,batch_no,route_id,route_code_snapshot,route_version_snapshot,planned_quantity,plan_start_date,plan_end_date,batch_owner_id,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT INTO production_batches (work_order_id,product_id,batch_no,route_id,planned_quantity,plan_start_date,plan_end_date,batch_owner_id,remark,status,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,'draft',?,?)`,
         [
           workOrderId,
           order.product_id,
           batchNo,
-          route?.id ?? null,
-          route?.routeCode ?? null,
-          route?.versionNo ?? null,
-          payload.plannedQuantity,
+          routeId,
+          integerQuantity(payload.plannedQuantity),
           payload.planStartDate ?? null,
           payload.planEndDate ?? null,
           payload.ownerId,
@@ -181,38 +160,13 @@ export class MysqlProductionBatchRepository {
           audit.actorId,
         ],
       );
-      const overrides = new Map(stepOverrides.map((override) => [override.routeStepId, override]));
-      for (const step of route?.steps ?? []) {
-        const override = overrides.get(step.routeStepId);
-        await connection.execute(
-          `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-          [
-            result.insertId,
-            step.routeStepId,
-            step.stepOrder,
-            step.stepCode,
-            step.stepName,
-            step.sop?.id ?? null,
-            step.sop?.fileName ?? null,
-            step.sop?.objectKey ?? null,
-            step.sop?.versionNo ?? null,
-            override?.actualSop?.id ?? null,
-            override?.actualSop?.fileName ?? null,
-            override?.actualSop?.objectKey ?? null,
-            override?.actualSop?.versionNo ?? null,
-            order.unit_snapshot,
-            audit.actorId,
-            audit.actorId,
-          ],
-        );
-      }
       await this.audit(
         connection,
         audit,
         'production-batch.create',
         String(result.insertId),
         null,
-        { ...payload, batchNo, routeId: route?.id ?? null, stepCount: route?.steps.length ?? 0 },
+        { ...payload, batchNo, routeId, status: 'draft' },
       );
       return selectBatchOverview(connection, String(result.insertId));
     }).catch((error) => ensureNoDuplicate(error, '单据编号或幂等键已存在'));
@@ -226,9 +180,16 @@ export class MysqlProductionBatchRepository {
       const unlocked = await findBatch(connection, batchId);
       await findWorkOrder(connection, String(unlocked.work_order_id), true);
       const batch = await findBatch(connection, batchId, true);
-      if (batch.status !== 'pending')
-        throw new ProductionDomainError('INVALID_STATE', '仅待处理生产批次可编辑');
-      return action({ ownerId: batch.owner_id === null ? null : String(batch.owner_id) });
+      if (batch.status === 'completed' || batch.status === 'cancelled')
+        throw new ProductionDomainError('INVALID_STATE', '已结束或已取消的生产任务不可编辑');
+      return action({
+        ownerId: batch.owner_id === null ? null : String(batch.owner_id),
+        productId: String(batch.product_id),
+        orderType: batch.order_type,
+        routeId: batch.route_id === null ? null : String(batch.route_id),
+        isUnusedDraft: await isUnusedBatchDraft(connection, batch, true),
+        version: batch.version,
+      });
     });
   }
 
@@ -241,8 +202,26 @@ export class MysqlProductionBatchRepository {
       const unlocked = await findBatch(connection, id);
       const order = await findWorkOrder(connection, String(unlocked.work_order_id), true);
       const before = await findBatch(connection, id, true);
-      if (before.status !== 'pending')
-        throw new ProductionDomainError('INVALID_STATE', '仅待处理生产批次可编辑');
+      if (before.status === 'completed' || before.status === 'cancelled')
+        throw new ProductionDomainError('INVALID_STATE', '已结束或已取消的生产任务不可编辑');
+      if (before.version !== payload.version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '生产任务已被其他操作修改，请刷新后重试',
+        );
+      const plannedQuantity = integerQuantity(payload.plannedQuantity ?? before.planned_quantity);
+      const routeId = before.route_id === null ? null : String(before.route_id);
+      const routeChanged = payload.routeId !== undefined && payload.routeId !== routeId;
+      if (
+        before.order_type === 'research' &&
+        payload.routeId !== undefined &&
+        payload.routeId !== null
+      )
+        throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+      if (routeChanged && !(await isUnusedBatchDraft(connection, before, true)))
+        throw new ProductionDomainError('INVALID_STATE', '只有尚未下达的任务草稿可修改工艺路线');
+      if (before.order_type === 'mass_production' && routeChanged && !payload.routeId)
+        throw new ProductionDomainError('INVALID_INPUT', '批量任务必须选择工艺路线');
       const planStartDate =
         payload.planStartDate === undefined
           ? toDateOnlyString(before.plan_start_date)
@@ -251,32 +230,128 @@ export class MysqlProductionBatchRepository {
         payload.planEndDate === undefined
           ? toDateOnlyString(before.plan_end_date)
           : payload.planEndDate;
+      const remark = payload.remark === undefined ? before.remark : payload.remark;
+      if (
+        before.status !== 'draft' &&
+        (planStartDate !== toDateOnlyString(before.plan_start_date) ||
+          planEndDate !== toDateOnlyString(before.plan_end_date) ||
+          remark !== before.remark)
+      )
+        throw new ProductionDomainError('INVALID_STATE', '任务下达后只能修改计划数量和负责人');
       if (planStartDate && planEndDate && planEndDate < planStartDate)
         throw new ProductionDomainError('INVALID_INPUT', '计划完工日期不能早于计划开始日期');
       this.assertPlanWithinWorkOrder(planStartDate, planEndDate, order);
       const [result] = await connection.execute<ResultSetHeader>(
-        'UPDATE production_batches SET batch_owner_id=?,plan_start_date=?,plan_end_date=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?',
+        `UPDATE production_batches SET planned_quantity=?,route_id=?,
+         batch_owner_id=?,plan_start_date=?,plan_end_date=?,remark=?,version=version+1,updated_by=? WHERE id=? AND version=?`,
         [
+          plannedQuantity,
+          payload.routeId === undefined ? before.route_id : payload.routeId,
           payload.ownerId === undefined ? before.owner_id : payload.ownerId,
           planStartDate,
           planEndDate,
-          payload.remark === undefined ? before.remark : payload.remark,
+          remark,
           audit.actorId,
           id,
           payload.version,
         ],
       );
       this.assertVersion(result, '生产批次已被其他操作修改，请刷新后重试');
+      const after = await findBatch(connection, id, true);
       await this.audit(
         connection,
         audit,
         'production-batch.update',
         id,
         batchAudit(before),
-        payload,
+        batchAudit(after),
       );
       return selectBatchOverview(connection, id);
     });
+  }
+
+  async release(
+    id: string,
+    version: number,
+    route: ProcessRouteSnapshot | null,
+    stepOverrides: ResolvedBatchStepOverride[],
+    audit: CommandContext,
+  ): Promise<ProductionBatchDetail> {
+    return withTransaction(this.pool, async (connection) => {
+      const unlocked = await findBatch(connection, id);
+      const order = await findWorkOrder(connection, String(unlocked.work_order_id), true);
+      const before = await findBatch(connection, id, true);
+      if (before.version !== version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '生产任务已被其他操作修改，请刷新后重试',
+        );
+      requireBatchTransition(before.status, 'pending');
+      if (!(await isUnusedBatchDraft(connection, before, true)))
+        throw new ProductionDomainError('INVALID_STATE', '只有尚未使用的任务草稿可以下达');
+      if (before.order_type === 'research') {
+        if (route || before.route_id !== null || stepOverrides.length)
+          throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+      } else if (!route || route.id !== String(before.route_id)) {
+        throw new ProductionDomainError('INVALID_INPUT', '批量任务必须选择有效工艺路线');
+      }
+      const [result] = await connection.execute<ResultSetHeader>(
+        `UPDATE production_batches SET status='pending',route_code_snapshot=?,route_version_snapshot=?,
+         version=version+1,updated_by=? WHERE id=? AND status='draft' AND version=?`,
+        [route?.routeCode ?? null, route?.versionNo ?? null, audit.actorId, id, version],
+      );
+      this.assertVersion(result, '生产任务已被其他操作修改，请刷新后重试');
+      await this.insertRouteSteps(
+        connection,
+        id,
+        route,
+        stepOverrides,
+        order.unit_snapshot,
+        audit.actorId,
+      );
+      const after = await findBatch(connection, id, true);
+      await this.audit(connection, audit, 'production-batch.release', id, batchAudit(before), {
+        ...batchAudit(after),
+        stepCount: route?.steps.length ?? 0,
+        stepOverrides,
+      });
+      return selectBatchOverview(connection, id);
+    });
+  }
+
+  private async insertRouteSteps(
+    connection: PoolConnection,
+    batchId: string,
+    route: ProcessRouteSnapshot | null,
+    stepOverrides: ResolvedBatchStepOverride[],
+    unit: string,
+    actorId: CommandContext['actorId'],
+  ): Promise<void> {
+    const overrides = new Map(stepOverrides.map((override) => [override.routeStepId, override]));
+    for (const step of route?.steps ?? []) {
+      const override = overrides.get(step.routeStepId);
+      await connection.execute(
+        `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        [
+          batchId,
+          step.routeStepId,
+          step.stepOrder,
+          step.stepCode,
+          step.stepName,
+          step.sop?.id ?? null,
+          step.sop?.fileName ?? null,
+          step.sop?.objectKey ?? null,
+          step.sop?.versionNo ?? null,
+          override?.actualSop?.id ?? null,
+          override?.actualSop?.fileName ?? null,
+          override?.actualSop?.objectKey ?? null,
+          override?.actualSop?.versionNo ?? null,
+          unit,
+          actorId,
+          actorId,
+        ],
+      );
+    }
   }
 
   private assertPlanWithinWorkOrder(
@@ -396,7 +471,7 @@ export class MysqlProductionBatchRepository {
       action,
       userId: audit.actorId,
       targetId,
-      targetType: action.includes('batch-step') ? 'batch_step_record' : 'production_batch',
+      targetType: 'production_batch',
       result: 'success',
       beforeData,
       afterData,

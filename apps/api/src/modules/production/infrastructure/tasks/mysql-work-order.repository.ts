@@ -1,4 +1,3 @@
-import { workOrderAssignedQuantitySql } from './mysql-work-order-allocation.sql.js';
 import type {
   WorkOrderReleaseContext,
   WorkOrderUpdateContext,
@@ -9,6 +8,7 @@ import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql
 import type {
   CreateWorkOrderPayload,
   PageResult,
+  ProductionBatchItem,
   UpdateWorkOrderPayload,
   WorkOrderDetail,
   WorkOrderItem,
@@ -46,15 +46,7 @@ import {
 type WorkOrderBatchSummaryRow = RowDataPacket & {
   id: number;
   batch_no: string;
-  status:
-    | 'pending'
-    | 'material_pending'
-    | 'material_assigned'
-    | 'material_outbound'
-    | 'doing'
-    | 'completed'
-    | 'cancelled'
-    | 'material_partially_outbound';
+  status: ProductionBatchItem['status'];
   planned_quantity: string;
   approved_available_quantity: string | null;
 };
@@ -105,10 +97,8 @@ export class MysqlWorkOrderRepository {
   }
 
   async listWorkOrderOptions(): Promise<WorkOrderOption[]> {
-    const remaining = `(wo.planned_quantity - ${workOrderAssignedQuantitySql('wo.id')})`;
-    const conditions = [`wo.status IN ('released','doing')`, `${remaining} > 0`];
     const [rows] = await this.pool.query<WorkOrderRow[]>(
-      `${WORK_ORDER_SELECT} WHERE ${conditions.join(' AND ')}
+      `${WORK_ORDER_SELECT} WHERE wo.status IN ('released','doing')
          ORDER BY wo.work_order_no ASC,wo.id ASC`,
     );
     return rows.map((row) => ({
@@ -129,15 +119,6 @@ export class MysqlWorkOrderRepository {
 
   async get(id: string): Promise<WorkOrderDetail> {
     return this.getDetail(this.pool, id);
-  }
-
-  async getProductId(id: string): Promise<string> {
-    const [[row]] = await this.pool.query<(RowDataPacket & { product_id: number })[]>(
-      'SELECT product_id FROM work_orders WHERE id=?',
-      [id],
-    );
-    if (!row) throw new ProductionDomainError('NOT_FOUND', '生产工单不存在');
-    return String(row.product_id);
   }
 
   async create(

@@ -11,8 +11,6 @@ describe('ProductSnapshotService', () => {
     };
     const repository = {
       getProductionProduct: vi.fn().mockResolvedValue(product),
-      getBomSnapshot: vi.fn(),
-      getRouteSnapshot: vi.fn(),
     };
     const service = new ProductSnapshotService(repository as never);
 

@@ -126,13 +126,14 @@
           <template #default="{ row }">{{ formatQuantity(row.plannedQuantity) }}</template>
         </el-table-column>
         <el-table-column
-          label="已分配"
+          label="累计已分配"
           min-width="185"
           align="right"
         >
           <template #header>
-            <el-tooltip content="非取消任务的计划量计入已分配，人工结束不释放原计划额度。"
-              ><span>已分配</span></el-tooltip
+            <el-tooltip
+              content="按任务计划量累计，包含已结束任务（含提前结束），取消任务不计入；与实际产出独立统计。"
+              ><span>累计已分配</span></el-tooltip
             >
           </template>
           <template #default="{ row }">

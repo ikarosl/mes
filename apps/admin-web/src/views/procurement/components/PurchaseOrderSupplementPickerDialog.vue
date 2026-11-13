@@ -108,11 +108,7 @@
                 clearable
                 maxlength="100"
                 :disabled="disabled"
-                :placeholder="
-                  reason === 'quality_replacement'
-                    ? '搜索到货单或供应商批号'
-                    : '搜索到货单或供应商批号'
-                "
+                placeholder="搜索到货单"
                 aria-label="搜索补单依据"
                 @clear="search"
               />
@@ -208,7 +204,6 @@
                     ></el-radio
                   >
                   <div class="candidate-information">
-                    <span>批号 {{ candidate.supplierBatchCode || '未提供' }}</span>
                     <span>到货 {{ formatDateTimeForDisplay(candidate.receivedAt) }}</span>
                   </div>
                   <SupplementReceiptQuantities
@@ -254,7 +249,6 @@
                     ></el-radio
                   >
                   <div class="candidate-information">
-                    <span>批号 {{ candidate.supplierBatchCode || '未提供' }}</span>
                     <span>到货 {{ formatDateTimeForDisplay(candidate.receivedAt) }}</span>
                   </div>
                   <SupplementReceiptQuantities

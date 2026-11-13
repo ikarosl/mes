@@ -7,6 +7,7 @@ export function productionTaskStartBlockedReason(input: {
   hasInitialMaterialConfiguration: boolean;
 }): string | null {
   if (!['released', 'doing'].includes(input.workOrderStatus)) return '当前工单状态不允许开工';
+  if (input.batchStatus === 'draft') return '请先下达任务，再配置物料需求并开始执行';
   if (
     ![
       'pending',

@@ -112,6 +112,6 @@ describe('useWorkOrderOptions', () => {
         planStartDate: null,
         planEndDate: null,
       }),
-    ).toBe('WO-001 / P-001 / 环形器 / 可分配 100');
+    ).toBe('WO-001 / P-001 / 环形器 / 计划内剩余 100');
   });
 });

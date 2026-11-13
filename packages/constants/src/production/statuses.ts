@@ -15,6 +15,7 @@ export const WORK_ORDER_TYPE_LABELS = {
 } as const;
 
 export const PRODUCTION_BATCH_STATUSES = [
+  'draft',
   'pending',
   'material_pending',
   'material_assigned',

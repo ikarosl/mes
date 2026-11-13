@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { ProductProductionDefinitionCommand } from './product-production-definition.command.js';
 import { ProductProductionDefinitionRepository } from './ports/product-production-definition.repository.js';
-import type { CommandContext } from '../../../common/audit/audit.types.js';
 import type {
   ProcessRouteSnapshot,
   ProductQueryFailure,
@@ -15,10 +14,23 @@ export class ProductProductionDefinitionService extends ProductProductionDefinit
     super();
   }
 
+  async requireRouteForProductionDraft(
+    routeId: string,
+  ): Promise<ProductQueryResult<{ id: string }>> {
+    try {
+      return {
+        status: 'success',
+        value: await this.definitions.requireRouteForProductionDraft(routeId),
+      };
+    } catch (error) {
+      if (error instanceof ProductDomainError) return toFailure(error);
+      throw error;
+    }
+  }
+
   async requireApprovedBomForProductionTask(
     productId: string,
     requestedRouteId: string | null,
-    audit: CommandContext,
   ): Promise<ProductQueryResult<ProcessRouteSnapshot>> {
     try {
       return {
@@ -26,7 +38,6 @@ export class ProductProductionDefinitionService extends ProductProductionDefinit
         value: await this.definitions.requireApprovedBomForProductionTask(
           productId,
           requestedRouteId,
-          audit,
         ),
       };
     } catch (error) {

@@ -16,7 +16,7 @@ receipt-order-options 使用已下单且有 open/new_arrival 行的采购候选�
 
 GET /procurement/inbound-sources 按有效到货物料分页，支持 keyword、supplierId、purchaseOrderId、receiptLineId 和 receiptLineIds，多个精确筛选取交集。keyword 搜索到货单号、采购单号、供应商、物料名称、物料编码、精确版本编码和供应商批号。按到货时间、明细 ID 倒序稳定排序。
 
-候选无数量授权含义，包含尚未检验、尚未入库、已有入库或说明的有效到货；作废来源退出候选。receiptLineVersion 用于提交时的乐观校验，入库总量仅供参考，不作为上限。每条来源可多次实际入库和分批归入新旧库存批次。入口要求 warehouse:inbound:view，批次候选由 Inventory 提供。
+候选无数量授权含义，包含尚未检验、尚未入库、已有入库或说明的有效到货；作废来源退出候选。receiptLineVersion 用于提交时的乐观校验，计划采购量取固定原采购行的 planned_quantity，与累计入库总量均仅供参考，不作为上限。每条来源可多次实际入库和分批归入新旧库存批次。入口要求 warehouse:inbound:view，批次候选由 Inventory 提供。
 
 ## 历史查询与作废预览
 

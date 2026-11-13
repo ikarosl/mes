@@ -1,6 +1,7 @@
 /** Production HTTP幂等命名空间；Controller与应用服务共同引用，客户端仅发送Idempotency-Key。 */
 export const SUBMIT_DEMAND_CORRECTION_SCOPE = 'production.demand-correction.submit.v3' as const;
 export const CREATE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.create.v16' as const;
+export const RELEASE_BATCH_IDEMPOTENCY_SCOPE = 'production.batch.release.v1' as const;
 export const CREATE_MATERIAL_ALLOCATION_IDEMPOTENCY_SCOPE =
   'production.material-allocation.create.v2' as const;
 export const CREATE_MATERIAL_OUTBOUND_IDEMPOTENCY_SCOPE =

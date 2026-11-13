@@ -1,4 +1,4 @@
-/** 已取消任务的原计划不占分配额度；人工结束任务仍占用原计划。 */
-export const workOrderAssignedQuantitySql = (workOrderId: string, lock = false): string =>
+/** 非取消任务计划累计，包含正常完工和提前结束任务，与实际产出独立。 */
+export const workOrderAssignedQuantitySql = (workOrderId: string): string =>
   `COALESCE((SELECT SUM(b.planned_quantity) FROM production_batches b
-    WHERE b.work_order_id=${workOrderId} AND b.status <>'cancelled'${lock ? ' FOR UPDATE' : ''}),0)`;
+    WHERE b.work_order_id=${workOrderId} AND b.status <>'cancelled'),0)`;

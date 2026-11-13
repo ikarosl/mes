@@ -1,6 +1,6 @@
 # ADR-0012：工单选版与任务引用边界
 
-状态：Partially superseded by [ADR-0014](0014-task-material-policy-and-output-inspection.md)（仅工单锁版与跨任务修改阻断被取代；计划额度与历史事实边界保留）
+状态：Partially superseded。工单锁版与跨任务修改阻断由 [ADR-0014](0014-task-material-policy-and-output-inspection.md) 取代；计划分配硬上限及终止释放计划额度由 [ADR-0029](0029-terminal-output-manual-inbound-and-task-reopen.md) 取代。历史事实保留及工单锁协调边界继续有效。
 
 ## 历史工单选版决策（已取代）
 
@@ -8,7 +8,7 @@
 
 只要非 cancelled/terminated 任务曾生成任意需求，整个工单配置禁止修改，正常完工历史也阻断。未执行任务取消、已领料任务完成提前收尾批准后，可以释放引用并重新配置；旧需求、精确版本、库存与产出事实保持原样。研发任务仍允许任务内多版本。
 
-## 仍有效的计划额度与历史事实边界
+## 历史计划额度与事实边界
 
 工单分配上限按排除 cancelled/terminated 后的任务计划计算，closing 和 completed 继续占用。终止历史计划独立显示，已批准产出继续累计，不从重新分配额度扣减；此上限不保证累计产出不超过工单计划。配置、需求、任务创建和终态变更以工单锁协调。
 
@@ -18,4 +18,4 @@
 
 ## 当前适用边界
 
-工单选版配置和跨任务修改阻断已由任务初配冻结取代；不得依据上方历史决策恢复 `work_order_material_versions` 或工单配置入口。批量每任务独立选版，研发无 BOM 与统一版本锁。有效任务计划合计仍受工单额度约束，取消／终止释放额度，实际产出保留历史且允许计划外产出。当前字段、命令及约束见 [工单所有者设计](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。
+工单选版配置和跨任务修改阻断已由任务初配冻结取代；不得依据上方历史决策恢复 `work_order_material_versions` 或工单配置入口。批量每任务独立选版，研发无 BOM 与统一版本锁。计划分配与实际产出按 ADR-0029 独立对照，不再沿用上方额度硬限制；历史需求、物料版本、库存与产出事实仍保留，业务命令继续以工单锁协调。当前字段、命令及约束见 [工单所有者设计](../../apps/api/src/modules/production/docs/database/work-orders-and-batches.md)。

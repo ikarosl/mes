@@ -63,7 +63,7 @@ export const buildBatchCancellationCheck = (
 ): ProductionBatchCancellationCheck => {
   const blockers: ProductionBatchCancellationCheck['blockers'] = [];
   if (state.pendingCorrectionDemandIds.length) blockers.push('pending_demand_correction');
-  if (!['pending', 'material_pending', 'material_assigned'].includes(batch.status))
+  if (!['draft', 'pending', 'material_pending', 'material_assigned'].includes(batch.status))
     blockers.push('batch_already_started');
   if (state.outbounds.some((outbound) => outbound.status !== 'pending_picking'))
     blockers.push('material_already_outbound');

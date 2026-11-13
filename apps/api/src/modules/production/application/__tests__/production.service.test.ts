@@ -5,7 +5,6 @@ import type {
   IdempotentCommandContext,
 } from '../../../../common/audit/audit.types.js';
 import { ProductionService } from '../production.service.js';
-import { CREATE_BATCH_IDEMPOTENCY_SCOPE } from '../idempotency/production-idempotency-scopes.contract.js';
 
 const audit: CommandContext = {
   actorId: '1',
@@ -51,8 +50,14 @@ const validBatchDetail = (
   startedById: null,
   startedByName: null,
   status: 'pending',
-  finalOutput: { availableQuantity: '0', confirmedOutputCount: 0 },
+  finalOutput: {
+    availableQuantity: '0',
+    confirmedOutputCount: 0,
+    inboundQuantity: '0',
+    pendingInboundQuantity: '0',
+  },
   finishReason: null,
+  finishMode: null,
   ownerId: null,
   ownerName: null,
   completedAt: null,
@@ -336,7 +341,9 @@ describe('ProductionService first-stage commands', () => {
 
   it('forwards batch plan dates as a versioned update', async () => {
     const repository = {
-      withBatchUpdateTransaction: vi.fn(async (_id, action) => action({ ownerId: '7' })),
+      withBatchUpdateTransaction: vi.fn(async (_id, action) =>
+        action({ ownerId: '7', version: 2 }),
+      ),
       updateBatch: vi.fn().mockResolvedValue({ id: '6' }),
     };
     const service = new ProductionService(
@@ -354,67 +361,10 @@ describe('ProductionService first-stage commands', () => {
     expect(repository.updateBatch).toHaveBeenCalledWith('6', payload, audit);
   });
 
-  // TODO(test-migration): 验证选定路线快照与任务写入处于同一事务；高重要性：生产定义和任务原子性。
-  // 旧用例依赖默认路线，当前暂停；用户明确授权正式测试后按显式路线和合格任务负责人恢复。
+  // TODO(test-migration): 验证下达时选定路线快照与任务状态写入处于同一事务；高重要性：生产定义和任务原子性。
+  // 旧用例依赖默认路线及创建快照，当前暂停；用户明确授权正式测试后按独立下达和合格任务负责人恢复。
 
-  it('wraps createBatch in the idempotency executor with a stable scope and request snapshot', async () => {
-    const repository = {
-      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
-      createBatch: vi.fn().mockResolvedValue({ id: '6', ownerId: null, stepRecords: [] }),
-    };
-    const productDefinitions = {
-      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
-        status: 'success',
-        value: { id: '9', product: { id: '8' }, steps: [] },
-      }),
-    };
-    const captured: unknown[] = [];
-    const capturingExecutor = {
-      execute: vi.fn(async (command: { handler: () => Promise<unknown> }) => {
-        captured.push(command);
-        return { result: await command.handler(), isReplay: false };
-      }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      {} as never,
-      {} as never,
-      capturingExecutor as never,
-      eligibleOwners as never,
-      eligibleOwners as never,
-      productDefinitions as never,
-    );
-
-    await service.createBatch(
-      '6',
-      { plannedQuantity: 3, routeId: '9', ownerId: '7' },
-      idempotentAudit,
-    );
-
-    expect(capturingExecutor.execute).toHaveBeenCalledOnce();
-    const command = captured[0] as {
-      scope: string;
-      key: string;
-      actorId: string;
-      requestId: string;
-      request: { params: { workOrderId: string }; body: unknown };
-      resultCodec: { encode: (result: unknown) => unknown; decode: (stored: unknown) => unknown };
-    };
-    expect(command.scope).toBe(CREATE_BATCH_IDEMPOTENCY_SCOPE);
-    expect(command.key).toBe('test-idempotency-key');
-    expect(command.actorId).toBe('1');
-    expect(command.requestId).toBe('test-request');
-    expect(command.request.params).toEqual({ workOrderId: '6' });
-    // body 必须是 DTO 转换与 trim 后的规范化载荷，才能与重放指纹一致
-    expect(command.request.body).toEqual({
-      plannedQuantity: 3,
-      routeId: '9',
-      ownerId: '7',
-      remark: null,
-    });
-    // codec 已改为完整嵌套校验：残缺对象（仅 id/batchNo）必须拒绝，不允许放行为伪 ProductionBatchDetail
-    expect(() => command.resultCodec.decode({ id: '6', batchNo: 'x' })).toThrow();
-  });
+  // TODO(production-draft-create-idempotency): 验证草稿创建使用稳定 scope、规范化请求快照及完整幂等结果校验；高重要性：幂等指纹与响应一致性，创建即冻结路线工序的旧首次执行旅程已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按草稿仅存路线引用及独立下达恢复。
 
   // TODO(task-owner-eligibility): 验证首次创建在任务写入事务内复核负责人资格，失败不创建任务或成功审计。
   // 高重要性：写入资格和事务原子性；旧用例仅模拟通用启用用户，已不能覆盖任务负责人场景。
@@ -465,69 +415,7 @@ describe('ProductionService first-stage commands', () => {
   // TODO(test-migration): 验证任务历史人员引用通过一次批量 Identity 查询解析；高重要性：历史身份一致性。
   // 旧用例依赖合并工序响应，当前暂停；用户明确授权正式测试后按任务概览和独立工序契约恢复。
 
-  it('maps a route public query failure to HTTP 404', async () => {
-    const repository = {
-      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
-    };
-    const productDefinitions = {
-      requireApprovedBomForProductionTask: vi
-        .fn()
-        .mockResolvedValue({ status: 'not-found', message: '工艺路线不可用' }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      {} as never,
-      {} as never,
-      executingIdempotencyExecutor as never,
-      eligibleOwners as never,
-      eligibleOwners as never,
-      productDefinitions as never,
-    );
+  // TODO(production-task-route-eligibility): 验证草稿路线引用和正式下达资格失败经 Product 公开边界映射为稳定错误且不写任务事实；高重要性：跨模块写入资格，创建即核验批准 BOM 的旧旅程已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，分别按草稿路线核验与下达生产定义核验恢复。
 
-    await expect(
-      service.createBatch('6', { plannedQuantity: 1, routeId: '9', ownerId: '7' }, idempotentAudit),
-    ).rejects.toMatchObject({
-      code: 'NOT_FOUND',
-      message: '工艺路线不可用',
-    });
-    expect(productDefinitions.requireApprovedBomForProductionTask).toHaveBeenCalledWith(
-      '8',
-      '9',
-      expect.objectContaining({ actorId: '1', requestId: 'test-request' }),
-    );
-  });
-
-  it('only accepts creation-time execution overrides for steps in the selected route', async () => {
-    const repository = {
-      withBatchCreationTransaction: vi.fn(async (_workOrderId, action) => action('8')),
-    };
-    const productDefinitions = {
-      requireApprovedBomForProductionTask: vi.fn().mockResolvedValue({
-        status: 'success',
-        value: { id: '9', steps: [{ routeStepId: '41' }] },
-      }),
-    };
-    const service = new ProductionService(
-      repository as never,
-      {} as never,
-      {} as never,
-      executingIdempotencyExecutor as never,
-      eligibleOwners as never,
-      eligibleOwners as never,
-      productDefinitions as never,
-    );
-
-    await expect(
-      service.createBatch(
-        '6',
-        {
-          routeId: '9',
-          plannedQuantity: 1,
-          ownerId: '7',
-          stepOverrides: [{ routeStepId: '42', actualSopFileId: null }],
-        },
-        idempotentAudit,
-      ),
-    ).rejects.toThrow('工序覆盖项不属于所选工艺路线');
-  });
+  // TODO(production-task-release-step-overrides): 验证下达覆盖项只属于选定路线且 SOP 来源当前合格，失败不保存工序快照；高重要性：执行依据与事务边界，创建时配置工序覆盖的旧行为已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按独立下达一次冻结工序的契约恢复。
 });

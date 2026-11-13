@@ -75,6 +75,7 @@ const knownIdempotencyScopes = [
   'procurement.receipt.inspect.v6',
   'procurement.receipt.void.v4',
   'production.batch.create.v16',
+  'production.batch.release.v1',
   'production.demand-correction.submit.v3',
   'production.material-allocation.create.v2',
   'production.material-demands.add-manual.v4',

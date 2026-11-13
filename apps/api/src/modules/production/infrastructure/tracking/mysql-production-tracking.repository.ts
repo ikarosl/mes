@@ -467,8 +467,8 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       );
   }
   private requireOpenTask(status: string): void {
-    if (['completed', 'cancelled'].includes(status))
-      throw new ProductionDomainError('INVALID_STATE', '任务已经结束，不能继续办理追踪卡');
+    if (['draft', 'completed', 'cancelled'].includes(status))
+      throw new ProductionDomainError('INVALID_STATE', '尚未下达或已结束的任务不能办理追踪卡');
   }
   private requireVersion(actual: number, expected: number): void {
     if (actual !== expected)

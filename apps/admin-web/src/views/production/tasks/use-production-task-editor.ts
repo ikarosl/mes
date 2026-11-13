@@ -3,6 +3,7 @@ import type {
   CreateProductionBatchPayload,
   ProductionBatchDetail,
   ProductionBatchItem,
+  UpdateProductionBatchPayload,
 } from '@company/contracts';
 import { normalizeCreateBatchPayload } from '@company/utils';
 import { productionTasksApi } from '../../../api/production/tasks';
@@ -21,6 +22,11 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
   let submittedCreateCommand: {
     workOrderId: string;
     payload: ReturnType<typeof normalizeCreateBatchPayload>;
+  } | null = null;
+  let editingTaskPlan: {
+    plannedQuantity: number;
+    routeId: string | null;
+    isDraft: boolean;
   } | null = null;
   const taskDialogVisible = ref(false),
     detailDialogVisible = ref(false),
@@ -45,6 +51,7 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
     editRead.invalidate();
     editingTaskId.value = null;
     editingTaskVersion.value = null;
+    editingTaskPlan = null;
     taskFormDialogRef.value?.resetForm();
     createBatchIntent.reset();
     taskIntentStatus.value = 'idle';
@@ -90,8 +97,16 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
       });
       if (!request.isCurrent()) return;
       if (detail.id !== row.id) throw new Error('任务详情与当前目标不一致，请重试');
+      if (detail.status === 'completed' || detail.status === 'cancelled') {
+        throw new Error('当前任务已结束，只能查看详情');
+      }
       editingTaskId.value = detail.id;
       editingTaskVersion.value = detail.version;
+      editingTaskPlan = {
+        plannedQuantity: Number(detail.plannedQuantity),
+        routeId: detail.routeId,
+        isDraft: detail.status === 'draft',
+      };
       taskFormDialogRef.value?.setForm(detail);
       taskDialogVisible.value = true;
     } catch (error) {
@@ -108,14 +123,25 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
       if (editId) {
         if (!data) return;
         const version = editingTaskVersion.value;
-        if (version === null) throw new Error('任务编辑依据缺失，请关闭后重新打开');
-        await productionTasksApi.updateBatch(editId, {
+        const originalPlan = editingTaskPlan;
+        if (version === null || !originalPlan) {
+          throw new Error('任务编辑依据缺失，请关闭后重新打开');
+        }
+        const payload: UpdateProductionBatchPayload = {
           ownerId: data.ownerId,
-          planStartDate: data.planStartDate || null,
-          planEndDate: data.planEndDate || null,
-          remark: data.remark || null,
           version,
-        });
+        };
+        if (data.plannedQuantity !== originalPlan.plannedQuantity) {
+          payload.plannedQuantity = data.plannedQuantity;
+        }
+        if (originalPlan.isDraft) {
+          payload.planStartDate = data.planStartDate || null;
+          payload.planEndDate = data.planEndDate || null;
+          payload.remark = data.remark || null;
+          const routeId = data.routeId || null;
+          if (routeId !== originalPlan.routeId) payload.routeId = routeId;
+        }
+        await productionTasksApi.updateBatch(editId, payload);
         EMessage.success('任务已更新');
       } else {
         if (createBatchIntent.getStatus() === 'idle' && data) {
@@ -144,7 +170,7 @@ export function useProductionTaskEditor(loadTasks: () => Promise<void>) {
           (key) => productionTasksApi.createOrderBatch(command.workOrderId, command.payload, key),
         );
         submittedCreateCommand = null;
-        EMessage.success('任务已新增');
+        EMessage.success('任务草稿已保存，请在列表中下达任务');
       }
       taskDialogVisible.value = false;
       saved = true;

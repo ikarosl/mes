@@ -8,6 +8,7 @@ import type {
   ProductionBatchItem,
   ProductionBatchQuery,
   ProductionBatchStartRecord,
+  ReleaseProductionBatchPayload,
   UpdateProductionBatchPayload,
   UpdateWorkOrderPayload,
   UserOption,
@@ -26,6 +27,7 @@ import {
   ProductSnapshotQuery,
   ProductProductionDefinitionCommand,
   type ProcessRouteSnapshot,
+  type ProcessRouteDisplayReference,
   type ProductQueryResult,
 } from '../../product/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
@@ -36,8 +38,12 @@ import type { ResolvedBatchStepOverride } from './ports/production.repository.js
 import {
   CREATE_BATCH_IDEMPOTENCY_SCOPE,
   CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE,
+  RELEASE_BATCH_IDEMPOTENCY_SCOPE,
 } from './idempotency/production-idempotency-scopes.contract.js';
-import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
+import {
+  productionBatchReleaseResultCodec,
+  productionBatchResultCodec,
+} from './idempotency/production-batch-result.codec.js';
 import { workOrderCreateResultCodec } from './idempotency/work-order-create-result.codec.js';
 
 @Injectable()
@@ -207,6 +213,9 @@ export class ProductionService {
       },
       resultCodec: productionBatchResultCodec,
       handler: async () => {
+        // 旧成功键先重放原快照；新创建草稿不丢弃尚无保存位置的工序覆盖参数。
+        if (normalizedPayload.stepOverrides?.length)
+          throw new ProductionDomainError('INVALID_INPUT', '工序执行参数请在任务下达时提交');
         const productDefinitions = this.productDefinitions;
         if (!productDefinitions) {
           throw new Error('产品生产定义命令未配置');
@@ -215,32 +224,21 @@ export class ProductionService {
           workOrderId,
           async (workOrderProductId, orderType) => {
             await this.taskOwners.requireEligible(normalizedPayload.ownerId);
+            this.requireProduct(await this.products.getProductionProduct(workOrderProductId));
             const research = orderType === 'research';
             if (research) {
-              this.requireProduct(await this.products.getProductionProduct(workOrderProductId));
-              if (normalizedPayload.routeId || normalizedPayload.stepOverrides?.length)
+              if (normalizedPayload.routeId)
                 throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
             } else if (!normalizedPayload.routeId) {
               throw new ProductionDomainError('INVALID_INPUT', '请先选择工艺路线后再创建批量任务');
             }
-            const route = research
-              ? null
-              : this.requireProduct(
-                  await productDefinitions.requireApprovedBomForProductionTask(
-                    workOrderProductId,
-                    normalizedPayload.routeId ?? null,
-                    commandContext,
-                  ),
-                );
-            const stepOverrides = await this.resolveStepOverrides(
-              normalizedPayload.stepOverrides ?? [],
-              route,
-            );
+            if (!research && normalizedPayload.routeId)
+              this.requireProduct(
+                await productDefinitions.requireRouteForProductionDraft(normalizedPayload.routeId),
+              );
             const batch = await this.production.createBatch(
               workOrderId,
               normalizedPayload,
-              route,
-              stepOverrides,
               commandContext,
             );
             // 首次执行即富化并保存最终响应快照，重放直接返回该快照；
@@ -254,13 +252,100 @@ export class ProductionService {
   }
   async updateBatch(id: string, payload: UpdateProductionBatchPayload, audit: CommandContext) {
     this.assertPlanDates(payload.planStartDate, payload.planEndDate);
-    const batch = await this.production.withBatchUpdateTransaction(id, async ({ ownerId }) => {
+    const batch = await this.production.withBatchUpdateTransaction(id, async (current) => {
+      if (current.version !== payload.version)
+        throw new ProductionDomainError(
+          'CONCURRENT_MODIFICATION',
+          '生产任务已被其他操作修改，请刷新后重试',
+        );
       await this.taskOwners.requireEligible(
-        payload.ownerId === undefined ? ownerId : payload.ownerId,
+        payload.ownerId === undefined ? current.ownerId : payload.ownerId,
       );
+      const routeChanged = payload.routeId !== undefined && payload.routeId !== current.routeId;
+      if (
+        current.orderType === 'research' &&
+        payload.routeId !== undefined &&
+        payload.routeId !== null
+      )
+        throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+      if (routeChanged && !current.isUnusedDraft)
+        throw new ProductionDomainError('INVALID_STATE', '只有尚未下达的任务草稿可修改工艺路线');
+      if (routeChanged) {
+        if (!payload.routeId)
+          throw new ProductionDomainError('INVALID_INPUT', '批量任务必须选择工艺路线');
+        if (!this.productDefinitions) throw new Error('产品生产定义命令未配置');
+        this.requireProduct(
+          await this.productDefinitions.requireRouteForProductionDraft(payload.routeId),
+        );
+      }
       return this.production.updateBatch(id, this.cleanBatchUpdate(payload), audit);
     });
     return this.enrichBatchDetail(batch);
+  }
+
+  async releaseBatch(
+    id: string,
+    payload: ReleaseProductionBatchPayload,
+    audit: IdempotentCommandContext,
+  ) {
+    const body: ReleaseProductionBatchPayload = {
+      version: payload.version,
+      stepOverrides: (payload.stepOverrides ?? []).map((override) => ({
+        routeStepId: override.routeStepId,
+        actualSopFileId: override.actualSopFileId ?? null,
+      })),
+    };
+    const commandContext: CommandContext = {
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      ip: audit.ip,
+      userAgent: audit.userAgent,
+    };
+    const execution = await this.idempotency.execute<ProductionBatchDetail>({
+      scope: RELEASE_BATCH_IDEMPOTENCY_SCOPE,
+      key: audit.idempotencyKey,
+      actorId: audit.actorId,
+      requestId: audit.requestId,
+      request: { params: { id }, body },
+      resultCodec: productionBatchReleaseResultCodec,
+      handler: () =>
+        this.production.withBatchUpdateTransaction(id, async (current) => {
+          if (current.version !== body.version)
+            throw new ProductionDomainError(
+              'CONCURRENT_MODIFICATION',
+              '生产任务已被其他操作修改，请刷新后重试',
+            );
+          if (!current.isUnusedDraft)
+            throw new ProductionDomainError('INVALID_STATE', '只有尚未使用的任务草稿可以下达');
+          await this.taskOwners.requireEligible(current.ownerId);
+          const research = current.orderType === 'research';
+          let route: ProcessRouteSnapshot | null = null;
+          if (research) {
+            if (current.routeId || body.stepOverrides?.length)
+              throw new ProductionDomainError('INVALID_INPUT', '研发任务不配置工艺路线或工序');
+            this.requireProduct(await this.products.getProductionProduct(current.productId));
+          } else {
+            if (!this.productDefinitions) throw new Error('产品生产定义命令未配置');
+            route = this.requireProduct(
+              await this.productDefinitions.requireApprovedBomForProductionTask(
+                current.productId,
+                current.routeId,
+              ),
+            );
+          }
+          const stepOverrides = await this.resolveStepOverrides(body.stepOverrides ?? [], route);
+          return this.enrichBatchDetail(
+            await this.production.releaseBatch(
+              id,
+              body.version,
+              route,
+              stepOverrides,
+              commandContext,
+            ),
+          );
+        }),
+    });
+    return execution.result;
   }
   async cancelBatch(id: string, version: number, reason: string, audit: CommandContext) {
     const normalizedReason = reason.trim();
@@ -296,10 +381,17 @@ export class ProductionService {
 
   private async enrichBatches(batches: ProductionBatchItem[]): Promise<ProductionBatchItem[]> {
     const names = await this.resolveUserNames(batches.map((batch) => batch.ownerId));
-    return batches.map((batch) => ({
-      ...batch,
-      ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
-    }));
+    const routes = await this.draftRouteReferences(batches);
+    return batches.map((batch) => {
+      const route =
+        batch.status === 'draft' && batch.routeId ? routes.get(batch.routeId) : undefined;
+      return {
+        ...batch,
+        routeCode: route?.routeCode ?? batch.routeCode,
+        routeVersion: route?.versionNo ?? batch.routeVersion,
+        ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
+      };
+    });
   }
 
   private async enrichBatchDetail(batch: ProductionBatchDetail): Promise<ProductionBatchDetail> {
@@ -308,12 +400,31 @@ export class ProductionService {
       batch.startedById,
       batch.cancelledBy,
     ]);
+    const routes = await this.draftRouteReferences([batch]);
+    const route = batch.status === 'draft' && batch.routeId ? routes.get(batch.routeId) : undefined;
     return {
       ...batch,
+      routeCode: route?.routeCode ?? batch.routeCode,
+      routeVersion: route?.versionNo ?? batch.routeVersion,
       ownerName: batch.ownerId ? (names.get(batch.ownerId) ?? null) : null,
       startedByName: batch.startedById ? (names.get(batch.startedById) ?? null) : null,
       cancelledByName: batch.cancelledBy ? (names.get(batch.cancelledBy) ?? null) : null,
     };
+  }
+
+  private async draftRouteReferences(
+    batches: ProductionBatchItem[],
+  ): Promise<Map<string, ProcessRouteDisplayReference>> {
+    const routeIds = [
+      ...new Set(
+        batches.flatMap((batch) =>
+          batch.status === 'draft' && batch.routeId ? [batch.routeId] : [],
+        ),
+      ),
+    ];
+    if (routeIds.length === 0) return new Map();
+    const routes = await this.products.listProcessRouteDisplayReferencesByIds(routeIds);
+    return new Map(routes.map((route) => [route.id, route]));
   }
 
   private async resolveUserNames(

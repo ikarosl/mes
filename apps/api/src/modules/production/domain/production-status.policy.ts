@@ -12,6 +12,7 @@ const workOrderTransitions: Readonly<Record<WorkOrderStatus, readonly WorkOrderS
 
 const batchTransitions: Readonly<Record<ProductionBatchStatus, readonly ProductionBatchStatus[]>> =
   {
+    draft: ['pending', 'cancelled'],
     pending: ['material_pending', 'cancelled', 'completed'],
     material_pending: [
       'material_assigned',

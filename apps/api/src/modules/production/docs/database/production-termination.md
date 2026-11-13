@@ -1,6 +1,6 @@
 ﻿# 任务开始与结束
 
-任务生命周期由 Production 拥有，任务主表结构见[工单与任务](work-orders-and-batches.md)，逐盘执行、异常和最终产出见[追踪卡](execution-traceability-quality.md)。数量达到计划不会自动完成任务。
+任务生命周期由 Production 拥有，草稿与正式下达及任务主表结构见[工单与任务](work-orders-and-batches.md)，逐盘执行、异常和最终产出见[追踪卡](execution-traceability-quality.md)。草稿不能开工、人工结束或恢复执行；数量达到计划不会自动完成任务。
 
 ## 管理员任务开工与物料阶段
 
@@ -24,7 +24,7 @@ POST /production/batches/:batchId/actions/finish 使用当前任务 version、�
 
 ## 未执行任务取消
 
-取消仍用于尚未开工、没有实际领料的 pending/material_pending/material_assigned 任务，要求当前版本和原因。取消一并取消待领料单、分配及活动需求，并作废尚未使用的卡；存在实际领料或已到站执行则拒绝，须使用人工结束。取消不产生库存反向流水。
+取消用于草稿及尚未开工、没有实际领料的 pending/material_pending/material_assigned 任务，要求当前版本和原因。草稿取消不生成工序或物料事实；已下达任务取消一并取消待领料单、分配及活动需求，并作废尚未使用的卡。存在实际领料或已到站执行则拒绝，须使用人工结束。取消不产生库存反向流水。
 
 ## 研发最终产出
 

@@ -25,7 +25,8 @@ export const ORDER_STATUS_META: StatusMeta<WorkOrderStatus>[] = [
 
 /** 生产批次状态元数据 */
 export const BATCH_STATUS_META: StatusMeta<ProductionBatchStatus>[] = [
-  { value: 'pending', label: '已生成批次', type: 'info' },
+  { value: 'draft', label: '草稿', type: 'info' },
+  { value: 'pending', label: '已下达待配料', type: 'primary' },
   { value: 'material_pending', label: '已配置物料需求', type: 'primary' },
   { value: 'material_assigned', label: '已分配物料批次', type: 'primary' },
   { value: 'material_partially_outbound', label: '部分领料', type: 'warning' },

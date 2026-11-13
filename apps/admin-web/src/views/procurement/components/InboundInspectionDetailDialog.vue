@@ -52,9 +52,12 @@
         ><el-descriptions-item label="供应商">{{ line.supplierName }}</el-descriptions-item
         ><el-descriptions-item label="采购单号">{{ line.purchaseNo }}</el-descriptions-item
         ><el-descriptions-item label="到货单号">{{ line.receiptNo }}</el-descriptions-item
-        ><el-descriptions-item label="来料批次号">{{
-          line.receiptNo
-        }}</el-descriptions-item></el-descriptions
+        ><el-descriptions-item label="来料批次号">{{ line.receiptNo }}</el-descriptions-item
+        ><el-descriptions-item label="计划采购量"
+          ><template v-if="line.plannedQuantity"
+            >{{ Number(line.plannedQuantity) }} {{ line.unit }}</template
+          ><template v-else>—</template></el-descriptions-item
+        ></el-descriptions
       >
       <el-tabs
         v-model="activeTab"

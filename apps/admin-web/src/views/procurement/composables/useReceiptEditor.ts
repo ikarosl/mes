@@ -16,7 +16,6 @@ import { useProcurementCommand } from './useProcurementCommand';
 interface ReceiptDraftRow {
   line: PurchaseOrderLine;
   selected: boolean;
-  supplierBatchCode: string;
 }
 
 export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) {
@@ -42,11 +41,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
   }, '到货记录');
   const activeRows = computed(() => rows.value.filter((row) => row.selected));
   const dirty = computed(() =>
-    Boolean(
-      handoverEvidence.value ||
-      remark.value ||
-      rows.value.some((row) => row.selected || row.supplierBatchCode),
-    ),
+    Boolean(handoverEvidence.value || remark.value || rows.value.some((row) => row.selected)),
   );
   async function loadOrders(): Promise<void> {
     if (!visible.value || order.value || !read.isActive()) return;
@@ -77,7 +72,7 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
       order.value = result;
       rows.value = result.items
         .filter((line) => line.status === 'open' && line.fulfillmentMode === 'new_arrival')
-        .map((line) => ({ line, selected: false, supplierBatchCode: '' }));
+        .map((line) => ({ line, selected: false }));
       stale.value = false;
     } catch (error) {
       if (current.isCurrent()) EMessage.error(error, '采购到货依据加载失败');
@@ -177,10 +172,9 @@ export function useReceiptEditor(onSaved: (id: string) => void | Promise<void>) 
       receivedAt: toBeijingISOString(receivedAt.value),
       handoverEvidence: handoverEvidence.value.trim(),
       remark: remark.value.trim() || null,
-      details: activeRows.value.map(({ line, supplierBatchCode }) => ({
+      details: activeRows.value.map(({ line }) => ({
         purchaseOrderLineId: line.id,
         version: line.version,
-        supplierBatchCode: supplierBatchCode.trim() || null,
       })),
     };
     await command.run(

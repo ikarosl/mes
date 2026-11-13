@@ -23,6 +23,7 @@ import type {
   CreateWorkOrderPayload,
   CloseWorkOrderPayload,
   ProductionBatchQuery,
+  ReleaseProductionBatchPayload,
   UpdateProductionBatchPayload,
   UpdateWorkOrderPayload,
   WorkOrderQuery,
@@ -147,6 +148,12 @@ export class UpdateProductionBatchDto
   implements UpdateProductionBatchPayload
 {
   @ValidateIf((_, value: unknown) => value !== undefined)
+  @IsInt()
+  @Min(1)
+  @Max(MAX_QUANTITY)
+  plannedQuantity?: number;
+  @IsOptional() @IsString() @MaxLength(20) routeId?: string | null;
+  @ValidateIf((_, value: unknown) => value !== undefined)
   @IsDefined({ message: '请选择任务负责人' })
   @IsString()
   @IsNotEmpty({ message: '请选择任务负责人' })
@@ -163,6 +170,18 @@ export class UpdateProductionBatchDto
   @IsDateString({ strict: true })
   planEndDate?: string | null;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+
+export class ReleaseProductionBatchDto
+  extends VersionedCommandDto
+  implements ReleaseProductionBatchPayload
+{
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(200)
+  @ValidateNested({ each: true })
+  @Type(() => CreateBatchStepOverrideDto)
+  stepOverrides?: ReleaseProductionBatchPayload['stepOverrides'];
 }
 
 export class CancelProductionBatchDto

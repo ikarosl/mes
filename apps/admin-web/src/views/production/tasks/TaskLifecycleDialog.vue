@@ -319,6 +319,7 @@ const canSubmit = computed(() => {
   if (submitting.value || status.value === 'blocked' || status.value === 'expired') return false;
   if (recovery.value) return true;
   if (loading.value || error.value || !context.value) return false;
+  if (context.value.batch.status === 'draft') return false;
   if (props.mode === 'start') return startCheck.value?.canStart === true;
   if (props.mode === 'reopen') return canReopenParent.value;
   return (

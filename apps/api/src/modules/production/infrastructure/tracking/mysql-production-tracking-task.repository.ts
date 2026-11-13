@@ -94,6 +94,8 @@ export class MysqlProductionTrackingTaskRepository {
           'CONCURRENT_MODIFICATION',
           '生产任务已经变化，请刷新后重试',
         );
+      if (batch.status === 'draft')
+        throw new ProductionDomainError('INVALID_STATE', '尚未下达的任务草稿请办理取消');
       if (
         ![
           'pending',

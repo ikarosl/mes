@@ -125,7 +125,7 @@
           maxlength="2000"
       /></el-form-item>
       <InlineHint class="notice"
-        >勾选采购单中本次到货的物料；实际入库数量由仓库办理时填写，检验报告可独立补录。</InlineHint
+        >勾选采购单中本次到货的物料；实际入库数量由仓库办理时填写，检验报告可独立补录。历史已入库仅累计本采购行的有效到货，不代表本次到货量或入库上限。</InlineHint
       >
       <el-table
         :data="rows"
@@ -157,15 +157,14 @@
           ></el-table-column
         >
         <el-table-column
-          label="来料批次号（选填）"
-          min-width="200"
+          label="历史已入库（参考）"
+          min-width="180"
           ><template #default="{ row }"
-            ><el-input
-              v-model="row.supplierBatchCode"
-              :disabled="!row.selected"
-              maxlength="100"
-              placeholder="如有请填写" /></template
-        ></el-table-column>
+            ><template v-if="row.line.quantities?.inboundQuantity != null"
+              >{{ row.line.quantities.inboundQuantity }} {{ row.line.unit }}</template
+            ><span v-else>未知</span></template
+          ></el-table-column
+        >
       </el-table>
     </el-form>
     <template #footer
