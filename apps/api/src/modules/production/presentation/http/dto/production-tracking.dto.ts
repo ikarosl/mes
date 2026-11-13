@@ -21,6 +21,7 @@ import type {
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
+  CreateProductionTrackingCardsPayload,
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
   ProductionTrackingCardQuery,
@@ -70,6 +71,12 @@ export class ProductionTrackingReportQueryDto
 }
 export class CreateProductionTrackingCardDto implements CreateProductionTrackingCardPayload {
   @Type(() => Number) @IsInt() @Min(1) @Max(99999999) quantity!: number;
+  @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
+  @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
+}
+export class CreateProductionTrackingCardsDto implements CreateProductionTrackingCardsPayload {
+  @Type(() => Number) @IsInt() @Min(1) @Max(99999999) totalQuantity!: number;
+  @Type(() => Number) @IsInt() @Min(1) @Max(99999999) quantityPerCard!: number;
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }

@@ -1,15 +1,18 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
-import type { Pool, PoolConnection, RowDataPacket, ResultSetHeader } from 'mysql2/promise';
+import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   ConfirmProductionTrackingOutputPayload,
   ConfirmProductionResearchOutputPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
+  CreateProductionTrackingCardsPayload,
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
+  ProductionTrackingCardDetail,
   ProductionTrackingCardQuery,
+  ProductionTrackingCardsCreatedResult,
   ProductionTrackingPersonnelSnapshot,
   ProductionTrackingReportQuery,
   ReopenProductionTrackingTaskPayload,
@@ -18,7 +21,6 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
-import { allocateBusinessNumber } from '../../../../infrastructure/numbering/mysql-business-number.js';
 import { ProductionTrackingRepository } from '../../application/ports/production-tracking.repository.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import { requireTrackingAffectedQuantity } from '../../domain/production-tracking-disposition.policy.js';
@@ -38,6 +40,10 @@ import {
   confirmResearchTrackingOutput,
   insertTrackingOutput,
 } from './mysql-production-tracking-output.js';
+import {
+  createTrackingCardAtFirstStation,
+  createUnusedTrackingCards,
+} from './mysql-production-tracking-create.js';
 
 type CardRow = RowDataPacket & {
   id: string;
@@ -109,46 +115,20 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
     payload: CreateProductionTrackingCardPayload,
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
-  ) {
-    return withTransaction(this.pool, async (db) => {
-      const batch = await findBatch(db, batchId, true);
-      if (batch.status !== 'doing')
-        throw new ProductionDomainError('INVALID_STATE', '请先开始任务，再建立追踪卡');
-      if (batch.order_type !== 'mass_production')
-        throw new ProductionDomainError(
-          'INVALID_STATE',
-          '研发任务直接在任务中确认最终产出，不建立追踪卡',
-        );
-      const steps = await this.steps(db, batchId);
-      if (!steps.length)
-        throw new ProductionDomainError('INVALID_STATE', '任务没有已冻结的工艺路线');
-      const cardNo = await allocateBusinessNumber(db, 'production_tracking_card');
-      const [result] = await db.execute<ResultSetHeader>(
-        `INSERT INTO production_tracking_card (production_batch_id,card_no,quantity,personnel_id,personnel_code_snapshot,personnel_name_snapshot,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?)`,
-        [
-          batchId,
-          cardNo,
-          payload.quantity,
-          person.personnelId,
-          person.personnelCode,
-          person.personnelName,
-          payload.remark ?? null,
-          context.actorId,
-          context.actorId,
-        ],
-      );
-      const id = String(result.insertId);
-      await writeProductionAudit(
-        db,
-        context,
-        'production-tracking-card.create',
-        'production_tracking_card',
-        id,
-        null,
-        { cardNo, ...payload, ...person },
-      );
-      return selectTrackingCard(db, id, true);
-    });
+  ): Promise<ProductionTrackingCardDetail> {
+    return withTransaction(this.pool, (db) =>
+      createTrackingCardAtFirstStation(db, batchId, payload, person, context),
+    );
+  }
+  createBulk(
+    batchId: string,
+    payload: CreateProductionTrackingCardsPayload,
+    person: ProductionTrackingPersonnelSnapshot,
+    context: CommandContext,
+  ): Promise<ProductionTrackingCardsCreatedResult> {
+    return withTransaction(this.pool, (db) =>
+      createUnusedTrackingCards(db, batchId, payload, person, context),
+    );
   }
   async scan(
     cardId: string,
@@ -187,7 +167,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
           ? -1
           : steps.findIndex((step) => step.id === card.current_step_record_id);
       if (next !== current + 1)
-        throw new ProductionDomainError('CONFLICT', '必须按冻结路线逐站扫码，不能跳站');
+        throw new ProductionDomainError('CONFLICT', '必须按工艺路线逐站扫码，不能跳站');
       let completedVisitId: string | null = null;
       if (current >= 0) {
         const [[visit]] = await db.query<(RowDataPacket & { id: string })[]>(

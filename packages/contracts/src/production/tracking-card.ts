@@ -149,6 +149,17 @@ export interface CreateProductionTrackingCardPayload {
   remark?: string | null;
 }
 
+export interface CreateProductionTrackingCardsPayload {
+  totalQuantity: number;
+  quantityPerCard: number;
+  personnelId: string;
+  remark?: string | null;
+}
+
+export interface ProductionTrackingCardsCreatedResult {
+  cards: ProductionTrackingCardDetail[];
+}
+
 export interface ScanProductionTrackingCardPayload {
   cardNo: string;
   stepRecordId: string;

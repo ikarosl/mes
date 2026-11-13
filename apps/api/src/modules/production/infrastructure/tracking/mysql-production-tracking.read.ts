@@ -191,6 +191,25 @@ export async function selectTrackingCard(
     output,
   };
 }
+export async function selectCreatedUnusedTrackingCards(
+  db: Db,
+  cardIds: readonly string[],
+): Promise<ProductionTrackingCardDetail[]> {
+  if (!cardIds.length) return [];
+  // These cards were created by this transaction; the task lock prevents any other fact writes.
+  const [rows] = await db.query<(RowDataPacket & ProductionTrackingCardItem)[]>(
+    `${CARD_SELECT} WHERE c.id IN (${cardIds.map(() => '?').join(',')}) AND c.status='unused' ORDER BY c.id FOR UPDATE`,
+    [...cardIds],
+  );
+  if (rows.length !== cardIds.length) throw new Error('新建追踪卡结果不完整');
+  return rows.map((row) => ({
+    ...mapCard(row),
+    visits: [],
+    quantityHistory: [],
+    abnormalities: [],
+    output: null,
+  }));
+}
 export async function listTrackingReports(
   db: Db,
   query: ProductionTrackingReportQuery,

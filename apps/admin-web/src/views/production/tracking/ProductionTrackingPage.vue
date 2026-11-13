@@ -169,6 +169,12 @@
           ></template
         ><template #tools
           ><el-button
+            v-if="view === 'cards'"
+            :disabled="!selectedLabels.length || loading || !!listError || labelVisible"
+            @click="openSelectedLabels"
+            >打印所选（{{ selectedLabels.length }}）</el-button
+          >
+          <el-button
             :icon="Refresh"
             text
             :loading="loading"
@@ -202,13 +208,19 @@
       </el-alert>
       <el-table
         v-if="view === 'cards'"
+        ref="cardTable"
         v-loading="loading"
         :data="cards"
         row-key="id"
         highlight-current-row
         :current-row-key="selectedId"
         @row-click="selectCard"
+        @selection-change="selectedLabels = $event"
       >
+        <el-table-column
+          type="selection"
+          width="48"
+        />
         <el-table-column
           label="追踪卡 / 任务"
           min-width="215"
@@ -378,6 +390,7 @@
     <TrackingLabelDialog
       v-model:visible="labelVisible"
       :card="labelCard"
+      :cards="labelCards"
       :card-no="labelTarget?.cardNo"
       :loading="labelLoading"
       :error="labelError"
@@ -390,6 +403,7 @@
 import { onActivated, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Refresh } from '@element-plus/icons-vue';
+import type { TableInstance } from 'element-plus';
 import {
   PRODUCTION_TRACKING_ABNORMALITY_STATUSES,
   PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS,
@@ -447,6 +461,8 @@ const cards = ref<ProductionTrackingCardItem[]>([]),
   reports = ref<ProductionTrackingVisit[]>([]),
   loading = ref(false),
   listError = ref('');
+const cardTable = ref<TableInstance>();
+const selectedLabels = ref<ProductionTrackingCardItem[]>([]);
 const context = ref<ProductionTrackingWorkbench | null>(null),
   contextLoading = ref(false),
   contextError = ref('');
@@ -486,6 +502,8 @@ async function loadContext(): Promise<void> {
 async function loadList(): Promise<void> {
   if (!listReads.isActive()) return;
   const read = listReads.begin();
+  selectedLabels.value = [];
+  cardTable.value?.clearSelection();
   loading.value = true;
   listError.value = '';
   const params = {
@@ -625,11 +643,16 @@ async function openCard(id: string): Promise<void> {
   detailVisible.value = true;
   await loadDetail();
 }
-async function selectCard(card: ProductionTrackingCardItem): Promise<void> {
+async function selectCard(
+  card: ProductionTrackingCardItem,
+  column?: { type?: string },
+): Promise<void> {
+  if (column?.type === 'selection') return;
   await openCard(card.id);
 }
 const labelVisible = ref(false),
   labelCard = ref<ProductionTrackingCardDetail | null>(null),
+  labelCards = ref<Array<Pick<ProductionTrackingCardItem, 'id' | 'cardNo'>>>([]),
   labelTarget = ref<Pick<ProductionTrackingCardItem, 'id' | 'cardNo'> | null>(null),
   labelLoading = ref(false),
   labelError = ref(''),
@@ -641,12 +664,29 @@ const labelReads = useLatestReadRequest(() => {
   if (labelLoading.value) labelError.value = '标签预览加载已中断，请重试';
   labelLoading.value = false;
 });
+function openSelectedLabels(): void {
+  if (
+    !labelReads.isActive() ||
+    labelVisible.value ||
+    loading.value ||
+    listError.value ||
+    !selectedLabels.value.length
+  )
+    return;
+  cancelQuantityAction();
+  labelTarget.value = null;
+  labelCard.value = null;
+  labelCards.value = selectedLabels.value.map(({ id, cardNo }) => ({ id, cardNo }));
+  labelError.value = '';
+  labelVisible.value = true;
+}
 async function openCardLabel(
   card: Pick<ProductionTrackingCardItem, 'id' | 'cardNo'>,
 ): Promise<void> {
   if (labelVisible.value || !labelReads.isActive()) return;
   cancelQuantityAction();
   labelTarget.value = { id: card.id, cardNo: card.cardNo };
+  labelCards.value = [];
   labelCard.value = null;
   labelError.value = '';
   labelVisible.value = true;

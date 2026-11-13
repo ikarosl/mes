@@ -1,6 +1,8 @@
 import { z } from 'zod';
+import { PRODUCTION_TRACKING_CARD_BATCH_LIMIT } from '@company/constants';
 import type {
   ProductionTrackingCardDetail,
+  ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
   ProductionTrackingScanResult,
 } from '@company/contracts';
@@ -111,11 +113,19 @@ const card = z
   })
   .strict();
 const scan = z.object({ card, duplicate: z.boolean(), completedVisitId: id.nullable() }).strict();
+const createdCards = z
+  .object({ cards: z.array(card).min(1).max(PRODUCTION_TRACKING_CARD_BATCH_LIMIT) })
+  .strict();
 
 export const trackingCardResultCodec: IdempotencyResultCodec<ProductionTrackingCardDetail> = {
   encode: (value) => card.parse(value),
   decode: (value) => card.parse(value),
 };
+export const trackingCardsCreatedResultCodec: IdempotencyResultCodec<ProductionTrackingCardsCreatedResult> =
+  {
+    encode: (value) => createdCards.parse(value),
+    decode: (value) => createdCards.parse(value),
+  };
 export const trackingOutputResultCodec: IdempotencyResultCodec<ProductionTrackingOutput> = {
   encode: (value) => output.parse(value),
   decode: (value) => output.parse(value),

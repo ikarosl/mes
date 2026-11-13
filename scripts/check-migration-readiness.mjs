@@ -46,6 +46,7 @@ const allowedTables = new Set([
   'approval_actions',
   'personnel',
   'production_tracking_card',
+  'production_tracking_card_sequence',
   'production_tracking_visit',
   'production_tracking_quantity_change',
   'production_tracking_abnormality',

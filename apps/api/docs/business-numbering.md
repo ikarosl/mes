@@ -4,13 +4,17 @@
 
 ## 格式与类型
 
-所有已接入的内部业务编号使用 `前缀YYYYMMDD-n`。日期是实际分配编号时的北京自然日，不使用用户补录的业务发生时间；每种编号类型每日从 1 独立递增，序号不补零、不承诺连续无缺口。
+已接入平台日计数的内部业务编号使用 `前缀YYYYMMDD-n`。日期是实际分配编号时的北京自然日，不使用用户补录的业务发生时间；每种编号类型每日从 1 独立递增，序号不补零、不承诺连续无缺口。Production 新追踪卡采用下节明确登记的任务内编号例外。
 
 语义类型到前缀的唯一映射由 [BUSINESS_NUMBER_PREFIX](../../../packages/constants/src/business-number.ts) 维护。前缀取中文业务名称的大写拼音首字母，由开发者人工维护，保持稳定且互不重复，不提供动态配置或前缀格式／长度校验。文档以业务名称或稳定编号类型描述取号规则并引用本章，不复制具体前缀值；编号示例使用前缀占位。
 
-进料检验报告按 `incoming_inspection_report` 取号，来料分组主单继续按 `incoming_inspection_order` 取号；报告与分组身份独立。追踪卡按 `production_tracking_card` 取号，逐站到站与交接通过卡及工序 ID 关联，不再建立独立报工单号。物料和成品新库批共用 `inventory_batch` 类型与日序列；来源、权限和身份仍由结构化字段判断，不解析编号决定业务行为。
+进料检验报告按 `incoming_inspection_report` 取号，来料分组主单继续按 `incoming_inspection_order` 取号；报告与分组身份独立。逐站到站与交接通过卡及工序 ID 关联，不建立独立报工单号。物料和成品新库批共用 `inventory_batch` 类型与日序列；来源、权限和身份仍由结构化字段判断，不解析编号决定业务行为。
 
 主数据版本编码、单据行号、修订号、审批动作序号、供应商批号和技术 UUID 不进入日序号。编号只由服务端生成；任务、盘点和新库存批次输入不接受手填编号。
+
+## 任务内追踪卡编号例外
+
+Production 新追踪卡使用 `任务号-k-序号`，由本模块拥有的任务计数分配；格式、计数表结构、并发与跨日边界及旧卡保留规则唯一维护在[追踪卡执行](../src/modules/production/docs/database/execution-traceability-quality.md#任务内卡号)。旧 `production_tracking_card` 类型及其平台日计数只作为历史保留，不进入当前 `BUSINESS_NUMBER_PREFIX` 或新卡运行时取号；其他类型仍使用平台日计数。
 
 ## 平台序列表
 
@@ -37,11 +41,11 @@ manual_material_demand, rework, step_report, abnormal_disposition,
 scrap_supplement_plan, material_supplement, approval_instance
 ```
 
-核验来源：[平台编号建表基线](../../../packages/database/migrations/202611020104-baseline-platform-numbering-tables.up.sql)、[追踪卡编号增量](../../../packages/database/migrations/202611090050-tracking-business-number-kind.up.sql)及[独立来料报告编号增量](../../../packages/database/migrations/202611110020-independent-incoming-reports.up.sql)。数据库 CHECK 保留的旧执行编号字面值不属于当前应用取号目录，也不开放相应业务入口；当前可取号类型只由共享映射限定，不为收窄应用目录改写已执行 migration。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。运行时只使用 `business_number_daily_sequence`。
+核验来源：[平台编号建表基线](../../../packages/database/migrations/202611020104-baseline-platform-numbering-tables.up.sql)、[追踪卡编号增量](../../../packages/database/migrations/202611090050-tracking-business-number-kind.up.sql)及[独立来料报告编号增量](../../../packages/database/migrations/202611110020-independent-incoming-reports.up.sql)。数据库 CHECK 保留的旧执行及旧追踪卡编号字面值不属于当前平台应用取号目录，也不开放相应业务入口；当前平台可取号类型只由共享映射限定，不为收窄应用目录改写已执行 migration。技术计数不配置软删除、业务 version 或操作者；操作者从业务记录和成功审计追溯。平台日编号运行时只使用 `business_number_daily_sequence`，不读取任务内追踪卡计数。
 
 ## 事务与日期
 
-取号以当前事务连接的北京自然日为准，日序列锁保持到事务结束；不能用应用时钟、扫描业务最大编号或随机尾段代替。
+平台日编号取号以当前事务连接的北京自然日为准，日序列锁保持到事务结束；不能用应用时钟、扫描业务最大编号或随机尾段代替。
 
 计数、业务写入、成功审计和已启用的 HTTP 幂等结果原子提交。失败整体回滚；成功重放不再次取号。提交后编号不可因取消、关闭或更正回收。锁超时／死锁沿现有命令和[幂等错误协议](idempotency.md#8-错误与日志语义)处理，不在已失败事务内只重试计数语句。涉及多个类型时保持业务既有稳定锁序和取号顺序。
 

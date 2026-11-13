@@ -1,3 +1,5 @@
+export const PRODUCTION_TRACKING_CARD_BATCH_LIMIT = 100;
+
 export const PRODUCTION_TRACKING_CARD_STATUSES = [
   'unused',
   'in_progress',

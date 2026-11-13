@@ -9,6 +9,7 @@
         id="workbench-create-quantity"
         v-model="createQuantity"
         :min="1"
+        :max="99999999"
         :precision="0"
         :step="1"
         controls-position="right"
@@ -26,10 +27,10 @@
           createStatus === 'expired'
         "
       >
-        {{ createRecovery ? '重试本次建卡' : '生成追踪卡' }}
+        {{ createRecovery ? '重试本次建卡' : '生成并到站' }}
       </el-button>
     </form>
-    <span class="create-hint">首工序建卡，沿用上方登记人员；建卡不登记到站。</span>
+    <span class="create-hint">现场建卡并登记首站到站，沿用上方登记人员。</span>
     <el-alert
       v-if="createRecovery"
       :title="submissionRecoveryMessage(createStatus, '追踪卡列表')"
@@ -156,7 +157,7 @@ async function createCard(): Promise<void> {
   try {
     const result = await createIntent.execute(
       {
-        intentType: 'production.tracking.create',
+        intentType: 'production.tracking.create-and-arrive',
         params: { batchId: frozen.batchId },
         query: {},
         body: frozen.body,
@@ -165,7 +166,7 @@ async function createCard(): Promise<void> {
     );
     quantityBaseline = frozen.body.quantity;
     emit('created', result);
-    EMessage.success('追踪卡已生成，尚未到站');
+    EMessage.success('追踪卡已生成，首工序已到站');
   } catch (error) {
     EMessage.error(error, '建卡失败');
   } finally {

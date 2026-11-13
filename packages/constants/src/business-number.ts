@@ -2,7 +2,6 @@
 export const BUSINESS_NUMBER_PREFIX = {
   work_order: 'GD', // 工单
   production_batch: 'SC', // 生产任务
-  production_tracking_card: 'GZK', // 追踪卡
   purchase_order: 'CG', // 采购订单
   purchase_receipt: 'DH', // 采购到货
   incoming_inspection_order: 'LLZJ', // 来料质检单

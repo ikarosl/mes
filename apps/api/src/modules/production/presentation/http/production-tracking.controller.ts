@@ -17,6 +17,7 @@ import {
   AuditInApplication,
   CurrentIdempotentCommandContext,
   IdempotentEndpoint,
+  RequireAllPermissions,
   RequirePermission,
 } from '../../../../common/security/auth.decorators.js';
 import { ProductionTrackingService } from '../../application/production-tracking.service.js';
@@ -28,6 +29,7 @@ import {
   CorrectProductionTrackingQuantityDto,
   CreateProductionTrackingAbnormalityDto,
   CreateProductionTrackingCardDto,
+  CreateProductionTrackingCardsDto,
   FinishProductionTrackingTaskDto,
   HandleProductionTrackingAbnormalityDto,
   ProductionTrackingCardQueryDto,
@@ -70,7 +72,10 @@ export class ProductionTrackingController {
     return this.service.get(cardId);
   }
   @Post('batches/:batchId/tracking-cards')
-  @RequirePermission(PERMISSIONS.production.tracking.manage)
+  @RequireAllPermissions([
+    PERMISSIONS.production.tracking.manage,
+    PERMISSIONS.production.workbench.operate,
+  ])
   @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['create'] })
   @AuditInApplication()
   create(
@@ -79,6 +84,17 @@ export class ProductionTrackingController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.create(batchId, body, context);
+  }
+  @Post('batches/:batchId/tracking-cards/bulk')
+  @RequirePermission(PERMISSIONS.production.tracking.manage)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['create-bulk'] })
+  @AuditInApplication()
+  createBulk(
+    @Param() { batchId }: TrackingBatchParamDto,
+    @Body() body: CreateProductionTrackingCardsDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.createBulk(batchId, body, context);
   }
   @Post('tracking-cards/scan')
   @RequirePermission(PERMISSIONS.production.workbench.operate)

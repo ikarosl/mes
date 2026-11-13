@@ -5,7 +5,7 @@
 | 专题                                                  | 所有表与边界                                                                                                                                                         |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | [工单与任务](work-orders-and-batches.md)              | work_orders、production_batches；计划、负责人、开始和人工结束                                                                                                        |
-| [追踪卡执行](execution-traceability-quality.md)       | batch_step_records、production_tracking_card/visit/quantity_change/abnormality/abnormality_handling/scrap_reference/output/output_cancellation；逐盘身份及不可变事实 |
+| [追踪卡执行](execution-traceability-quality.md)       | batch_step_records、production_tracking_card、production_tracking_card_sequence、production_tracking_visit/quantity_change/abnormality/abnormality_handling/scrap_reference/output/output_cancellation；逐盘身份、任务内编号及不可变事实 |
 | [需求、分配与领料](demand-allocation-and-outbound.md) | production_material_requirement_basis、production_manual_demand_addition、production_item_demand、production_item_allocation、production_demand_correction           |
 | [退料与损耗](return-scrap-and-stocktake.md)           | item_scrap；实际退料仍由 Inventory 公共主从拥有                                                                                                                      |
 | [任务生命周期](production-termination.md)             | 开始、短产／零产／提前结束与收口语义，结构只引用任务表                                                                                                               |

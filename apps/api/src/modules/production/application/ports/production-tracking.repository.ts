@@ -4,6 +4,7 @@ import type {
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
+  CreateProductionTrackingCardsPayload,
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
   PageResult,
@@ -12,6 +13,7 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
+  ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
   ProductionTrackingPersonnelSnapshot,
   ProductionTrackingReportQuery,
@@ -46,6 +48,12 @@ export abstract class ProductionTrackingRepository {
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
   ): Promise<ProductionTrackingCardDetail>;
+  abstract createBulk(
+    batchId: string,
+    payload: CreateProductionTrackingCardsPayload,
+    person: ProductionTrackingPersonnelSnapshot,
+    context: CommandContext,
+  ): Promise<ProductionTrackingCardsCreatedResult>;
   abstract scan(
     cardId: string,
     payload: ScanProductionTrackingCardPayload,

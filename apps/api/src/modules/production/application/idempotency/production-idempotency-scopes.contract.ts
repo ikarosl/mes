@@ -17,7 +17,8 @@ export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
 export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v7' as const;
 
 export const PRODUCTION_TRACKING_SCOPES = {
-  create: 'production.tracking.create.v2',
+  create: 'production.tracking.create.v3',
+  'create-bulk': 'production.tracking.create-bulk.v1',
   scan: 'production.tracking.scan.v2',
   'correct-quantity': 'production.tracking.correct-quantity.v2',
   void: 'production.tracking.void.v3',

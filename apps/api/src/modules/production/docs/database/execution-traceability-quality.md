@@ -8,9 +8,21 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 扫码输入是卡号、目标工序和现场登记人员。人员来自 Identity 的统一现场人员目录，扫码、报工、异常及最终产出确认均使用当前启用且未删除的人员，资格由[人员目录](../../../identity/docs/database.md#110-personnel)所有。业务事实保存所选人员 ID、编码、姓名快照，并独立保存实际登录操作者。
 
-任务必须先由有权限的账号明确开始，只有 doing 批量任务可以建卡。卡首次只能扫路线首站，只形成到站事实，不计报工。下一站扫码须恰好是冻结路线的下一道工序，在同一事务中完成前站交接报工并登记本站到站；前站报工数量取交接时的当前剩余盘量，归属前站原登记人员，不归属本次扫码人员。已到过的工序再次扫码不重记到站、不重记数量、不换登记人员。未经过的工序不得跳站，不能用工序名称替代冻结工序 ID。
+任务必须先由有权限的账号明确开始，只有 doing 批量任务可以建卡。首工序现场单盘建卡时，服务器从本任务冻结路线取得首站，以建卡时选定的现场人员同时登记该卡首站到站，初始状态为 in_progress。该命令只记到站，不完成首站、不计报工、产出或库存；单工序路线也须另行明确确认最终产出。
+
+批量预制按总数量和每盘数量拆分，完整盘先生成，余量生成最后一盘，例如 85／25 生成 25、25、25、10。全部数量均为 1 至 99999999 的整数；一次最多张数由 [PRODUCTION_TRACKING_CARD_BATCH_LIMIT](../../../../../../../packages/constants/src/production/tracking-card.ts) 维护，超过上限整体拒绝。所有卡初始为 unused，不产生到站事实。拆分校验先于取号，整批共享一个事务和幂等意图，计数、所有卡及成功审计原子提交，成功结果保存整批真实卡身份。建卡与打印独立；打印及补打只使用已有卡号，不重新建卡或取号。
+
+预制卡及升级前已有 unused 卡首次只能扫路线首站，只形成到站事实，不计报工。下一站扫码须恰好是冻结路线的下一道工序，在同一事务中完成前站交接报工并登记本站到站；前站报工数量取交接时的当前剩余盘量，归属前站原登记人员，不归属本次扫码人员。已到过的工序再次扫码不重记到站、不重记数量、不换登记人员。未经过的工序不得跳站，不能用工序名称替代冻结工序 ID。升级不为旧卡补造到站或更改人员历史。
 
 每站到站身份永久保留；交接完成时间、操作者和数量只允许由空值写入一次。任务级报工总量不作为最终产出，工作台逐站汇总已完成交接事实。
+
+## 任务内卡号
+
+新建追踪卡使用 `任务号-k-序号`，序号至少三位补零，例如 `SC20261112-1-k-001`；超过 999 后继续使用完整序号，不截断或换日重置。同一任务的现场单盘和批量预制共享一个计数，跨日、任务结束和恢复均继续递增；作废、报废或取消不回收已提交序号。卡号只表达可打印身份，不替代任务、卡及冻结工序 ID，不从编号解析写入资格。
+
+计数由 Production 的 `production_tracking_card_sequence` 唯一保存，运行时只经 [mysql-production-tracking-number.ts](../../infrastructure/tracking/mysql-production-tracking-number.ts) 在当前业务事务中分配；一次批量锁定计数并分配完整区间，不扫描业务 MAX／COUNT，也不预领号。整批最终序号须处于 BIGINT UNSIGNED 范围，全部卡号须不超过 100 字符；溢出时整体拒绝。计数、卡、现场建卡的首站到站、成功审计及 HTTP 幂等结果同事务提交，失败整体回滚，成功重放不重新取号。
+
+旧卡号及平台 `production_tracking_card` 日计数保留为历史，不重编号、不回填新序号。升级后每个已有任务的新计数从 1 开始，仅代表新规则分配顺序，不声称与旧卡的总张数连续；旧卡继续按其真实卡号扫码、查询和补打。该任务内计数是[平台日编号](../../../../../docs/business-numbering.md)的明确例外，其他业务日编号不变。
 
 ## 盘量更正与作废
 
@@ -46,7 +58,9 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 | 卡状态转换                     | 触发与边界                                                     |
 | ------------------------------ | -------------------------------------------------------------- |
-| unused → in_progress           | 首站扫码，只记到站                                             |
+| 新建 → unused                  | 批量预制，只建卡，不记到站                                     |
+| 新建 → in_progress             | 首工序现场单盘建卡，以同一人员只记首站到站                     |
+| unused → in_progress           | 预制卡或已有未用卡首站扫码，只记到站                           |
 | in_progress → in_progress      | 无 open 异常时按冻结顺序交接到下一站                           |
 | unused／in_progress → 原状态   | 登记异常、独立改量、结算后仍有正量或零量未结异常；均推进卡版本 |
 | unused／in_progress → scrapped | 结算后卡量为零且无 open 异常                                   |
@@ -65,18 +79,21 @@ completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复�
 | GET tracking-cards、tracking-cards/:cardId                                                                            | tracking:view 或 workbench:view；卡列表、追踪详情和工作台       |
 | GET batches/:batchId/tracking-workbench                                                                               | tasks:view、tracking:view 或 workbench:view；任务内工作台和卡页 |
 | GET tracking-reports                                                                                                  | tracking:view 或 workbench:view；逐站交接历史                   |
-| POST batches/:batchId/tracking-cards、PATCH tracking-cards/:cardId/quantity、POST tracking-cards/:cardId/actions/void | tracking:manage；建卡、留痕更正和作废                           |
+| POST batches/:batchId/tracking-cards                                                                                  | tracking:manage 且 workbench:operate；现场建卡并首站到站         |
+| POST batches/:batchId/tracking-cards/bulk、PATCH tracking-cards/:cardId/quantity、POST tracking-cards/:cardId/actions/void | tracking:manage；批量预制、留痕更正和作废                       |
 | POST tracking-cards/scan、卡下 abnormalities 和 abnormality handlings                                                 | workbench:operate；现场到站、异常发现及处理                     |
 | POST tracking-cards/:cardId/actions/confirm-output、batches/:batchId/actions/confirm-research-output                  | tracking:confirm-output；登记现场人员并显式确认最终产出         |
 | GET batches/:batchId/step-records/:recordId/sop                                                                       | tasks:view、tracking:view 或 workbench:view；冻结 SOP 下载      |
 
-上表权限均带 production 前缀，多项为 any-of。卡列表的 keyword 搜索卡号、任务号、工单号、成品编码或名称；精确筛选包括任务、卡状态、当前工序及是否具有指定状态的异常。交接历史按完成时间、ID 倒序分页，可按任务、工序和登记人员筛选。列表筛选不授予任何命令资格。
+上表权限均带 production 前缀；现场单盘建卡要求两项权限同时满足，其余列出的多项权限为 any-of。卡列表的 keyword 搜索卡号、任务号、工单号、成品编码或名称；精确筛选包括任务、卡状态、当前工序及是否具有指定状态的异常。交接历史按完成时间、ID 倒序分页，可按任务、工序和登记人员筛选。列表筛选不授予任何命令资格。
 
 命令按工单 → 任务 → 卡 → 现场人员资格及相关事实 → Inventory 所需库存对象锁定，共享同池事务。实际命令重新校验状态和版本，扫码用每卡每站唯一约束和卡根锁防重；不能依赖浏览器缓存。展示读取仅访问本模块表，不通过人员当前姓名覆盖历史快照。标签由管理端从真实卡号生成，不把条码解析为新的业务身份。
 
 ## 数据库逐表设计
 
 本章是冻结工序与追踪事实表的唯一结构所有者。数量、ID、时间和审计列遵守[数据库公共规则](../../../../../../../docs/database-conventions.md)。迁移新增表为 `202611090010-production-tracking-workbench`，旧执行退役及不可变触发器为 `202611090040-retire-production-execution`，数量结算及关联事实为 `202611090060-tracking-abnormality-disposition`；均为追加，旧基线不改写。结构升级不转换旧报工、产出或无法推导影响数量的异常；0060 在任何追踪卡、追踪事实或研发产出非空时于 DDL 前拒绝，必须使用独立空库。0060 的配对 down 同样只允许追踪子系统为空；已有事实须恢复配套备份，不自动丢弃或重造。
+
+`202611130010-task-tracking-card-sequence` 在已有数据上只追加任务内技术计数表及计数保护，不改旧卡、到站或日计数。迁移先检查历史卡是否占用任一现有任务的 `任务号-k-` 命名空间，命中即在永久 DDL 前停止，须明确处置而非猜造初始序号。停写、备份、中断恢复及 down 边界见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md#任务内追踪卡编号)。
 
 ## batch_step_records
 
@@ -187,6 +204,32 @@ CONSTRAINT `chk_tracking_card_void` CHECK ((((`status` = 'voided') and (`void_re
 ```
 
 数据库触发器：trg_tracking_card_output_guard 在 202611090060 扩展为保护 completed 和 scrapped 不再更新，并始终保护卡号、任务及建卡身份；trg_tracking_card_used_no_delete 拒绝删除已用卡。跨行异常状态与卡量一致性由命令事务保证。
+
+## production_tracking_card_sequence
+
+职责：保存每个任务在新规则下最后已分配的追踪卡序号，为现场单盘和批量预制提供同一事务锁定点。不记录业务产量或旧卡张数，不是库存或生产需求的事实来源。升级时保持空表，首次取号时按任务懒建 0 值行；同一事务随后增加完整张数。
+
+### 字段
+
+| 字段                  | SQL 定义                                                                   | 含义                                   |
+| --------------------- | -------------------------------------------------------------------------- | -------------------------------------- |
+| `production_batch_id` | `BIGINT UNSIGNED NOT NULL`                                                 | 任务 ID，也是唯一计数主键，不自增     |
+| `last_sequence`       | `BIGINT UNSIGNED NOT NULL DEFAULT 0`                                       | 最后已提交分配序号，准备行允许 0       |
+| `created_at`          | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP`                             | 该任务计数首次创建时间                 |
+| `updated_at`          | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP` | 最近计数写入时间                       |
+
+技术计数不使用业务 version、软删除或操作者字段，实际操作者沿卡和成功审计追溯。表使用 InnoDB、utf8mb4_0900_ai_ci；每任务至多一行，没有额外二级索引。任务生命周期不删除计数。
+
+### 约束与生命周期
+
+```sql
+PRIMARY KEY (production_batch_id);
+CONSTRAINT fk_tracking_card_sequence_batch FOREIGN KEY (production_batch_id)
+ REFERENCES production_batches(id) ON UPDATE RESTRICT ON DELETE RESTRICT;
+CONSTRAINT chk_tracking_card_sequence_nonnegative CHECK (last_sequence >= 0);
+```
+
+`trg_tracking_card_sequence_update_guard` 固定任务 ID 与创建时间并拒绝序号减少；`trg_tracking_card_sequence_no_delete` 拒绝删除计数，防止卡号复用。区间分配、100 字符卡号与溢出校验由事务内 helper 保证，卡号唯一性继续由 `production_tracking_card.uk_tracking_card_no` 保证。配对 down 仅在所有计数尚为 0 或没有计数行时允许删除该表；任何已提交分配都阻止结构回退，不能通过删除卡或清空计数绕过。
 
 ## production_tracking_visit
 

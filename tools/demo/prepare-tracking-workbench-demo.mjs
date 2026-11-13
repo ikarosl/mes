@@ -345,7 +345,12 @@ async function prepare(config, request) {
       { expectedCode: 'CONFLICT' },
     ),
   });
-  await create('未使用待打印', 3);
+  await request(`/production/batches/${config.batchId}/tracking-cards/bulk`, {
+    totalQuantity: 3,
+    quantityPerCard: 3,
+    personnelId: registrant.id,
+    remark: `${config.marker} 未使用待打印`,
+  });
   const voided = await scan(await create('已用卡作废保留事实', 2), workbench.steps[0]);
   await request(`/production/tracking-cards/${voided.id}/actions/void`, {
     version: voided.version,

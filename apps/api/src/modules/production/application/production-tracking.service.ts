@@ -6,9 +6,12 @@ import type {
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
+  CreateProductionTrackingCardsPayload,
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
+  ProductionTrackingCardDetail,
   ProductionTrackingCardQuery,
+  ProductionTrackingCardsCreatedResult,
   ProductionTrackingPersonnelSnapshot,
   ProductionTrackingReportQuery,
   ReopenProductionTrackingTaskPayload,
@@ -27,6 +30,7 @@ import { ProductionTrackingRepository } from './ports/production-tracking.reposi
 import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
 import {
   trackingCardResultCodec,
+  trackingCardsCreatedResultCodec,
   trackingOutputResultCodec,
   trackingScanResultCodec,
 } from './idempotency/production-tracking-result.codec.js';
@@ -60,12 +64,39 @@ export class ProductionTrackingService {
     batchId: string,
     payload: CreateProductionTrackingCardPayload,
     context: IdempotentCommandContext,
-  ) {
-    const body = { ...payload, remark: payload.remark?.trim() || null };
+  ): Promise<ProductionTrackingCardDetail> {
+    const body = {
+      quantity: payload.quantity,
+      personnelId: payload.personnelId,
+      remark: payload.remark?.trim() || null,
+    };
     return this.execute('create', { batchId }, body, context, trackingCardResultCodec, () =>
       this.repository.withBatchTransaction(batchId, async () =>
         this.repository.create(batchId, body, await this.person(body.personnelId), context),
       ),
+    );
+  }
+  createBulk(
+    batchId: string,
+    payload: CreateProductionTrackingCardsPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProductionTrackingCardsCreatedResult> {
+    const body = {
+      totalQuantity: payload.totalQuantity,
+      quantityPerCard: payload.quantityPerCard,
+      personnelId: payload.personnelId,
+      remark: payload.remark?.trim() || null,
+    };
+    return this.execute(
+      'create-bulk',
+      { batchId },
+      body,
+      context,
+      trackingCardsCreatedResultCodec,
+      () =>
+        this.repository.withBatchTransaction(batchId, async () =>
+          this.repository.createBulk(batchId, body, await this.person(body.personnelId), context),
+        ),
     );
   }
   scan(payload: ScanProductionTrackingCardPayload, context: IdempotentCommandContext) {

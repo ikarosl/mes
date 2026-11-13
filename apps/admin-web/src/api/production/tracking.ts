@@ -4,6 +4,7 @@ import type {
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
+  CreateProductionTrackingCardsPayload,
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
   PageResult,
@@ -12,6 +13,7 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
+  ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
   ProductionTrackingReportQuery,
   ProductionTrackingScanResult,
@@ -52,6 +54,17 @@ export const productionTrackingApi = {
   ): Promise<ProductionTrackingCardDetail> =>
     request({
       url: `/production/batches/${batchId}/tracking-cards`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  createBulk: (
+    batchId: string,
+    data: CreateProductionTrackingCardsPayload,
+    key: string,
+  ): Promise<ProductionTrackingCardsCreatedResult> =>
+    request({
+      url: `/production/batches/${batchId}/tracking-cards/bulk`,
       method: 'POST',
       data,
       headers: headers(key),

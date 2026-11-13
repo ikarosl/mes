@@ -172,6 +172,7 @@
                   :loading="scanning"
                   :disabled="
                     createLocked ||
+                    bulkVisible ||
                     (!scanRecovery && !canWork) ||
                     scanStatus === 'blocked' ||
                     scanStatus === 'expired'
@@ -205,10 +206,15 @@
               :batch-id="batchId"
               :personnel-id="personnelId"
               :can-create="canWork && stepId === context?.steps[0]?.stepRecordId"
-              :disabled="scanning || scanRecovery"
+              :disabled="scanning || scanRecovery || bulkVisible"
               @update:locked="createLocked = $event"
               @created="cardCreated"
             />
+            <el-button
+              :disabled="!canWork || setupLocked"
+              @click="bulkVisible = true"
+              >批量预生成</el-button
+            >
             <el-button
               v-if="context && canAccessRoute({ name: 'production-tracking' })"
               link
@@ -306,6 +312,16 @@
     <TrackingLabelDialog
       v-model:visible="labelVisible"
       :card="labelCard"
+      :cards="labelCards"
+    />
+    <WorkbenchBulkCreateDialog
+      v-model:visible="bulkVisible"
+      :batch-id="batchId"
+      :batch-no="context?.batch.batchNo || ''"
+      :personnel-id="personnelId"
+      :personnel-name="selectedPersonnel?.name || ''"
+      @created="loadContext"
+      @print="openBulkLabels"
     />
   </div>
 </template>
@@ -350,6 +366,7 @@ import WorkbenchRouteProgress from './WorkbenchRouteProgress.vue';
 import WorkbenchCurrentCard from './WorkbenchCurrentCard.vue';
 import WorkbenchRecentReports from './WorkbenchRecentReports.vue';
 import WorkbenchCreateCardBar from './WorkbenchCreateCardBar.vue';
+import WorkbenchBulkCreateDialog from './WorkbenchBulkCreateDialog.vue';
 
 defineOptions({ name: 'ProductionWorkbenchPage' });
 const route = useRoute(),
@@ -479,7 +496,10 @@ const scanInput = ref<InputInstance>(),
 const scanRecovery = computed(() => scanStatus.value !== 'idle');
 const createBar = ref<InstanceType<typeof WorkbenchCreateCardBar>>();
 const createLocked = ref(false);
-const setupLocked = computed(() => scanRecovery.value || scanning.value || createLocked.value);
+const bulkVisible = ref(false);
+const setupLocked = computed(
+  () => scanRecovery.value || scanning.value || createLocked.value || bulkVisible.value,
+);
 const currentCard = ref<ProductionTrackingCardDetail | null>(null);
 const scanResultLabel = ref('');
 const scanError = ref('');
@@ -550,6 +570,7 @@ async function scan(): Promise<void> {
   if (
     scanning.value ||
     createLocked.value ||
+    bulkVisible.value ||
     !contextReads.isActive() ||
     (!scanRecovery.value && !canWork.value)
   )
@@ -619,20 +640,28 @@ async function cardCreated(card: ProductionTrackingCardDetail): Promise<void> {
   if (contextReads.isActive() && batchId.value === card.productionBatchId) {
     currentCard.value = card;
     scanText.value = '';
-    scanResultLabel.value = '追踪卡已生成，尚未到站。请在首工序扫码到站。';
+    scanResultLabel.value = '追踪卡已生成，首工序已到站。';
     scanError.value = '';
-    await loadContext();
+    await Promise.all([loadContext(), recentReports.load()]);
   }
 }
 const labelVisible = ref(false),
   labelCard = ref<ProductionTrackingCardDetail | null>(null),
+  labelCards = ref<ProductionTrackingCardDetail[]>([]),
   actionVisible = ref(false),
   actionCard = ref<ProductionTrackingCardDetail | null>(null),
   action = ref<TrackingCardAction>('abnormality'),
   abnormality = ref<ProductionTrackingAbnormality | null>(null);
 function openLabel(card: ProductionTrackingCardDetail): void {
   if (labelVisible.value) return;
+  labelCards.value = [];
   labelCard.value = { ...card };
+  labelVisible.value = true;
+}
+function openBulkLabels(cards: ProductionTrackingCardDetail[]): void {
+  if (!contextReads.isActive() || labelVisible.value) return;
+  labelCard.value = null;
+  labelCards.value = cards.map((card) => ({ ...card }));
   labelVisible.value = true;
 }
 function openDetailLabel(): void {

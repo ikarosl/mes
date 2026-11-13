@@ -90,6 +90,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'work_order_daily_sequence', // Retired; historical migration ownership.
     'work_order_material_versions',
     'production_tracking_card',
+    'production_tracking_card_sequence',
     'production_tracking_visit',
     'production_tracking_quantity_change',
     'production_tracking_abnormality',

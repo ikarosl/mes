@@ -6,7 +6,7 @@
 
 权限入口为 [permissions.ts](src/permissions.ts) 与 [permission-catalog.ts](src/permission-catalog.ts)，后者同时提供名称、层级及中文提示；本包不另列副本。
 
-内部业务编号的语义类型与人工前缀映射维护在 [business-number.ts](src/business-number.ts)，运行与数据库边界见[业务编号](../../apps/api/docs/business-numbering.md)。
+平台日编号的语义类型与人工前缀映射维护在 [business-number.ts](src/business-number.ts)，运行、任务内编号例外及数据库边界见[业务编号](../../apps/api/docs/business-numbering.md)。
 
 导出入口见 [src/index.ts](src/index.ts)，完整状态及映射直接查源码，本入口不重复枚举。
 
