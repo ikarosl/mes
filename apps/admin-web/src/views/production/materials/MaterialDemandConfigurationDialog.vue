@@ -94,7 +94,7 @@
         >
           <template #default="{ row }">
             <div
-              v-for="(split, index) in row.splits"
+              v-for="(split, index) in row.splits as SplitDraft[]"
               :key="index"
               class="split-row"
             >
@@ -110,9 +110,8 @@
                   :value="variant.materialVariantId"
                   :label="variant.materialVariantCode"
                 >
-                  {{ variant.materialVariantCode }} · {{ variant.majorVersion }} /
-                  {{ variant.minorVersion }}
-                </el-option>
+                  {{ variant.materialVariantCode }}</el-option
+                >
               </el-select>
             </div>
             <span
