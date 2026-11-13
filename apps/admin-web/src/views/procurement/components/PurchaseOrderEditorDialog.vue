@@ -8,6 +8,7 @@
     :close-on-click-modal="false"
     :close-on-press-escape="!command.busy.value"
     :show-close="!command.busy.value"
+    @opened="measureMaterialColumn"
   >
     <el-alert
       v-if="stale || freshnessError"
@@ -153,7 +154,8 @@
           >
           <el-table-column
             label="物料与精确版本"
-            min-width="360"
+            :width="materialColumnWidth"
+            class-name="purchase-material-column"
           >
             <template #default="{ row }">
               <PurchaseMaterialSelect
@@ -166,7 +168,10 @@
                 @change="(item, variant) => changeMaterial(row, item, variant)"
                 @ready="row.ready = $event"
               />
-              <div v-else>
+              <div
+                v-else
+                class="material-identity"
+              >
                 <strong>{{ row.itemCode }} · {{ row.itemName }}</strong>
                 <p>{{ row.materialVariantCode }}</p>
                 <el-tag
@@ -327,7 +332,7 @@
 </template>
 
 <script setup lang="ts">
-import { onScopeDispose, ref } from 'vue';
+import { onScopeDispose, ref, watch } from 'vue';
 import type { TableInstance } from 'element-plus';
 import {
   PURCHASE_ORDER_SOURCE_TYPE_LABELS,
@@ -383,6 +388,52 @@ const {
   addRow,
   changeMaterial,
 } = usePurchaseOrderEditor((id) => emit('saved', id));
+const materialColumnWidth = ref(160);
+const measureMaterialColumn = (): void => {
+  const tableElement: unknown = lineTable.value?.$el;
+  if (!visible.value || !(tableElement instanceof HTMLElement)) return;
+  const cell = tableElement.querySelector<HTMLElement>('.purchase-material-column .cell');
+  const context = document.createElement('canvas').getContext('2d');
+  if (!cell || !context) return;
+  const style = getComputedStyle(cell);
+  const measureText = (text: string, bold = false): number => {
+    context.font = `${bold ? 'bold' : 'normal'} ${style.fontSize} ${style.fontFamily}`;
+    return context.measureText(text).width;
+  };
+  const selecting = sourceType.value === 'stock' && !supplement.value;
+  let contentWidth = measureText(cell.textContent?.trim() ?? '', true);
+  for (const row of rows.value) {
+    contentWidth = Math.max(
+      contentWidth,
+      measureText(`${row.itemCode} · ${row.itemName}`, !selecting),
+      measureText(row.materialVariantCode),
+      row.ready ? 0 : measureText('来源须重新核对') + 20,
+    );
+  }
+  const padding = Number.parseFloat(style.paddingLeft) + Number.parseFloat(style.paddingRight);
+  // A numeric column width prevents the table's fit layout from growing beyond the cap.
+  materialColumnWidth.value = Math.min(
+    360,
+    Math.max(selecting ? 240 : 160, Math.ceil(contentWidth + padding + (selecting ? 52 : 2))),
+  );
+};
+watch(
+  [
+    visible,
+    lineTable,
+    sourceType,
+    supplement,
+    () =>
+      rows.value.map(({ itemCode, itemName, materialVariantCode, ready }) => [
+        itemCode,
+        itemName,
+        materialVariantCode,
+        ready,
+      ]),
+  ],
+  measureMaterialColumn,
+  { flush: 'post' },
+);
 const originalLine = (id: string) => original.value?.items.find((line) => line.id === id);
 const beforeClose = (): void => {
   void close();
@@ -394,6 +445,9 @@ defineExpose({ open, close, visible, locked: command.locked });
 </script>
 
 <style scoped>
+.material-identity {
+  overflow-wrap: anywhere;
+}
 .identity-value {
   color: var(--el-text-color-primary);
   font-weight: 600;
