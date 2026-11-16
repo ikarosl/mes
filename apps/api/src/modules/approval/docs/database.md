@@ -37,19 +37,22 @@ C 为配置审计：定义、版本和配置节点使用；各表删除 CHECK �
 
 ### 3.2 `approval_flow_definitions`
 
-每个场景的配置根，持有供新申请采用的发布指针；具体内容保存在版本表，旧申请继续引用原版本。
+每个场景的配置根，持有审批开关及供新申请采用的发布指针；具体内容保存在版本表，旧申请继续引用原版本。
 
 | 字段                   | 类型、空值与默认值                        | 含义              |
 | ---------------------- | ----------------------------------------- | ----------------- |
 | `id`                   | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键              |
 | `scene_code`           | `VARCHAR(100) NOT NULL`                   | Registry 场景编码 |
 | `name`                 | `VARCHAR(100) NOT NULL`                   | 流程显示名        |
+| `is_enabled`           | `TINYINT NOT NULL DEFAULT 0`             | 是否对新提交启用审批 |
 | `published_version_id` | `BIGINT UNSIGNED NULL`                    | 当前发布版本      |
 | 配置审计 C             | 见公共列组                                | 配置根并发与审计  |
 
 唯一键 `uk_approval_flow_definitions_scene(scene_code)`；索引 `idx_approval_flow_definitions_published(published_version_id)`。组合外键 `(published_version_id,id) → approval_flow_versions(id,definition_id)` 保证发布指针属于本定义；配置审计外键和 CHECK 见列组 C。
 
-每个场景只有一个配置入口，编码永久不复用；当前发布版本必须属于该定义。没有发布指针即不能开始申请。首期不提供流程删除或“禁用后自动免审”入口，配置归档不用于绕过必需审批。
+每个场景只有一个配置入口，编码永久不复用；当前发布版本必须属于该定义。`chk_approval_flow_definitions_enabled` 限定 `is_enabled` 为 `0/1` 且开启时必须有发布指针；应用进一步核验发布状态、节点及人员资格。未配置及新配置默认关闭，发布流程不自动开启；关闭保留发布指针与全部版本，不等同删除或归档。关闭时的提交与成功回调见[接入契约](subject-integration.md)。
+
+开关变更使用配置根 `version` 防止旧页面覆盖，并与草稿保存、发布及提交选路持有同一根锁。升级按既有发布指针将有效已发布配置设为开启，未发布配置设为关闭；不改写在途申请、历史业务或人工决定。退回旧约束前必须确认尚无免审生效事实，执行限制见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#可选业务审批)。
 
 ### 3.3 `approval_flow_versions`
 

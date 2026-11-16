@@ -51,10 +51,13 @@ export interface ApprovalSubjectHandler {
     expectedVersion: number,
     audit: CommandContext,
   ): Promise<number>;
-  /** 全部节点通过后，使业务结果最终生效；失败必须抛出以回滚本次决定。 */
+  /**
+   * 审批通过或引擎在流程定义锁内确认免审后，使业务结果最终生效。
+   * instanceId 为 null 仅表示免审，使用 prepare 返回的业务版本且不经过绑定；失败须整体回滚。
+   */
   finalizeApproval(
     subjectId: string,
-    instanceId: string,
+    instanceId: string | null,
     expectedVersion: number,
     audit: CommandContext,
   ): Promise<void>;

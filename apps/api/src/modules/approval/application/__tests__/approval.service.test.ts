@@ -42,7 +42,7 @@ describe('ApprovalService caller boundaries', () => {
   });
 
   it('passes an unchanged business version to the shared submission engine', async () => {
-    const result = { id: '15', currentStepId: '21', status: 'pending' };
+    const result = { subjectId: '11', approvalInstanceId: '15', status: 'pending' };
     const repository = { submit: vi.fn().mockResolvedValue(result) };
     const service = new ApprovalService(repository as never, {} as never);
     await expect(service.submit(submission, context)).resolves.toBe(result);

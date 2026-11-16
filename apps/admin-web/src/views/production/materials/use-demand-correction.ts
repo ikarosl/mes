@@ -310,7 +310,7 @@ export function useDemandCorrection(
     submitting.value = true;
     writeError.value = '';
     try {
-      await intent.execute(
+      const result = await intent.execute(
         {
           intentType: 'production.demand.correct',
           params: { demandId: currentCommand.demandId },
@@ -328,7 +328,9 @@ export function useDemandCorrection(
       const stillSelected = props.visible && props.demandId === currentCommand.demandId;
       clearEditor();
       if (stillSelected) {
-        EMessage.success('已提交需求更正审批');
+        EMessage.success(
+          result.status === 'approved' ? '需求更正已直接生效' : '已提交需求更正审批',
+        );
         changed();
         closed();
       }
@@ -365,7 +367,7 @@ export function useDemandCorrection(
           try {
             await RouteMessageBox.confirm(
               unresolved.value
-                ? '暂时无法确认本次操作是否成功。关闭后无法继续重试本次提交，请先在需求追溯中核对审批结果，确认关闭？'
+                ? '暂时无法确认本次操作是否成功。关闭后无法继续重试本次提交，请先在需求追溯中核对更正结果，确认关闭？'
                 : '更正内容尚未提交，确认放弃输入并关闭？',
               '关闭需求更正',
               { type: 'warning', confirmButtonText: '放弃并关闭', cancelButtonText: '继续保留' },

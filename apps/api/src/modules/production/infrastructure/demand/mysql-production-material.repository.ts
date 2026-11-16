@@ -55,18 +55,6 @@ export class MysqlProductionMaterialRepository extends ProductionMaterialReposit
     super();
   }
 
-  async hasGeneratedNormalDemands(batchId: string): Promise<boolean> {
-    await findBatch(this.pool, batchId);
-    const [[row]] = await this.pool.query<(RowDataPacket & { has_normal_demands: number })[]>(
-      `SELECT EXISTS(
-         SELECT 1 FROM production_item_demand
-         WHERE production_batch_id=? AND demand_type='normal'
-       ) AS has_normal_demands`,
-      [batchId],
-    );
-    return Number(row?.has_normal_demands ?? 0) === 1;
-  }
-
   async listDemands(batchId: string): Promise<ProductionMaterialDemandItem[]> {
     await findBatch(this.pool, batchId);
     const [rows] = await this.pool.query<DemandRow[]>(

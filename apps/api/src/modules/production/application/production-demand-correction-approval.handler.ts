@@ -37,7 +37,7 @@ export class ProductionDemandCorrectionApprovalHandler
   lockCurrentApproval(id: string, instance: string, version: number) {
     return productionApprovalCall(() => this.repository.lock(id, instance, version));
   }
-  finalizeApproval(id: string, instance: string, version: number, audit: CommandContext) {
+  finalizeApproval(id: string, instance: string | null, version: number, audit: CommandContext) {
     return productionApprovalCall(() => this.repository.finalize(id, instance, version, audit));
   }
   restoreAfterApprovalEnd(id: string, instance: string, version: number, audit: CommandContext) {

@@ -5,15 +5,22 @@ import type {
   ApprovalInstanceQuery,
   ApprovalRoleOption,
   ApprovalSceneItem,
+  ApprovalSubmissionResult,
   ApprovalDecisionCommand,
   ApprovalCommentCommand,
   PublishApprovalFlowCommand,
   PageResult,
   SaveApprovalFlowDraft,
+  SetApprovalFlowEnabledCommand,
   UserOption,
 } from '@company/contracts';
 import { toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
+
+interface ReadRequestOptions {
+  signal?: AbortSignal;
+  skipErrorHandling?: boolean;
+}
 
 const request = async <T>(config: RetryRequestConfig) => {
   try {
@@ -30,16 +37,27 @@ const base = '/approval';
  * this module only translates stable URLs and DTOs.
  */
 export const approvalApi = {
-  scenes: () => request<ApprovalSceneItem[]>({ url: `${base}/scenes` }),
-  roleOptions: () =>
+  scenes: (options: ReadRequestOptions = {}) =>
+    request<ApprovalSceneItem[]>({ url: `${base}/scenes`, ...options }),
+  roleOptions: (options: ReadRequestOptions = {}) =>
     request<ApprovalRoleOption[]>({
       url: `${base}/role-options`,
       skipErrorHandling: true,
+      ...options,
     }),
-  userOptions: () =>
-    request<UserOption[]>({ url: `${base}/user-options`, skipErrorHandling: true }),
-  flow: (sceneCode: string) =>
-    request<ApprovalFlowDetail>({ url: `${base}/scenes/${encodeURIComponent(sceneCode)}/flow` }),
+  userOptions: (options: ReadRequestOptions = {}) =>
+    request<UserOption[]>({ url: `${base}/user-options`, skipErrorHandling: true, ...options }),
+  flow: (sceneCode: string, options: ReadRequestOptions = {}) =>
+    request<ApprovalFlowDetail>({
+      url: `${base}/scenes/${encodeURIComponent(sceneCode)}/flow`,
+      ...options,
+    }),
+  setFlowEnabled: (sceneCode: string, data: SetApprovalFlowEnabledCommand) =>
+    request<ApprovalFlowDetail>({
+      url: `${base}/scenes/${encodeURIComponent(sceneCode)}/flow/enabled`,
+      method: 'PUT',
+      data,
+    }),
   saveFlowDraft: (sceneCode: string, data: SaveApprovalFlowDraft) =>
     request<ApprovalFlowDetail>({
       url: `${base}/scenes/${encodeURIComponent(sceneCode)}/flow/draft`,
@@ -74,7 +92,7 @@ export const approvalApi = {
       data,
     }),
   submitBom: (productId: string, version: number) =>
-    request<ApprovalInstanceDetail>({
+    request<ApprovalSubmissionResult>({
       url: `${base}/bom/${productId}/submit`,
       method: 'POST',
       data: { version },

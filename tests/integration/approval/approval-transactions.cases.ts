@@ -14,6 +14,7 @@ import {
   roleAssignee,
   userAssignee,
   createProduct,
+  readSubmittedApproval,
   productState,
   context,
   SCENE_CODE,
@@ -30,10 +31,11 @@ export const registerApprovalNotificationRollbackCases = (
 
     await publishFlow([roleAssignee('通知失败节点', fixture.assignmentRoleId)]);
     const product = await createProduct(pool, fixture, 'notification-failure');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'notification-failure-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     await flushAfterCommit();
     const beforeFailure = await notificationsFor(pool, submitted.id);
     if (!notificationServiceRef) throw new Error('notification service is not initialized');
@@ -82,10 +84,11 @@ export const registerApprovalDecisionTransactionCases = (
       userAssignee('并发末级', fixture.designatedId),
     ]);
     const product = await createProduct(pool, fixture, 'concurrent');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'concurrent-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     const outcomes = await Promise.allSettled([
       approvals.approve(
         submitted.id,
@@ -134,10 +137,11 @@ export const registerApprovalDecisionTransactionCases = (
       roleAssignee('回滚末级', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'final-rollback');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'final-rollback-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     const first = await approvals.approve(
       submitted.id,
       { version: submitted.version, stepId: submitted.steps[0]!.id },
@@ -197,10 +201,11 @@ export const registerApprovalDecisionTransactionCases = (
       ],
     };
     const product = await createProduct(pool, fixture, 'freeze', { specValues });
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'freeze-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     const snapshot = submitted.subjectSnapshot;
     if (!('materials' in snapshot)) throw new Error('Expected BOM approval evidence');
     const expectedSnapshot: BomApprovalSnapshot = {
@@ -294,10 +299,11 @@ export const registerApprovalDecisionTransactionCases = (
     ).rejects.toMatchObject({ code: 'CONFLICT' });
 
     const rejectedProduct = await createProduct(pool, fixture, 'reject-restore');
-    const rejection = await approvals.submit(
+    const rejectionResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(rejectedProduct.productId), expectedVersion: 0 },
       context(fixture.actorId, 'reject-restore-submit'),
     );
+    const rejection = await readSubmittedApproval(approvals, rejectionResult, fixture.actorId);
     const rejected = await approvals.reject(
       rejection.id,
       { version: rejection.version, stepId: rejection.steps[0]!.id, comment: '请补充工艺依据' },
@@ -378,10 +384,11 @@ export const registerApprovalDecisionTransactionCases = (
       roleAssignee('撤回末级', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'withdraw-race');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'withdraw-race-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     const first = await approvals.approve(
       submitted.id,
       { version: submitted.version, stepId: submitted.steps[0]!.id },

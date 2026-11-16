@@ -38,11 +38,10 @@ export class ProductionDemandCorrectionService {
       resultCodec: productionApprovalResultCodec,
       handler: async () => {
         const subjectId = await this.repository.createRequest(demandId, body, audit);
-        const instance = await this.approval.submit(
+        return this.approval.submit(
           { sceneCode: DEMAND_CORRECTION_APPROVAL_SCENE.code, subjectId, expectedVersion: 0 },
           audit,
         );
-        return { subjectId, approvalInstanceId: instance.id };
       },
     });
     return execution.result;

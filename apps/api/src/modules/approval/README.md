@@ -6,8 +6,8 @@
 
 ## 配置与操作
 
-1. 管理员为对应业务场景配置顺序节点，每级选择启用角色或指定用户，保存并发布。
-2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正。待办与本人申请分别按服务端授权范围读取。
+1. 管理员为对应业务场景配置顺序节点，每级选择启用角色或指定用户，保存、发布后独立开启审批。未配置及新配置默认关闭；开关与发布的并发和升级规则见[配置根](docs/database.md#32-approval_flow_definitions)。
+2. 产品页保存完整 BOM 后提交；生产任务需求总览中提交更正。关闭审批时直接执行业务成功回调，开启时建立审批申请；权限和业务资格均照常核验，完整分流与事务契约见[场景接入](docs/subject-integration.md#模块与事务边界)。待办与本人申请仅包含真实审批流程，分别按服务端授权范围读取。
 3. 当前节点的任一合格用户明确通过后进入下一级；末级通过与所属业务生效同事务。
 4. 任一级驳回结束申请；仅申请人可撤回待审申请。在审改内容须先撤回或驳回，修改后从第一级新建申请，旧证据保留；撤回与最终批准在同一业务根锁下互斥。
 5. 节点无人可审时保留当前节点并显示提示；角色新增合格成员或原人员资格恢复后，自然进入其待办，无需重新分派。指定用户节点不会自动转给其他用户，申请人可撤回后按新流程重新提交。
@@ -23,6 +23,7 @@
 | `GET /scenes`、`GET /role-options`、`GET /user-options`、`GET /scenes/:sceneCode/flow` | `approval:configure`；场景、启用角色及当前具备审批资格的用户候选                                                                               |
 | `PUT /scenes/:sceneCode/flow/draft`                                                    | `approval:configure`；完整有序节点；以草稿 ID 和版本防止覆盖，首次两者为空；人员分派规则见[数据库](docs/database.md#33-approval_flow_versions) |
 | `POST /scenes/:sceneCode/flow/publish`                                                 | `approval:configure`；核对草稿 ID 和版本，发布后内容不可改                                                                                     |
+| `PUT /scenes/:sceneCode/flow/enabled`                                                  | `approval:configure`；按配置根版本开启／关闭审批，只影响新提交，开启须有有效已发布流程                                                         |
 | `GET /instances`、`GET /instances/:id`                                                 | 审批查看、处理、配置、BOM 管理或生产需求更正任一权限；普通用户按下方范围过滤                                                                   |
 | `POST /bom/:productId/submit`                                                          | `product:products:manage-bom`；提交产品聚合版本                                                                                                |
 | `POST /instances/:id/approve`、`.../reject`                                            | `approval:decide`；提交申请 `version` 和当前 `stepId`，驳回原因必填                                                                            |

@@ -12,12 +12,13 @@ const context = { actorId: '7', requestId: 'approval-request', ip: null, userAge
 
 describe('ApprovalController', () => {
   it('fixes the BOM submission scene at the business entry point', async () => {
-    const service = { submit: vi.fn().mockResolvedValue({ id: '1' }) };
+    const result = { subjectId: '11', approvalInstanceId: '1', status: 'pending' };
+    const service = { submit: vi.fn().mockResolvedValue(result) };
     const controller = new ApprovalController(service as never);
 
     await expect(
       controller.submitBom({ productId: '11' }, { version: 3 }, context),
-    ).resolves.toEqual({ id: '1' });
+    ).resolves.toEqual(result);
     expect(service.submit).toHaveBeenCalledWith(
       { sceneCode: APPROVAL_SCENE_CODES.bom, subjectId: '11', expectedVersion: 3 },
       context,
@@ -42,8 +43,6 @@ describe('ApprovalController', () => {
       PERMISSIONS.approval.configure,
       PERMISSIONS.product.products.manageBom,
       PERMISSIONS.production.materials.correctDemand,
-      PERMISSIONS.production.tasks.terminate,
-      PERMISSIONS.production.tasks.manageOutput,
     ]);
     expect(Reflect.getMetadata(AUDIT_IN_APPLICATION, ApprovalController.prototype.approve)).toBe(
       true,

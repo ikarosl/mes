@@ -5,6 +5,7 @@ import {
   roleAssignee,
   userAssignee,
   createProduct,
+  readSubmittedApproval,
   context,
   SCENE_CODE,
   type ApprovalMysqlContext,
@@ -16,10 +17,11 @@ export const registerApprovalFlowVersionCases = (getContext: () => ApprovalMysql
     const { pool, fixture, approvals } = getContext();
 
     const product = await createProduct(pool, fixture, 'single-node');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'single-node-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     expect(submitted).toMatchObject({
       status: 'pending',
       flowVersionNo: fixture.publishedFlow.published!.versionNo,
@@ -75,10 +77,11 @@ export const registerApprovalAssigneeCases = (getContext: () => ApprovalMysqlCon
       roleAssignee('动态后续节点', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'dynamic');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'dynamic-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
 
     const actorEligibility = await identity.getApprovalActorEligibility(String(fixture.actorId));
     const roleCandidates = await identity.listApprovalEligibleUserIds(
@@ -181,10 +184,11 @@ export const registerApprovalAssigneeCases = (getContext: () => ApprovalMysqlCon
       roleAssignee('恢复后续节点', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'blocked');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'blocked-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     await pool.execute('DELETE FROM user_roles WHERE role_id=?', [fixture.qualificationRoleId]);
     const blocked = await approvals.getInstance(submitted.id, String(fixture.actorId), true);
     expect(blocked.steps[0]).toMatchObject({
@@ -239,9 +243,14 @@ export const registerApprovalAssigneeCases = (getContext: () => ApprovalMysqlCon
     expect(userEligibility.roleIds).not.toContain(String(fixture.assignmentRoleId));
 
     const disabledProduct = await createProduct(pool, fixture, 'designated-disabled');
-    const disabledSubmitted = await approvals.submit(
+    const disabledSubmittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(disabledProduct.productId), expectedVersion: 0 },
       context(fixture.actorId, 'designated-disabled-submit'),
+    );
+    const disabledSubmitted = await readSubmittedApproval(
+      approvals,
+      disabledSubmittedResult,
+      fixture.actorId,
     );
     expect(disabledSubmitted.steps[0]).toMatchObject({
       assigneeType: 'user',
@@ -260,9 +269,14 @@ export const registerApprovalAssigneeCases = (getContext: () => ApprovalMysqlCon
     await pool.execute('UPDATE users SET status=1 WHERE id=?', [fixture.designatedId]);
 
     const revokedProduct = await createProduct(pool, fixture, 'designated-revoked');
-    const revokedSubmitted = await approvals.submit(
+    const revokedSubmittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(revokedProduct.productId), expectedVersion: 0 },
       context(fixture.actorId, 'designated-revoked-submit'),
+    );
+    const revokedSubmitted = await readSubmittedApproval(
+      approvals,
+      revokedSubmittedResult,
+      fixture.actorId,
     );
     await pool.execute(
       'DELETE rp FROM role_permissions rp WHERE rp.role_id=? AND rp.permission_id=?',
@@ -305,16 +319,18 @@ export const registerApprovalAssigneeCases = (getContext: () => ApprovalMysqlCon
     }
     await publishFlow([userAssignee('pagination old assignee', fixture.designatedId)]);
     const eligibleProduct = await createProduct(pool, fixture, 'pagination-eligible');
-    const eligible = await approvals.submit(
+    const eligibleResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(eligibleProduct.productId), expectedVersion: 0 },
       context(fixture.actorId, 'pagination-eligible-submit'),
     );
+    const eligible = await readSubmittedApproval(approvals, eligibleResult, fixture.actorId);
     await publishFlow([userAssignee('pagination new assignee', fixture.actorId)]);
     const ineligibleProduct = await createProduct(pool, fixture, 'pagination-ineligible');
-    const ineligible = await approvals.submit(
+    const ineligibleResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(ineligibleProduct.productId), expectedVersion: 0 },
       context(fixture.actorId, 'pagination-ineligible-submit'),
     );
+    const ineligible = await readSubmittedApproval(approvals, ineligibleResult, fixture.actorId);
     const eligiblePage = await approvals.listInstances(
       { scope: 'todo', page: 1, pageSize: 1 },
       String(fixture.designatedId),

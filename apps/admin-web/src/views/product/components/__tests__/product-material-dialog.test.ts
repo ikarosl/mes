@@ -17,29 +17,29 @@ vi.mock('../../../../api/product', () => ({
 vi.mock('../../../../utils/message', () => ({ EMessage: { error, warning } }));
 vi.mock('../../../../utils/route-message-box', () => ({ RouteMessageBox: { confirm } }));
 
-const product = (id: string): ProductListItem =>
-  ({
-    id,
-    itemCode: id,
-    productName: `产品${id}`,
-    categoryId: 'c1',
-    categoryCode: 'C1',
-    categoryName: '分类1',
-    itemKind: 'finished_product',
-    defaultRouteId: null,
-    defaultRouteName: null,
-    unit: 'pcs',
-    acquireMethod: 'self_made',
-    status: 1,
-    materialCount: 0,
-    bomLockedAt: null,
-    bomLockedById: null,
-    bomStatus: 'draft',
-    bomApprovalInstanceId: null,
-    version: 1,
-    remark: null,
-    updatedAt: null,
-  }) as ProductListItem;
+const product = (id: string): ProductListItem => ({
+  id,
+  itemCode: id,
+  productName: `产品${id}`,
+  categoryId: 'c1',
+  categoryCode: 'C1',
+  categoryName: '分类1',
+  itemKind: 'finished_product',
+  unit: 'pcs',
+  acquireMethod: 'self_made',
+  specValues: { columns: [], rows: [] },
+  specificationFileId: null,
+  specificationFile: null,
+  status: 1,
+  materialCount: 0,
+  bomLockedAt: null,
+  bomLockedById: null,
+  bomStatus: 'draft',
+  bomApprovalInstanceId: null,
+  version: 1,
+  remark: null,
+  updatedAt: null,
+});
 
 const bomRow = (id: string) => ({
   id: `bom-${id}`,
@@ -298,7 +298,7 @@ describe('ProductMaterialDialog', () => {
     await flushPromises();
 
     expect(wrapper.find('.el-alert-stub').attributes('data-title')).toContain(
-      '已审批通过，仅可查看',
+      '已生效并永久锁定，仅可查看',
     );
     expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();
     expect(saveButton(wrapper)).toBeUndefined();
@@ -381,7 +381,7 @@ describe('ProductMaterialDialog', () => {
     vm.localRows[0]!.quantityPerUnit = 2;
     await flushPromises();
 
-    const submit = buttonByText(wrapper, '提交 BOM 审批');
+    const submit = buttonByText(wrapper, '提交 BOM');
     expect(submit?.attributes('disabled')).toBeDefined();
     await submit?.trigger('click');
     expect(wrapper.emitted('submit-approval')).toBeUndefined();
@@ -418,7 +418,7 @@ describe('ProductMaterialDialog', () => {
     await flushPromises();
     expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();
     expect(saveButton(wrapper)).toBeUndefined();
-    expect(buttonByText(wrapper, '提交 BOM 审批')).toBeUndefined();
+    expect(buttonByText(wrapper, '提交 BOM')).toBeUndefined();
 
     await wrapper.setProps({
       product: {
@@ -432,7 +432,7 @@ describe('ProductMaterialDialog', () => {
     expect(
       wrapper
         .findAll('.el-alert-stub')
-        .some((alert) => alert.attributes('data-title')?.includes('已审批通过，仅可查看')),
+        .some((alert) => alert.attributes('data-title')?.includes('已生效并永久锁定，仅可查看')),
     ).toBe(true);
     expect(saveButton(wrapper)).toBeUndefined();
     expect(buttonByText(wrapper, '添加已有物料')?.attributes('disabled')).toBeDefined();

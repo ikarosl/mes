@@ -93,7 +93,7 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
 
   finalizeBomApproval(
     productId: string,
-    instanceId: string,
+    instanceId: string | null,
     expectedVersion: number,
     audit: CommandContext,
   ): Promise<void> {

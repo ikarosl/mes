@@ -12,13 +12,14 @@ import type {
   ApprovalInstanceQuery,
   ApprovalStepStatus,
   ApprovalSubjectType,
+  ApprovalSubmissionResult,
   PageResult,
 } from '@company/contracts';
 import { IdentityDirectoryService } from '../../identity/public.js';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeApprovalAudit } from './approval-audit.js';
 import { MysqlApprovalFlowRepository } from './mysql-approval-flow.repository.js';
-import type { FlowStepRow } from './mysql-approval-flow.repository.js';
+import type { FlowStepRow } from './approval-flow-selection.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
 import { ApprovalDomainError } from '../domain/approval.errors.js';
@@ -188,22 +189,28 @@ export class MysqlApprovalRepository extends ApprovalRepository {
   }
 
   /**
-   * 通用提交事务：业务 handler 校验受审内容，Approval 固定流程并建申请，再由 handler 绑定。
+   * 通用提交事务：业务 handler 校验内容，再在配置根锁内选择审批或直接生效。
    * handler 内同一连接池上的嵌套 withTransaction 通过事务上下文复用连接；
    * 产品冻结、审批记录和成功审计一起提交，任一步失败均向外抛错并整体回滚。
    */
   async submit(
     command: ApprovalSubmission,
     audit: CommandContext,
-  ): Promise<ApprovalInstanceDetail> {
+  ): Promise<ApprovalSubmissionResult> {
     this.requireActor(audit);
     const { sceneCode, subjectId, expectedVersion } = command;
     const scene = this.handlers.getSceneDefinition(sceneCode);
     const handler = this.handlers.getHandler(scene.code, scene.subjectType);
-    const instanceId = await withTransaction(this.pool, async (connection) => {
+    return withTransaction(this.pool, async (connection): Promise<ApprovalSubmissionResult> => {
       // 先锁业务根并取得送审快照；后续审批操作也按业务根 → 申请的顺序加锁。
       const preparation = await handler.prepareForApproval(subjectId, expectedVersion, audit);
-      const { flow, steps } = await this.flows.lockPublishedFlow(connection, scene.code);
+      const submissionFlow = await this.flows.lockFlowForSubmission(connection, scene.code, audit);
+      if (!submissionFlow.isEnabled) {
+        // 免审不绑定、不伪造申请或审批动作；业务生效及其成功审计由同一个回调原子完成。
+        await handler.finalizeApproval(subjectId, null, preparation.subjectVersion, audit);
+        return { subjectId, approvalInstanceId: null, status: 'approved' };
+      }
+      const { flow, steps } = submissionFlow;
       const resolvedUsers = resolveBusinessAssigneeUsers(
         scene,
         preparation.businessAssigneeResolutions,
@@ -300,9 +307,8 @@ export class MysqlApprovalRepository extends ApprovalRepository {
         sceneCode: scene.code,
         subjectId,
       });
-      return instanceId;
+      return { subjectId, approvalInstanceId: instanceId, status: 'pending' };
     });
-    return this.getInstance(instanceId, audit.actorId!, false);
   }
 
   async approve(

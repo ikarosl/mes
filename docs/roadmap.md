@@ -18,6 +18,7 @@
 模块化初始化基线及旧链退役已批准；现行范围、不可变登记和失败保护见[迁移规则](../packages/database/docs/90-migration-order.md#初始化基线)。备份、恢复、手动维护和半月任务的操作边界由[MySQL 运维手册](../ops/runbooks/mysql-backup-restore.md)维护，代码与本地验证不代替目标服务器验收。
 
 - [ ] 在部署环境完成基线旧库拒绝与空库切换、发布前备份、迁移中断保持停写、独立库恢复及匹配应用恢复演练；核对所需业务数据和附件是否已完整保留，未明确重建的现有环境不自动清库。
+- [ ] 修复单句 `SIGNAL` 触发器的备份恢复风险：当前 MySQL 8.4 `mysqldump` 会把部分定义的末尾分号包入版本注释，恢复报 `1064`。正式备份／恢复入口须验证可执行的导出形式，并保留触发器正文、DEFINER、SQL_MODE、字符集与执行顺序；不能以导出成功替代恢复验证，或修改已执行 migration 绕过。所有者见 [MySQL 运维手册](../ops/runbooks/mysql-backup-restore.md)。
 - [ ] 部署验收 MySQL／MinIO 配套备份与隔离恢复、各保留最近 3 份定时／发布备份、QQ 邮箱 SMTP 失败提醒；在服务器启用并验收半月任务。半月间隔的数据损失已接受，异地副本手动维护，不实现自动同步；半月备份不等于具备任意时点恢复能力。
 - [ ] 凌晨自动部署尚未实施：保留手动入口，按[发布手册](../ops/runbooks/compose-server-deployment.md)的自动发布前置条件，确定批准记录、镜像预下载、UTC+8 维护窗口及关键业务检查后再接入；错过窗口跳过，不补发。
 
@@ -244,6 +245,7 @@
 
 ## 审批试探验收与后续扩展
 
+- [ ] 可选审批待用户验收及正式测试：覆盖 BOM、需求更正开关与统一生效回调，核对在途保持、免审后生产使用、配置／业务并发、失败整体回滚、旧幂等结果重放及保留数据升级／回退守卫。当前规则见 [Approval](../apps/api/src/modules/approval/README.md)；正式测试集尚未补充。
 - [ ] 审批组件 mock 页待 UI 验收：开发入口 `/dev/approval-components`，核对 BOM 和需求更正的证据展示、详情弹窗、状态与视角切换、本地模拟及重置；使用说明见[演示页](../apps/admin-web/src/views/approval/demo/README.md)。不代表真实审批链路或正式测试通过。
 
 - 当前接入 BOM 和生产需求更正场景，按角色、指定用户或场景业务来源配置顺序多级审批；当前使用入口、表结构和事务职责见 [Approval](../apps/api/src/modules/approval/README.md)。长期业务决策见 [ADR-0006](adr/0006-approval-workflow-boundaries.md) 和 [ADR-0008](adr/0008-approval-node-assignees.md)，未实施扩展见[审批与通知设计](approval-design.md)。

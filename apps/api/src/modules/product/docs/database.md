@@ -65,10 +65,10 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 | `category_id`              | `BIGINT UNSIGNED NOT NULL`                | 成品分类                            |
 | `default_route_id`         | `BIGINT UNSIGNED NULL`                    | 未启用保留列，应用不读写            |
 | `bom_status`               | `VARCHAR(30) NOT NULL DEFAULT 'draft'`    | `draft/pending_approval/approved`   |
-| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL`                    | 当前送审或最终批准的申请            |
+| `bom_approval_instance_id` | `BIGINT UNSIGNED NULL`                    | 当前送审或最终批准的申请；免审批准为空 |
 | `version`                  | `INT NOT NULL DEFAULT 0`                  | 成品聚合并发版本，不是 BOM 业务版本 |
 | `bom_locked_at`            | `DATETIME NULL`                           | BOM 最终批准并永久锁定的时间        |
-| `bom_locked_by`            | `BIGINT UNSIGNED NULL`                    | 最后一级实际批准人                  |
+| `bom_locked_by`            | `BIGINT UNSIGNED NULL`                    | 末级实际批准人或免审提交人           |
 | `unit`                     | `VARCHAR(20) NOT NULL`                    | 固定基础计量单位                    |
 | `acquire_method`           | `VARCHAR(32) NOT NULL`                    | `self_made/outsourced/purchased`    |
 | `spec_values`              | `JSON NOT NULL`                           | 完整规格参数表格；无数据库默认值    |
@@ -79,7 +79,7 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 
 - 唯一键 `uk_products_item_code(item_code)`；索引 `idx_products_category(category_id)`、`idx_products_default_route(default_route_id)`、`idx_products_bom_locked_by(bom_locked_by)`、`idx_products_bom_approval_instance(bom_approval_instance_id)`、`idx_products_specification_file(specification_file_id)`。
 - 外键：`category_id → item_categories.id`；`default_route_id → process_routes.id ON DELETE SET NULL`；`bom_approval_instance_id → approval_instances.id`；`bom_locked_by → users.id`；`specification_file_id → technical_files.id ON DELETE RESTRICT`；另有 M 组操作者外键。
-- CHECK：获取方式为表列三值；状态、删除标志为 `0/1`；`version >= 0`；`bom_locked_at IS NOT NULL OR bom_locked_by IS NULL`。`chk_products_bom_status` 进一步要求草稿无申请和锁定依据、在审有申请而无锁定依据、批准后申请／锁定人／锁定时间均非空。规格参数结构 CHECK 见[下文](#规格参数存储与迁移)。
+- CHECK：获取方式为表列三值；状态、删除标志为 `0/1`；`version >= 0`；`bom_locked_at IS NOT NULL OR bom_locked_by IS NULL`。`chk_products_bom_status` 进一步要求草稿无申请和锁定依据、在审有申请而无锁定依据、批准后锁定人／锁定时间均非空；批准后申请可空以表达免审，非空仍受原外键保护。规格参数结构 CHECK 见[下文](#规格参数存储与迁移)。
 - `trg_products_reject_item_code_update` 是 `BEFORE UPDATE` 触发器，拒绝修改 `item_code`；固定单位、BOM 冻结及永久锁定的命令约束由应用执行，不能视为此触发器已覆盖。
 
 `item_code` 是永久身份；`product_name` 可重复。BOM 批准人、时间及当前申请关联保存于成品根；当前规格书引用 `technical_files`，文件引用限制删除，绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。

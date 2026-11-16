@@ -4,6 +4,8 @@
 
 后续取代范围：[ADR-0008](0008-approval-node-assignees.md)取代个人任务与人工重新分派；[ADR-0011](0011-task-closeout-output-list-and-finished-goods-inbound.md)补充任务结案和业务关联人员；[ADR-0013](0013-procurement-source-and-stock-boundaries.md)细化按正式需求采购与独立备料；[ADR-0014](0014-task-material-policy-and-output-inspection.md)将 BOM 任务门禁限定为批量；通知边界由 [ADR-0007](0007-general-notification-boundaries.md)维护。
 
+可选审批将下文“全部节点通过才生效”和“末级批准时锁定”限定为已开启审批的场景；关闭时在提交事务执行相同业务成功回调，BOM 仍永久锁定，不伪造人工决定。当前契约由[审批场景接入](../../apps/api/src/modules/approval/docs/subject-integration.md)维护，本调整不改变工单未接入范围、业务所有权或后续实时资格门禁。
+
 ## 背景
 
 销售需要在 BOM 尚未完整时下达研发或批量工单，研发先建立成品资料并占用编码。任务承诺、技术定义和实际执行资格必须分开，避免把成品存在、工单下达和允许生产混为同一条件。

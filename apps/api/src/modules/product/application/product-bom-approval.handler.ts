@@ -57,10 +57,10 @@ export class ProductBomApprovalHandler implements ApprovalSubjectHandler, OnModu
     );
   }
 
-  /** 只有末级通过才调用：重新校验 BOM 资格，由 Product 写入永久锁定事实。 */
+  /** 末级通过或配置免审时复用同一资格复核与永久锁定。 */
   finalizeApproval(
     subjectId: string,
-    instanceId: string,
+    instanceId: string | null,
     expectedVersion: number,
     audit: CommandContext,
   ): Promise<void> {

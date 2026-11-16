@@ -8,6 +8,7 @@ import {
   requireBomSubmissionProduct,
   requireBomSubmissionState,
   requireCurrentBomApproval,
+  requireFinalizableBom,
 } from '../domain/product-bom.policy.js';
 import {
   productBomDefinition,
@@ -142,12 +143,15 @@ export class MysqlProductBomApproval {
 
   async finalizeBomApproval(
     productId: string,
-    instanceId: string,
+    instanceId: string | null,
     expectedVersion: number,
     audit: CommandContext,
   ): Promise<void> {
     await withTransaction(this.pool, async (connection) => {
+      if (!audit.actorId) throw new ProductDomainError('INVALID_INPUT', '缺少操作人');
       const product = await readProductCatalogRecord(connection, productId, true);
+      const definition = productBomDefinition(product);
+      requireFinalizableBom(definition, instanceId, expectedVersion);
       await requireProductCatalogCategory(connection, String(product.category_id));
       const [materials] = await connection.query<
         (RowDataPacket & {
@@ -187,9 +191,16 @@ export class MysqlProductBomApproval {
       }
       const [result] = await connection.execute<ResultSetHeader>(
         `UPDATE products SET bom_status='approved',bom_locked_at=NOW(),bom_locked_by=?,version=version+1,updated_by=?
-          WHERE id=? AND is_deleted=0 AND bom_status='pending_approval' AND bom_approval_instance_id=?
+          WHERE id=? AND is_deleted=0 AND bom_status=? AND bom_approval_instance_id <=> ?
             AND bom_locked_at IS NULL AND version=?`,
-        [audit.actorId, audit.actorId, productId, instanceId, expectedVersion],
+        [
+          audit.actorId,
+          audit.actorId,
+          productId,
+          definition.bomStatus,
+          instanceId,
+          expectedVersion,
+        ],
       );
       if (result.affectedRows !== 1)
         throw new ProductDomainError('CONFLICT', 'BOM 当前状态已变化，不能完成审批');
@@ -198,8 +209,17 @@ export class MysqlProductBomApproval {
         audit,
         'bom.approve',
         productId,
-        { bomStatus: 'pending_approval', approvalInstanceId: instanceId, version: expectedVersion },
-        { bomStatus: 'approved', approvalInstanceId: instanceId, bomLockedBy: audit.actorId },
+        {
+          bomStatus: definition.bomStatus,
+          approvalInstanceId: instanceId,
+          version: expectedVersion,
+        },
+        {
+          bomStatus: 'approved',
+          approvalInstanceId: instanceId,
+          approvalSkipped: instanceId === null,
+          bomLockedBy: audit.actorId,
+        },
       );
     });
   }

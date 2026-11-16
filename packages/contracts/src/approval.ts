@@ -36,6 +36,8 @@ export interface ApprovalSceneItem {
   description: string;
   businessAssigneeSources: ApprovalBusinessAssigneeSource[];
   requiredFinalAssigneeSourceCode: string | null;
+  isEnabled: boolean;
+  definitionVersion: number | null;
   configured: boolean;
   activeFlowVersion: number | null;
 }
@@ -67,6 +69,8 @@ export interface ApprovalFlowDetail {
   requiredFinalAssigneeSourceCode: string | null;
   sceneCode: string;
   name: string;
+  isEnabled: boolean;
+  definitionVersion: number | null;
   published: ApprovalFlowVersion | null;
   draft: ApprovalFlowVersion | null;
 }
@@ -80,6 +84,17 @@ export interface SaveApprovalFlowDraft {
 }
 export interface PublishApprovalFlowCommand extends VersionedCommand {
   draftId: string;
+}
+export interface SetApprovalFlowEnabledCommand {
+  isEnabled: boolean;
+  /** 未建立流程定义时显式为 null；已有定义必须提交其并发版本。 */
+  version: number | null;
+}
+/** 免审直接生效时没有申请 ID；待审结果始终引用真实审批申请。 */
+export interface ApprovalSubmissionResult {
+  subjectId: string;
+  approvalInstanceId: string | null;
+  status: 'pending' | 'approved';
 }
 export interface ApprovalInstanceQuery extends PageQuery {
   scope?: ApprovalListScope;

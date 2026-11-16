@@ -29,7 +29,7 @@
         >最新需求的更正入口已停用，请手动刷新后重新核对。</el-alert
       >
       <InlineHint v-if="needsRefresh && !loading && !error && !eligibilityError">
-        请手动刷新，核对最新需求、审批历史和更正资格。
+        请手动刷新，核对最新需求、更正历史和更正资格。
       </InlineHint>
 
       <template v-if="selected && latest">
@@ -195,32 +195,30 @@
         </section>
 
         <section>
-          <h4>更正审批历史</h4>
+          <h4>更正历史</h4>
           <el-table
             :data="history"
             row-key="id"
             size="small"
             border
-            empty-text="尚无更正审批记录"
+            empty-text="尚无更正记录"
           >
             <el-table-column
               label="更正申请"
               width="100"
             >
-              <template #default="{ row }">id:{{ row.id }}</template>
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }"
+                >id:{{ row.id }}</template
+              >
             </el-table-column>
             <el-table-column
               label="需求变化"
               min-width="180"
             >
-              <template #default="{ row }">
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }">
                 id:{{ row.oldDemandId }} → {{ productionDemandCorrectionReplacementLabel(row) }}
                 <div class="secondary-text">
-                  {{
-                    DEMAND_CORRECTION_KIND_LABELS[
-                      row.snapshot.correctionKind as DemandCorrectionKind
-                    ]
-                  }}
+                  {{ DEMAND_CORRECTION_KIND_LABELS[row.snapshot.correctionKind] }}
                 </div>
               </template>
             </el-table-column>
@@ -228,7 +226,7 @@
               label="目标总量前后"
               min-width="170"
             >
-              <template #default="{ row }">
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }">
                 {{ quantity(row.snapshot.check.currentTotalQuantity) }} →
                 {{ quantity(row.snapshot.targetTotalQuantity) }} {{ row.snapshot.check.unit }}
                 <div class="secondary-text">
@@ -251,7 +249,7 @@
               label="状态"
               width="125"
             >
-              <template #default="{ row }">
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }">
                 <el-tag
                   :type="productionDemandCorrectionHistoryStatus(row).type"
                   size="small"
@@ -263,7 +261,7 @@
               label="原因"
               min-width="200"
             >
-              <template #default="{ row }"
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }"
                 ><div class="reason-text">{{ row.snapshot.reason }}</div></template
               >
             </el-table-column>
@@ -271,18 +269,10 @@
               label="申请 / 生效时间"
               width="190"
             >
-              <template #default="{ row }">
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }">
                 <div class="secondary-text">申请 {{ formatDateTimeForDisplay(row.createdAt) }}</div>
                 <div class="secondary-text">
                   生效 {{ formatDateTimeForDisplay(row.appliedAt, '未生效') }}
-                </div>
-                <div
-                  v-if="row.fulfilledSupplementIds.length"
-                  class="secondary-text"
-                >
-                  本次齐套补料：{{
-                    row.fulfilledSupplementIds.map((id: string) => `id:${id}`).join('、')
-                  }}
                 </div>
               </template>
             </el-table-column>
@@ -291,7 +281,7 @@
               min-width="150"
               fixed="right"
             >
-              <template #default="{ row }">
+              <template #default="{ row }: { row: DemandCorrectionHistoryItem }">
                 <template v-if="row.approvalInstanceId">
                   <el-button
                     v-if="canAccessRoute({ name: 'approval-inbox' })"
@@ -302,7 +292,8 @@
                   >
                   <span v-else>审批 id:{{ row.approvalInstanceId }}</span>
                 </template>
-                <span v-else>尚未提交审批</span>
+                <span v-else-if="row.state === 'applied'">无需审批，已直接生效</span>
+                <span v-else>尚无审批记录</span>
               </template>
             </el-table-column>
           </el-table>
@@ -329,7 +320,7 @@
 import { useRouter } from 'vue-router';
 import type {
   DemandCloseCause,
-  DemandCorrectionKind,
+  DemandCorrectionHistoryItem,
   ProductionBatchItem,
   ProductionMaterialDemandItem,
 } from '@company/contracts';

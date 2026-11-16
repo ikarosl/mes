@@ -127,7 +127,7 @@ export function useProductionDemandTrace(props: ProductionDemandTraceProps): Pro
             (row.newDemandId !== null && !chainIds.has(row.newDemandId)),
         )
       )
-        throw new Error('需求链与审批历史已发生变化，请刷新后重新查看。');
+        throw new Error('需求链与更正历史已发生变化，请刷新后重新查看。');
 
       storedTarget.value = { batchId, demandId };
       storedDemands.value = demands;

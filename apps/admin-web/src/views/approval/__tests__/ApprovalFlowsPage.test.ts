@@ -83,7 +83,10 @@ describe('ApprovalFlowsPage', () => {
     await configure!.trigger('click');
     await flushPromises();
 
-    expect(flow).toHaveBeenCalledWith('product.bom.approve');
+    expect(flow).toHaveBeenCalledWith('product.bom.approve', {
+      signal: expect.any(AbortSignal),
+      skipErrorHandling: true,
+    });
     const publish = wrapper.find('.publish-latest');
     expect(publish.exists()).toBe(true);
     await publish.trigger('click');
@@ -115,7 +118,7 @@ describe('ApprovalFlowsPage', () => {
       draftId: 'saved-draft',
       version: 7,
     });
-    expect(success).toHaveBeenCalledWith('审批流程已发布');
+    expect(success).toHaveBeenCalledWith('审批流程已发布，新提交将使用新流程');
   });
 
   it('keeps an unconfigured registered scene available and opens an empty editor', async () => {
@@ -124,7 +127,7 @@ describe('ApprovalFlowsPage', () => {
     const wrapper = mountPage();
     await flushPromises();
 
-    expect(wrapper.text()).toContain('未配置');
+    expect(wrapper.text()).toContain('未发布');
     await wrapper
       .findAll('button')
       .find((button) => button.text() === '配置流程')!

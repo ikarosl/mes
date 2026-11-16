@@ -78,5 +78,6 @@ export interface DemandCorrectionHistoryItem {
 }
 export interface ProductionApprovalResult {
   subjectId: string;
-  approvalInstanceId: string;
+  approvalInstanceId: string | null;
+  status: 'pending' | 'approved';
 }

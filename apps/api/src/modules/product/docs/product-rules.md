@@ -52,7 +52,9 @@
 
 ## BOM 命令与审批
 
-`ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 通用提交调用其准备、绑定及终态方法；冻结版本取绑定返回值。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
+`ProductBomApprovalHandler` 负责声明 BOM 受审快照的结构版本，并通过 `readSnapshotForDisplay()` 校验历史证据、按物料 ID 补充当前名称。Approval 按[场景接入契约](../../approval/docs/subject-integration.md)选择人工审批或免审；开启时调用准备、绑定及终态方法，冻结版本取绑定返回值，关闭时准备后直接调用同一成功回调。BOM 资格和永久锁定规则仍由 Product 实现，不进入审批通用配置仓储。
+
+成功回调在人工路径核验在审状态、申请关联及冻结版本，在免审路径核验草稿、无申请关联及提交版本；两者都复核 BOM 内容与物料资格并永久锁定。人工批准保存末级决定人，免审批准保存提交人并在业务审计区分免审；不伪造审批申请。后续生产以 `approved` 及完整锁定人／时间为批准依据，审批申请 ID 可空，不因免审批准而开放再次编辑。
 
 BOM 审批证据仅接受 [handler](../application/product-bom-approval.handler.ts) 声明的当前结构，规格参数按送审时的完整 JSON 表格冻结；不保留旧版本兼容读取或补造缺失字段。升级时已有旧 BOM 审批证据由迁移守卫拒绝，不能改写历史申请，边界见[数据库设计](database.md#规格参数存储与迁移)。
 

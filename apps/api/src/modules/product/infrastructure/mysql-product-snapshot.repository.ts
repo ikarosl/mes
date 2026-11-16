@@ -197,18 +197,14 @@ export class MysqlProductSnapshotRepository
       (RowDataPacket & {
         bom_status: string;
         bom_locked_at: Date | null;
-        bom_approval_instance_id: string | null;
+        bom_locked_by: string | null;
       })[]
     >(
-      'SELECT bom_status,bom_locked_at,bom_approval_instance_id FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
+      'SELECT bom_status,bom_locked_at,bom_locked_by FROM products WHERE id=? AND is_deleted=0 FOR UPDATE',
       [productId],
     );
     if (!lockFact) throw new ProductDomainError('NOT_FOUND', '已启用的生产产品不存在');
-    if (
-      lockFact.bom_status !== 'approved' ||
-      !lockFact.bom_locked_at ||
-      !lockFact.bom_approval_instance_id
-    ) {
+    if (lockFact.bom_status !== 'approved' || !lockFact.bom_locked_at || !lockFact.bom_locked_by) {
       throw new ProductDomainError(
         'INVALID_MATERIAL',
         'BOM 尚未审批通过，不能配置用料或下达生产任务',

@@ -4,6 +4,7 @@ import type {
   ApprovalInstanceDetail,
   ApprovalInstanceListItem,
   ApprovalInstanceQuery,
+  ApprovalSubmissionResult,
   PageResult,
 } from '@company/contracts';
 import type { ApprovalSubmission } from '../approval-submission.js';
@@ -23,7 +24,7 @@ export abstract class ApprovalRepository {
   abstract submit(
     command: ApprovalSubmission,
     audit: CommandContext,
-  ): Promise<ApprovalInstanceDetail>;
+  ): Promise<ApprovalSubmissionResult>;
   abstract approve(
     id: string,
     command: ApprovalDecisionCommand,

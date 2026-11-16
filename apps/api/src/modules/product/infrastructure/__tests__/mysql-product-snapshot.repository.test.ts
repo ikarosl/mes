@@ -53,7 +53,7 @@ describe('MysqlProductSnapshotRepository', () => {
     connection.query
       .mockResolvedValueOnce([[{ ...productRow, default_route_id: null }], []])
       .mockResolvedValueOnce([
-        [{ bom_status: 'pending_approval', bom_locked_at: null, bom_approval_instance_id: 12 }],
+        [{ bom_status: 'pending_approval', bom_locked_at: null, bom_locked_by: null }],
         [],
       ]);
     const repository = repositoryWith(connection);

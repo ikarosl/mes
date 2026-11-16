@@ -7,6 +7,7 @@ import {
   userAssignee,
   createUser,
   createProduct,
+  readSubmittedApproval,
   context,
   SCENE_CODE,
   notificationHookEvents,
@@ -22,10 +23,11 @@ export const registerApprovalNotificationCases = (getContext: () => ApprovalMysq
       roleAssignee('通知末级', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'notification-lifecycle');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'notification-lifecycle-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     await flushAfterCommit();
 
     const submittedAction = submitted.actions[0]!;
@@ -95,10 +97,11 @@ export const registerApprovalNotificationCases = (getContext: () => ApprovalMysq
 
     await publishFlow([roleAssignee('通知驳回节点', fixture.assignmentRoleId)]);
     const product = await createProduct(pool, fixture, 'notification-rejected');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'notification-rejected-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     const rejected = await approvals.reject(
       submitted.id,
       { version: submitted.version, stepId: submitted.steps[0]!.id, comment: '请补充依据' },
@@ -130,10 +133,11 @@ export const registerApprovalNotificationCases = (getContext: () => ApprovalMysq
       roleAssignee('动态通知后续', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'notification-dynamic');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'notification-dynamic-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     const newMember = await createUser(
       pool,
       fixture.token,
@@ -176,10 +180,11 @@ export const registerApprovalNotificationCases = (getContext: () => ApprovalMysq
       roleAssignee('撤回通知后续', fixture.assignmentRoleId),
     ]);
     const product = await createProduct(pool, fixture, 'notification-withdrawn');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'notification-withdrawn-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     await pool.execute('DELETE FROM user_roles WHERE role_id=? AND user_id<>?', [
       fixture.assignmentRoleId,
       fixture.actorId,
@@ -224,10 +229,11 @@ export const registerApprovalNotificationCases = (getContext: () => ApprovalMysq
       userAssignee('暂时停用后续', fixture.designatedId),
     ]);
     const product = await createProduct(pool, fixture, 'notification-no-next-user');
-    const submitted = await approvals.submit(
+    const submittedResult = await approvals.submit(
       { sceneCode: SCENE_CODE, subjectId: String(product.productId), expectedVersion: 0 },
       context(fixture.actorId, 'notification-no-next-user-submit'),
     );
+    const submitted = await readSubmittedApproval(approvals, submittedResult, fixture.actorId);
     await pool.execute('UPDATE users SET status=0 WHERE id=?', [fixture.designatedId]);
     try {
       const first = await approvals.approve(

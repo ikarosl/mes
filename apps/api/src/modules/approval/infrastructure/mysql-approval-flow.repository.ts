@@ -9,6 +9,7 @@ import type {
   ApprovalSceneItem,
   PublishApprovalFlowCommand,
   SaveApprovalFlowDraft,
+  SetApprovalFlowEnabledCommand,
   UserOption,
 } from '@company/contracts';
 import { IdentityDirectoryService } from '../../identity/public.js';
@@ -20,39 +21,17 @@ import { ApprovalSubjectHandlerRegistry } from '../application/approval-subject-
 import type { ApprovalSceneDefinition } from '../application/approval-scenes.js';
 import { ApprovalFlowRepository } from '../application/ports/approval-flow.repository.js';
 import { writeApprovalAudit } from './approval-audit.js';
+import { assertSceneAssigneeRules, resolveAssigneeIds } from './approval-assignees.js';
 import {
-  assertSceneAssigneeRules,
-  resolveAssigneeIds,
-  type AssigneeRuleRow,
-} from './approval-assignees.js';
+  assertSequentialApprovalSteps,
+  ensureApprovalDefinition,
+  lockPublishedApprovalFlow,
+  type DefinitionRow,
+  type FlowVersionRow,
+  type FlowStepRow,
+} from './approval-flow-selection.js';
 
 type Db = Pool | PoolConnection;
-type FlowVersionStatus = 'draft' | 'published' | 'discarded';
-
-interface DefinitionRow extends RowDataPacket {
-  id: number;
-  scene_code: string;
-  name: string;
-  published_version_id: number | null;
-  version: number;
-}
-
-interface FlowVersionRow extends RowDataPacket {
-  id: number;
-  definition_id: number;
-  version_no: number;
-  status: FlowVersionStatus;
-  published_at: Date | null;
-  version: number;
-}
-
-export interface FlowStepRow extends RowDataPacket, AssigneeRuleRow {
-  id: number;
-  flow_version_id: number;
-  node_code: string;
-  step_no: number;
-  name: string;
-}
 
 /** 配置聚合：维护场景列表、流程草稿、发布版本，以及提交时的固定选版。 */
 @Injectable()
@@ -68,14 +47,21 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
   /** 管理页查询：将代码场景定义与数据库发布状态合并，未配置的场景也返回。 */
   async listScenes(): Promise<ApprovalSceneItem[]> {
     const [rows] = await this.pool.query<
-      (RowDataPacket & { scene_code: string; published_version_no: number | null })[]
+      (RowDataPacket & {
+        scene_code: string;
+        published_version_no: number | null;
+        is_enabled: number;
+        version: number;
+      })[]
     >(
-      `SELECT d.scene_code,v.version_no published_version_no
+      `SELECT d.scene_code,d.is_enabled,d.version,v.version_no published_version_no
          FROM approval_flow_definitions d
-         LEFT JOIN approval_flow_versions v ON v.id=d.published_version_id
+         LEFT JOIN approval_flow_versions v
+           ON v.id=d.published_version_id AND v.definition_id=d.id
+          AND v.status='published' AND v.is_deleted=0
         WHERE d.is_deleted=0`,
     );
-    const configured = new Map(rows.map((row) => [row.scene_code, row.published_version_no]));
+    const configured = new Map(rows.map((row) => [row.scene_code, row]));
     // 以代码目录为准；数据库只提供流程配置，不自行创造审批场景。
     return this.handlers.listSceneDefinitions().map((scene) => ({
       code: scene.code,
@@ -84,8 +70,12 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       description: scene.description,
       businessAssigneeSources: scene.businessAssigneeSources.map((source) => ({ ...source })),
       requiredFinalAssigneeSourceCode: scene.requiredFinalAssigneeSourceCode,
-      configured: configured.has(scene.code) && configured.get(scene.code) !== null,
-      activeFlowVersion: configured.get(scene.code) ?? null,
+      isEnabled: Number(configured.get(scene.code)?.is_enabled ?? 0) === 1,
+      definitionVersion: configured.has(scene.code)
+        ? Number(configured.get(scene.code)!.version)
+        : null,
+      configured: configured.get(scene.code)?.published_version_no != null,
+      activeFlowVersion: configured.get(scene.code)?.published_version_no ?? null,
     }));
   }
 
@@ -149,21 +139,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
 
     let detail: ApprovalFlowDetail;
     await withTransaction(this.pool, async (connection) => {
-      let [[definition]] = await connection.query<DefinitionRow[]>(
-        'SELECT id,scene_code,name,published_version_id,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0 FOR UPDATE',
-        [sceneCode],
-      );
-      if (!definition) {
-        const [insert] = await connection.execute<ResultSetHeader>(
-          'INSERT INTO approval_flow_definitions (scene_code,name,created_by,updated_by) VALUES (?,?,?,?)',
-          [sceneCode, name, audit.actorId, audit.actorId],
-        );
-        [[definition]] = await connection.query<DefinitionRow[]>(
-          'SELECT id,scene_code,name,published_version_id,version FROM approval_flow_definitions WHERE id=? FOR UPDATE',
-          [insert.insertId],
-        );
-      }
-      if (!definition) throw new ApprovalDomainError('CONFLICT', '审批流程定义创建失败');
+      const definition = await ensureApprovalDefinition(connection, sceneCode, name, audit);
       const [[draft]] = await connection.query<FlowVersionRow[]>(
         `SELECT id,definition_id,version_no,status,published_at,version
            FROM approval_flow_versions WHERE definition_id=? AND status='draft' AND is_deleted=0 FOR UPDATE`,
@@ -306,7 +282,7 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     this.requireActor(audit);
     await withTransaction(this.pool, async (connection) => {
       const [[definition]] = await connection.query<DefinitionRow[]>(
-        'SELECT id,scene_code,name,published_version_id,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0 FOR UPDATE',
+        'SELECT id,scene_code,name,published_version_id,is_enabled,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0 FOR UPDATE',
         [sceneCode],
       );
       if (!definition) throw new ApprovalDomainError('FLOW_NOT_CONFIGURED', '审批流程尚未保存草稿');
@@ -322,16 +298,9 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
            FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no FOR UPDATE`,
         [draft.id],
       );
-      this.assertSequentialSteps(steps);
+      assertSequentialApprovalSteps(steps);
       assertSceneAssigneeRules(scene, steps);
-      for (const step of steps) {
-        if (step.assignee_type === 'business') continue;
-        if ((await resolveAssigneeIds(this.identity, step)).length === 0)
-          throw new ApprovalDomainError(
-            'NO_ELIGIBLE_ASSIGNEE',
-            `节点“${step.name}”当前没有合格审批人`,
-          );
-      }
+      await this.assertEligibleAssignees(steps);
       await connection.execute(
         `UPDATE approval_flow_versions SET status='published',published_by=?,published_at=NOW(),updated_by=?
           WHERE id=? AND status='draft' AND version=?`,
@@ -349,41 +318,87 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     return this.getFlow(sceneCode);
   }
 
-  /** 供申请提交事务选版：调用方已锁业务根，此处锁发布指针和版本，防止选版期间被切换。 */
-  async lockPublishedFlow(
+  /** 开关和发布指针属于同一配置根；过期命令即使目标值相同也不能覆盖其他配置变化。 */
+  async setFlowEnabled(
+    sceneCode: string,
+    command: SetApprovalFlowEnabledCommand,
+    audit: CommandContext,
+  ): Promise<ApprovalFlowDetail> {
+    const scene = this.handlers.getSceneDefinition(sceneCode);
+    this.requireActor(audit);
+    if (
+      typeof command.isEnabled !== 'boolean' ||
+      (command.version !== null &&
+        (!Number.isInteger(command.version) ||
+          command.version < 0 ||
+          command.version > 2_147_483_647))
+    ) {
+      throw new ApprovalDomainError('INVALID_INPUT', '请提供有效的审批开关及流程定义版本');
+    }
+    return withTransaction(this.pool, async (connection) => {
+      const [[definition]] = await connection.query<DefinitionRow[]>(
+        'SELECT id,scene_code,name,published_version_id,is_enabled,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0 FOR UPDATE',
+        [sceneCode],
+      );
+      if (!definition) {
+        if (command.version !== null)
+          throw new ApprovalDomainError(
+            'CONCURRENT_MODIFICATION',
+            '审批流程配置已变化，请刷新后重试',
+          );
+        if (command.isEnabled)
+          throw new ApprovalDomainError('FLOW_NOT_CONFIGURED', '请先保存并发布审批流程');
+        return this.loadFlow(connection, sceneCode);
+      }
+      if (command.version === null || Number(definition.version) !== command.version)
+        throw new ApprovalDomainError(
+          'CONCURRENT_MODIFICATION',
+          '审批流程配置已变化，请刷新后重试',
+        );
+      if (Boolean(definition.is_enabled) === command.isEnabled)
+        return this.loadFlow(connection, sceneCode);
+      if (command.isEnabled) {
+        const { steps } = await lockPublishedApprovalFlow(connection, definition, scene);
+        await this.assertEligibleAssignees(steps);
+      }
+      const [updated] = await connection.execute<ResultSetHeader>(
+        `UPDATE approval_flow_definitions SET is_enabled=?,version=version+1,updated_by=?
+          WHERE id=? AND version=?`,
+        [command.isEnabled ? 1 : 0, audit.actorId, definition.id, command.version],
+      );
+      if (updated.affectedRows !== 1)
+        throw new ApprovalDomainError(
+          'CONCURRENT_MODIFICATION',
+          '审批流程配置已变化，请刷新后重试',
+        );
+      await writeApprovalAudit(connection, audit, 'approval.flow.enabled', String(definition.id), {
+        sceneCode,
+        isEnabled: command.isEnabled,
+        definitionVersion: command.version + 1,
+      });
+      return this.loadFlow(connection, sceneCode);
+    });
+  }
+
+  /** 调用方已锁业务根；缺少配置根时也经唯一场景键串行化创建，关闭判断持锁至业务生效。 */
+  async lockFlowForSubmission(
     connection: PoolConnection,
     sceneCode: string,
-  ): Promise<{ flow: FlowVersionRow; steps: FlowStepRow[] }> {
+    audit: CommandContext,
+  ): Promise<
+    { isEnabled: false } | { isEnabled: true; flow: FlowVersionRow; steps: FlowStepRow[] }
+  > {
     const scene = this.handlers.getSceneDefinition(sceneCode);
-    const [[definition]] = await connection.query<DefinitionRow[]>(
-      `SELECT id,scene_code,name,published_version_id,version
-           FROM approval_flow_definitions
-          WHERE scene_code=? AND is_deleted=0 FOR UPDATE`,
-      [sceneCode],
-    );
-    if (!definition?.published_version_id)
-      throw new ApprovalDomainError('FLOW_NOT_CONFIGURED', '审批流程尚未发布');
-    const [[flow]] = await connection.query<FlowVersionRow[]>(
-      `SELECT id,definition_id,version_no,status,published_at,version
-           FROM approval_flow_versions
-          WHERE id=? AND definition_id=? AND status='published' AND is_deleted=0 FOR UPDATE`,
-      [definition.published_version_id, definition.id],
-    );
-    if (!flow) throw new ApprovalDomainError('FLOW_NOT_CONFIGURED', '审批流程版本不可用');
-    const [steps] = await connection.query<FlowStepRow[]>(
-      `SELECT id,flow_version_id,node_code,step_no,name,assignee_type,role_id,assignee_user_id,assignee_source_code
-           FROM approval_flow_steps WHERE flow_version_id=? AND is_deleted=0 ORDER BY step_no FOR UPDATE`,
-      [flow.id],
-    );
-    this.assertSequentialSteps(steps);
-    assertSceneAssigneeRules(scene, steps);
-    return { flow, steps };
+    const definition = await ensureApprovalDefinition(connection, sceneCode, scene.name, audit);
+    if (Number(definition.is_enabled) === 0) return { isEnabled: false };
+    const published = await lockPublishedApprovalFlow(connection, definition, scene);
+    return { isEnabled: true, ...published };
   }
 
   private async loadFlow(db: Db, sceneCode: string): Promise<ApprovalFlowDetail> {
     const scene = this.handlers.getSceneDefinition(sceneCode);
     const [[definition]] = await db.query<DefinitionRow[]>(
-      'SELECT id,scene_code,name,published_version_id,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0',
+      'SELECT id,scene_code,name,published_version_id,is_enabled,version FROM approval_flow_definitions WHERE scene_code=? AND is_deleted=0',
       [sceneCode],
     );
     const assignmentPolicy = {
@@ -391,7 +406,15 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
       requiredFinalAssigneeSourceCode: scene.requiredFinalAssigneeSourceCode,
     };
     if (!definition)
-      return { sceneCode, name: scene.name, ...assignmentPolicy, published: null, draft: null };
+      return {
+        sceneCode,
+        name: scene.name,
+        isEnabled: false,
+        definitionVersion: null,
+        ...assignmentPolicy,
+        published: null,
+        draft: null,
+      };
     const [versions] = await db.query<FlowVersionRow[]>(
       `SELECT id,definition_id,version_no,status,published_at,version FROM approval_flow_versions
        WHERE definition_id=? AND status IN ('published','draft') AND is_deleted=0 ORDER BY version_no DESC`,
@@ -404,6 +427,8 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     return {
       sceneCode,
       name: definition.name,
+      isEnabled: Number(definition.is_enabled) === 1,
+      definitionVersion: Number(definition.version),
       ...assignmentPolicy,
       published: published ? await this.mapFlowVersion(db, published, scene) : null,
       draft: draft ? await this.mapFlowVersion(db, draft, scene) : null,
@@ -463,14 +488,17 @@ export class MysqlApprovalFlowRepository extends ApprovalFlowRepository {
     };
   }
 
-  private assertSequentialSteps(steps: FlowStepRow[]): void {
-    if (
-      !steps.length ||
-      steps.length > 20 ||
-      steps.some((step, index) => step.step_no !== index + 1)
-    )
-      throw new ApprovalDomainError('INVALID_INPUT', '审批流程必须至少一级且顺序连续');
+  private async assertEligibleAssignees(steps: FlowStepRow[]): Promise<void> {
+    for (const step of steps) {
+      if (step.assignee_type === 'business') continue;
+      if ((await resolveAssigneeIds(this.identity, step)).length === 0)
+        throw new ApprovalDomainError(
+          'NO_ELIGIBLE_ASSIGNEE',
+          `节点“${step.name}”当前没有合格审批人`,
+        );
+    }
   }
+
   private newNodeCode(existing: Map<string, FlowStepRow>): string {
     let code = randomUUID();
     while (existing.has(code)) code = randomUUID();

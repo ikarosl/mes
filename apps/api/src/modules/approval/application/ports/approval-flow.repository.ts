@@ -4,6 +4,7 @@ import type {
   ApprovalSceneItem,
   PublishApprovalFlowCommand,
   SaveApprovalFlowDraft,
+  SetApprovalFlowEnabledCommand,
   UserOption,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
@@ -22,6 +23,11 @@ export abstract class ApprovalFlowRepository {
   abstract publishFlow(
     sceneCode: string,
     command: PublishApprovalFlowCommand,
+    audit: CommandContext,
+  ): Promise<ApprovalFlowDetail>;
+  abstract setFlowEnabled(
+    sceneCode: string,
+    command: SetApprovalFlowEnabledCommand,
     audit: CommandContext,
   ): Promise<ApprovalFlowDetail>;
 }

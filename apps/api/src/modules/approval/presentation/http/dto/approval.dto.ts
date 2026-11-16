@@ -3,12 +3,14 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNumberString,
   IsOptional,
   IsString,
   Matches,
+  Max,
   MaxLength,
   Min,
   ValidateIf,
@@ -27,6 +29,7 @@ import type {
   ApprovalInstanceStatus,
   PublishApprovalFlowCommand,
   SaveApprovalFlowDraft,
+  SetApprovalFlowEnabledCommand,
   ApprovalAssigneeType,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
@@ -109,6 +112,18 @@ export class PublishApprovalFlowDto {
   version!: number;
 }
 
+export class SetApprovalFlowEnabledDto {
+  @IsBoolean()
+  isEnabled!: boolean;
+
+  @ValidateIf((_object, value) => value !== null)
+  @Type(() => Number)
+  @IsInt()
+  @Min(0)
+  @Max(2_147_483_647)
+  version!: number | null;
+}
+
 export class ApprovalInstanceQueryDto extends PageQueryDto {
   @IsOptional()
   @IsIn(APPROVAL_LIST_SCOPES)
@@ -173,6 +188,13 @@ export const toFlowDraft = (body: SaveApprovalFlowDraftDto): SaveApprovalFlowDra
 
 export const toPublishCommand = (body: PublishApprovalFlowDto): PublishApprovalFlowCommand => ({
   draftId: body.draftId,
+  version: body.version,
+});
+
+export const toSetFlowEnabledCommand = (
+  body: SetApprovalFlowEnabledDto,
+): SetApprovalFlowEnabledCommand => ({
+  isEnabled: body.isEnabled,
   version: body.version,
 });
 

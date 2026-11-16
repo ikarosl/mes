@@ -200,33 +200,9 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
     version: number,
     context: CommandContext,
   ): Promise<number> {
-    return withTransaction(this.pool, async (db) => {
-      const row = await this.lockRequest(db, correctionId);
-      if (row.version !== version || row.approval_instance_id !== null || row.ended_at !== null)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '更正申请已变化');
-      const check = this.snapshot(row).check;
-      await db.execute(
-        'UPDATE production_demand_correction SET approval_instance_id=?,version=version+1,updated_by=? WHERE id=?',
-        [instanceId, context.actorId, correctionId],
-      );
-      const [bound] = await db.execute<ResultSetHeader>(
-        `UPDATE production_item_demand SET pending_correction_id=?,version=version+1,updated_by=?
-         WHERE id=? AND business_status='active' AND pending_correction_id IS NULL AND version=?`,
-        [correctionId, context.actorId, row.old_demand_id, check.version],
-      );
-      if (bound.affectedRows !== 1)
-        throw new ProductionDomainError('CONCURRENT_MODIFICATION', '需求已变化或已有在审更正');
-      await writeProductionAudit(
-        db,
-        context,
-        'production-demand.correction.submit',
-        'production_item_demand',
-        String(row.old_demand_id),
-        { version: check.version },
-        { correctionId, instanceId, targetTotalQuantity: row.target_total_quantity },
-      );
-      return version + 1;
-    });
+    return withTransaction(this.pool, (db) =>
+      this.freeze(db, correctionId, instanceId, version, context),
+    );
   }
 
   lock(correctionId: string, instanceId: string, version: number): Promise<void> {
@@ -266,13 +242,16 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
 
   finalize(
     correctionId: string,
-    instanceId: string,
+    instanceId: string | null,
     version: number,
     context: CommandContext,
   ): Promise<void> {
     return withTransaction(this.pool, async (db) => {
       if (!context.actorId) throw new ProductionDomainError('INVALID_INPUT', '缺少操作人');
-      const row = await this.current(db, correctionId, instanceId, version);
+      // 免审也建立事务内冻结指针并推进一版，沿用在审路径的证据校验和唯一 Writer。
+      const frozenVersion =
+        instanceId === null ? await this.freeze(db, correctionId, null, version, context) : version;
+      const row = await this.current(db, correctionId, instanceId, frozenVersion);
       const { check, demand, batch, additionNo } = await this.loadCheck(
         db,
         String(row.old_demand_id),
@@ -371,11 +350,59 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
         {
           correctionId,
           instanceId,
+          approvalSkipped: instanceId === null,
           newDemandId,
           closeCause,
         },
       );
     });
+  }
+
+  private async freeze(
+    db: PoolConnection,
+    correctionId: string,
+    instanceId: string | null,
+    version: number,
+    context: CommandContext,
+  ): Promise<number> {
+    const row = await this.lockRequest(db, correctionId);
+    if (
+      row.version !== version ||
+      row.approval_instance_id !== null ||
+      row.ended_at !== null ||
+      row.applied_at !== null
+    )
+      throw new ProductionDomainError('CONCURRENT_MODIFICATION', '更正申请已变化');
+    const check = this.snapshot(row).check;
+    const [requestBound] = await db.execute<ResultSetHeader>(
+      `UPDATE production_demand_correction SET approval_instance_id=?,version=version+1,updated_by=?
+       WHERE id=? AND version=? AND approval_instance_id IS NULL AND ended_at IS NULL AND applied_at IS NULL`,
+      [instanceId, context.actorId, correctionId, version],
+    );
+    if (requestBound.affectedRows !== 1)
+      throw new ProductionDomainError('CONCURRENT_MODIFICATION', '更正申请已变化');
+    const [bound] = await db.execute<ResultSetHeader>(
+      `UPDATE production_item_demand SET pending_correction_id=?,version=version+1,updated_by=?
+       WHERE id=? AND business_status='active' AND pending_correction_id IS NULL AND version=?`,
+      [correctionId, context.actorId, row.old_demand_id, check.version],
+    );
+    if (bound.affectedRows !== 1)
+      throw new ProductionDomainError('CONCURRENT_MODIFICATION', '需求已变化或已有在审更正');
+    await writeProductionAudit(
+      db,
+      context,
+      'production-demand.correction.submit',
+      'production_item_demand',
+      String(row.old_demand_id),
+      { version: check.version },
+      {
+        correctionId,
+        instanceId,
+        approvalSkipped: instanceId === null,
+        targetTotalQuantity: row.target_total_quantity,
+      },
+    );
+    return version + 1;
   }
 
   private snapshot(row: Correction): DemandCorrectionApprovalSnapshot {
@@ -412,7 +439,7 @@ export class MysqlProductionDemandCorrectionRepository extends ProductionDemandC
   private async current(
     db: PoolConnection,
     correctionId: string,
-    instanceId: string,
+    instanceId: string | null,
     version: number,
   ): Promise<Correction> {
     const row = await this.lockRequest(db, correctionId);

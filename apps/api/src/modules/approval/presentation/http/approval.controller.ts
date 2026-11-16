@@ -19,12 +19,14 @@ import {
   ApprovalSceneCodeParamDto,
   PublishApprovalFlowDto,
   SaveApprovalFlowDraftDto,
+  SetApprovalFlowEnabledDto,
   SubmitBomApprovalDto,
   toComment,
   toDecision,
   toFlowDraft,
   toInstanceQuery,
   toPublishCommand,
+  toSetFlowEnabledCommand,
 } from './dto/approval.dto.js';
 
 const INSTANCE_ACCESS = [
@@ -87,6 +89,17 @@ export class ApprovalController {
     @CurrentCommandContext() audit: CommandContext,
   ) {
     return this.service.publishFlow(sceneCode, toPublishCommand(body), audit);
+  }
+
+  @Put('scenes/:sceneCode/flow/enabled')
+  @RequirePermission(PERMISSIONS.approval.configure)
+  @AuditInApplication()
+  setEnabled(
+    @Param() { sceneCode }: ApprovalSceneCodeParamDto,
+    @Body() body: SetApprovalFlowEnabledDto,
+    @CurrentCommandContext() audit: CommandContext,
+  ) {
+    return this.service.setFlowEnabled(sceneCode, toSetFlowEnabledCommand(body), audit);
   }
 
   @Get('instances')

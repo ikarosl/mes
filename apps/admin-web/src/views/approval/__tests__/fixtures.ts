@@ -13,6 +13,8 @@ export const bomScene = (): ApprovalSceneItem => ({
   module: 'Product',
   name: 'BOM 审批',
   description: '成品 BOM 变更审批',
+  isEnabled: true,
+  definitionVersion: 2,
   configured: true,
   activeFlowVersion: 2,
   businessAssigneeSources: [],
@@ -21,6 +23,8 @@ export const bomScene = (): ApprovalSceneItem => ({
 
 export const unconfiguredBomScene = (): ApprovalSceneItem => ({
   ...bomScene(),
+  isEnabled: false,
+  definitionVersion: null,
   configured: false,
   activeFlowVersion: null,
 });
@@ -80,6 +84,8 @@ export const flowDetail = (
   return {
     sceneCode: 'product.bom.approve',
     name: 'BOM 审批',
+    isEnabled: !options.empty,
+    definitionVersion: options.empty ? null : 2,
     businessAssigneeSources: [],
     requiredFinalAssigneeSourceCode: null,
     published: options.empty ? null : published,
@@ -121,13 +127,20 @@ export const instanceDetail = (
   ...instanceListItem(),
   subjectType: 'product',
   flowVersionNo: 2,
-  snapshotSchemaVersion: 2,
+  snapshotSchemaVersion: 3,
   subjectSnapshot: {
     productId: 'product-1',
     itemCode: 'P-001',
     productName: '成品一',
     unit: 'pcs',
-    specValues: [{ key: '规格', value: '10', unit: 'mm' }],
+    specValues: {
+      columns: [
+        { key: 'parameter', label: '参数' },
+        { key: 'value', label: '值' },
+        { key: 'unit', label: '单位' },
+      ],
+      rows: [{ parameter: '规格', value: '10', unit: 'mm' }],
+    },
     materials: [
       {
         id: 'bom-1',

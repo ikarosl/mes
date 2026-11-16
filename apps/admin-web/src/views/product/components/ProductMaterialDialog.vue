@@ -3,12 +3,15 @@
     :model-value="visible"
     title="配置产品物料清单"
     :width="DialogWidth.xl"
+    :close-on-press-escape="!submitting"
+    :show-close="!submitting"
+    :before-close="beforeClose"
     @update:model-value="$emit('update:visible', $event)"
   >
     <template v-if="product">
       <el-alert
         v-if="isBomApproved"
-        title="该物料清单已审批通过，仅可查看。若物料的材料、关键参数等根本属性发生变化，请新建物料并使用新编码。"
+        title="该物料清单已生效并永久锁定，仅可查看。若物料的材料、关键参数等根本属性发生变化，请新建物料并使用新编码。"
         type="info"
         :closable="false"
         show-icon
@@ -24,7 +27,7 @@
       />
       <el-alert
         v-if="detailReady && bomDirty && !isBomLocked"
-        title="BOM 有未保存的修改，请先保存物料清单，再提交审批。"
+        title="BOM 有未保存的修改，请先保存物料清单，再提交。"
         type="info"
         :closable="false"
         show-icon
@@ -54,6 +57,12 @@
         show-icon
         class="bom-alert"
       />
+      <InlineHint
+        v-if="!isBomLocked"
+        class="bom-alert"
+      >
+        提交后按当前审批设置直接生效或进入审批；一旦生效，BOM 将永久锁定，不能再修改。
+      </InlineHint>
       <div class="bom-header">
         <div>
           <span class="item-code">{{ product.itemCode }}</span>
@@ -63,19 +72,21 @@
           <el-button
             v-if="hasStaleDraft"
             :loading="loading"
+            :disabled="submitting"
             @click="reloadLatest"
             >重新加载 BOM</el-button
           >
           <el-button
             :icon="Refresh"
             :loading="loading"
+            :disabled="submitting"
             @click="retryNow"
             >刷新物料</el-button
           >
           <el-button
             type="primary"
             :icon="Plus"
-            :disabled="!detailReady || isBomLocked"
+            :disabled="!detailReady || isBomLocked || submitting"
             @click="addRow"
             >添加已有物料</el-button
           >
@@ -101,7 +112,7 @@
               v-model="row.materialId"
               filterable
               placeholder="请选择物料"
-              :disabled="!detailReady || isBomLocked"
+              :disabled="!detailReady || isBomLocked || submitting"
               @change="syncRowUnit(row)"
               @visible-change="(visible: boolean) => visible && refreshCandidates()"
             >
@@ -142,7 +153,7 @@
               :precision="0"
               :step="1"
               controls-position="right"
-              :disabled="!detailReady || isBomLocked"
+              :disabled="!detailReady || isBomLocked || submitting"
             />
           </template>
         </el-table-column>
@@ -154,7 +165,7 @@
             <el-input
               v-model="row.remark"
               placeholder="可选"
-              :disabled="!detailReady || isBomLocked"
+              :disabled="!detailReady || isBomLocked || submitting"
             />
           </template>
         </el-table-column>
@@ -167,7 +178,7 @@
             <el-button
               link
               type="danger"
-              :disabled="!detailReady || isBomLocked"
+              :disabled="!detailReady || isBomLocked || submitting"
               @click="removeRow($index)"
               >删除</el-button
             >
@@ -176,12 +187,16 @@
       </el-table>
     </template>
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button
+        :disabled="submitting"
+        @click="$emit('update:visible', false)"
+        >取消</el-button
+      >
       <el-button
         v-if="!isBomLocked"
         type="primary"
         :loading="submitting"
-        :disabled="!detailReady"
+        :disabled="!detailReady || submitting"
         @click="handleSubmit"
         >保存物料清单</el-button
       >
@@ -191,7 +206,7 @@
         :loading="submitting"
         :disabled="!canSubmitApproval"
         @click="handleSubmitApproval"
-        >提交 BOM 审批</el-button
+        >提交 BOM</el-button
       >
     </template>
   </el-dialog>
@@ -206,6 +221,7 @@ import { buildLiveOptions, hasUnavailableSelection } from '../../../utils/live-o
 import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useProductMaterialEditor } from '../composables/useProductMaterialEditor';
+import InlineHint from '../../../components/InlineHint.vue';
 
 export type MaterialRow = {
   materialId: string;
@@ -226,6 +242,10 @@ const emit = defineEmits<{
   (e: 'submit-approval'): void;
   (e: 'view-approval'): void;
 }>();
+
+const beforeClose = (done: () => void): void => {
+  if (!props.submitting) done();
+};
 
 const {
   materialOptions,
@@ -269,7 +289,7 @@ const bomDirty = computed(
     fingerprint(localRows.value) !== savedFingerprint.value,
 );
 const canSubmitApproval = computed(
-  () => detailReady.value && !bomDirty.value && localRows.value.length > 0,
+  () => detailReady.value && !props.submitting && !bomDirty.value && localRows.value.length > 0,
 );
 
 const setRows = (initial: MaterialRow[]): void => {
@@ -383,7 +403,7 @@ const syncRowUnit = (row: MaterialRow): void => {
 };
 
 const handleSubmit = (): void => {
-  if (isBomLocked.value) return;
+  if (isBomLocked.value || props.submitting) return;
   if (!detailReady.value) {
     EMessage.warning('物料清单尚未加载完成，请稍后重试');
     return;
@@ -418,7 +438,7 @@ const handleSubmit = (): void => {
 };
 
 const handleSubmitApproval = (): void => {
-  if (isBomLocked.value) return;
+  if (isBomLocked.value || props.submitting) return;
   if (!detailReady.value) {
     EMessage.warning('物料清单尚未加载完成，请稍后重试');
     return;
@@ -428,7 +448,7 @@ const handleSubmitApproval = (): void => {
     return;
   }
   if (bomDirty.value) {
-    EMessage.warning('BOM 有未保存的修改，请先保存后再提交审批');
+    EMessage.warning('BOM 有未保存的修改，请先保存后再提交');
     return;
   }
   emit('submit-approval');

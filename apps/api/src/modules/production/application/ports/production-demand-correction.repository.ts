@@ -28,7 +28,7 @@ export abstract class ProductionDemandCorrectionRepository {
   abstract lock(id: string, instanceId: string, version: number): Promise<void>;
   abstract finalize(
     id: string,
-    instanceId: string,
+    instanceId: string | null,
     version: number,
     context: CommandContext,
   ): Promise<void>;

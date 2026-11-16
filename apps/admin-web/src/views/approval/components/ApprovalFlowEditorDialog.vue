@@ -4,6 +4,9 @@
     title="配置审批流程"
     :width="DialogWidth.xl"
     :close-on-click-modal="false"
+    :close-on-press-escape="!saving && !publishing"
+    :show-close="!saving && !publishing"
+    :before-close="beforeClose"
     @update:model-value="$emit('update:visible', $event)"
   >
     <template v-if="detail">
@@ -12,7 +15,7 @@
         :closable="false"
         show-icon
         class="flow-tip"
-        title="每级选择角色、指定用户或场景支持的业务关联人员。业务关联人员在送审时确定；新发布流程只用于新申请。"
+        title="每级选择角色、指定用户或场景支持的业务关联人员。业务关联人员在送审时确定；新发布流程只用于开启审批后的新申请，发布不会自动开启审批。"
       />
       <el-alert
         v-if="requiredFinalSourceCode"
@@ -30,6 +33,7 @@
       <el-form
         label-width="90px"
         class="flow-form"
+        :disabled="saving || publishing"
       >
         <el-form-item label="流程名称">
           <el-input
@@ -49,6 +53,7 @@
         <el-button
           type="primary"
           plain
+          :disabled="saving || publishing"
           @click="addStep"
           >添加节点</el-button
         >
@@ -83,6 +88,7 @@
               v-model="row.name"
               maxlength="100"
               placeholder="例如：技术审核"
+              :disabled="saving || publishing"
             />
           </template>
         </el-table-column>
@@ -94,6 +100,7 @@
             <div class="assignee-fields">
               <el-select
                 v-model="row.assigneeType"
+                :disabled="saving || publishing"
                 @change="changeAssigneeType(row)"
               >
                 <el-option
@@ -110,6 +117,7 @@
                 filterable
                 placeholder="请选择角色"
                 class="role-select"
+                :disabled="saving || publishing"
                 @visible-change="(open: boolean) => open && $emit('refresh-roles')"
               >
                 <el-option
@@ -130,6 +138,7 @@
                 filterable
                 placeholder="请选择用户"
                 class="role-select"
+                :disabled="saving || publishing"
                 @visible-change="(open: boolean) => open && $emit('refresh-users')"
               >
                 <el-option
@@ -145,6 +154,7 @@
                 v-model="row.assigneeSourceCode"
                 placeholder="请选择人员来源"
                 class="role-select"
+                :disabled="saving || publishing"
               >
                 <el-option
                   v-for="choice in sourceChoices(row.assigneeSourceCode)"
@@ -173,20 +183,21 @@
             <el-button
               link
               type="primary"
-              :disabled="$index === 0"
+              :disabled="saving || publishing || $index === 0"
               @click="moveStep($index, -1)"
               >上移</el-button
             >
             <el-button
               link
               type="primary"
-              :disabled="$index === steps.length - 1"
+              :disabled="saving || publishing || $index === steps.length - 1"
               @click="moveStep($index, 1)"
               >下移</el-button
             >
             <el-button
               link
               type="danger"
+              :disabled="saving || publishing"
               @click="removeStep($index)"
               >删除</el-button
             >
@@ -205,7 +216,11 @@
       description="流程详情加载中"
     />
     <template #footer>
-      <el-button @click="$emit('update:visible', false)">取消</el-button>
+      <el-button
+        :disabled="saving || publishing"
+        @click="$emit('update:visible', false)"
+        >取消</el-button
+      >
       <el-button
         type="primary"
         :loading="saving"
@@ -270,6 +285,10 @@ const emit = defineEmits<{
   (event: 'refresh-roles'): void;
   (event: 'refresh-users'): void;
 }>();
+
+const beforeClose = (done: () => void): void => {
+  if (!props.saving && !props.publishing) done();
+};
 
 const formName = ref('');
 const steps = ref<EditorStep[]>([]);
@@ -447,11 +466,13 @@ const buildPayload = (): SaveApprovalFlowDraft | null => {
 };
 
 const save = (): void => {
+  if (!canSave.value) return;
   const payload = buildPayload();
   if (payload) emit('save', payload);
 };
 
 const publish = (): void => {
+  if (!canPublish.value) return;
   const payload = buildPayload();
   if (!payload) return;
   // Publishing always sends the current form through save-draft first. This

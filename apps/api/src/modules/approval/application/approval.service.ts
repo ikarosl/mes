@@ -10,8 +10,10 @@ import type {
   PublishApprovalFlowCommand,
   ApprovalRoleOption,
   ApprovalSceneItem,
+  ApprovalSubmissionResult,
   PageResult,
   SaveApprovalFlowDraft,
+  SetApprovalFlowEnabledCommand,
   UserOption,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -59,6 +61,14 @@ export class ApprovalService {
     return this.flows.publishFlow(sceneCode, command, audit);
   }
 
+  setFlowEnabled(
+    sceneCode: string,
+    command: SetApprovalFlowEnabledCommand,
+    audit: CommandContext,
+  ): Promise<ApprovalFlowDetail> {
+    return this.flows.setFlowEnabled(sceneCode, command, audit);
+  }
+
   listInstances(
     query: ApprovalInstanceQuery,
     actorId: string,
@@ -74,7 +84,7 @@ export class ApprovalService {
   }
 
   /** 仅供已鉴权业务入口调用；不同场景共用提交引擎，业务资格由注册的 handler 校验。 */
-  submit(command: ApprovalSubmission, audit: CommandContext): Promise<ApprovalInstanceDetail> {
+  submit(command: ApprovalSubmission, audit: CommandContext): Promise<ApprovalSubmissionResult> {
     if (!audit.actorId) throw new ApprovalDomainError('FORBIDDEN', '缺少当前用户上下文');
     if (
       !Number.isInteger(command.expectedVersion) ||

@@ -10,6 +10,8 @@ import { APPROVAL_SCENE_CODES, PERMISSIONS } from '../../../packages/constants/s
 import type {
   ApprovalFlowDetail,
   ApprovalAssignee,
+  ApprovalInstanceDetail,
+  ApprovalSubmissionResult,
 } from '../../../packages/contracts/src/index.js';
 import { type ApprovalService } from '../../../apps/api/src/modules/approval/application/approval.service.js';
 import { type MysqlApprovalFlowRepository } from '../../../apps/api/src/modules/approval/infrastructure/mysql-approval-flow.repository.js';
@@ -121,6 +123,16 @@ export const flushAfterCommit = (): Promise<void> =>
   new Promise((resolve) => {
     setImmediate(resolve);
   });
+
+export const readSubmittedApproval = (
+  approvals: ApprovalService,
+  result: ApprovalSubmissionResult,
+  actorId: number,
+): Promise<ApprovalInstanceDetail> => {
+  if (result.status !== 'pending' || !result.approvalInstanceId)
+    throw new Error('Expected an enabled approval flow to create a pending instance');
+  return approvals.getInstance(result.approvalInstanceId, String(actorId), true);
+};
 
 export const notificationsFor = async (
   pool: Pool,
@@ -267,6 +279,8 @@ export const createFixture = async (pool: Pool): Promise<Fixture> => {
     publishedFlow: {
       sceneCode: SCENE_CODE,
       name: '',
+      isEnabled: false,
+      definitionVersion: null,
       businessAssigneeSources: [],
       requiredFinalAssigneeSourceCode: null,
       published: null,
@@ -301,8 +315,13 @@ export const publishFlow = async (
     { draftId: draft.draft!.id, version: draft.draft!.version },
     context(contextFixture.actorId, `flow-publish-${randomUUID()}`),
   );
-  contextFixture.publishedFlow = published;
-  return published;
+  const enabled = await flowRepository.setFlowEnabled(
+    SCENE_CODE,
+    { isEnabled: true, version: published.definitionVersion },
+    context(contextFixture.actorId, `flow-enable-${randomUUID()}`),
+  );
+  contextFixture.publishedFlow = enabled;
+  return enabled;
 };
 
 export const flowsForContext = (): MysqlApprovalFlowRepository => {
@@ -496,7 +515,7 @@ export const cleanupFixture = async (pool: Pool, current: Fixture): Promise<void
         versionIds,
       );
       await pool.execute(
-        'UPDATE approval_flow_definitions SET published_version_id=NULL WHERE id=?',
+        'UPDATE approval_flow_definitions SET is_enabled=0,published_version_id=NULL WHERE id=?',
         [definition.id],
       );
       await pool.execute(`DELETE FROM approval_flow_versions WHERE id IN (${marks})`, versionIds);

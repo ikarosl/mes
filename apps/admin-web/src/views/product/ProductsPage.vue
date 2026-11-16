@@ -678,18 +678,44 @@ const saveBom = (rows: MaterialRow[]) => {
     'BOM 保存失败',
   );
 };
-const submitBomApproval = () =>
-  activeProduct.value
-    ? runSave(
-        async () => {
-          await approvalApi.submitBom(activeProduct.value!.id, activeProduct.value!.version);
-          bomVisible.value = false;
-          await products.load();
-        },
-        'BOM 已提交审批',
-        'BOM 提交审批失败',
-      )
-    : undefined;
+const submitBomApproval = async (): Promise<void> => {
+  const product = activeProduct.value;
+  if (!product || !bomVisible.value || !pageActive.value || submitting.value) return;
+  submitting.value = true;
+  try {
+    try {
+      await RouteMessageBox.confirm(
+        `确认提交「${product.productName}（${product.itemCode}）」的 BOM（${product.materialCount} 项物料）？\n提交后按当前审批设置直接生效或进入审批；一旦生效，BOM 将永久锁定，不能再修改。`,
+        '提交 BOM',
+        { type: 'warning', confirmButtonText: '确认提交' },
+      );
+    } catch {
+      // 取消确认或离开路由时保留已保存的 BOM。
+      return;
+    }
+    if (
+      !pageActive.value ||
+      !bomVisible.value ||
+      activeProduct.value?.id !== product.id ||
+      activeProduct.value.version !== product.version
+    )
+      return;
+    const result = await approvalApi.submitBom(product.id, product.version);
+    if (pageActive.value && bomVisible.value && activeProduct.value?.id === product.id) {
+      bomVisible.value = false;
+      EMessage.success(
+        result.status === 'approved'
+          ? 'BOM 已直接生效并永久锁定'
+          : 'BOM 已提交审批，审批通过后将永久锁定',
+      );
+    }
+    if (pageActive.value && viewMode.value === 'products') await products.load();
+  } catch (error) {
+    if (pageActive.value) EMessage.error(error, 'BOM 提交失败');
+  } finally {
+    submitting.value = false;
+  }
+};
 const viewBomApproval = (): void => {
   if (!activeProduct.value) return;
   bomVisible.value = false;

@@ -12,11 +12,13 @@ production_item_demand 是唯一生产需求事实。批量初始需求按冻结
 
 ## 正式需求更正与替代
 
-原始需求数量、身份、版本及单位不可修改。数量更正或单条关闭通过审批关闭旧剩余并按需创建替代需求，不重算或删除真实领料。当前只允许更正人工追加需求，批量初始 BOM normal 需求不开放更正；更多用料另行追加。
+原始需求数量、身份、版本及单位不可修改。数量更正或单条关闭在批准后关闭旧剩余并按需创建替代需求，不重算或删除真实领料；是否进入人工审批由[场景开关](../../../approval/docs/database.md#32-approval_flow_definitions)决定，关闭时提交直接批准。当前只允许更正人工追加需求，批量初始 BOM normal 需求不开放更正；更多用料另行追加。
 
 更正目标是原来源沿替代链的累计总需求，已确认领料按整条链合计，新目标不得小于已领；新剩余为目标减链上已领。新剩余为零只关闭旧需求，不生成零量需求、不伪造履约。实际退料不加回需求或分配可领量。
 
-送审前必须先处理涉及旧需求的待领料单，预留释放范围、领退料、损耗和旧需求版本进入审批证据。送审后冻结证据，影响证据的操作受控；最终批准在同事务重新核验，再由统一 Writer 关闭旧需求、建立替代需求、释放未领预留、推进任务版本并完成审批和成功审计。失败回滚；撤回或驳回保留原事实。混合多需求领料单不能因更正一条需求而无提示取消其他安排。
+提交前必须先处理涉及旧需求的待领料单，预留释放范围、领退料、损耗和旧需求版本进入更正证据。开启审批时送审后冻结证据，影响证据的操作受控；最终批准在同事务重新核验，再由统一 Writer 关闭旧需求、建立替代需求、释放未领预留、推进任务版本并完成审批和成功审计。关闭审批时在提交事务内冻结并复核相同证据，执行同一 Writer 和成功审计，不创建审批实例；冻结与生效原子提交，不能跳过需求版本、冻结指针或数量校验。失败回滚；撤回或驳回保留原事实。混合多需求领料单不能因更正一条需求而无提示取消其他安排。
+
+幂等重放返回首次提交的进入审批或直接生效结果，不按当前开关重新执行；已有仅包含真实审批 ID 的成功结果可确定为当时已送审，解码补充 `pending`，不重写旧快照，也不将它解释为申请当前状态。
 
 替代需求继承原 manual_addition_id，生成键沿原来源追加 CORRECTION:<申请ID>，同一旧需求只能有一条生效替代。历史详情保留逐次旧新关系、受审证据及真实领退料；当前缺口只计活动末端需求，不重复累加历史总量。更正不创建补产授权、报废或补料单。
 
@@ -303,9 +305,9 @@ CONSTRAINT `chk_production_item_allocation_version` CHECK ((`version` >= 0));
 
 ## production_demand_correction
 
-保存人工追加需求的一次数量更正或剩余关闭申请、不可变审批证据和生效关系。旧需求不改量，批准后指向可空的新剩余需求。
+保存人工追加需求的一次数量更正或剩余关闭申请、不可变更正证据和生效关系。旧需求不改量，人工或免审批准后指向可空的新剩余需求。
 
-active_slot生成列限制同旧需求仅一份未结束申请；申请、继任需求及审批身份各有唯一约束。CHECK保护目标不低于链上已领、新剩余公式及生效字段组合；审批最终批准与Writer、预留释放和审计同事务提交。
+active_slot生成列限制同旧需求仅一份未结束申请；申请、继任需求及非空审批身份各有唯一约束。CHECK保护目标不低于链上已领、新剩余公式及生效字段组合；生效与Writer、预留释放和审计同事务提交。免审保留证据、生效人／时间和替代历史，审批关联为空；非空关联仍受原外键保护。
 
 ### 字段
 
@@ -322,7 +324,7 @@ active_slot生成列限制同旧需求仅一份未结束申请；申请、继任
 | `reason`                 | `text NOT NULL`                                                                              | 更正／关闭说明                                                    |
 | `evidence`               | `json NOT NULL`                                                                              | 冻结的来源、需求链、预留及真实领退料／损耗事实                    |
 | `evidence_hash`          | `char(64) NOT NULL`                                                                          | 冻结证据的 SHA-256 核对指纹                                       |
-| `approval_instance_id`   | `bigint unsigned DEFAULT NULL`                                                               | 一次申请对应一次审批                                              |
+| `approval_instance_id`   | `bigint unsigned DEFAULT NULL`                                                               | 人工审批申请；免审生效时为空                                      |
 | `new_demand_id`          | `bigint unsigned DEFAULT NULL`                                                               | 有剩余时的唯一后继                                                |
 | `applied_by`             | `bigint unsigned DEFAULT NULL`                                                               | 实际生效人，未生效时为空                                          |
 | `applied_at`             | `datetime DEFAULT NULL`                                                                      | 实际生效时间，未生效时为空                                        |
@@ -354,7 +356,7 @@ CONSTRAINT `fk_correction_creator` FOREIGN KEY (`created_by`) REFERENCES `users`
 CONSTRAINT `fk_correction_demand` FOREIGN KEY (`old_demand_id`, `production_batch_id`) REFERENCES `production_item_demand` (`id`, `production_batch_id`);
 CONSTRAINT `fk_correction_successor` FOREIGN KEY (`new_demand_id`, `production_batch_id`) REFERENCES `production_item_demand` (`id`, `production_batch_id`);
 CONSTRAINT `fk_correction_updater` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
-CONSTRAINT `chk_correction_effect` CHECK ((((`applied_at` is null) and (`applied_by` is null) and (`new_demand_id` is null)) or ((`applied_at` is not null) and (`applied_by` is not null) and (`ended_at` is not null) and (`approval_instance_id` is not null) and (((`new_remaining_quantity` = 0) and (`new_demand_id` is null)) or ((`new_remaining_quantity` > 0) and (`new_demand_id` is not null))))));
+CONSTRAINT `chk_correction_effect` CHECK ((((`applied_at` is null) and (`applied_by` is null) and (`new_demand_id` is null)) or ((`applied_at` is not null) and (`applied_by` is not null) and (`ended_at` is not null) and (((`new_remaining_quantity` = 0) and (`new_demand_id` is null)) or ((`new_remaining_quantity` > 0) and (`new_demand_id` is not null))))));
 CONSTRAINT `chk_correction_kind` CHECK ((`correction_kind` in ('quantity','close')));
 CONSTRAINT `chk_correction_quantities` CHECK (((`target_total_quantity` <= 99999999) and (`old_remaining_quantity` > 0) and (`target_total_quantity` >= `issued_quantity`) and (`new_remaining_quantity` = (`target_total_quantity` - `issued_quantity`)) and ((`correction_kind` <> 'close') or (`new_remaining_quantity` = 0))));
 CONSTRAINT `chk_correction_reason` CHECK ((char_length(trim(`reason`)) > 0));

@@ -26,7 +26,7 @@
       <SubmissionRecoveryNotice
         :status="intentStatus"
         :busy="submitting || confirming"
-        records-label="需求追溯与审批记录"
+        records-label="需求追溯与更正记录"
         :retry-disabled="!canSubmit"
         allow-restart
         @retry="editor.submit()"
@@ -113,7 +113,7 @@
             </div>
           </el-form-item>
           <InlineHint class="approval-effect">
-            批准后关闭旧未领
+            生效后关闭旧未领
             <strong>{{ quantity(check.oldRemainingQuantity) }} {{ check.unit }}</strong
             >；
             <template v-if="remaining !== undefined && remaining >= 0">
@@ -127,7 +127,7 @@
               }}
             </template>
             <template v-else>填写有效目标总量后计算本次新需求量。</template>
-            历次领料保留，退料不抵减累计已领。
+            历次领料保留，退料不抵减累计已领。提交后按当前审批设置直接生效或进入审批。
           </InlineHint>
           <el-form-item
             label="更正原因"
@@ -172,7 +172,7 @@
         :disabled="unresolved || !canSubmit"
         @click="editor.submit()"
       >
-        提交更正审批
+        提交更正
       </el-button>
     </template>
   </el-dialog>

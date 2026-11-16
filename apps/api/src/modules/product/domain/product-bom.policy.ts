@@ -112,6 +112,26 @@ export function requireCurrentBomApproval(
   }
 }
 
+export function requireFinalizableBom(
+  product: ProductBomDefinition,
+  instanceId: string | null,
+  expectedVersion: number,
+): void {
+  if (instanceId !== null) {
+    requireCurrentBomApproval(product, instanceId, expectedVersion);
+  } else if (
+    product.bomStatus !== 'draft' ||
+    product.approvalInstanceId !== null ||
+    product.version !== expectedVersion
+  ) {
+    throw new ProductDomainError('CONFLICT', 'BOM 当前状态已变化，不能直接生效');
+  }
+  if (product.isBomLocked) {
+    throw new ProductDomainError('CONFLICT', 'BOM 已批准并永久锁定，不能再次生效');
+  }
+  requireBomSubmissionProduct(product, expectedVersion);
+}
+
 /** 送审和末级批准复用同一资格口径；取数与锁序由基础设施决定。 */
 export function isEligibleBomMaterial(material: BomMaterialEligibility): boolean {
   return (
