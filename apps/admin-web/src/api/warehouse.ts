@@ -12,7 +12,7 @@ import type {
   ReturnOrderBatchOption,
   ReturnOrderCandidateItem,
   ReturnOrderItem,
-  ReturnOrderQuery,
+  StockCheckOrderItem,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER, toRequestError, type RetryRequestConfig } from '@company/request';
 import { httpClient } from './http';
@@ -26,6 +26,12 @@ const request = async <T>(config: RetryRequestConfig) => {
 };
 
 export const warehouseApi = {
+  getStockCheck: (id: string, signal?: AbortSignal) =>
+    request<StockCheckOrderItem>({
+      url: `/warehouse/stock-checks/${id}`,
+      signal,
+      skipErrorHandling: true,
+    }),
   listInboundBatchCandidates: (
     params: {
       itemKind: 'material' | 'finished_product';
@@ -83,15 +89,23 @@ export const warehouseApi = {
       data,
     }),
 
-  listReturnOrders: (params: ReturnOrderQuery) =>
-    request<PageResult<ReturnOrderItem>>({ url: '/warehouse/return-orders', params }),
-  getReturnOrder: (returnId: string) =>
-    request<ReturnOrderItem>({ url: `/warehouse/return-orders/${returnId}` }),
-  listReturnBatchOptions: () =>
-    request<ReturnOrderBatchOption[]>({ url: '/warehouse/return-orders/batch-options' }),
-  listReturnCandidates: (batchId: string) =>
+  getReturnOrder: (returnId: string, signal?: AbortSignal) =>
+    request<ReturnOrderItem>({
+      url: `/warehouse/return-orders/${returnId}`,
+      signal,
+      skipErrorHandling: true,
+    }),
+  listReturnBatchOptions: (signal?: AbortSignal) =>
+    request<ReturnOrderBatchOption[]>({
+      url: '/warehouse/return-orders/batch-options',
+      signal,
+      skipErrorHandling: true,
+    }),
+  listReturnCandidates: (batchId: string, signal?: AbortSignal) =>
     request<ReturnOrderCandidateItem[]>({
       url: `/warehouse/return-orders/batches/${batchId}/candidates`,
+      signal,
+      skipErrorHandling: true,
     }),
   createReturnOrder: (data: CreateReturnOrderPayload) =>
     request<ReturnOrderItem>({ url: '/warehouse/return-orders', method: 'POST', data }),

@@ -335,15 +335,23 @@ export const API_DISPLAY_READ_ACCESS = Object.freeze([
   {
     directory: 'apps/api/src/modules/inventory/infrastructure/queries/',
     tables: {
-      procurement_receipt_line: ['id', 'receipt_id', 'purchase_order_id', 'purchase_order_line_id'],
+      procurement_receipt_line: [
+        'id',
+        'receipt_id',
+        'purchase_order_id',
+        'purchase_order_line_id',
+        'line_no',
+      ],
       procurement_receipt: ['id', 'receipt_no', 'purchase_order_id'],
-      procurement_order_line: ['id', 'purchase_order_id'],
+      procurement_order_line: ['id', 'purchase_order_id', 'line_no'],
       procurement_order: ['id', 'purchase_no', 'supplier_id'],
       materials: ['id', 'material_name', 'material_code'],
       products: ['id', 'item_code', 'product_name'],
       material_variants: ['id', 'variant_code'],
       work_orders: ['id', 'work_order_no', 'product_name_snapshot'],
       production_batches: ['id', 'batch_no', 'work_order_id'],
+      production_tracking_output: ['id', 'tracking_card_id'],
+      production_tracking_card: ['id', 'card_no'],
       production_output_revision: ['id', 'revision_no'],
       production_output_allocation: ['id', 'revision_id', 'category'],
       production_item_allocation: [

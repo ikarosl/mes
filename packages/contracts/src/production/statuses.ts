@@ -45,8 +45,6 @@ export type InventoryReferenceType =
   | 'inspection_record'
   | 'manual';
 
-export type InboundOrderStatus = 'pending' | 'completed' | 'cancelled';
-
 export type DemandType = 'normal' | 'manual_additional';
 
 /** 同一次需求生成动作的分组类型。 */

@@ -9,10 +9,6 @@ export const MATERIAL_RETURN_ORDER_SELECT = `SELECT ro.id,ro.inbound_no return_n
   JOIN production_batches pb ON pb.id=ro.production_batch_id
   JOIN work_orders wo ON wo.id=ro.work_order_id`;
 
-export const MATERIAL_RETURN_ORDER_COUNT = `SELECT COUNT(*) total FROM inbound_order ro
-  JOIN production_batches pb ON pb.id=ro.production_batch_id
-  JOIN work_orders wo ON wo.id=ro.work_order_id`;
-
 export const materialReturnDetailsSql = (
   ids: string[],
 ): string => `SELECT rd.id,rd.inbound_id return_id,

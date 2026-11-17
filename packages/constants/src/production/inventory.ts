@@ -40,15 +40,6 @@ export const INVENTORY_TRANSACTION_TYPES = [
   'other_outbound',
 ] as const;
 
-export const INVENTORY_REFERENCE_TYPES = [
-  'inbound_detail',
-  'outbound_detail',
-  'scrap',
-  'stock_check_detail',
-  'inspection_record',
-  'manual',
-] as const;
-
 export const INVENTORY_TRANSACTION_TYPE_LABELS = {
   purchase_inbound: '外购入库',
   production_inbound: '生产入库',
@@ -63,25 +54,6 @@ export const INVENTORY_TRANSACTION_TYPE_LABELS = {
   other_inbound: '其他入库',
   other_outbound: '其他出库',
 } as const satisfies Record<(typeof INVENTORY_TRANSACTION_TYPES)[number], string>;
-
-export const INVENTORY_REFERENCE_TYPE_LABELS = {
-  inbound_detail: '入库明细',
-  outbound_detail: '出库明细',
-  scrap: '报废记录',
-  stock_check_detail: '盘点明细',
-  inspection_record: '检验记录',
-  manual: '手工调整',
-} as const satisfies Record<(typeof INVENTORY_REFERENCE_TYPES)[number], string>;
-
-export const INBOUND_ORDER_STATUSES = ['pending', 'completed', 'cancelled'] as const;
-
-export const RETURN_ORDER_STATUSES = ['pending', 'returned', 'cancelled'] as const;
-
-export const RETURN_ORDER_STATUS_LABELS = {
-  pending: '待退料',
-  returned: '已入库',
-  cancelled: '已取消',
-} as const;
 
 export const SCRAP_STATUSES = ['pending', 'confirmed', 'cancelled'] as const;
 

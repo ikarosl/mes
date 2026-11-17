@@ -23,7 +23,7 @@ export async function listInboundSources(
   query: ProcurementInboundSourceQuery,
 ): Promise<PageResult<ProcurementInboundSourceItem>> {
   const page = pageInput(query),
-    where = ['r.is_voided=0'],
+    where = ['r.is_voided=0', 'line.inbound_closed=0'],
     params: Array<string | number> = [];
   for (const [column, value] of [
     ['po.supplier_id', query.supplierId],

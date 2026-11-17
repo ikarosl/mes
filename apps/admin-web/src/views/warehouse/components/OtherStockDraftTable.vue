@@ -17,8 +17,11 @@
       <thead>
         <tr>
           <th scope="col">类型</th>
-          <th scope="col">物料 / 成品</th>
-          <th scope="col">{{ direction === 'inbound' ? '入库批次' : '出库批次' }}</th>
+          <th scope="col">物料 / 成品 <span class="required-mark">*</span></th>
+          <th scope="col">
+            {{ direction === 'inbound' ? '入库批次' : '出库批次' }}
+            <span class="required-mark">*</span>
+          </th>
           <th scope="col">数量 <span class="required-mark">*</span></th>
           <th scope="col">单位</th>
           <th scope="col">行备注</th>
@@ -37,6 +40,7 @@
         :direction="direction"
         :row-index="index"
         :disabled="disabled"
+        :errors="lineErrors[line.key]"
         :new-batch-groups="newBatchGroups(line)"
         :batch-summary="otherInventoryDraftBatchSummary(line, lines)"
         @update-line="emit('updateLine', $event)"
@@ -60,6 +64,7 @@ import {
 } from '../other-inventory-draft';
 import { buildInboundNewBatchGroups, type NewBatchGroupChoice } from '../inbound-new-batch-groups';
 import { otherInventoryDraftBatchSummary } from '../other-inventory-presentation';
+import type { OtherInventoryDraftLineErrors } from '../other-inventory-validation';
 import OtherStockDraftLine from './OtherStockDraftLine.vue';
 
 defineOptions({ name: 'OtherStockDraftTable' });
@@ -67,6 +72,7 @@ const props = defineProps<{
   lines: OtherInventoryDraftLine[];
   direction: OtherInventoryDirection;
   disabled: boolean;
+  lineErrors: Record<string, OtherInventoryDraftLineErrors>;
 }>();
 const emit = defineEmits<{
   updateLine: [update: OtherInventoryDraftLineUpdate];

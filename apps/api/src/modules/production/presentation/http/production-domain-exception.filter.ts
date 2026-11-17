@@ -47,7 +47,10 @@ export class ProductionDomainExceptionFilter implements ExceptionFilter {
   }
 }
 
-const statusFor = (code: ProductionDomainError['code']): number => {
+const statusFor = (
+  code: ProductionDomainError['code'] | InventoryCommandError['code'] | PersonnelError['code'],
+): number => {
+  if (code === 'FORBIDDEN') return HttpStatus.FORBIDDEN;
   if (code === 'NOT_FOUND') return HttpStatus.NOT_FOUND;
   if (
     code === 'CONFLICT' ||

@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   ALLOCATION_STATUSES,
   DEMAND_TYPES,
-  INVENTORY_REFERENCE_TYPE_LABELS,
-  INVENTORY_REFERENCE_TYPES,
   INVENTORY_SOURCE_TYPES,
   INVENTORY_TRANSACTION_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPES,
@@ -17,7 +15,6 @@ const persistedCodeSets = [
   INVENTORY_SOURCE_TYPES,
   STOCK_STATUSES,
   INVENTORY_TRANSACTION_TYPES,
-  INVENTORY_REFERENCE_TYPES,
   ALLOCATION_STATUSES,
   DEMAND_TYPES,
   OUTBOUND_ORDER_STATUSES,
@@ -35,11 +32,9 @@ describe('business persisted codes', () => {
     expect(STOCK_STATUSES).toEqual(['available', 'pending_inspection', 'frozen', 'defective']);
   });
 
-  it('provides complete inventory transaction and reference labels', () => {
+  it('provides complete inventory transaction labels', () => {
     expect(Object.keys(INVENTORY_TRANSACTION_TYPE_LABELS)).toEqual(INVENTORY_TRANSACTION_TYPES);
-    expect(Object.keys(INVENTORY_REFERENCE_TYPE_LABELS)).toEqual(INVENTORY_REFERENCE_TYPES);
     expect(INVENTORY_TRANSACTION_TYPE_LABELS.production_material_outbound).toBe('生产领料出库');
-    expect(INVENTORY_REFERENCE_TYPE_LABELS.outbound_detail).toBe('出库明细');
   });
 
   it('provides complete demand progress labels', () => {

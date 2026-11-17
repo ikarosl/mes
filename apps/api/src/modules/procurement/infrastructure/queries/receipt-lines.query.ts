@@ -49,6 +49,7 @@ export async function mapReceiptLines(db: Db, rows: ReadRow[]): Promise<Procurem
       supplierBatchCode: nullableText(row.supplier_batch_code),
       version: Number(row.version),
       stage,
+      inboundClosed: Number(row.inbound_closed) === 1,
       quantities: summary,
       handlingCount: Number(row.handling_count),
       otherHandlingNote: nullableText(row.other_handling_note),

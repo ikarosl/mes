@@ -6,14 +6,10 @@ export const BUSINESS_NUMBER_PREFIX = {
   purchase_receipt: 'DH', // 采购到货
   incoming_inspection_order: 'LLZJ', // 来料质检单
   incoming_inspection_report: 'JLJYBG', // 进料检验报告
-  purchase_inbound: 'CGRK', // 采购入库
-  finished_inbound: 'CPRK', // 成品入库
-  other_inbound: 'QTRK', // 其他入库
-  other_outbound: 'QTCK', // 其他出库
+  inbound_order: 'RK', // 入库单，物料与成品共用方向日序列
+  outbound_order: 'CK', // 出库单，物料与成品共用方向日序列
   inventory_batch: 'KCPC', // 库存批次
   stock_check: 'PD', // 盘点
-  production_material_outbound: 'LLCK', // 领料出库
-  production_material_return: 'TL', // 退料
   material_loss: 'SH', // 损耗
   manual_material_demand: 'RGXQ', // 人工需求
   approval_instance: 'SP', // 审批

@@ -930,7 +930,7 @@ export const PERMISSION_CATALOG = [
   },
   {
     code: PERMISSIONS.warehouse.receipts.handle,
-    name: '登记其他处理说明',
+    name: '到货处理',
     parentCode: PERMISSIONS.warehouse.receipts.view,
     type: 'button',
     routePath: null,

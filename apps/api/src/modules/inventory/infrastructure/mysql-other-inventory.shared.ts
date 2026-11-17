@@ -4,6 +4,7 @@ import type {
   OtherInventoryLine,
   OtherInventoryLinePayload,
 } from '@company/contracts';
+import { INVENTORY_ITEM_KINDS } from '@company/constants';
 import { fixedIntegerQuantity, integerQuantity } from '@company/utils';
 import { InventoryDomainError } from '../domain/inventory.errors.js';
 
@@ -58,10 +59,12 @@ export function validateOtherInventoryDraft(
   direction: OtherInventoryDirection,
   payload: OtherInventoryDraftPayload,
 ): void {
+  if (!INVENTORY_ITEM_KINDS.includes(payload.itemKind)) fail('请选择物料或成品类型');
   if (!clean(payload.reason)) fail('办理原因不能为空');
   if (payload.details.length < 1 || payload.details.length > 50) fail('每单须包含1至50条有效明细');
   const groups = new Map<string, string>();
   for (const line of payload.details) {
+    if (line.itemKind !== payload.itemKind) fail('同一单据的明细必须与主单物料／成品类型一致');
     if (!Number.isInteger(line.quantity) || line.quantity < 1 || line.quantity > 99_999_999)
       fail('数量必须为1至99999999的整数');
     if (

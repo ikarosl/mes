@@ -2,6 +2,7 @@ import { computed, onActivated, onDeactivated, onScopeDispose, reactive, ref } f
 import { CONCURRENCY_ERROR_CODES, OTHER_INVENTORY_DIRECTION_LABELS } from '@company/constants';
 import type {
   OtherInventoryDirection,
+  OtherInventoryItemKind,
   OtherInventoryDraftPayload,
   OtherInventoryOrder,
   SaveOtherInventoryDraftPayload,
@@ -18,18 +19,20 @@ import { EMessage } from '../../../utils/message';
 import { RouteMessageBox } from '../../../utils/route-message-box';
 import {
   newOtherInventoryDraftLine,
-  otherInventoryDraftIdentity,
   otherInventoryDraftLineFromDetail,
-  otherInventoryDraftMatchesBatch,
   type OtherInventoryDraftLine,
 } from '../other-inventory-draft';
+import {
+  otherInventoryReasonMessage,
+  validateOtherInventoryDraft,
+} from '../other-inventory-validation';
 import {
   activeOtherInventoryLines,
   otherInventoryPendingStatus,
   otherInventoryQuantitySummary,
 } from '../other-inventory-presentation';
 
-export type OtherInventoryEditorMode = 'create' | 'edit' | 'detail' | 'confirm' | 'cancel';
+type OtherInventoryEditorMode = 'create' | 'edit' | 'detail' | 'confirm' | 'cancel';
 type WriteCommand =
   | { kind: 'create'; body: OtherInventoryDraftPayload }
   | { kind: 'save'; id: string; body: SaveOtherInventoryDraftPayload }
@@ -40,6 +43,7 @@ export function useOtherInventoryOrderEditor(
   direction: OtherInventoryDirection,
   routeName: string,
   afterWrite: () => Promise<void>,
+  itemKind: OtherInventoryItemKind = 'material',
 ) {
   const visible = ref(false);
   const mode = ref<OtherInventoryEditorMode>('detail');
@@ -55,6 +59,7 @@ export function useOtherInventoryOrderEditor(
   const conflict = ref(false);
   const submitting = ref(false);
   const intentStatus = ref<IdempotentIntentStatus>('idle');
+  const validationRevision = ref(0);
   const intent = useIdempotentIntent('其他出入库单');
   const reader = useLatestReadRequest(() => (loading.value = false));
   const active = ref(true);
@@ -86,53 +91,12 @@ export function useOtherInventoryOrderEditor(
   const readReady = computed(
     () => active.value && loaded.value && !loading.value && !readError.value,
   );
-  const validationMessage = computed((): string => {
-    if (!form.reason.trim()) return '请填写办理原因';
-    if (form.reason.length > 5000 || form.remark.length > 5000)
-      return '原因及备注不能超过 5000 个字符';
-    if (!lines.value.length || lines.value.length > 50) return '每单须保留 1–50 条有效明细';
-    const newBatchIdentities = new Map<string, string>();
-    for (const line of lines.value) {
-      if (!line.object?.id) return '请为每行选择精确物料版本或成品';
-      if (line.object.itemKind !== line.itemKind) return '明细类型与库存对象不一致，请重新选择';
-      if (
-        !Number.isInteger(line.quantity) ||
-        !line.quantity ||
-        line.quantity < 1 ||
-        line.quantity > 99_999_999
-      )
-        return '每行数量须为 1–99,999,999 的整数';
-      if (line.remark.length > 5000) return '行备注不能超过 5000 个字符';
-      if (line.target.mode === 'existing' && (!line.target.batchId || !line.batch))
-        return '请为每行选择已有库存批次';
-      if (line.target.mode === 'existing' && !otherInventoryDraftMatchesBatch(line))
-        return '库存对象、精确版本及单位须与所选批次一致，请重新选择批次';
-      if (direction === 'outbound' && line.target.mode !== 'existing')
-        return '其他出库仅可选择已有库存批次';
-      if (line.target.mode === 'new' && (!line.target.clientKey.trim() || !line.objectVerified))
-        return '请重新核验新批次的库存对象；停用或读取失败的对象不能新建批次';
-      if (line.target.mode === 'new') {
-        if (
-          line.itemKind === 'material' &&
-          (!line.materialVerified || !line.material || line.object.itemId !== line.material.id)
-        )
-          return '请重新核验物料及其精确版本；版本须属于所选物料';
-        const identity = otherInventoryDraftIdentity(line);
-        const existingIdentity = newBatchIdentities.get(line.target.clientKey);
-        if (existingIdentity && existingIdentity !== identity)
-          return '共用新批次的明细须为同物料版本或同成品、同单位';
-        newBatchIdentities.set(line.target.clientKey, identity);
-      }
-    }
-    return '';
-  });
+  const validation = computed(() =>
+    validateOtherInventoryDraft(form, lines.value, direction, itemKind),
+  );
+  const validationMessage = computed(() => validation.value.message);
   const canSave = computed(
-    () =>
-      isEditing.value &&
-      readReady.value &&
-      !controlsLocked.value &&
-      !conflict.value &&
-      !validationMessage.value,
+    () => isEditing.value && readReady.value && !controlsLocked.value && !conflict.value,
   );
   const canConfirm = computed(
     () =>
@@ -142,12 +106,7 @@ export function useOtherInventoryOrderEditor(
       !conflict.value &&
       !dirty.value,
   );
-  const canCancel = computed(
-    () =>
-      canConfirm.value &&
-      Boolean(cancelReason.value.trim()) &&
-      cancelReason.value.trim().length <= 5000,
-  );
+  const canCancel = computed(() => canConfirm.value);
 
   function applyOrder(value: OtherInventoryOrder): void {
     order.value = value;
@@ -160,6 +119,7 @@ export function useOtherInventoryOrderEditor(
     conflict.value = false;
     loaded.value = true;
     readError.value = false;
+    validationRevision.value += 1;
     if (value.status !== otherInventoryPendingStatus(direction)) mode.value = 'detail';
   }
   function reset(): void {
@@ -179,6 +139,7 @@ export function useOtherInventoryOrderEditor(
     intentStatus.value = 'idle';
     retainedCommand = null;
     baseline.value = inputSnapshot();
+    validationRevision.value += 1;
   }
   async function canDiscard(): Promise<boolean> {
     if (submitting.value) return false;
@@ -207,7 +168,7 @@ export function useOtherInventoryOrderEditor(
     mode.value = targetMode;
     visible.value = true;
     if (targetMode === 'create') {
-      lines.value = [newOtherInventoryDraftLine(direction === 'inbound')];
+      lines.value = [newOtherInventoryDraftLine(direction === 'inbound', itemKind)];
       loaded.value = true;
       baseline.value = inputSnapshot();
       return;
@@ -262,7 +223,7 @@ export function useOtherInventoryOrderEditor(
   }
   function addLine(): void {
     if (controlsLocked.value || lines.value.length >= 50) return;
-    lines.value = [...lines.value, newOtherInventoryDraftLine(direction === 'inbound')];
+    lines.value = [...lines.value, newOtherInventoryDraftLine(direction === 'inbound', itemKind)];
   }
   function removeLine(key: string): void {
     if (controlsLocked.value) return;
@@ -270,6 +231,7 @@ export function useOtherInventoryOrderEditor(
   }
   function draftPayload(): OtherInventoryDraftPayload {
     return {
+      itemKind,
       reason: form.reason.trim(),
       remark: form.remark.trim() || null,
       details: lines.value.map((line) => ({
@@ -337,7 +299,7 @@ export function useOtherInventoryOrderEditor(
     }
   }
   async function save(): Promise<void> {
-    if (!canSave.value) return;
+    if (!canSave.value || validationMessage.value) return;
     const body = draftPayload();
     const basis = order.value;
     await run(
@@ -367,14 +329,24 @@ export function useOtherInventoryOrderEditor(
   }
   async function cancel(): Promise<void> {
     const basis = order.value;
-    if (!basis || !canCancel.value) return;
+    if (
+      !basis ||
+      !canCancel.value ||
+      otherInventoryReasonMessage(cancelReason.value.trim(), '取消原因')
+    )
+      return;
     try {
       await RouteMessageBox.confirm(
         `取消 ${basis.orderNo} 后保留单据与全部历史行，不生成库存流水或新库存批次。取消后不能恢复或编辑。`,
         `取消${title}单`,
         { type: 'warning', confirmButtonText: '取消单据', cancelButtonText: '返回核对' },
       );
-      if (!canCancel.value || order.value?.id !== basis.id) return;
+      if (
+        !canCancel.value ||
+        order.value?.id !== basis.id ||
+        otherInventoryReasonMessage(cancelReason.value.trim(), '取消原因')
+      )
+        return;
       await run({
         kind: 'cancel',
         id: basis.id,
@@ -421,7 +393,8 @@ export function useOtherInventoryOrderEditor(
     isPending,
     isEditing,
     readReady,
-    validationMessage,
+    validation,
+    validationRevision,
     canSave,
     canConfirm,
     canCancel,

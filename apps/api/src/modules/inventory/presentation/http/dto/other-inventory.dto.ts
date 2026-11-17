@@ -21,14 +21,13 @@ import {
 } from 'class-validator';
 import {
   OTHER_INVENTORY_DIRECTIONS,
-  OTHER_INVENTORY_ORDER_STATUSES,
   INVENTORY_TARGET_MODES,
+  INVENTORY_ITEM_KINDS,
 } from '@company/constants';
 import type {
   InventoryInboundTarget,
   OtherInventoryDraftPayload,
   OtherInventoryLinePayload,
-  OtherInventoryOrderQuery,
   OtherStockCandidateQuery,
   OtherStockMaterialQuery,
   OtherStockObjectQuery,
@@ -43,10 +42,6 @@ const isStockCandidateId = (value: unknown): boolean =>
 
 export class OtherInventoryIdParamDto {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) orderId!: string;
-}
-export class OtherInventoryOrderQueryDto extends PageQueryDto implements OtherInventoryOrderQuery {
-  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
-  @IsOptional() @IsIn(OTHER_INVENTORY_ORDER_STATUSES) status?: OtherInventoryOrderQuery['status'];
 }
 export class OtherInventoryTargetDto {
   @IsIn(INVENTORY_TARGET_MODES) mode!: InventoryInboundTarget['mode'];
@@ -64,7 +59,7 @@ export class OtherInventoryTargetDto {
 }
 export class OtherInventoryLineDto implements OtherInventoryLinePayload {
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) id?: string;
-  @IsIn(['material', 'finished_product']) itemKind!: OtherInventoryLinePayload['itemKind'];
+  @IsIn(INVENTORY_ITEM_KINDS) itemKind!: OtherInventoryLinePayload['itemKind'];
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) materialVariantId?: string;
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) productId?: string;
   @IsInt() @Min(1) @Max(99_999_999) quantity!: number;
@@ -76,6 +71,7 @@ export class OtherInventoryLineDto implements OtherInventoryLinePayload {
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
 }
 export class OtherInventoryDraftDto implements OtherInventoryDraftPayload {
+  @IsIn(INVENTORY_ITEM_KINDS) itemKind!: OtherInventoryDraftPayload['itemKind'];
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;
   @IsOptional() @IsString() @MaxLength(5000) remark?: string | null;
   @IsArray()
@@ -94,7 +90,7 @@ export class SaveOtherInventoryDraftDto
 export class OtherStockCandidateQueryDto extends PageQueryDto implements OtherStockCandidateQuery {
   @IsIn(OTHER_INVENTORY_DIRECTIONS) direction!: OtherStockCandidateQuery['direction'];
   @IsOptional()
-  @IsIn(['material', 'finished_product'])
+  @IsIn(INVENTORY_ITEM_KINDS)
   itemKind?: OtherStockCandidateQuery['itemKind'];
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) materialVariantId?: string;
   @IsOptional() @Matches(/^[1-9]\d{0,19}$/) productId?: string;
@@ -124,7 +120,7 @@ export class OtherStockObjectQueryDto
   extends OtherStockMaterialQueryDto
   implements OtherStockObjectQuery
 {
-  @IsIn(['material', 'finished_product']) itemKind!: OtherStockObjectQuery['itemKind'];
+  @IsIn(INVENTORY_ITEM_KINDS) itemKind!: OtherStockObjectQuery['itemKind'];
   @ValidateIf((_query, value: unknown) => value !== undefined)
   @ValidateBy({
     name: 'isOtherStockMaterialFilter',

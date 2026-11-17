@@ -6,6 +6,7 @@ import type {
   ConfirmProcurementInboundPayload,
   VoidProcurementReceiptPayload,
   QualityIncomingInspectionReportInput,
+  SetReceiptInboundStatusPayload,
 } from '@company/contracts';
 import type {
   CommandContext,
@@ -23,12 +24,14 @@ import {
   INSPECT_RECEIPT_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
   VOID_RECEIPT_SCOPE,
+  SET_RECEIPT_INBOUND_STATUS_SCOPE,
 } from './idempotency/procurement-idempotency-scopes.contract.js';
 import {
   receiptCommandResultCodec,
   receiptHandlingResultCodec,
   inboundCommandResultCodec,
   voidReceiptCommandResultCodec,
+  receiptInboundStatusResultCodec,
 } from './idempotency/receipt-result.codec.js';
 const nullableTrim = (value: string | null | undefined) => value?.trim() || null;
 @Injectable()
@@ -37,6 +40,23 @@ export class ReceiptService {
     private readonly repository: ProcurementReceiptRepository,
     private readonly idempotency: IdempotencyExecutor,
   ) {}
+  async setInboundStatus(
+    id: string,
+    payload: SetReceiptInboundStatusPayload,
+    context: IdempotentCommandContext,
+  ) {
+    const body = { inboundClosed: payload.inboundClosed, version: payload.version };
+    const execution = await this.idempotency.execute({
+      scope: SET_RECEIPT_INBOUND_STATUS_SCOPE,
+      key: context.idempotencyKey,
+      actorId: context.actorId,
+      requestId: context.requestId,
+      request: { params: { id }, body },
+      resultCodec: receiptInboundStatusResultCodec,
+      handler: () => this.repository.setInboundStatus(id, body, auditContext(context)),
+    });
+    return execution.result;
+  }
   async voidReceipt(
     id: string,
     payload: VoidProcurementReceiptPayload,
@@ -45,9 +65,9 @@ export class ReceiptService {
     const body = {
       version: payload.version,
       reason: payload.reason.trim(),
-      lines: [...payload.lines].sort((a, b) =>
-        BigInt(a.receiptLineId) < BigInt(b.receiptLineId) ? -1 : 1,
-      ),
+      lines: payload.lines
+        .map((line) => ({ receiptLineId: line.receiptLineId, version: line.version }))
+        .sort((a, b) => (BigInt(a.receiptLineId) < BigInt(b.receiptLineId) ? -1 : 1)),
     };
     const execution = await this.idempotency.execute({
       scope: VOID_RECEIPT_SCOPE,

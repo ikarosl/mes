@@ -1,26 +1,17 @@
 import type {
   InventoryBatchStatus,
-  InventoryReferenceType,
   InventorySourceType,
   InventoryTransactionType,
-  ReturnOrderStatus,
   ScrapStatus,
   StockStatus,
 } from '@company/contracts';
 import {
-  INVENTORY_REFERENCE_TYPE_LABELS,
   INVENTORY_SOURCE_TYPE_LABELS,
   INVENTORY_TRANSACTION_TYPE_LABELS,
-  RETURN_ORDER_STATUS_LABELS,
 } from '@company/constants';
 
 export const inventoryTransactionTypeLabels = INVENTORY_TRANSACTION_TYPE_LABELS satisfies Record<
   InventoryTransactionType,
-  string
->;
-
-export const inventoryReferenceTypeLabels = INVENTORY_REFERENCE_TYPE_LABELS satisfies Record<
-  InventoryReferenceType,
   string
 >;
 
@@ -42,11 +33,6 @@ export const stockStatusLabels = {
   defective: '不良',
 } satisfies Record<StockStatus, string>;
 
-export const returnOrderStatusLabels = RETURN_ORDER_STATUS_LABELS satisfies Record<
-  ReturnOrderStatus,
-  string
->;
-
 export const scrapStatusLabels = {
   pending: '待确认',
   confirmed: '已确认',
@@ -60,7 +46,4 @@ export const inventoryBatchStatusLabel = (value: InventoryBatchStatus) =>
 export const stockStatusLabel = (value: StockStatus) => stockStatusLabels[value];
 export const inventoryTransactionTypeLabel = (value: InventoryTransactionType) =>
   inventoryTransactionTypeLabels[value];
-export const inventoryReferenceTypeLabel = (value: InventoryReferenceType) =>
-  inventoryReferenceTypeLabels[value];
-export const returnOrderStatusLabel = (value: ReturnOrderStatus) => returnOrderStatusLabels[value];
 export const scrapStatusLabel = (value: ScrapStatus) => scrapStatusLabels[value];

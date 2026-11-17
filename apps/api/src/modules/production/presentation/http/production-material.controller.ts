@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type {
   CommandContext,
@@ -27,7 +27,6 @@ import {
   CreateMaterialAllocationsDto,
   CreateMaterialOutboundDto,
   DemandIdParamDto,
-  MaterialOutboundQueryDto,
   OutboundIdParamDto,
 } from './dto/production-material.dto.js';
 
@@ -106,17 +105,6 @@ export class ProductionMaterialController {
   @RequirePermission(PERMISSIONS.warehouse.outbound.view)
   outboundCandidates(@Param() { batchId }: BatchIdParamDto) {
     return this.outboundService.listOutboundCandidates(batchId);
-  }
-
-  @Get('material-outbounds')
-  @RequirePermission(PERMISSIONS.warehouse.outbound.view)
-  outboundOrders(@Query() query: MaterialOutboundQueryDto) {
-    return this.outboundService.listOutboundOrders({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword?.trim() || undefined,
-      status: query.status,
-    });
   }
 
   @Get('material-outbounds/:outboundId')

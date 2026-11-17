@@ -3,6 +3,7 @@ import type {
   ProcurementReceiptItem,
   ProcurementReceiptLineListItem,
   ProcurementReceiptWorklistLines,
+  ReceiptInboundStatusResult,
 } from '@company/contracts';
 import { PROCUREMENT_RECEIPT_MAX_LINES } from '@company/constants';
 import { procurementApi } from '../../../api/procurement';
@@ -330,6 +331,25 @@ export function usePurchaseReceipts(hasLocationIntent: () => boolean) {
   const focusedIsInPage = computed(() =>
     rows.value.some((receipt) => receipt.id === focusedReceipt.value?.receipt.id),
   );
+  function applyInboundStatus(result: ReceiptInboundStatusResult, receiptId: string): void {
+    cancelChild(receiptId);
+    if (locationTarget === receiptId) invalidateLocation();
+    const cached = new Set([...Object.values(states.value), focusedReceipt.value]);
+    for (const state of cached) {
+      const line = state?.items.find((item) => item.id === result.receiptLineId);
+      if (!line || line.version > result.version) continue;
+      line.inboundClosed = result.inboundClosed;
+      line.version = result.version;
+    }
+    const state = states.value[receiptId];
+    if (state && !state.loaded) void loadLines(state.receipt);
+    if (
+      focusedReceipt.value?.receipt.id === receiptId &&
+      !focusedReceipt.value.loaded &&
+      !focusedIsInPage.value
+    )
+      void refreshLocation();
+  }
   function deactivate(): void {
     active = false;
     cancelChildren();
@@ -370,6 +390,7 @@ export function usePurchaseReceipts(hasLocationIntent: () => boolean) {
     revealReceipt,
     refreshLocation,
     clearLocation,
+    applyInboundStatus,
     toggleFocused,
   };
 }

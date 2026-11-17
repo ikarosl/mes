@@ -1,11 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import type {
   CreateReturnOrderPayload,
-  PageResult,
   ReturnOrderBatchOption,
   ReturnOrderCandidateItem,
   ReturnOrderItem,
-  ReturnOrderQuery,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
@@ -19,10 +17,6 @@ export class ProductionReturnService {
     private readonly identity: IdentityDirectoryService,
   ) {}
 
-  async listReturnOrders(query: ReturnOrderQuery): Promise<PageResult<ReturnOrderItem>> {
-    const result = await this.returns.listReturnOrders(query);
-    return { ...result, items: await this.enrichReturns(result.items) };
-  }
   async getReturnOrder(returnId: string): Promise<ReturnOrderItem> {
     return (await this.enrichReturns([await this.returns.getReturnOrder(returnId)]))[0]!;
   }

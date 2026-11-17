@@ -84,10 +84,10 @@ export class MysqlInventoryPurchaseInboundWriter {
         }
         resolved.set(line, batchId);
       }
-      const inboundNo = await allocateBusinessNumber(db, 'purchase_inbound');
+      const inboundNo = await allocateBusinessNumber(db, 'inbound_order');
       const [order] = await db.execute<ResultSetHeader>(
-        `INSERT INTO inbound_order(inbound_no,source_type,status,remark,created_by,updated_by)
-         VALUES (?,'purchased','pending',?,?,?)`,
+        `INSERT INTO inbound_order(inbound_no,item_kind,source_type,status,remark,created_by,updated_by)
+         VALUES (?,'material','purchased','pending',?,?,?)`,
         [inboundNo, input.remark ?? null, context.actorId, context.actorId],
       );
       const inboundId = String(order.insertId);
@@ -126,8 +126,8 @@ export class MysqlInventoryPurchaseInboundWriter {
       for (const { line, batchId, inboundDetailId } of insertedDetails) {
         const [transaction] = await db.execute<ResultSetHeader>(
           `INSERT INTO inventory_transaction(item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
-           reference_type,reference_detail_id,idempotency_key,remark,created_by)
-           VALUES (?,?,?,'purchase_inbound',?,?,'available','inbound_detail',?,?,?,?)`,
+           reference_type,reference_detail_id,reference_order_id,reference_order_no_snapshot,idempotency_key,remark,created_by)
+           VALUES (?,?,?,'purchase_inbound',?,?,'available','inbound_detail',?,?,?,?,?,?)`,
           [
             line.itemId,
             line.materialVariantId,
@@ -135,6 +135,8 @@ export class MysqlInventoryPurchaseInboundWriter {
             fixedIntegerQuantity(line.quantity),
             line.unit,
             inboundDetailId,
+            inboundId,
+            inboundNo,
             `INBOUND:${inboundDetailId}`,
             input.remark ?? null,
             context.actorId,

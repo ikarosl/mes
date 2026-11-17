@@ -112,12 +112,6 @@
         @update:page-size="changePageSize"
       />
     </section>
-    <TaskOutputDialog
-      v-model:visible="inboundVisible"
-      :batch="inboundBatch"
-      route-name="warehouse-inbound"
-      @changed="handleChanged"
-    />
   </section>
 </template>
 <script setup lang="ts">
@@ -132,10 +126,9 @@ import { useLatestReadRequest } from '../../../composables/requests/useLatestRea
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { formatQuantity } from '../../../utils/quantity';
-import { TaskOutputDialog } from '../../production/public';
 
 defineOptions({ name: 'FinishedGoodsOutputPanel' });
-const emit = defineEmits<{ changed: [] }>();
+const emit = defineEmits<{ select: [batchId: string] }>();
 const items = ref<ProductionOutputItem[]>([]),
   total = ref(0),
   page = ref(1),
@@ -143,8 +136,6 @@ const items = ref<ProductionOutputItem[]>([]),
   keyword = ref(''),
   loading = ref(false),
   error = ref('');
-const inboundVisible = ref(false),
-  inboundBatch = ref<{ id: string } | null>(null);
 const reads = useLatestReadRequest(() => {
   loading.value = false;
 });
@@ -191,14 +182,9 @@ async function changePageSize(value: number): Promise<void> {
   await search();
 }
 function openInbound(item: ProductionOutputItem): void {
-  if (inboundVisible.value) return;
-  inboundBatch.value = { id: item.productionBatchId };
-  inboundVisible.value = true;
+  emit('select', item.productionBatchId);
 }
-async function handleChanged(): Promise<void> {
-  emit('changed');
-  await load();
-}
+defineExpose({ refresh: load });
 usePageInitialLoad(load);
 </script>
 <style scoped>

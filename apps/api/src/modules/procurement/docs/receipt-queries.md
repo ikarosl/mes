@@ -8,7 +8,7 @@ GET /procurement/receipts 直接按到货单分页，包含作废历史，采购
 
 单张到货 worklist-lines、详情和 voiding 返回完整轻量行，登记限制保证最多 100 行；不会把当前分页误作整单。receipt-lines/:id/location 按持久明细 ID 返回采购及到货路径，receipt-lines/:id 读取当前来源。行号仅作为来源采购行的显示属性。
 
-stage 是展示结果：作废为 voided，存在实际入库或说明为 handled，否则 registered。handled 仅表示已有仓库记录，不能推算剩余实物或全部处理完成。quantities 只有真实 inboundQuantity；handlingCount 与最后 otherHandlingNote 是说明历史投影。没有实收量、可入量、待退量和检验轮次。
+stage 是展示结果：作废为 voided，存在实际入库或说明为 handled，否则 registered。handled 仅表示已有仓库记录，不能推算剩余实物或全部处理完成。人工入库开关以独立的 inboundClosed 返回，不替代 stage；语义见[人工结束与恢复入库](receipts.md#人工结束与恢复入库)。quantities 只有真实 inboundQuantity；handlingCount 与最后 otherHandlingNote 是说明历史投影。没有实收量、可入量、待退量和检验轮次。
 
 receipt-order-options 使用已下单且有 open/new_arrival 行的采购候选，按公共分页；明细仍在确认事务中校验。上述仓储查询均要求 warehouse:receipts:view，无需采购管理页面权限。
 
@@ -16,7 +16,7 @@ receipt-order-options 使用已下单且有 open/new_arrival 行的采购候选�
 
 GET /procurement/inbound-sources 按有效到货物料分页，支持 keyword、supplierId、purchaseOrderId、receiptLineId 和 receiptLineIds，多个精确筛选取交集。keyword 搜索到货单号、采购单号、供应商、物料名称、物料编码、精确版本编码和供应商批号。按到货时间、明细 ID 倒序稳定排序。
 
-候选无数量授权含义，包含尚未检验、尚未入库、已有入库或说明的有效到货；作废来源退出候选。receiptLineVersion 用于提交时的乐观校验，计划采购量取固定原采购行的 planned_quantity，与累计入库总量均仅供参考，不作为上限。每条来源可多次实际入库和分批归入新旧库存批次。入口要求 warehouse:inbound:view，批次候选由 Inventory 提供。
+候选无数量授权含义，包含尚未检验、尚未入库、已有入库或说明的有效且未结束入库到货；作废或结束入库的来源退出候选，精确 ID 定位同样不绕过该条件。receiptLineVersion 用于提交时的乐观校验，计划采购量取固定原采购行的 planned_quantity，与累计入库总量均仅供参考，不作为上限。每条未结束来源可多次实际入库和分批归入新旧库存批次。入口要求 warehouse:inbound:view，批次候选由 Inventory 提供。到货管理和历史查询继续保留已结束行。
 
 ## 历史查询与作废预览
 

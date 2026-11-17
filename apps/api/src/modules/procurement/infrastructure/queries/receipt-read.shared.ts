@@ -27,7 +27,7 @@ export const receiptSelect = (columns: string) =>
   `SELECT ${columns} FROM procurement_receipt r JOIN procurement_order po ON po.id=r.purchase_order_id JOIN procurement_supplier supplier ON supplier.id=po.supplier_id`;
 export const LINE_COLUMNS = `line.id,line.receipt_id,line.purchase_order_id,line.purchase_order_line_id,pol.line_no purchase_order_line_no,
   line.item_id,pol.item_code_snapshot,material.material_name,line.material_variant_id,pol.material_variant_code_snapshot,
-  pol.unit_snapshot,pol.planned_quantity,line.supplier_batch_code,line.version,r.receipt_no,r.received_at,po.purchase_no,po.supplier_id,supplier.supplier_name,
+  pol.unit_snapshot,pol.planned_quantity,line.supplier_batch_code,line.version,line.inbound_closed,r.receipt_no,r.received_at,po.purchase_no,po.supplier_id,supplier.supplier_name,
   ${RECEIPT_VOID_COLUMNS},
   (SELECT COUNT(*) FROM procurement_receipt_handling handling WHERE handling.receipt_line_id=line.id) handling_count,
   (SELECT handling.other_handling_note FROM procurement_receipt_handling handling WHERE handling.receipt_line_id=line.id ORDER BY handling.id DESC LIMIT 1) other_handling_note`;

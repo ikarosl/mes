@@ -10,6 +10,8 @@
 
 代码入口为 [public.ts](public.ts)，调用语义见[公开能力](docs/public-contracts.md)。跨模块事务、稳定锁序及其他出库读取生产预留的例外由[库存协作协议](../../../../../docs/inventory-extraction-design.md)维护。
 
+仓库统一出入库主单列表、精确详情、场景权限及流水导航见[统一查询](docs/public-contracts.md#统一出入库主单)。
+
 ## 入库与库存边界
 
 [库存场景](docs/database/inventory-ledger-and-inbound.md#六场景来源)区分采购入库、终检成品入库、生产退料、其他入库、生产领料和其他出库；来源履约与库存补差不能混用。

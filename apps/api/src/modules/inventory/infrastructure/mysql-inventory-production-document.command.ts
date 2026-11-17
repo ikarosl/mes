@@ -163,12 +163,9 @@ export class MysqlInventoryProductionDocumentCommand extends InventoryProduction
       const batches = await this.stock.lockMaterialBatches(input.lines.map((line) => line.batchId));
       const byId = new Map(batches.map((batch) => [batch.id, batch]));
       const m = meta(returning);
-      const no = await allocateBusinessNumber(
-        db,
-        returning ? 'production_material_return' : 'production_material_outbound',
-      );
+      const no = await allocateBusinessNumber(db, returning ? 'inbound_order' : 'outbound_order');
       const [header] = await db.execute<ResultSetHeader>(
-        `INSERT INTO ${m.table}(${m.no},source_type,production_batch_id,work_order_id,status,remark,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?)`,
+        `INSERT INTO ${m.table}(${m.no},item_kind,source_type,production_batch_id,work_order_id,status,remark,created_by,updated_by) VALUES (?,'material',?,?,?,?,?,?,?)`,
         [
           no,
           m.source,

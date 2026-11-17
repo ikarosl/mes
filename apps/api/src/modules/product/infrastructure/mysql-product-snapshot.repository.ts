@@ -159,7 +159,10 @@ export class MysqlProductSnapshotRepository
         [productId],
       );
       if (bomLines.length === 0) {
-        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM，不能下达生产任务');
+        throw new ProductDomainError(
+          'INVALID_MATERIAL',
+          '产品 BOM 未配置或未生效，请到产品资料中检查或通知研发人员进行配置。',
+        );
       }
       if (
         bomLines.some(
@@ -188,7 +191,10 @@ export class MysqlProductSnapshotRepository
       await this.requireApprovedBom(connection, productId);
       const snapshot = await this.getBomSnapshot(productId);
       if (snapshot.lines.length === 0)
-        throw new ProductDomainError('INVALID_MATERIAL', '产品未配置启用的 BOM');
+        throw new ProductDomainError(
+          'INVALID_MATERIAL',
+          '产品 BOM 未配置或未生效，请到产品资料中检查或通知研发人员进行配置。',
+        );
       return snapshot;
     });
   }
@@ -208,7 +214,7 @@ export class MysqlProductSnapshotRepository
     if (lockFact.bom_status !== 'approved' || !lockFact.bom_locked_at || !lockFact.bom_locked_by) {
       throw new ProductDomainError(
         'INVALID_MATERIAL',
-        'BOM 尚未审批通过，不能配置用料或下达生产任务',
+        '产品 BOM 未配置或未生效，请到产品资料中检查或通知研发人员进行配置。',
       );
     }
   }

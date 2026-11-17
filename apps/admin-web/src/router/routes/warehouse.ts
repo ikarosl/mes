@@ -1,16 +1,64 @@
-import type { RouteRecordRaw } from 'vue-router';
+import type { RouteLocationNormalized, RouteRecordRaw } from 'vue-router';
 import { PERMISSIONS } from '@company/constants';
-import InboundOrdersPage from '../../views/warehouse/InboundOrdersPage.vue';
-import OutboundOrdersPage from '../../views/warehouse/OutboundOrdersPage.vue';
-import ReturnOrdersPage from '../../views/warehouse/ReturnOrdersPage.vue';
+import MaterialStockDocumentsPage from '../../views/warehouse/MaterialStockDocumentsPage.vue';
+import FinishedStockDocumentsPage from '../../views/warehouse/FinishedStockDocumentsPage.vue';
+import StockDocumentOrdersPanel from '../../views/warehouse/StockDocumentOrdersPanel.vue';
 import ScrapsPage from '../../views/warehouse/ScrapsPage.vue';
 import WarehouseInventoryPage from '../../views/warehouse/WarehouseInventoryPage.vue';
-import OtherInboundsPage from '../../views/warehouse/OtherInboundsPage.vue';
-import OtherOutboundsPage from '../../views/warehouse/OtherOutboundsPage.vue';
-import PurchaseInboundPanel from '../../views/warehouse/components/PurchaseInboundPanel.vue';
-import FinishedGoodsInboundPanel from '../../views/warehouse/components/FinishedGoodsInboundPanel.vue';
-import ProductionOutboundPanel from '../../views/warehouse/components/ProductionOutboundPanel.vue';
+import {
+  STOCK_DOCUMENT_ROUTES,
+  stockDocumentTabName,
+} from '../../views/warehouse/stock-document-navigation';
 import { page } from '../page';
+
+const stockDocumentGroups = [
+  {
+    itemKind: 'material',
+    segment: 'material',
+    title: '物料出入库',
+    component: MaterialStockDocumentsPage,
+    keepAliveName: 'MaterialStockDocumentsPage',
+  },
+  {
+    itemKind: 'finished_product',
+    segment: 'finished',
+    title: '成品出入库',
+    component: FinishedStockDocumentsPage,
+    keepAliveName: 'FinishedStockDocumentsPage',
+  },
+] as const;
+
+function legacyDocument(
+  to: Pick<RouteLocationNormalized, 'query' | 'hash'>,
+  direction: 'inbound' | 'outbound',
+  sourceType?: string,
+  finished = false,
+) {
+  const identityKeys =
+    direction === 'inbound'
+      ? ['documentId', 'inboundId', 'returnId', 'otherInboundId', 'orderId', 'id']
+      : ['documentId', 'outboundId', 'otherOutboundId', 'orderId', 'id'];
+  const documentId = identityKeys
+    .map((key) => to.query[key])
+    .find((value) => typeof value === 'string' && value);
+  const itemKind = finished || to.query.itemKind === 'finished_product' ? 'finished' : 'material';
+  return {
+    name: 'warehouse-' + itemKind + '-' + direction,
+    query: {
+      ...to.query,
+      documentId,
+      sourceType: sourceType ?? to.query.sourceType,
+      inboundId: undefined,
+      outboundId: undefined,
+      returnId: undefined,
+      otherInboundId: undefined,
+      otherOutboundId: undefined,
+      orderId: undefined,
+      id: undefined,
+    },
+    hash: to.hash,
+  };
+}
 
 export const warehouseRoutes: RouteRecordRaw[] = [
   page(
@@ -22,83 +70,74 @@ export const warehouseRoutes: RouteRecordRaw[] = [
     'WarehouseInventoryPage',
   ),
   {
+    path: 'warehouse/stock-documents',
+    name: 'warehouse-stock-documents',
+    redirect: { name: 'warehouse-material-inbound' },
+  },
+  ...stockDocumentGroups.map((group): RouteRecordRaw => {
+    const scopes = STOCK_DOCUMENT_ROUTES.filter((scope) => scope.itemKind === group.itemKind);
+    const tabName = stockDocumentTabName(group.itemKind);
+    return {
+      path: 'warehouse/stock-documents/' + group.segment,
+      name: tabName,
+      component: group.component,
+      redirect: { name: scopes[0]?.name },
+      meta: {
+        title: group.title,
+        tab: true,
+        tabName,
+        menuPath: '/warehouse/stock-documents/' + group.segment,
+        keepAliveName: group.keepAliveName,
+        permission: [...new Set(scopes.flatMap((scope) => scope.permission))],
+      },
+      children: scopes.map((scope) => ({
+        path: scope.direction,
+        name: scope.name,
+        component: StockDocumentOrdersPanel,
+        props: { itemKind: scope.itemKind, direction: scope.direction },
+        meta: { permission: scope.permission },
+      })),
+    };
+  }),
+  {
     path: 'warehouse/inbound-orders',
-    component: InboundOrdersPage,
-    meta: {
-      title: '入库管理',
-      tab: true,
-      tabName: 'warehouse-inbound',
-      menuPath: '/warehouse/inbound-orders',
-      keepAliveName: 'InboundOrdersPage',
-    },
-    children: [
-      {
-        path: '',
-        name: 'warehouse-inbound',
-        component: PurchaseInboundPanel,
-        props: (route) => ({
-          active: true,
-          requestedInboundId:
-            typeof route.query.inboundId === 'string' ? route.query.inboundId : null,
-          requestedReceiptLineId:
-            typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : null,
-        }),
-        meta: { permission: PERMISSIONS.warehouse.inbound.view },
-      },
-      {
-        path: 'finished',
-        name: 'warehouse-inbound-finished',
-        component: FinishedGoodsInboundPanel,
-        props: (route) => ({
-          active: true,
-          requestedInventoryBatchId:
-            typeof route.query.inventoryBatchId === 'string' ? route.query.inventoryBatchId : null,
-        }),
-        meta: { permission: PERMISSIONS.warehouse.inbound.view },
-      },
-      {
-        path: 'other',
-        alias: '/warehouse/other-inbounds',
-        name: 'warehouse-other-inbounds',
-        component: OtherInboundsPage,
-        meta: { permission: PERMISSIONS.warehouse.otherInbounds.view },
-      },
-    ],
+    name: 'warehouse-inbound',
+    meta: { permission: PERMISSIONS.warehouse.inbound.view },
+    redirect: (to) =>
+      legacyDocument(to, 'inbound', undefined, to.query.sourceType === 'finished_product'),
+  },
+  {
+    path: 'warehouse/inbound-orders/finished',
+    name: 'warehouse-inbound-finished',
+    meta: { permission: PERMISSIONS.warehouse.inbound.view },
+    redirect: (to) => legacyDocument(to, 'inbound', 'finished_product', true),
+  },
+  {
+    path: 'warehouse/inbound-orders/other',
+    alias: '/warehouse/other-inbounds',
+    name: 'warehouse-other-inbounds',
+    meta: { permission: PERMISSIONS.warehouse.otherInbounds.view },
+    redirect: (to) => legacyDocument(to, 'inbound', 'other'),
   },
   {
     path: 'warehouse/outbound-orders',
-    component: OutboundOrdersPage,
-    meta: {
-      title: '出库管理',
-      tab: true,
-      tabName: 'warehouse-outbound',
-      menuPath: '/warehouse/outbound-orders',
-      keepAliveName: 'OutboundOrdersPage',
-    },
-    children: [
-      {
-        path: '',
-        name: 'warehouse-outbound',
-        component: ProductionOutboundPanel,
-        meta: { permission: PERMISSIONS.warehouse.outbound.view },
-      },
-      {
-        path: 'other',
-        alias: '/warehouse/other-outbounds',
-        name: 'warehouse-other-outbounds',
-        component: OtherOutboundsPage,
-        meta: { permission: PERMISSIONS.warehouse.otherOutbounds.view },
-      },
-    ],
+    name: 'warehouse-outbound',
+    meta: { permission: PERMISSIONS.warehouse.outbound.view },
+    redirect: (to) => legacyDocument(to, 'outbound'),
   },
-  page(
-    'warehouse/return-orders',
-    'warehouse-returns',
-    '退料管理',
-    ReturnOrdersPage,
-    PERMISSIONS.warehouse.returns.view,
-    'ReturnOrdersPage',
-  ),
+  {
+    path: 'warehouse/outbound-orders/other',
+    alias: '/warehouse/other-outbounds',
+    name: 'warehouse-other-outbounds',
+    meta: { permission: PERMISSIONS.warehouse.otherOutbounds.view },
+    redirect: (to) => legacyDocument(to, 'outbound', 'other'),
+  },
+  {
+    path: 'warehouse/return-orders',
+    name: 'warehouse-returns',
+    meta: { permission: PERMISSIONS.warehouse.returns.view },
+    redirect: (to) => legacyDocument(to, 'inbound', 'return_inbound'),
+  },
   page(
     'warehouse/scraps',
     'warehouse-scraps',

@@ -2,7 +2,6 @@ import type {
   OtherInventoryDirection,
   OtherInventoryDraftPayload,
   OtherInventoryOrder,
-  OtherInventoryOrderQuery,
   OtherStockCandidate,
   OtherStockCandidateQuery,
   OtherStockMaterialQuery,
@@ -29,17 +28,6 @@ const idempotencyOptions = (idempotencyKey: string): RetryRequestConfig => ({
 });
 
 export const otherInventoryApi = {
-  list: (
-    direction: OtherInventoryDirection,
-    params: OtherInventoryOrderQuery,
-    signal?: AbortSignal,
-  ) =>
-    request<PageResult<OtherInventoryOrder>>({
-      url: orderPath(direction),
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
   get: (direction: OtherInventoryDirection, orderId: string, signal?: AbortSignal) =>
     request<OtherInventoryOrder>({
       url: `${orderPath(direction)}/${orderId}`,

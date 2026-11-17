@@ -54,10 +54,10 @@ export class MysqlInventoryTrackingInboundWriter {
       if (consumed.length)
         throw new InventoryDomainError('CONFLICT', '所选产出已有入库记录，请刷新后重新选择');
       const target = await resolveTarget(db, input, context);
-      const inboundNo = await allocateBusinessNumber(db, 'finished_inbound');
+      const inboundNo = await allocateBusinessNumber(db, 'inbound_order');
       const [order] = await db.execute<ResultSetHeader>(
-        `INSERT INTO inbound_order(inbound_no,source_type,work_order_id,production_batch_id,product_id,status,remark,created_by,updated_by)
-         VALUES (?,'finished_product',?,?,?,'pending',?,?,?)`,
+        `INSERT INTO inbound_order(inbound_no,item_kind,source_type,work_order_id,production_batch_id,product_id,status,remark,created_by,updated_by)
+         VALUES (?,'finished_product','finished_product',?,?,?,'pending',?,?,?)`,
         [
           inboundNo,
           input.workOrderId,
@@ -94,14 +94,16 @@ export class MysqlInventoryTrackingInboundWriter {
       // Every source detail must exist before the first ledger posting freezes the order.
       for (const detail of details)
         await db.execute(
-          `INSERT INTO inventory_transaction(product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by)
-           VALUES (?,?,'production_inbound',?,?,'available','inbound_detail',?,?,?,?)`,
+          `INSERT INTO inventory_transaction(product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,reference_order_id,reference_order_no_snapshot,idempotency_key,remark,created_by)
+           VALUES (?,?,'production_inbound',?,?,'available','inbound_detail',?,?,?,?,?,?)`,
           [
             input.productId,
             target.itemBatchId,
             fixedIntegerQuantity(detail.quantity),
             input.unit,
             detail.detailId,
+            inboundId,
+            inboundNo,
             `INBOUND:${detail.detailId}`,
             input.remark ?? null,
             context.actorId,

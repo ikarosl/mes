@@ -5,7 +5,3 @@ export const MATERIAL_OUTBOUND_ORDER_SELECT = `SELECT o.id,o.outbound_no,o.produ
   FROM outbound_order o
   JOIN production_batches b ON b.id=o.production_batch_id
   JOIN work_orders wo ON wo.id=o.work_order_id`;
-
-export const MATERIAL_OUTBOUND_ORDER_COUNT = `SELECT COUNT(*) total FROM outbound_order o
-  JOIN production_batches b ON b.id=o.production_batch_id
-  JOIN work_orders wo ON wo.id=o.work_order_id`;

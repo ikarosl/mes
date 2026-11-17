@@ -3,6 +3,7 @@ export class InventoryCommandError extends Error {
   constructor(
     readonly code:
       | 'NOT_FOUND'
+      | 'FORBIDDEN'
       | 'CONFLICT'
       | 'INVALID_STATE'
       | 'INVALID_INPUT'

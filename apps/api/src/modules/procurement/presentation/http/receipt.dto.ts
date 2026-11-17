@@ -4,6 +4,7 @@ import {
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsDefined,
   IsIn,
   IsInt,
@@ -45,6 +46,9 @@ class ReceiptSourceQueryDto extends PageQueryDto {
 }
 export class ReceiptQueryDto extends ReceiptSourceQueryDto {
   @IsOptional() @Matches(ID) purchaseOrderId?: string;
+}
+export class SetReceiptInboundStatusDto extends PurchaseOrderVersionDto {
+  @IsBoolean() inboundClosed!: boolean;
 }
 export class ReceiptSourceCandidatesQueryDto extends ReceiptSourceQueryDto {
   @IsOptional() @Matches(ID) purchaseOrderId?: string;

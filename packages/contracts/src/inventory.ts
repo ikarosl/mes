@@ -14,16 +14,13 @@ export interface OtherInventoryLinePayload {
   remark?: string | null;
 }
 export interface OtherInventoryDraftPayload {
+  itemKind: OtherInventoryItemKind;
   reason: string;
   remark?: string | null;
   details: OtherInventoryLinePayload[];
 }
 export interface SaveOtherInventoryDraftPayload extends OtherInventoryDraftPayload {
   version: number;
-}
-export interface OtherInventoryOrderQuery extends PageQuery {
-  keyword?: string;
-  status?: OtherInventoryStatus;
 }
 export interface OtherInventoryLine {
   id: string;
@@ -49,6 +46,7 @@ export interface OtherInventoryOrder {
   id: string;
   orderNo: string;
   direction: OtherInventoryDirection;
+  itemKind: OtherInventoryItemKind;
   status: OtherInventoryStatus;
   version: number;
   reason: string;

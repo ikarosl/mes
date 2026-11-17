@@ -12,18 +12,12 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import {
-  RETURN_ORDER_STATUSES,
-  SCRAP_STATUSES,
-  STOCK_CHECK_STATUSES,
-  STOCK_STATUSES,
-} from '@company/constants';
+import { SCRAP_STATUSES, STOCK_CHECK_STATUSES, STOCK_STATUSES } from '@company/constants';
 import type {
   CreateReturnOrderPayload,
   CreateStockCheckPayload,
   CreateMaterialLossPayload,
   MaterialLossQuery,
-  ReturnOrderQuery,
   SaveStockCheckCountsPayload,
   StockCheckCandidateQuery,
   StockCheckOrderQuery,
@@ -41,10 +35,6 @@ export class StockCheckIdParamDto {
 }
 export class WarehouseBatchIdParamDto {
   @IsString() @MaxLength(20) batchId!: string;
-}
-export class ReturnOrderQueryDto extends PageQueryDto implements ReturnOrderQuery {
-  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
-  @IsOptional() @IsIn(RETURN_ORDER_STATUSES) status?: ReturnOrderQuery['status'];
 }
 export class CreateReturnOrderLineDto {
   @IsString() @MaxLength(20) allocationId!: string;

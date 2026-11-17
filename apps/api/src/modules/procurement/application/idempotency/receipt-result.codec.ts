@@ -4,6 +4,7 @@ import type {
   ConfirmProcurementInboundResult,
   VoidProcurementReceiptCommandResult,
   ReceiptHandlingItem,
+  ReceiptInboundStatusResult,
 } from '@company/contracts';
 import type { IdempotencyResultCodec } from '../../../../common/idempotency/idempotency-executor.js';
 const id = z.string().regex(/^[1-9]\d*$/);
@@ -50,3 +51,15 @@ export const receiptHandlingResultCodec = {
   encode: (value) => handlingSchema.parse(value),
   decode: (value) => handlingSchema.parse(value),
 } satisfies IdempotencyResultCodec<ReceiptHandlingItem>;
+
+const inboundStatusSchema = z
+  .object({
+    receiptLineId: id,
+    inboundClosed: z.boolean(),
+    version: z.number().int().min(0).max(2147483647),
+  })
+  .strict();
+export const receiptInboundStatusResultCodec = {
+  encode: (value) => inboundStatusSchema.parse(value),
+  decode: (value) => inboundStatusSchema.parse(value),
+} satisfies IdempotencyResultCodec<ReceiptInboundStatusResult>;

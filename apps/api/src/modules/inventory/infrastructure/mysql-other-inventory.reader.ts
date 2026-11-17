@@ -2,7 +2,6 @@ import { withActiveConnection } from '@company/database';
 import type {
   OtherInventoryDirection,
   OtherInventoryOrder,
-  OtherInventoryOrderQuery,
   OtherStockCandidate,
   OtherStockCandidateQuery,
   PageResult,
@@ -24,37 +23,6 @@ type Row = RowDataPacket;
 export class MysqlOtherInventoryReader {
   constructor(private readonly pool: Pool) {}
 
-  async list(
-    direction: OtherInventoryDirection,
-    query: OtherInventoryOrderQuery,
-  ): Promise<PageResult<OtherInventoryOrder>> {
-    return withActiveConnection(this.pool, async (db) => {
-      const m = meta(direction);
-      const p = pagination(query);
-      const filters = ["source_type='other'"];
-      const args: unknown[] = [];
-      if (query.status) {
-        filters.push('status=?');
-        args.push(query.status);
-      }
-      if (query.keyword?.trim()) {
-        filters.push(`(${m.number} LIKE ? OR reason LIKE ? OR remark LIKE ?)`);
-        args.push(...Array(3).fill(`%${query.keyword.trim()}%`));
-      }
-      const where = filters.join(' AND ');
-      const [[count]] = await db.query<Row[]>(
-        `SELECT COUNT(*) total FROM ${m.order} WHERE ${where}`,
-        args,
-      );
-      const [rows] = await db.query<Row[]>(
-        `SELECT id FROM ${m.order} WHERE ${where} ORDER BY id DESC LIMIT ? OFFSET ?`,
-        [...args, p.pageSize, p.offset],
-      );
-      const items: OtherInventoryOrder[] = [];
-      for (const row of rows) items.push(await this.read(db, direction, String(row.id)));
-      return { items, total: Number(count!.total), page: p.page, pageSize: p.pageSize };
-    });
-  }
   get(direction: OtherInventoryDirection, orderId: string): Promise<OtherInventoryOrder> {
     return withActiveConnection(this.pool, (db) => this.read(db, direction, orderId));
   }
@@ -80,6 +48,7 @@ export class MysqlOtherInventoryReader {
       id: String(row.id),
       orderNo: row[m.number],
       direction,
+      itemKind: row.item_kind,
       status: row.status,
       version: row.version,
       reason: row.reason,

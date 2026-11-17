@@ -40,6 +40,7 @@ export class InventoryDomainExceptionFilter implements ExceptionFilter {
 
 const inventoryErrorStatus = (code: InventoryDomainError['code']): number => {
   if (code === 'NOT_FOUND') return 404;
+  if (code === 'FORBIDDEN') return 403;
   if (code === 'INVALID_INPUT') return 400;
   return 409;
 };

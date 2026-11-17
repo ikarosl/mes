@@ -425,77 +425,21 @@
               ></el-descriptions-item
             ></el-descriptions
           >
-          <h3>已确认入库来源</h3>
-          <el-table
-            :data="detail.inboundSources"
-            empty-text="该批次没有已确认入库单来源"
-            ><el-table-column label="入库单号"
-              ><template #default="{ row }"
-                ><el-button
-                  v-if="canOpenInbound(row.sourceType)"
-                  link
-                  type="primary"
-                  @click="openInbound(row.inboundId, row.sourceType)"
-                  >{{ row.inboundNo }}</el-button
-                ><span v-else>{{ row.inboundNo }}</span></template
-              ></el-table-column
-            ><el-table-column
-              label="来源类别"
-              min-width="110"
-            >
-              <template #default="{ row }">{{
-                inventorySourceTypeLabel(row.sourceType)
-              }}</template> </el-table-column
-            ><el-table-column
-              label="来源授权"
-              min-width="170"
-            >
-              <template #default="{ row }">
-                <template v-if="row.productionOutputId"
-                  >产出确认 #{{ row.productionOutputId }}<br />任务 #{{
-                    row.productionBatchId
-                  }}</template
-                >
-                <template v-else-if="row.procurementAllocationId"
-                  >到货分配 ID：{{ row.procurementAllocationId }}<br />到货行 ID
-                  <span class="identity-value">{{ row.procurementReceiptLineId }}</span></template
-                >
-                <span v-else>入库明细 #{{ row.inboundDetailId }}</span>
-              </template> </el-table-column
-            ><el-table-column
-              prop="provider"
-              label="供应方"
-              ><template #default="{ row }">{{ row.provider || '-' }}</template></el-table-column
-            ><el-table-column
-              label="确认时间"
-              width="180"
-              ><template #default="{ row }">{{
-                formatDateTimeForDisplay(row.inboundAt)
-              }}</template></el-table-column
-            ><el-table-column
-              label="入库数量"
-              width="120"
-              align="right"
-              ><template #default="{ row }">{{
-                formatQuantity(row.inboundQuantity)
-              }}</template></el-table-column
-            ><el-table-column
-              label="库存流水"
-              width="120"
-              ><template #default="{ row }"
-                >#{{ row.inventoryTransactionId }}</template
-              ></el-table-column
-            ></el-table
-          >
           <h3>库存流水（全部正负记录）</h3>
           <el-table
             :data="detail.inventoryTransactions"
             empty-text="该库存批次暂无库存流水"
             ><el-table-column
-              label="流水 ID"
-              width="100"
+              label="业务单号"
+              min-width="200"
               ><template #default="{ row }"
-                >#{{ row.inventoryTransactionId }}</template
+                ><el-button
+                  v-if="canOpenTransaction(row)"
+                  link
+                  type="primary"
+                  @click="openTransaction(row)"
+                  >{{ row.referenceOrderNoSnapshot || '未记录单号' }}</el-button
+                ><span v-else>{{ row.referenceOrderNoSnapshot || '未记录单号' }}</span></template
               ></el-table-column
             ><el-table-column
               label="发生时间"
@@ -531,13 +475,17 @@
               label="业务来源"
               min-width="150"
               ><template #default="{ row }">
-                {{ inventoryReferenceTypeLabel(row.referenceType) }} #{{ row.referenceDetailId }}
+                {{
+                  row.sourceType
+                    ? STOCK_DOCUMENT_SOURCE_LABELS[row.sourceType as StockDocumentSourceType]
+                    : inventoryTransactionTypeLabel(row.transactionType)
+                }}
               </template></el-table-column
             ><el-table-column
               label="关联信息"
               min-width="150"
               ><template #default="{ row }">
-                {{ inventoryTransactionAssociationText(row) }}
+                {{ reversalText(row) }}
               </template></el-table-column
             ><el-table-column
               label="备注"
@@ -557,6 +505,7 @@
         <el-button @click="detailVisible = false">关闭</el-button>
       </template>
     </el-dialog>
+    <StockCheckReadonlyDialog ref="stockCheckDialog" />
   </div>
 </template>
 <script setup lang="ts">
@@ -568,21 +517,26 @@ import {
   INVENTORY_ITEM_KIND_LABELS,
   INVENTORY_SOURCE_TYPE_LABELS,
   MATERIAL_DEMAND_PROGRESS_LABELS,
+  PERMISSIONS,
+  STOCK_DOCUMENT_SOURCE_LABELS,
 } from '@company/constants';
 import type {
   DemandType,
   InventoryBatchDetailItem,
   InventoryBatchItem,
   InventoryMaterialDemandTraceItem,
-  InventorySourceType,
+  InventoryBatchTransactionItem,
+  StockDocumentSourceType,
 } from '@company/contracts';
 import { productionInventoryApi } from '../../api/production/inventory';
+import { useAuthStore } from '../../stores/auth';
+import { stockDocumentRoute, stockDocumentViewPermission } from './stock-document-navigation';
+import StockCheckReadonlyDialog from './components/StockCheckReadonlyDialog.vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import {
   inventoryBatchStatusLabel,
   inventoryBatchStatusLabels,
-  inventoryReferenceTypeLabel,
   inventorySourceTypeLabel,
   inventoryTransactionTypeLabel,
   stockStatusLabel,
@@ -600,8 +554,6 @@ import {
   inventoryBatchProductionBatchText,
   inventoryBatchProviderText,
   inventoryBatchWorkOrderText,
-  inventoryInboundRouteName,
-  inventoryTransactionAssociationText,
 } from './warehouse-inventory-presentation';
 defineOptions({ name: 'WarehouseInventoryPage' });
 const route = useRoute(),
@@ -622,21 +574,48 @@ const batchStatusTag = (row: InventoryBatchItem) => {
   if (row.batchStatus === 'frozen') return 'warning';
   return 'info';
 };
-const canOpenInbound = (sourceType: InventorySourceType): boolean => {
-  const name = inventoryInboundRouteName(sourceType);
-  return name !== null && canAccessRoute({ name });
+const auth = useAuthStore();
+const stockCheckDialog = ref<InstanceType<typeof StockCheckReadonlyDialog> | null>(null);
+const canOpenTransaction = (row: InventoryBatchTransactionItem): boolean => {
+  if (!row.referenceOrderId) return false;
+  if (row.referenceType === 'stock_check_detail')
+    return auth.can(PERMISSIONS.warehouse.stockChecks.view);
+  if (!row.direction || !row.sourceType) return false;
+  return (
+    auth.can(stockDocumentViewPermission(row.direction, row.sourceType)) &&
+    canAccessRoute(stockDocumentRoute(row.itemKind, row.direction))
+  );
 };
-const openInbound = (inboundId: string, sourceType: InventorySourceType) => {
-  const name = inventoryInboundRouteName(sourceType);
-  if (!name || !canOpenInbound(sourceType)) return;
-  return router.push({
-    name,
-    query:
-      sourceType === 'finished_product'
-        ? { inventoryBatchId: selectedBatchId.value || undefined }
-        : { inboundId, sourceType },
-  });
-};
+async function openTransaction(row: InventoryBatchTransactionItem): Promise<void> {
+  if (!canOpenTransaction(row)) return;
+  if (row.referenceType === 'stock_check_detail')
+    await stockCheckDialog.value?.open(row.referenceOrderId, row.referenceDetailId);
+  else if (row.direction && row.sourceType)
+    await router.push(
+      stockDocumentRoute(
+        row.itemKind,
+        row.direction,
+        row.referenceOrderId,
+        row.sourceType,
+        row.referenceDetailId,
+      ),
+    );
+}
+function reversalText(row: InventoryBatchTransactionItem): string {
+  if (!row.reversalOfInventoryTransactionId) return '—';
+  const original = detail.value?.inventoryTransactions.find(
+    (entry) => entry.inventoryTransactionId === row.reversalOfInventoryTransactionId,
+  );
+  if (!original) return '冲销原库存记录';
+  return (
+    '冲销 ' +
+    formatDateTimeForDisplay(original.transactionAt) +
+    ' · ' +
+    formatQuantity(original.quantity) +
+    ' ' +
+    original.unit
+  );
+}
 const viewMode = ref<'supply-demand' | 'material-batches' | 'finished-product-batches'>(
   'supply-demand',
 );

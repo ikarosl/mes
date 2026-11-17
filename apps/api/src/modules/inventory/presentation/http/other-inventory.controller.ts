@@ -17,7 +17,6 @@ import { OTHER_INVENTORY_SCOPES } from '../../application/idempotency/other-inve
 import { InventoryDomainExceptionFilter } from './inventory-domain-exception.filter.js';
 import {
   OtherInventoryIdParamDto,
-  OtherInventoryOrderQueryDto,
   OtherInventoryDraftDto,
   SaveOtherInventoryDraftDto,
   OtherStockCandidateQueryDto,
@@ -29,11 +28,6 @@ import {
 @UseFilters(InventoryDomainExceptionFilter)
 export class OtherInboundController {
   constructor(private readonly service: OtherInventoryService) {}
-  @Get()
-  @RequirePermission(PERMISSIONS.warehouse.otherInbounds.view)
-  list(@Query() query: OtherInventoryOrderQueryDto) {
-    return this.service.list('inbound', query);
-  }
   @Get(':orderId')
   @RequirePermission(PERMISSIONS.warehouse.otherInbounds.view)
   get(@Param() { orderId }: OtherInventoryIdParamDto) {
@@ -88,11 +82,6 @@ export class OtherInboundController {
 @UseFilters(InventoryDomainExceptionFilter)
 export class OtherOutboundController {
   constructor(private readonly service: OtherInventoryService) {}
-  @Get()
-  @RequirePermission(PERMISSIONS.warehouse.otherOutbounds.view)
-  list(@Query() query: OtherInventoryOrderQueryDto) {
-    return this.service.list('outbound', query);
-  }
   @Get(':orderId')
   @RequirePermission(PERMISSIONS.warehouse.otherOutbounds.view)
   get(@Param() { orderId }: OtherInventoryIdParamDto) {

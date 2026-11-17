@@ -76,5 +76,5 @@ WHERE NOT EXISTS (
 INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
 SELECT sample.code, '库存演示控制组件', @other_stock_demo_product_category, '套', 'self_made', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), sample.status,
   @other_stock_demo_actor, @other_stock_demo_actor
-FROM (SELECT 'demo-stock-product' code, 1 status UNION ALL SELECT 'demo-stock-product-disabled', 0) sample
+FROM (SELECT 'demo-stock-product' code, 1 status UNION ALL SELECT 'demo-stock-product-second', 1 UNION ALL SELECT 'demo-stock-product-disabled', 0) sample
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.item_code = sample.code);

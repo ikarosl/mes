@@ -7,7 +7,6 @@ import type {
   OtherInventoryLine,
   OtherInventoryLinePayload,
   OtherInventoryOrder,
-  OtherInventoryOrderQuery,
   OtherStockCandidate,
   OtherStockCandidateQuery,
   OtherStockObject,
@@ -49,12 +48,6 @@ export class MysqlOtherInventoryRepository extends OtherInventoryRepository {
     this.reader = new MysqlOtherInventoryReader(pool);
   }
 
-  list(
-    direction: OtherInventoryDirection,
-    query: OtherInventoryOrderQuery,
-  ): Promise<PageResult<OtherInventoryOrder>> {
-    return this.reader.list(direction, query);
-  }
   get(direction: OtherInventoryDirection, orderId: string): Promise<OtherInventoryOrder> {
     return this.reader.get(direction, orderId);
   }
@@ -74,12 +67,13 @@ export class MysqlOtherInventoryRepository extends OtherInventoryRepository {
       const m = meta(direction);
       const no = await allocateBusinessNumber(
         db,
-        direction === 'inbound' ? 'other_inbound' : 'other_outbound',
+        direction === 'inbound' ? 'inbound_order' : 'outbound_order',
       );
       const [result] = await db.execute<ResultSetHeader>(
-        `INSERT INTO ${m.order} (${m.number},source_type,status,reason,remark,created_by,updated_by) VALUES (?,'other',?,?,?,?,?)`,
+        `INSERT INTO ${m.order} (${m.number},item_kind,source_type,status,reason,remark,created_by,updated_by) VALUES (?,?,'other',?,?,?,?,?)`,
         [
           no,
+          payload.itemKind,
           m.pending,
           payload.reason.trim(),
           clean(payload.remark),
@@ -122,6 +116,7 @@ export class MysqlOtherInventoryRepository extends OtherInventoryRepository {
       const m = meta(direction);
       await this.lockOrder(db, direction, orderId, payload.version);
       const before = await this.reader.read(db, direction, orderId);
+      if (payload.itemKind !== before.itemKind) fail('单据类型创建后不能更改，请重新建单');
       const objects = await this.resolve(payload.details);
       await this.lockBatches(db, payload.details, objects);
       const retained = new Set(payload.details.map((line) => line.id).filter(Boolean));
@@ -218,6 +213,7 @@ export class MysqlOtherInventoryRepository extends OtherInventoryRepository {
       const before = await this.reader.read(db, direction, orderId);
       const active = before.details.filter((line) => !line.isDeleted).map((line) => ({ ...line }));
       const payload = {
+        itemKind: before.itemKind,
         reason: before.reason,
         details: active.map((line) => otherInventoryPayloadLine(line)),
       };
@@ -261,7 +257,7 @@ export class MysqlOtherInventoryRepository extends OtherInventoryRepository {
       if (direction === 'outbound') await this.requireUnreserved(db, active);
       for (const line of active) {
         await db.execute(
-          `INSERT INTO inventory_transaction (item_id,material_variant_id,product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,remark,created_by) VALUES (?,?,?,?,?,?,?,'available',?,?,?,?,?)`,
+          `INSERT INTO inventory_transaction (item_id,material_variant_id,product_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,reference_order_id,reference_order_no_snapshot,idempotency_key,remark,created_by) VALUES (?,?,?,?,?,?,?,'available',?,?,?,?,?,?,?)`,
           [
             line.itemId,
             line.materialVariantId,
@@ -272,6 +268,8 @@ export class MysqlOtherInventoryRepository extends OtherInventoryRepository {
             line.unit,
             m.reference,
             line.id,
+            orderId,
+            before.orderNo,
             `${direction === 'inbound' ? 'INBOUND' : 'OUTBOUND'}:${line.id}`,
             line.remark,
             context.actorId,

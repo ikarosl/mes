@@ -1,8 +1,5 @@
 import { materialOutboundDetailsSql } from '../queries/logistics/material-outbound-details.sql.js';
-import {
-  MATERIAL_OUTBOUND_ORDER_SELECT as OUTBOUND_SELECT,
-  MATERIAL_OUTBOUND_ORDER_COUNT,
-} from '../queries/logistics/material-outbound-orders.sql.js';
+import { MATERIAL_OUTBOUND_ORDER_SELECT as OUTBOUND_SELECT } from '../queries/logistics/material-outbound-orders.sql.js';
 import { currentMaterialNameSql } from '../queries/shared/material-name.sql.js';
 import { hydrateAllocationQuantities } from '../demand/mysql-production-material-facts.js';
 import type { MaterialVariantQuery } from '../../../product/public.js';
@@ -13,10 +10,8 @@ import type {
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type {
   MaterialOutboundItem,
-  MaterialOutboundQuery,
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
-  PageResult,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
@@ -50,39 +45,6 @@ export class MysqlProductionMaterialOutboundRead {
       [batchId],
     );
     return this.loadOutbounds(this.pool, rows);
-  }
-
-  async listOutboundOrders(
-    query: MaterialOutboundQuery,
-  ): Promise<PageResult<MaterialOutboundItem>> {
-    const page = query.page ?? 1;
-    const pageSize = query.pageSize ?? 20;
-    const conditions = ["o.source_type='production_material'"];
-    const values: Array<string | number> = [];
-    if (query.keyword?.trim()) {
-      const keyword = `%${query.keyword.trim()}%`;
-      conditions.push('(o.outbound_no LIKE ? OR b.batch_no LIKE ? OR wo.work_order_no LIKE ?)');
-      values.push(keyword, keyword, keyword);
-    }
-    if (query.status) {
-      conditions.push('o.status=?');
-      values.push(query.status);
-    }
-    const where = conditions.join(' AND ');
-    const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `${MATERIAL_OUTBOUND_ORDER_COUNT} WHERE ${where}`,
-      values,
-    );
-    const [rows] = await this.pool.query<OutboundRow[]>(
-      `${OUTBOUND_SELECT} WHERE ${where} ORDER BY o.created_at DESC,o.id DESC LIMIT ? OFFSET ?`,
-      [...values, pageSize, (page - 1) * pageSize],
-    );
-    return {
-      items: await this.loadOutbounds(this.pool, rows),
-      total: Number(count?.total ?? 0),
-      page,
-      pageSize,
-    };
   }
 
   getOutbound(outboundId: string): Promise<MaterialOutboundItem> {

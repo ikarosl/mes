@@ -2,8 +2,6 @@ import type {
   CreateMaterialOutboundPayload,
   MaterialOutboundCommandResult,
   MaterialOutboundItem,
-  PageResult,
-  MaterialOutboundQuery,
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
   CancelMaterialOutboundPayload,
@@ -37,17 +35,6 @@ export const productionMaterialOutboundsApi = {
 
   listMaterialOutbounds: (batchId: string): Promise<MaterialOutboundItem[]> =>
     request<MaterialOutboundItem[]>({ url: `/production/batches/${batchId}/material-outbounds` }),
-
-  listMaterialOutboundOrders: (
-    params: MaterialOutboundQuery,
-    signal?: AbortSignal,
-  ): Promise<PageResult<MaterialOutboundItem>> =>
-    request<PageResult<MaterialOutboundItem>>({
-      url: '/production/material-outbounds',
-      params,
-      signal,
-      skipErrorHandling: true,
-    }),
 
   getMaterialOutbound: (outboundId: string, signal?: AbortSignal): Promise<MaterialOutboundItem> =>
     request<MaterialOutboundItem>({

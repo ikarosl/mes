@@ -102,6 +102,12 @@
 
       <el-form
         v-if="editor.isEditing.value && editor.loaded.value"
+        ref="draftFormRef"
+        :model="draftFormModel"
+        :rules="draftRules"
+        :validate-on-rule-change="false"
+        scroll-to-error
+        :scroll-into-view-options="{ block: 'nearest', inline: 'nearest' }"
         label-position="top"
         :disabled="editor.controlsLocked.value || !editor.readReady.value"
         class="draft-form"
@@ -109,7 +115,7 @@
         <div class="reason-fields">
           <el-form-item
             label="办理原因"
-            required
+            prop="reason"
           >
             <el-input
               v-model="editor.form.reason"
@@ -120,7 +126,10 @@
               :placeholder="`说明本次其他${direction === 'inbound' ? '入库' : '出库'}原因`"
             />
           </el-form-item>
-          <el-form-item label="单据备注（可选）">
+          <el-form-item
+            label="单据备注（可选）"
+            prop="remark"
+          >
             <el-input
               v-model="editor.form.remark"
               type="textarea"
@@ -145,19 +154,19 @@
             添加明细
           </el-button>
         </div>
-        <OtherStockDraftTable
-          :lines="editor.lines.value"
-          :direction="direction"
-          :disabled="editor.controlsLocked.value || !editor.readReady.value"
-          @update-line="updateLine"
-          @remove="editor.removeLine"
-        />
-        <p
-          v-if="editor.validationMessage.value"
-          class="validation-note"
+        <el-form-item
+          prop="lines"
+          class="draft-lines-field"
         >
-          {{ editor.validationMessage.value }}
-        </p>
+          <OtherStockDraftTable
+            :lines="editor.lines.value"
+            :direction="direction"
+            :disabled="editor.controlsLocked.value || !editor.readReady.value"
+            :line-errors="editor.validation.value.lineByKey"
+            @update-line="updateLine"
+            @remove="editor.removeLine"
+          />
+        </el-form-item>
         <p
           v-if="editor.dirty.value && editor.order.value"
           class="validation-note"
@@ -250,13 +259,18 @@
       </template>
       <el-form
         v-if="editor.mode.value === 'cancel' && editor.order.value"
+        ref="cancelFormRef"
+        :model="cancelFormModel"
+        :rules="cancelRules"
+        :validate-on-rule-change="false"
+        scroll-to-error
         label-position="top"
         class="cancel-form"
         :disabled="editor.controlsLocked.value"
       >
         <el-form-item
           label="取消原因"
-          required
+          prop="reason"
         >
           <el-input
             v-model="editor.cancelReason.value"
@@ -289,7 +303,7 @@
           type="primary"
           :loading="editor.submitting.value"
           :disabled="!editor.canSave.value"
-          @click="editor.save"
+          @click="saveDraft"
           >保存草稿</el-button
         >
         <el-button
@@ -312,7 +326,7 @@
           type="danger"
           :loading="editor.submitting.value"
           :disabled="!editor.canCancel.value"
-          @click="editor.cancel"
+          @click="cancelOrder"
           >取消单据</el-button
         >
       </template>
@@ -322,7 +336,8 @@
 
 <script setup lang="ts">
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import type { FormInstance, FormRules } from 'element-plus';
 import {
   INVENTORY_ITEM_KIND_LABELS,
   INVENTORY_TARGET_MODE_LABELS,
@@ -335,6 +350,10 @@ import { DialogWidth } from '../../../utils/dialog';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import type { useOtherInventoryOrderEditor } from '../composables/useOtherInventoryOrderEditor';
 import type { OtherInventoryDraftLineUpdate } from '../other-inventory-draft';
+import {
+  otherInventoryFieldRule,
+  otherInventoryReasonMessage,
+} from '../other-inventory-validation';
 import {
   activeOtherInventoryLines,
   otherInventoryNewBatchGroupLabel,
@@ -350,6 +369,43 @@ const props = defineProps<{
   editor: ReturnType<typeof useOtherInventoryOrderEditor>;
 }>();
 const editor = props.editor;
+const draftFormRef = ref<FormInstance>();
+const cancelFormRef = ref<FormInstance>();
+const draftFormModel = computed(() => ({
+  ...editor.form,
+  lines: editor.lines.value,
+  lineByKey: Object.fromEntries(editor.lines.value.map((line) => [line.key, line])),
+}));
+const cancelFormModel = computed(() => ({ reason: editor.cancelReason.value }));
+const draftRules: FormRules = {
+  reason: [otherInventoryFieldRule(() => editor.validation.value.reason, true)],
+  remark: [otherInventoryFieldRule(() => editor.validation.value.remark)],
+  lines: [otherInventoryFieldRule(() => editor.validation.value.lines, true)],
+};
+const cancelRules: FormRules = {
+  reason: [
+    otherInventoryFieldRule(
+      () => otherInventoryReasonMessage(editor.cancelReason.value.trim(), '取消原因'),
+      true,
+    ),
+  ],
+};
+watch(
+  () => editor.validationRevision.value,
+  () => {
+    draftFormRef.value?.clearValidate();
+    cancelFormRef.value?.clearValidate();
+  },
+  { flush: 'post' },
+);
+watch(
+  () => editor.lines.value.length,
+  () => {
+    const field = draftFormRef.value?.getField('lines');
+    if (field?.validateState === 'error') void field.validate('change').catch(() => false);
+  },
+  { flush: 'post' },
+);
 const dialogTitle = computed(() => {
   let prefix = '';
   if (editor.mode.value === 'create') prefix = '创建';
@@ -362,6 +418,26 @@ function updateLine(value: OtherInventoryDraftLineUpdate): void {
   editor.lines.value = editor.lines.value.map((line) =>
     line.key === value.key ? { ...line, ...value.patch } : line,
   );
+}
+async function saveDraft(): Promise<void> {
+  if (!editor.canSave.value || !draftFormRef.value) return;
+  const revision = editor.validationRevision.value;
+  const valid = await draftFormRef.value.validate().catch(() => false);
+  if (!valid || !editor.visible.value || revision !== editor.validationRevision.value) return;
+  await editor.save();
+}
+async function cancelOrder(): Promise<void> {
+  if (!editor.canCancel.value || !cancelFormRef.value) return;
+  const revision = editor.validationRevision.value;
+  const valid = await cancelFormRef.value.validate().catch(() => false);
+  if (
+    !valid ||
+    !editor.visible.value ||
+    editor.mode.value !== 'cancel' ||
+    revision !== editor.validationRevision.value
+  )
+    return;
+  await editor.cancel();
 }
 function handleVisible(value: boolean): void {
   if (!value && editor.visible.value) void editor.close();
@@ -408,6 +484,15 @@ function handleVisible(value: boolean): void {
 }
 .detail-table :deep(th.el-table__cell) {
   background: var(--el-fill-color-light);
+}
+.draft-lines-field :deep(> .el-form-item__content) {
+  display: block;
+  min-width: 0;
+}
+.draft-lines-field :deep(> .el-form-item__content > .el-form-item__error),
+.cancel-form :deep(.el-form-item__error) {
+  position: static;
+  padding-top: 6px;
 }
 .cancel-form :deep(.el-form-item) {
   margin-bottom: 0;

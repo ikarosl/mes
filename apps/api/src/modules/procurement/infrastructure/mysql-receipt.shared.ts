@@ -6,7 +6,7 @@ import { receiptError } from '../domain/procurement.errors.js';
 import { readOrder, sortedIds, idsSql } from './mysql-purchase-order.shared.js';
 
 export const RECEIPT_LINE_COLUMNS =
-  'id,receipt_id,purchase_order_id,purchase_order_line_id,item_id,material_variant_id,supplier_batch_code,version';
+  'id,receipt_id,purchase_order_id,purchase_order_line_id,item_id,material_variant_id,supplier_batch_code,version,inbound_closed';
 export type ReceiptLineRow = RowDataPacket & {
   id: number;
   receipt_id: number;
@@ -16,6 +16,7 @@ export type ReceiptLineRow = RowDataPacket & {
   material_variant_id: number;
   supplier_batch_code: string | null;
   version: number;
+  inbound_closed: number;
 };
 /** Originals and dependent supplements share the source root lock before arrival locks. */
 export async function lockReceiptRoots(
@@ -38,6 +39,7 @@ export async function lockReceiptRoots(
 export async function lockReceiptLines(
   db: PoolConnection,
   ids: string[],
+  options: { requireActive?: boolean } = {},
 ): Promise<ReceiptLineRow[]> {
   const ordered = sortedIds(ids);
   if (!ordered.length) return receiptError('请选择到货物料');
@@ -50,7 +52,7 @@ export async function lockReceiptLines(
   await lockReceiptRoots(db, ordered);
   for (const receiptId of sortedIds(locators.map((row) => String(row.receipt_id)))) {
     await db.query('SELECT id FROM procurement_receipt WHERE id=? FOR UPDATE', [receiptId]);
-    await requireReceiptActive(db, receiptId);
+    if (options.requireActive !== false) await requireReceiptActive(db, receiptId);
   }
   const result: ReceiptLineRow[] = [];
   for (const id of ordered) {

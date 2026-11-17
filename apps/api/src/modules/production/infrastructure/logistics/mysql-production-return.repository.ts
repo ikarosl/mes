@@ -5,7 +5,6 @@ import {
 import { materialQuantitiesOf } from '../demand/mysql-production-material-facts.js';
 import {
   MATERIAL_RETURN_ORDER_SELECT as RETURN_ORDER_SELECT,
-  MATERIAL_RETURN_ORDER_COUNT,
   MATERIAL_RETURN_BATCH_OPTIONS_SQL,
   materialReturnDetailsSql,
 } from '../queries/logistics/material-return-display.sql.js';
@@ -13,11 +12,9 @@ import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
 import type {
   CreateReturnOrderPayload,
-  PageResult,
   ReturnOrderBatchOption,
   ReturnOrderCandidateItem,
   ReturnOrderItem,
-  ReturnOrderQuery,
 } from '@company/contracts';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
@@ -27,7 +24,6 @@ import { ProductionDomainError } from '../../domain/production.errors.js';
 import { integerQuantity } from '../../domain/integer-quantity.js';
 import { findBatch } from '../tasks/mysql-production-batch.persistence.js';
 import { ProductionReturnRepository } from '../../application/ports/production-return.repository.js';
-import { pagination } from '../shared/mysql-production-query.js';
 import { fixedIntegerQuantity as decimal } from '../../domain/integer-quantity.js';
 import { nullableBeijingDateTime as iso } from '../shared/mysql-production-mapping.js';
 import { requireVersion } from './mysql-production-logistics-concurrency.js';
@@ -101,37 +97,6 @@ export class MysqlProductionReturnRepository extends ProductionReturnRepository 
     private readonly documents: InventoryProductionDocumentCommand,
   ) {
     super();
-  }
-
-  async listReturnOrders(query: ReturnOrderQuery): Promise<PageResult<ReturnOrderItem>> {
-    const where: string[] = ["ro.source_type='return_inbound'"];
-    const params: Array<string | number> = [];
-    if (query.keyword) {
-      where.push(
-        '(ro.inbound_no LIKE ? OR pb.batch_no LIKE ? OR wo.work_order_no LIKE ? OR wo.product_code_snapshot LIKE ? OR wo.product_name_snapshot LIKE ?)',
-      );
-      params.push(...Array(5).fill(`%${query.keyword}%`));
-    }
-    if (query.status) {
-      where.push('ro.status=?');
-      params.push(query.status === 'returned' ? 'completed' : query.status);
-    }
-    const clause = where.length ? ` WHERE ${where.join(' AND ')}` : '';
-    const [[count]] = await this.pool.query<(RowDataPacket & { total: number })[]>(
-      `${MATERIAL_RETURN_ORDER_COUNT}${clause}`,
-      params,
-    );
-    const { page, pageSize, offset } = pagination(query);
-    const [rows] = await this.pool.query<ReturnOrderRow[]>(
-      `${RETURN_ORDER_SELECT}${clause} ORDER BY ro.id DESC LIMIT ? OFFSET ?`,
-      [...params, pageSize, offset],
-    );
-    return {
-      items: await this.mapReturnOrders(this.pool, rows),
-      total: Number(count?.total ?? 0),
-      page,
-      pageSize,
-    };
   }
 
   async getReturnOrder(returnId: string): Promise<ReturnOrderItem> {

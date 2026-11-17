@@ -1,6 +1,6 @@
 # Inventory 公开能力
 
-本章维护 Inventory 向 Production、Procurement 开放的事务能力，以及其他单据 HTTP 命令。完整锁序与反向预留协作例外见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，六场景字段及不可变守卫见[数据库边界](database.md)。端口类型以 [public.ts](../public.ts) 导出的契约为准。
+本章维护 Inventory 向 Production、Procurement 开放的事务能力、其他单据 HTTP 命令及统一单据展示查询。完整锁序与反向预留协作例外见[库存协作协议](../../../../../../docs/inventory-extraction-design.md)，六场景字段及不可变守卫见[数据库边界](database.md)。端口类型以 [public.ts](../public.ts) 导出的契约为准。
 
 ## 生产领退料
 
@@ -10,7 +10,7 @@
 
 `facts({productionBatchId?,allocationIds?,demandIds?,lock?})` 至少限定一个范围，多范围取交集；只返回 production_material 和 return_inbound，其他单永不参与生产履约、退料／损耗额度或审批依据。lock=true 要求调用者已有活跃同池事务，对公共父单与实际明细使用当前读及 NOWAIT；普通查询不授予写入资格。它不关联或锁生产分配，也不以库存余额代替历史领退料。
 
-生产退料的 HTTP 状态及来源资格由[退料专题](../../production/docs/database/return-scrap-and-stocktake.md#37-退料表)维护。
+生产退料的 HTTP 状态及来源资格由[退料专题](../../production/docs/database/return-scrap-and-stocktake.md#退料表)维护。
 
 `InventoryStockCommand` 提供物料批次历史引用、统一父身份及库存批次锁与物料数量。库存流水动作在公共单据 adapter 内执行，Production 不得自行写单据或调用裸流水来替代来源编排；单据与流水关联由登记展示查询读取。
 
@@ -46,13 +46,25 @@ Inventory 用该事实及自己当前已完成生产领料核对未预留量，�
 
 ## 只读展示
 
+### 统一出入库主单
+
+`GET /warehouse/stock-documents` 以 `direction`、`itemKind` 限定出入库方向和物料／成品分区，按公共主单查询。可精确筛选 `sourceType`、`status`；`keyword` 匹配单号、原因、备注、活动明细的物料／成品编码与名称、精确版本编码、库存批号、来源采购单号、到货单号、供应商名称快照、工单号、任务号和追踪卡号。按 `created_at DESC,id DESC` 稳定分页；全部筛选及授权在主单计数、排序和分页前完成，再批量读取本页明细与来源，不把各场景已分页结果拼接。
+
+`GET /warehouse/stock-documents/:direction/:id` 精确读取真实公共主单及完整明细，成品入库也使用入库主单身份，不能由共用批次反推单据。列表只附活动明细；精确详情保留其他草稿已软删除行的 `isDeleted` 历史标记。明细数、数量按单位汇总及来源摘要均只计活动行。传输形状以 [stock-documents.ts](../../../../../../packages/contracts/src/stock-documents.ts) 为准。
+
+统一入口的 any-of 授权只用于允许进入查询，不扩大场景权限。采购／生产成品入库要求 `warehouse:inbound:view`，生产退料要求 `warehouse:returns:view`，生产领料要求 `warehouse:outbound:view`，其他入库／出库分别要求对应 `other-inbounds:view`／`other-outbounds:view`；列表 SQL 只允许当前用户有权的场景，精确详情在读取来源及明细前独立核验真实父单场景。读取不授予创建、编辑、确认或取消资格，所有命令仍通过原业务所有者办理。
+
+采购来源逐行返回真实到货及采购单号、单内行号和确认时供应商快照，生产来源逐行返回工单／任务、实际产出及追踪卡引用。主单来源使用集合摘要，允许多采购／多到货／多供应商，不能伪造唯一来源或按名称补 ID。跨模块读取只在登记的 `infrastructure/queries/` 中用于历史展示，不授予来源写入或资格校验。
+
+库存批次的每笔流水返回 `referenceOrderId`、`referenceOrderNoSnapshot`，并带原明细引用及当前场景、物料／成品身份、出入库方向供导航。盘点流水保留真实盘点主单与编号，方向及出入库场景为空，使用既有盘点精确详情；它不成为公共出入库单或成品盘点入口。
+
 `GET /warehouse/production-output-inbound-batch-candidates` 供任务产出与仓库成品入库选择同任务已有批次，要求任务、成品及单位，按 warehouse:inbound:view 或 production:tasks:view 授权；结果带当前版本，确认须重核。此入口与其他入库的通用成品候选分开，不改变通用候选范围。
 
 库存批次候选公开查询 `listInboundBatchCandidates` 按成品 ID 或物料精确版本、来源单位、可用状态、批号关键词稳定分页。HTTP 入口分别为 `GET /warehouse/finished-inbound-batch-candidates`（`warehouse:inbound:view`）和 `GET /warehouse/material-inbound-batch-candidates`（`warehouse:inbound:view`），无需额外采购或任务页面权限。命令事务仍复核身份与状态，候选结果不授予写资格。
 
-外购入库列表和详情的主单供应商摘要使用 `suppliers` 集合，逐明细的 `supplierId` 沿真实到货采购行所属的采购主单读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。采购供应商存储层级调整不回写已确认 inbound_detail 名称快照或既有 item_batch.provider 文本。
+统一主单的采购供应商摘要使用 `suppliers` 集合，逐明细采购来源的 `supplierId` 沿真实到货采购行所属的采购主单读取，`supplierName` 为确认时名称快照；缺少来源身份时不从名称猜 ID。关键词按明细供应商快照匹配，使用 EXISTS 保持主单计数。库存批次及生产追溯的每笔来源供应方同样取该实际明细快照，不能把合单中另一家供应商显示到本行。采购供应商存储层级调整不回写已确认 inbound_detail 名称快照或既有 item_batch.provider 文本。
 
-`InventoryInboundRepository` 提供入库/库存历史查询。库存批次列表、详情和名称关键词使用同一名称来源：物料按公共规则读当前名称；成品优先保留有效入库来源中首条工单的冻结名称，没有工单来源时按 `product_id` 读取 `products.product_name`，不因成品停用或软删除丢失历史展示，也不由名称补造工单或任务。
+`InventoryInboundRepository` 提供库存批次与流水历史查询。库存批次列表、详情和名称关键词使用同一名称来源：物料按公共规则读当前名称；成品优先保留有效入库来源中首条工单的冻结名称，没有工单来源时按 `product_id` 读取 `products.product_name`，不因成品停用或软删除丢失历史展示，也不由名称补造工单或任务。
 
 库批来源集合、来源类别筛选及来源工单／任务关键词只读取已完成主单的未删除 `inbound_detail`，并匹配该明细所属场景的原始正流水：采购 `purchase_inbound`、终检成品 `production_inbound`、生产退料 `material_return_inbound`、其他入库 `other_inbound`；身份、精确版本、批次、单位、库存状态及数量必须一致。类别沿实际主单读取，成品返回真实 productionOutputId，采购到货沿其明细关联；其他入库不产生生产／采购来源。批次供应方和工单／任务摘要仅在所有有效来源均有相同值时返回，否则为 `null`；`item_batch.source_type` 保留建批类别，不作为实际来源集合或唯一工单归属。
 

@@ -1,6 +1,7 @@
 export * from './common.js';
 export * from './personnel.js';
 export * from './inventory.js';
+export * from './stock-documents.js';
 export * from './business-number.js';
 export * from './permissions.js';
 export * from './permission-catalog.js';
