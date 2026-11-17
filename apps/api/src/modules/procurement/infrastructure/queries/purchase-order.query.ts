@@ -160,6 +160,10 @@ export const getPurchaseOrder = async (db: Db, id: string): Promise<PurchaseOrde
       originReceiptLineId:
         row.origin_receipt_line_id === null ? null : String(row.origin_receipt_line_id),
       originReceiptNo: row.origin_receipt_no,
+      receiptCount:
+        row.fulfillment_mode === 'existing_receipt'
+          ? null
+          : metrics.get(String(row.id))!.inboundByReceiptLine.size,
       quantities:
         row.fulfillment_mode === 'existing_receipt'
           ? null

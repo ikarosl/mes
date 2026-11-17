@@ -1,4 +1,5 @@
 import type { RouteLocationRaw, RouteMeta, Router } from 'vue-router';
+import type { ViewTab } from '../stores/tabs';
 
 interface NavigationItem {
   routeNames: readonly string[];
@@ -100,15 +101,24 @@ const navigationGroups: readonly NavigationGroup[] = [
 export function getVisibleNavigation(
   router: Router,
   canAccess: (permission: RouteMeta['permission']) => boolean,
+  openTabs: readonly Pick<ViewTab, 'name' | 'path'>[] = [],
 ): VisibleNavigation {
   const resolveItem = (item: NavigationItem): VisibleNavigationItem | null => {
     for (const name of item.routeNames) {
       const target = router.resolve({ name });
       if (!target.matched.length || !canAccess(target.meta.permission)) continue;
+      const tab = openTabs.find((tab) => tab.name === target.meta.tabName);
+      const lastRoute = tab ? router.resolve(tab.path) : undefined;
+      // 分类菜单恢复已打开标签的方向和定位，首次进入仍选择首个有权限的方向。
+      const canRestore =
+        lastRoute &&
+        typeof lastRoute.name === 'string' &&
+        item.routeNames.includes(lastRoute.name) &&
+        canAccess(lastRoute.meta.permission);
       return {
         path: target.meta.menuPath ?? target.path,
         title: target.meta.title ?? name,
-        route: { name },
+        route: canRestore ? lastRoute.fullPath : { name },
       };
     }
     return null;

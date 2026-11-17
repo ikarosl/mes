@@ -125,7 +125,7 @@
           maxlength="2000"
       /></el-form-item>
       <InlineHint class="notice"
-        >勾选采购单中本次到货的物料；实际入库数量由仓库办理时填写，检验报告可独立补录。历史已入库仅累计本采购行的有效到货，不代表本次到货量或入库上限。</InlineHint
+        >勾选采购单中本次到货的物料；实际入库数量由仓库办理时填写，检验报告可独立补录。已关联到货数与历史已入库均只统计本采购行的有效到货，不代表本次到货量或入库上限。</InlineHint
       >
       <el-table
         :data="rows"
@@ -155,6 +155,13 @@
           ><template #default="{ row }"
             >{{ Number(row.line.plannedQuantity) }} {{ row.line.unit }}</template
           ></el-table-column
+        >
+        <el-table-column
+          label="已有关联到货（参考）"
+          min-width="140"
+          ><template #default="{ row }">{{
+            row.line.receiptCount ?? '未知'
+          }}</template></el-table-column
         >
         <el-table-column
           label="历史已入库（参考）"

@@ -37,8 +37,10 @@ import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import { getVisibleNavigation } from '../../router/navigation';
 import { useAuthStore } from '../../stores/auth';
+import { useTabsStore } from '../../stores/tabs';
 
 const router = useRouter();
 const auth = useAuthStore();
-const navigation = computed(() => getVisibleNavigation(router, auth.can));
+const tabs = useTabsStore();
+const navigation = computed(() => getVisibleNavigation(router, auth.can, tabs.tabs));
 </script>

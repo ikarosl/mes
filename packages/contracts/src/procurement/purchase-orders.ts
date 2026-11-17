@@ -129,6 +129,8 @@ export interface PurchaseOrderLine {
   supplementEvidence: string | null;
   originReceiptLineId: string | null;
   originReceiptNo: string | null;
+  /** 本采购行自身的有效到货登记数；existing_receipt 为 null。 */
+  receiptCount: number | null;
   quantities: ReceiptQuantitySummary | null;
 }
 export interface PurchaseOrderDetail extends PurchaseOrderItem {

@@ -26,7 +26,7 @@ voiding 是同一只读快照的完整行与阻断原因预览；真实入库或
 
 ## 采购来源与补单候选
 
-采购行 quantities.inboundQuantity 与 receipt-records 只累计该采购行自身有效到货的实际库存正流水；超量补单 existing_receipt 没有自身到货，quantities=NULL。receipt-records 包含尚未入库的有效登记，页头完整已入量不受关键词和分页影响。到货不是数量台账，登记次数不换算采购完成度。
+采购详情行 receiptCount 为该采购行自身有效到货登记数，排除作废，包含尚未入库的登记；超量补单 existing_receipt 没有自身到货，receiptCount 与 quantities 均为 NULL。quantities.inboundQuantity 与 receipt-records 的已入量只累计这些有效到货的实际库存正流水；receipt-records 包含尚未入库的有效登记，页头完整已入量不受关键词和分页影响。到货不是数量台账，登记次数不换算采购完成度。
 
 excess-receipt-candidates 和 quality-replacement-candidates 都列出该原采购行的有效到货，支持 keyword 与 receiptLineId；关键词搜索到货单号和供应商批号。候选不要求检验、授权、已入或已退。receiptLinkedSupplements 按同到货、同补因分组统计状态、行数和计划量，包含取消历史且不表示仓库额度。正式创建及下单仍核验同源有效到货，规则见[补单](purchase-orders.md#补单来源与独立物流)。
 
