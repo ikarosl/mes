@@ -1,5 +1,10 @@
 import type { Router } from 'vue-router';
-import { PERMISSIONS } from '@company/constants';
+import { STOCK_DOCUMENT_SOURCE_TYPES } from '@company/constants';
+import type { StockDocumentSourceType } from '@company/contracts';
+import {
+  STOCK_DOCUMENT_ROUTES,
+  stockDocumentViewPermission,
+} from '../views/warehouse/stock-document-navigation';
 import { useAuthStore } from '../stores/auth';
 import { useTabsStore } from '../stores/tabs';
 
@@ -17,30 +22,23 @@ export function installRouterGuards(router: Router): void {
         return { name: 'login', query: { redirect: to.fullPath } };
       }
     }
-    // 旧入库链接仍按真实来源定位；分类各自保留查看权限。
+    const scope = STOCK_DOCUMENT_ROUTES.find((record) => record.name === to.name);
+    const source = to.query.sourceType;
     if (
-      to.name === 'warehouse-inbound' &&
-      typeof to.query.inboundId === 'string' &&
-      to.query.inboundId &&
-      to.query.sourceType !== 'purchased'
+      scope &&
+      typeof source === 'string' &&
+      STOCK_DOCUMENT_SOURCE_TYPES.includes(source as StockDocumentSourceType) &&
+      !auth.can(stockDocumentViewPermission(scope.direction, source as StockDocumentSourceType))
     )
-      return { name: 'warehouse-inbound-finished', query: to.query, hash: to.hash, replace: true };
+      return { name: 'no-permission' };
 
-    // 通用菜单地址允许最小查看角色进入自己可见的分类，不扩大原分类准入。
     if (!auth.can(to.meta.permission)) {
-      if (
-        to.name === 'warehouse-inbound' &&
-        !to.query.inboundId &&
-        !to.query.receiptLineId &&
-        auth.can(PERMISSIONS.warehouse.otherInbounds.view)
-      )
-        return { name: 'warehouse-other-inbounds', query: to.query, hash: to.hash, replace: true };
-      if (
-        to.name === 'warehouse-outbound' &&
-        !to.query.outboundId &&
-        auth.can(PERMISSIONS.warehouse.otherOutbounds.view)
-      )
-        return { name: 'warehouse-other-outbounds', query: to.query, hash: to.hash, replace: true };
+      if (scope && !Object.keys(to.query).length) {
+        const target = STOCK_DOCUMENT_ROUTES.find(
+          (record) => record.itemKind === scope.itemKind && auth.can(record.permission),
+        );
+        if (target) return { name: target.name, replace: true };
+      }
       return { name: 'no-permission' };
     }
     return true;

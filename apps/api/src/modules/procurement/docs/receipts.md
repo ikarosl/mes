@@ -14,7 +14,13 @@
 
 `POST /procurement/purchase-inbounds/actions/confirm` 一次提交 1 至 100 条实际入库明细，可混合多个到货、采购单和供应商。同一来源可拆到多个目标，同次输入共享来源行 version；每个来源在命令中只推进一次版本。每条 quantity 为 1～99999999 的实际正整数数量，target 必填；新批次相同 clientKey 共批时必须物料精确身份及单位一致。目标规则归 [Inventory](../../inventory/docs/public-contracts.md#采购和终检成品实际入库)。
 
-实际入库不受采购计划量、检验样本量或检验结果封顶。Procurement 在锁内复核未作废及同源身份，Inventory 在同池事务复核物料与目标批次资格并生成一张入库单、逐笔明细及唯一正库存流水。历史已入只从这些真实流水累计；没有可入授权量或未入余量，也不从说明推算实际退回。输入与结果以[入库契约](../../../../../../packages/contracts/src/procurement/inbounds.ts)为准；确认不接收说明或零入库明细。
+实际入库不受采购计划量、检验样本量或检验结果封顶。Procurement 在锁内复核未作废、未结束入库及同源身份，Inventory 在同池事务复核物料与目标批次资格并生成一张入库单、逐笔明细及唯一正库存流水。历史已入只从这些真实流水累计；没有可入授权量或未入余量，也不从说明推算实际退回。输入与结果以[入库契约](../../../../../../packages/contracts/src/procurement/inbounds.ts)为准；确认不接收说明或零入库明细。
+
+### 人工结束与恢复入库
+
+到货明细的 `inbound_closed` 由人员主动切换，默认未结束。结束后退出入库来源候选并禁止新增实际入库，恢复后重新作为候选；它不表示数量已收齐、检查完成、采购结束或全部实物已处理，不自动改变其他业务状态。
+
+`POST /procurement/receipt-lines/:id/inbound-status` 使用当前行版本设置开关。切换只要求记录存在、权限和并发版本有效，不以到货作废、采购状态、入库量、检查报告或补单为前置条件。作废行仍可切换，但恢复开关不解除作废对入库的限制。检验、补单、说明和原有库存事实不受该开关影响。命令沿来源锁序与入库互斥，改变时推进一次行版本；同值请求不产生业务变更。仅保存当前开关和通用行审计，成功变更写通用操作日志，不设专用状态历史、结束人或结束时间。
 
 ### 独立其他处理说明
 
@@ -45,9 +51,10 @@
 | /receipts/actions/confirm          | warehouse:receipts:confirm          |
 | /receipts/:id/actions/void         | warehouse:receipts:void             |
 | /receipt-lines/:id/handlings       | warehouse:receipts:handle           |
+| /receipt-lines/:id/inbound-status  | warehouse:receipts:handle           |
 | /receipt-lines/:id/inspect         | quality:inbound-inspections:inspect |
 | /purchase-inbounds/actions/confirm | warehouse:inbound:confirm-purchase  |
 
 登记采购候选、到货列表及到货行的入库／说明历史要求 warehouse:receipts:view；入库管理的来源候选及入库单历史要求 warehouse:inbound:view。质量来源与报告读取要求 quality:inbound-inspections:view。页面权限不替代每个写接口鉴权。
 
-所有写入要求 Idempotency-Key，完整规范化输入与语义 path 参与指纹；实际入库、作废包含各自提交版本，独立说明不携带来源版本。同键同请求重放首次成功结果，后续来源变化不重新执行；错误及未知结果恢复遵守[幂等契约](../../../../docs/idempotency.md)。scope 以[应用代码](../application/idempotency/procurement-idempotency-scopes.contract.ts)为准。
+所有写入要求 Idempotency-Key，完整规范化输入与语义 path 参与指纹；实际入库、作废及入库开关包含各自提交版本，独立说明不携带来源版本。同键同请求重放首次成功结果，后续来源变化不重新执行；错误及未知结果恢复遵守[幂等契约](../../../../docs/idempotency.md)。scope 以[应用代码](../application/idempotency/procurement-idempotency-scopes.contract.ts)为准。

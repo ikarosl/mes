@@ -60,6 +60,15 @@
       </TableToolbar>
       <div class="list-hint">
         <InlineHint>按到货单分页；展开后显示该到货单的全部物料。</InlineHint>
+        <SubmissionRecoveryNotice
+          :status="inboundStatus.status.value"
+          :busy="inboundStatus.busy.value"
+          :records-label="inboundStatusTarget?.label ?? '到货入库状态'"
+          :retry-disabled="route.name !== 'procurement-receipts'"
+          allow-restart
+          @retry="inboundStatus.retry"
+          @restart="inboundStatus.discard"
+        />
       </div>
       <el-alert
         v-if="error"
@@ -105,6 +114,8 @@
           :expanded="focusedExpanded"
           :highlighted-line-id="focusedLineId"
           focused
+          :inbound-status-disabled="blocked"
+          @inbound-status="toggleInboundStatus"
           @toggle="toggleFocused"
           @retry="refreshLocation"
           @detail="navigate"
@@ -127,6 +138,8 @@
           :expanded="expandedReceipts.has(receipt.id)"
           :highlighted-line-id="focusedLineId"
           :focused="focusedReceipt?.receipt.id === receipt.id"
+          :inbound-status-disabled="blocked"
+          @inbound-status="toggleInboundStatus"
           @toggle="toggleReceipt(receipt)"
           @retry="loadLines(receipt)"
           @detail="navigate"
@@ -156,14 +169,20 @@
 import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { Plus, Refresh } from '@element-plus/icons-vue';
+import type {
+  ProcurementReceiptLineOverview,
+  ReceiptInboundStatusResult,
+} from '@company/contracts';
 import { procurementApi } from '../../api/procurement';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import InlineHint from '../../components/InlineHint.vue';
+import SubmissionRecoveryNotice from '../../components/SubmissionRecoveryNotice.vue';
 import { EMessage } from '../../utils/message';
 import { useTabsStore } from '../../stores/tabs';
 import { useLatestReadRequest } from '../../composables/requests/useLatestReadRequest';
 import { usePurchaseReceipts } from './composables/usePurchaseReceipts';
+import { useProcurementCommand } from './composables/useProcurementCommand';
 import type { ReceiptDetailIntent } from './receipt-presentation';
 import ReceiptCreateDialog from './components/ReceiptCreateDialog.vue';
 import ReceiptDetailDialog from './components/ReceiptDetailDialog.vue';
@@ -214,9 +233,32 @@ const editor = ref<InstanceType<typeof ReceiptCreateDialog>>(),
   detail = ref<InstanceType<typeof ReceiptDetailDialog>>();
 const locator = useLatestReadRequest(() => {});
 const pageRoot = ref<HTMLElement>();
+const inboundStatusTarget = ref<{ receiptId: string; label: string } | null>(null);
+const inboundStatus = useProcurementCommand<ReceiptInboundStatusResult>((result) => {
+  if (inboundStatusTarget.value)
+    list.applyInboundStatus(result, inboundStatusTarget.value.receiptId);
+  inboundStatusTarget.value = null;
+}, '到货入库状态');
 const blocked = computed(
-  () => navigating.value || Boolean(editor.value?.locked || detail.value?.locked),
+  () =>
+    navigating.value ||
+    inboundStatus.locked.value ||
+    Boolean(editor.value?.locked || detail.value?.locked),
 );
+async function toggleInboundStatus(line: ProcurementReceiptLineOverview): Promise<void> {
+  if (blocked.value || route.name !== 'procurement-receipts') return;
+  const id = line.id;
+  const body = { inboundClosed: !line.inboundClosed, version: line.version };
+  inboundStatusTarget.value = {
+    receiptId: line.receiptId,
+    label: `${line.receiptNo} · ${line.materialVariantCode} 的入库状态`,
+  };
+  await inboundStatus.run(
+    { intentType: 'procurement.receipt.inbound-status', params: { id }, query: {}, body },
+    (key) => procurementApi.setReceiptInboundStatus(id, body, key),
+    body.inboundClosed ? '已结束入库' : '已恢复入库',
+  );
+}
 let pendingLocate = false;
 const finishNavigation = (): void => {
   navigating.value = false;
@@ -226,6 +268,7 @@ const finishNavigation = (): void => {
   }
 };
 const release = async (): Promise<boolean> => {
+  if (!(await inboundStatus.canClose())) return false;
   if (editor.value?.visible && !(await editor.value.close())) return false;
   if (detail.value?.visible && !(await detail.value.close())) return false;
   if (editor.value?.locked || detail.value?.locked) {

@@ -6,20 +6,20 @@
 
 ## 仓库简化实验分支
 
-本分支 `experiment/warehouse-simplification` 基于追踪卡实验，采用[仓库独立办理方案](docs/adr/0028-independent-warehouse-receipt-and-inspection.md)。到货登记、检查报告、仓库实际入库与补单独立办理。首次切换实验模型使用新建独立空库，不转换实验之前的旧业务模型；此后实验库已有数据通过增量迁移保留升级。原业务库不要执行破坏性的实验初始迁移，已有基线文件保持不可变。
+本分支 `codex/experiment-warehouse-documents` 基于仓库简化实验，采用[统一出入库管理](docs/adr/0030-unified-stock-document-management.md)。物料／成品按单据类型分区，业务创建仍分别办理；到货人工结束／恢复入库不引入数量授权。此次切换使用新建独立空库，不转换旧测试库存及混合单。原数据库不自动清理，已有基线及增量文件保持不可变；后续升级按迁移安全约定执行。
 
 在 PowerShell 为本次命令指定独立库，连接及凭据仍从本机 `.env` 读取：
 
 ```powershell
-$env:DB_NAME='easy_mes_warehouse_simplification_20261111'
+$env:DB_NAME='easy_mes_warehouse_documents_20261116'
 corepack pnpm db:init
 $env:ALLOW_DEMO_SEED='1'
 corepack pnpm db:seed:demo
-$env:APP_PORT='3003'
+$env:APP_PORT='3005'
 corepack pnpm exec turbo watch dev:serve --filter=@company/api --env-mode=loose
 ```
 
-管理端在另一个终端设置同一 `APP_PORT=3003`，运行 `corepack pnpm exec turbo watch dev:serve --filter=@company/admin-web --env-mode=loose`；以 Vite 输出地址访问。仓库和追踪卡场景工具见[演示入口](tools/demo/README.md)。实验范围、当前规则和验收状态分别由 ADR、模块文档和路线图维护。
+管理端在另一个终端设置同一 `APP_PORT=3005`，运行 `corepack pnpm exec turbo watch dev:serve --filter=@company/admin-web --env-mode=loose`；以 Vite 输出地址访问。仓库和追踪卡场景工具见[演示入口](tools/demo/README.md)。实验范围、当前规则和验收状态分别由 ADR、模块文档和路线图维护。
 
 ## 快速开始（测试环境）
 

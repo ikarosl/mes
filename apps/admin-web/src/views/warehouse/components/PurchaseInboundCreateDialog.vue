@@ -1,13 +1,12 @@
 <template>
-  <div class="purchase-inbounds">
-    <el-radio-group
-      v-model="view"
-      @change="refresh"
+  <div>
+    <el-dialog
+      v-model="selectorVisible"
+      title="选择采购入库来源"
+      :width="DialogWidth.workbench"
+      workbench
+      :before-close="closeSelector"
     >
-      <el-radio-button value="sources">到货入库</el-radio-button>
-      <el-radio-button value="history">已入库记录</el-radio-button>
-    </el-radio-group>
-    <template v-if="view === 'sources'">
       <section class="query-panel">
         <el-form
           inline
@@ -82,115 +81,11 @@
           @update:page-size="sourceSize"
         />
       </section>
-    </template>
-    <template v-else>
-      <section class="query-panel">
-        <el-form
-          inline
-          @submit.prevent="searchHistory"
-          ><el-form-item label="关键词"
-            ><el-input
-              v-model="historyKeyword"
-              clearable
-              placeholder="入库单号或供应商" /></el-form-item
-          ><el-form-item
-            ><el-button
-              type="primary"
-              :loading="history.loading.value"
-              @click="searchHistory"
-              >查询</el-button
-            ><el-button @click="resetHistory">重置</el-button></el-form-item
-          ></el-form
-        >
-      </section>
-      <section class="table-panel">
-        <TableToolbar
-          ><template #tools
-            ><el-button
-              :icon="Refresh"
-              text
-              circle
-              aria-label="刷新入库历史"
-              :loading="history.loading.value"
-              @click="loadHistory(true)" /></template
-        ></TableToolbar>
-        <section
-          v-if="currentInboundId && !locatedOnPage"
-          class="current-location"
-        >
-          <div
-            v-if="detachedOrder"
-            class="current-location-note"
-          >
-            此定位单不计入当前筛选页
-          </div>
-          <div
-            v-else
-            class="current-location-heading"
-          >
-            <strong>当前定位</strong>
-            <span>入库单 ID {{ currentInboundId }} · 不计入当前筛选页</span>
-            <el-button
-              link
-              @click="clearHistoryLocation"
-              >取消定位</el-button
-            >
-          </div>
-          <div
-            v-loading="history.detailLoading.value"
-            class="current-location-body"
-          >
-            <div
-              v-if="!detachedOrder && !history.detailError.value"
-              class="location-status"
-            >
-              {{ history.loading.value ? '正在核对当前页…' : '正在读取定位单…' }}
-            </div>
-            <el-alert
-              v-if="history.detailError.value"
-              :title="history.detailError.value"
-              type="error"
-              :closable="false"
-            />
-            <el-button
-              v-if="history.detailError.value"
-              type="primary"
-              link
-              @click="retryHistoryLocation"
-              >重试读取定位单</el-button
-            >
-            <PurchaseInboundHistoryGroups
-              v-if="detachedOrder"
-              :rows="[detachedOrder]"
-              :expanded-ids="historyExpansion.expandedIds.value"
-              :loading="false"
-              :located-inbound-id="currentInboundId"
-              :go-source="goSource"
-              @toggle="historyExpansion.toggle"
-              @clear-location="clearHistoryLocation"
-            />
-          </div>
-        </section>
-        <PurchaseInboundHistoryGroups
-          :rows="history.rows.value"
-          :expanded-ids="historyExpansion.expandedIds.value"
-          :loading="history.loading.value"
-          :located-inbound-id="currentInboundId"
-          :go-source="goSource"
-          @toggle="historyExpansion.toggle"
-          @clear-location="clearHistoryLocation"
-        />
-        <PaginationFooter
-          :total="history.total.value"
-          :current-page="historyPage"
-          :page-size="historySize"
-          @page-change="changeHistoryPage"
-          @update:page-size="changeHistorySize"
-        />
-      </section>
-    </template>
+
+      <template #footer><el-button @click="closeSelector()">关闭</el-button></template>
+    </el-dialog>
     <el-dialog
-      :model-value="active && pageActive && sources.visible.value"
+      :model-value="pageActive && sources.visible.value"
       title="核对外购物料入库"
       :width="DialogWidth.workbench"
       workbench
@@ -401,11 +296,10 @@
     </el-dialog>
   </div>
 </template>
-
 <script setup lang="ts">
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
-import { computed, onActivated, onDeactivated, onMounted, onScopeDispose, ref, watch } from 'vue';
-import { useRoute, useRouter } from 'vue-router';
+import { computed, onActivated, onDeactivated, onScopeDispose, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { Refresh } from '@element-plus/icons-vue';
 import { useTabsStore } from '../../../stores/tabs';
@@ -413,55 +307,27 @@ import TableToolbar from '../../../components/TableToolbar.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { DialogWidth } from '../../../utils/dialog';
-import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
-import { usePurchaseInbounds } from '../composables/use-purchase-inbounds';
-import { useInboundHistoryExpansion } from '../composables/use-inbound-history-expansion';
 import { usePurchaseInboundSources } from '../composables/usePurchaseInboundSources';
-import PurchaseInboundHistoryGroups from './PurchaseInboundHistoryGroups.vue';
 import PurchaseInboundSourceGroups from './PurchaseInboundSourceGroups.vue';
 import InboundBatchTargetPicker from './InboundBatchTargetPicker.vue';
 import InboundSplitControl from './InboundSplitControl.vue';
 
-defineOptions({ name: 'PurchaseInboundPanel' });
-const props = withDefaults(
-  defineProps<{
-    active?: boolean;
-    requestedInboundId?: string | null;
-    requestedReceiptLineId?: string | null;
-  }>(),
-  { active: true, requestedInboundId: null, requestedReceiptLineId: null },
-);
-const route = useRoute(),
-  router = useRouter();
-const { canAccessRoute } = useRouteAccess();
-const goSource = async (name: string, query: Record<string, string>): Promise<void> => {
-  if (!canAccessRoute({ name, query })) return;
-  if (sources.command.locked.value || sources.checking.value) {
-    EMessage.warning('请先完成当前入库操作的核对或原操作重试');
-    return;
-  }
-  await router.push({ name, query });
-};
-const view = ref('sources'),
-  history = usePurchaseInbounds();
-const historyKeyword = ref(''),
-  historyPage = ref(1),
-  historySize = ref(10);
-const historyExpansion = useInboundHistoryExpansion();
-const currentInboundId = ref<string | null>(null);
+defineOptions({ name: 'PurchaseInboundCreateDialog' });
+const props = defineProps<{ tabName: string }>();
+const emit = defineEmits<{ changed: [] }>();
+const selectorVisible = ref(false);
 const pageActive = ref(true);
-const sources = usePurchaseInboundSources();
-const locatedOnPage = computed(
-  () =>
-    !!currentInboundId.value &&
-    history.rows.value.some((row) => row.inboundId === currentInboundId.value),
-);
-const detachedOrder = computed(() =>
-  !locatedOnPage.value && history.detail.value?.inboundId === currentInboundId.value
-    ? history.detail.value
-    : null,
-);
+const router = useRouter();
+const { canAccessRoute } = useRouteAccess();
+const sources = usePurchaseInboundSources(async () => {
+  selectorVisible.value = false;
+  emit('changed');
+});
+async function goSource(name: string, query: Record<string, string>): Promise<void> {
+  if (!canAccessRoute({ name, query }) || sources.locked.value) return;
+  await router.push({ name, query });
+}
 const selectedReceiptGroups = computed(() => {
   const byReceipt = new Map<
     string,
@@ -507,241 +373,47 @@ const quantitySummaries = computed(() => {
 const targetRowNumbers = computed(
   () => new Map(sources.selected.value.map((row, index) => [row.rowKey, index + 1])),
 );
-let historyLoadSequence = 0;
-const syncHistoryLocation = async (refreshDetached = false): Promise<void> => {
-  if (!pageActive.value || !props.active || view.value !== 'history') return;
-  const id = currentInboundId.value;
-  if (!id) return;
-  if (locatedOnPage.value) {
-    history.closeDetail();
-    return;
-  }
-  if (refreshDetached || history.detail.value?.inboundId !== id) await history.loadDetail(id);
-};
-const loadHistory = async (refreshDetached = false): Promise<void> => {
-  if (!pageActive.value || !props.active || view.value !== 'history') return;
-  const sequence = ++historyLoadSequence;
-  const loaded = await history.load({
-    page: historyPage.value,
-    pageSize: historySize.value,
-    keyword: historyKeyword.value.trim() || undefined,
-    status: 'completed',
-  });
-  if (
-    loaded &&
-    sequence === historyLoadSequence &&
-    pageActive.value &&
-    props.active &&
-    view.value === 'history'
-  ) {
-    historyExpansion.sync(
-      history.rows.value.map((row) => row.inboundId),
-      currentInboundId.value,
-    );
-    await syncHistoryLocation(refreshDetached);
-  }
-};
-const searchHistory = () => {
-  historyPage.value = 1;
-  historyExpansion.initializeNextLoad();
-  return loadHistory();
-};
-const resetHistory = () => {
-  historyKeyword.value = '';
-  return searchHistory();
-};
-const changeHistoryPage = (page: number) => {
-  historyPage.value = page;
-  historyExpansion.initializeNextLoad();
-  return loadHistory();
-};
-const changeHistorySize = (size: number) => {
-  historySize.value = size;
-  return searchHistory();
-};
-const sourcePage = (page: number) => {
-  sources.page.value = page;
+
+async function open(receiptLineId?: string): Promise<void> {
+  selectorVisible.value = true;
+  if (receiptLineId) sources.query.receiptLineId = receiptLineId;
+  await sources.load();
+}
+async function closeSelector(done?: () => void): Promise<void> {
+  if (!(await sources.clear())) return;
+  selectorVisible.value = false;
+  done?.();
+}
+const sourcePage = (value: number) => {
+  sources.page.value = value;
   return sources.load();
 };
-const sourceSize = (size: number) => {
-  sources.pageSize.value = size;
+const sourceSize = (value: number) => {
+  sources.pageSize.value = value;
   return sources.search();
-};
-const refresh = () => (view.value === 'sources' ? sources.load() : loadHistory());
-const refreshActive = async (): Promise<void> => {
-  if (!pageActive.value || !props.active) return;
-  if (view.value === 'history') await loadHistory(true);
-  else await sources.load();
-  if (pageActive.value && sources.visible.value && !sources.command.locked.value)
-    await sources.recheck(false);
 };
 const closeConfirmation = () => {
   void sources.close();
 };
-async function showInbound(id: string): Promise<void> {
-  view.value = 'history';
-  currentInboundId.value = id;
-  historyExpansion.retain(
-    history.rows.value.map((row) => row.inboundId),
-    id,
-  );
-  historyExpansion.expand(id);
-  history.closeDetail();
-  await loadHistory();
-}
-function clearHistoryLocation(): void {
-  const oldId = currentInboundId.value;
-  currentInboundId.value = null;
-  historyExpansion.retain(history.rows.value.map((row) => row.inboundId));
-  history.closeDetail();
-  if (oldId && route.name === 'warehouse-inbound' && route.query.inboundId === oldId)
-    void router.replace({ query: { ...route.query, inboundId: undefined } });
-}
-function retryHistoryLocation(): void {
-  const id = currentInboundId.value;
-  if (id && !locatedOnPage.value) void history.loadDetail(id);
-}
-let navigating = false;
-let consumedLocation = '';
-let pendingLocation: readonly [string | null | undefined, string | null | undefined] | null = null;
-async function locate(
-  inboundId: string | null | undefined,
-  receiptLineId: string | null | undefined,
-): Promise<void> {
-  if (!pageActive.value) {
-    pendingLocation = [inboundId, receiptLineId];
-    return;
-  }
-  const token = JSON.stringify([inboundId ?? '', receiptLineId ?? '']);
-  if (token === consumedLocation) return;
-  if (!inboundId && !receiptLineId) {
-    consumedLocation = token;
-    pendingLocation = null;
-    if (currentInboundId.value) {
-      historyLoadSequence += 1;
-      history.cancelList();
-      history.closeDetail();
-      currentInboundId.value = null;
-      historyExpansion.retain(history.rows.value.map((row) => row.inboundId));
-    }
-    return;
-  }
-  if (navigating) {
-    pendingLocation = [inboundId, receiptLineId];
-    historyLoadSequence += 1;
-    history.cancelList();
-    history.closeDetail();
-    return;
-  }
-  if (
-    (inboundId && inboundId === currentInboundId.value && view.value === 'history') ||
-    (!inboundId && receiptLineId === sources.query.receiptLineId && view.value === 'sources')
-  )
-    return;
-  consumedLocation = token;
-  const restore = async () => {
-    if (route.name !== 'warehouse-inbound') return;
-    if (route.query.inboundId !== inboundId && route.query.receiptLineId !== receiptLineId) return;
-    await router.replace({
-      query: {
-        ...route.query,
-        sourceType: 'purchased',
-        inboundId: currentInboundId.value || undefined,
-        receiptLineId: sources.query.receiptLineId || undefined,
-      },
-    });
-  };
-  navigating = true;
-  try {
-    if (sources.command.locked.value || sources.checking.value) {
-      EMessage.warning('请先完成当前入库操作的核对或原操作重试');
-      await restore();
-      return;
-    }
-    if (sources.selected.value.length && !(await sources.clear())) {
-      await restore();
-      return;
-    }
-    if (
-      !pageActive.value ||
-      route.name !== 'warehouse-inbound' ||
-      inboundId !== props.requestedInboundId ||
-      receiptLineId !== props.requestedReceiptLineId
-    )
-      return;
-    if (inboundId) {
-      await showInbound(inboundId);
-    } else if (receiptLineId) {
-      clearHistoryLocation();
-      view.value = 'sources';
-      sources.query.receiptLineId = receiptLineId;
-      await sources.search();
-    }
-  } finally {
-    navigating = false;
-    const next = pendingLocation;
-    pendingLocation = null;
-    if (next && next[0] === props.requestedInboundId && next[1] === props.requestedReceiptLineId)
-      void locate(next[0], next[1]);
-  }
-}
-watch(
-  () => [props.requestedInboundId, props.requestedReceiptLineId] as const,
-  ([id, receiptLineId]) => {
-    void locate(id, receiptLineId);
-  },
-  { immediate: true },
-);
-watch(view, (value) => {
-  if (value !== 'history') {
-    historyLoadSequence += 1;
-    history.cancelList();
-    history.closeDetail();
-  }
-});
-onMounted(() => {
-  if (props.active && !props.requestedInboundId && !props.requestedReceiptLineId)
-    void refreshActive();
-});
-watch(
-  () => props.active,
-  (active) => {
-    if (!active) {
-      historyLoadSequence += 1;
-      history.cancelList();
-      history.closeDetail();
-    }
-  },
-);
 onActivated(() => {
   pageActive.value = true;
-  const next = pendingLocation;
-  pendingLocation = null;
-  if (next) void locate(next[0], next[1]);
 });
 onDeactivated(() => {
   pageActive.value = false;
-  historyLoadSequence += 1;
-  history.cancelList();
-  history.closeDetail();
 });
-onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', sources.clear));
+onScopeDispose(useTabsStore().registerCloseGuard(props.tabName, sources.clear));
+defineExpose({ open });
 </script>
-
 <style scoped>
-.purchase-inbounds {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
 .query-panel,
 .table-panel {
   border: 1px solid var(--el-border-color);
-  background: #fff;
+  background: var(--el-bg-color);
   border-radius: 6px;
 }
 .query-panel {
   padding: 16px 16px 0;
+  margin-bottom: 16px;
 }
 .query-panel :deep(.el-input) {
   width: 280px;
@@ -805,46 +477,6 @@ onScopeDispose(useTabsStore().registerCloseGuard('warehouse-inbound', sources.cl
 }
 .remark-form {
   margin-top: 16px;
-}
-.inbound-hint {
-  margin: 0;
-}
-.current-location {
-  margin: 0 16px 12px;
-  border: 1px solid var(--el-color-primary-light-5);
-  border-radius: var(--el-border-radius-base);
-  overflow: hidden;
-}
-.current-location-heading {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px 12px;
-  padding: 10px 16px;
-  background: var(--el-color-primary-light-9);
-  font-size: 13px;
-}
-.current-location-note {
-  padding: 8px 16px;
-  color: var(--el-text-color-secondary);
-  font-size: 12px;
-}
-.current-location-heading span {
-  flex: 1 1 auto;
-  overflow-wrap: anywhere;
-  color: var(--el-text-color-regular);
-}
-.current-location-body {
-  min-height: 48px;
-}
-.location-status {
-  padding: 12px 16px;
-  color: var(--el-text-color-secondary);
-  font-size: 13px;
-}
-.current-location-body > :deep(.el-alert),
-.current-location-body > :deep(.el-button) {
-  margin: 8px 16px;
 }
 .quantity-summary {
   display: flex;

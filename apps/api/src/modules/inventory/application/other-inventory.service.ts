@@ -3,7 +3,6 @@ import type {
   OtherInventoryDirection,
   OtherInventoryDraftPayload,
   OtherInventoryOrder,
-  OtherInventoryOrderQuery,
   OtherStockCandidateQuery,
   OtherStockMaterialQuery,
   OtherStockMaterials,
@@ -28,10 +27,6 @@ export class OtherInventoryService {
     private readonly objects: ProductOtherStockQuery,
     private readonly idempotency: IdempotencyExecutor,
   ) {}
-  async list(direction: OtherInventoryDirection, query: OtherInventoryOrderQuery) {
-    const result = await this.repository.list(direction, query);
-    return { ...result, items: await this.enrich(result.items) };
-  }
   async get(direction: OtherInventoryDirection, id: string) {
     return (await this.enrich([await this.repository.get(direction, id)]))[0]!;
   }

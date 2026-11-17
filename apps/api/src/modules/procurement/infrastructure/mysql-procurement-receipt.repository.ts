@@ -8,6 +8,7 @@ import type {
   ConfirmProcurementInboundPayload,
   VoidProcurementReceiptPayload,
   QualityIncomingInspectionReportInput,
+  SetReceiptInboundStatusPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -19,6 +20,7 @@ import { confirmReceiptArrival } from './mysql-receipt-arrival.operation.js';
 import { confirmReceiptInbound } from './mysql-receipt-inbound.operation.js';
 import { recordReceiptHandling } from './mysql-receipt-handling.operation.js';
 import { voidProcurementReceipt } from './mysql-receipt-void.operation.js';
+import { setReceiptInboundStatus } from './mysql-receipt-inbound-status.operation.js';
 import { lockReceiptLines } from './mysql-receipt.shared.js';
 import { readReceiptLine } from './queries/receipt-lines.query.js';
 
@@ -37,6 +39,9 @@ export class MysqlProcurementReceiptRepository extends ProcurementReceiptReposit
     return withTransaction(this.pool, (db) =>
       voidProcurementReceipt(db, id, payload, context, this.inventoryQuery),
     );
+  }
+  setInboundStatus(id: string, payload: SetReceiptInboundStatusPayload, context: CommandContext) {
+    return withTransaction(this.pool, (db) => setReceiptInboundStatus(db, id, payload, context));
   }
   confirmReceipt(payload: ConfirmProcurementReceiptPayload, context: CommandContext) {
     return withTransaction(this.pool, (db) =>

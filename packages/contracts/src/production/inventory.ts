@@ -1,5 +1,10 @@
 import type { PageQuery, ReasonedVersionedCommand, VersionedCommand } from '../common.js';
 import type {
+  StockDocumentDirection,
+  StockDocumentItemKind,
+  StockDocumentSourceType,
+} from '../stock-documents.js';
+import type {
   ReturnOrderStatus,
   ScrapStatus,
   StockCheckStatus,
@@ -11,11 +16,6 @@ import type {
   InventoryTransactionType,
   DemandType,
 } from './statuses.js';
-
-export interface ReturnOrderQuery extends PageQuery {
-  keyword?: string;
-  status?: ReturnOrderStatus;
-}
 
 export interface ReturnOrderBatchOption {
   productionBatchId: string;
@@ -351,6 +351,11 @@ export interface InventoryBatchTransactionItem {
   stockStatus: StockStatus;
   referenceType: InventoryReferenceType;
   referenceDetailId: string;
+  referenceOrderId: string;
+  referenceOrderNoSnapshot: string;
+  direction: StockDocumentDirection | null;
+  itemKind: StockDocumentItemKind;
+  sourceType: StockDocumentSourceType | null;
   transactionGroupKey: string | null;
   reversalOfInventoryTransactionId: string | null;
   remark: string | null;

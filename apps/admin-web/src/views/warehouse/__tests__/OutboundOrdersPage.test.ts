@@ -1,9 +1,3 @@
-import { describe, it } from 'vitest';
-
-// TODO(outbound-orders): 保留版本提交与打印资源清理场景；正式测试获准并迁移至出库子页后恢复。
-
-describe('OutboundOrdersPage', () => {
-  it.todo('uses current query/table layout and exposes only the supported pending order actions');
-  it.todo('prints through a hidden iframe without opening a new window and cleans it up');
-  it.todo('confirms the exact outbound row version and refreshes the list after success');
-});
+// TODO(outbound-order-confirmation): 验证整单领料确认使用准确的主单版本并在成功后刷新统一出库列表；
+// 涉及库存扣减及乐观锁的高重要性覆盖，旧出库分类页已由统一出库管理替代；
+// 恢复条件：用户确认设计并明确授权正式测试后，按现行出库动作、幂等意图及统一列表恢复。

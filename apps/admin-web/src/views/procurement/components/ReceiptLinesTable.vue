@@ -51,6 +51,7 @@
       <template #column-widths
         ><col style="width: 130px" />
         <col style="width: 130px" />
+        <col style="width: 125px" />
         <col style="width: 150px" />
         <col style="width: 240px" />
         <col style="width: 165px"
@@ -58,6 +59,7 @@
       <template #column-headings
         ><th scope="col">计划采购量</th>
         <th scope="col">累计已入库</th>
+        <th scope="col">入库状态</th>
         <th
           scope="col"
           title="记录数包含登记和修订历史，不代表检查次数"
@@ -76,6 +78,11 @@
         ><td>{{ Number(row.plannedQuantity) }} {{ row.unit }}</td>
         <td>
           <strong>{{ Number(row.quantities.inboundQuantity) }}</strong> {{ row.unit }}
+        </td>
+        <td>
+          <el-tag :type="row.inboundClosed ? 'info' : 'success'">{{
+            RECEIPT_INBOUND_STATUS_LABELS[row.inboundClosed ? 'closed' : 'open']
+          }}</el-tag>
         </td>
         <td>
           <span
@@ -112,6 +119,15 @@
         <td class="handling-note">{{ row.otherHandlingNote || '—' }}</td>
         <td class="actions-cell">
           <div class="line-actions">
+            <el-button
+              link
+              type="primary"
+              :disabled="inboundStatusDisabled || Boolean(state?.loading || state?.error)"
+              @click="emit('inbound-status', row)"
+              >{{
+                RECEIPT_INBOUND_STATUS_ACTION_LABELS[row.inboundClosed ? 'closed' : 'open']
+              }}</el-button
+            >
             <el-button
               v-if="!isReceiptVoided(row)"
               link
@@ -170,7 +186,15 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue';
-import type { ProcurementReceiptItem, QualityIncomingInspectionLineItem } from '@company/contracts';
+import type {
+  ProcurementReceiptItem,
+  ProcurementReceiptLineOverview,
+  QualityIncomingInspectionLineItem,
+} from '@company/contracts';
+import {
+  RECEIPT_INBOUND_STATUS_LABELS,
+  RECEIPT_INBOUND_STATUS_ACTION_LABELS,
+} from '@company/constants';
 import { incomingInspectionReceiptsApi } from '../../../api/incoming-inspection-receipts';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
@@ -187,11 +211,13 @@ const props = defineProps<{
   expanded: boolean;
   highlightedLineId?: string;
   focused?: boolean;
+  inboundStatusDisabled?: boolean;
 }>();
 const emit = defineEmits<{
   detail: [receiptId: string, lineId?: string, intent?: ReceiptDetailIntent];
   toggle: [];
   retry: [];
+  'inbound-status': [line: ProcurementReceiptLineOverview];
 }>();
 const header = computed(() => (props.state?.loaded ? props.state.receipt : props.receipt));
 const { canAccessRoute } = useRouteAccess();
@@ -288,7 +314,7 @@ watch(
   border-top: 1px solid var(--el-border-color-lighter);
 }
 .purchase-receipt :deep(.receipt-table) {
-  min-width: 1115px;
+  min-width: 1240px;
 }
 .receipt-actions {
   display: flex;

@@ -34,15 +34,14 @@ const sameBasis = (
   left.receiptLineVersion === right.receiptLineVersion;
 
 /** 列表窗口与跨页已选独立；显式核对只替换同一明细依据，绝不换成拆分后的子明细。 */
-export function usePurchaseInboundSources() {
+export function usePurchaseInboundSources(afterWrite?: () => void | Promise<void>) {
   const query = reactive({ keyword: '', receiptLineId: '' });
   const rows = ref<ProcurementInboundSourceItem[]>([]);
   const page = ref(1),
     pageSize = ref(10),
     total = ref(0),
     loading = ref(false),
-    loadError = ref(''),
-    hasLoaded = ref(false);
+    loadError = ref('');
   const selected = ref<SelectedSource[]>([]),
     remark = ref(''),
     visible = ref(false);
@@ -60,6 +59,7 @@ export function usePurchaseInboundSources() {
     visible.value = false;
     checkError.value = '';
     await load();
+    await afterWrite?.();
   }, '入库单');
   const locked = computed(() => command.locked.value || checking.value);
   const batchIdentity = (source: ProcurementInboundSourceItem): string =>
@@ -140,7 +140,6 @@ export function usePurchaseInboundSources() {
       if (!current.isCurrent()) return;
       rows.value = result.items;
       total.value = result.total;
-      hasLoaded.value = true;
     } catch (error) {
       if (current.isCurrent()) {
         loadError.value = '到货明细读取失败，请重试';
@@ -390,7 +389,6 @@ export function usePurchaseInboundSources() {
     total,
     loading,
     loadError,
-    hasLoaded,
     selected,
     remark,
     visible,

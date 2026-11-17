@@ -28,6 +28,10 @@ import { MysqlInventoryInboundRepository } from './infrastructure/mysql-inventor
 import { MysqlInventoryStockCheckRepository } from './infrastructure/mysql-inventory-stock-check.repository.js';
 import { InventoryStockCheckController } from './presentation/http/inventory-stock-check.controller.js';
 import { InboundBatchCandidateController } from './presentation/http/inbound-batch-candidate.controller.js';
+import { StockDocumentQueryService } from './application/stock-document-query.service.js';
+import { StockDocumentQueryPort } from './application/ports/stock-document-query.port.js';
+import { MysqlStockDocumentQuery } from './infrastructure/queries/mysql-stock-document.query.js';
+import { StockDocumentQueryController } from './presentation/http/stock-document-query.controller.js';
 
 @Module({
   imports: [DatabaseModule, ProductModule, IdentityModule, IdempotencyModule],
@@ -37,9 +41,12 @@ import { InboundBatchCandidateController } from './presentation/http/inbound-bat
     OtherStockCandidateController,
     InventoryStockCheckController,
     InboundBatchCandidateController,
+    StockDocumentQueryController,
   ],
   providers: [
     OtherInventoryService,
+    StockDocumentQueryService,
+    { provide: StockDocumentQueryPort, useClass: MysqlStockDocumentQuery },
     { provide: OtherInventoryRepository, useClass: MysqlOtherInventoryRepository },
     {
       provide: InventoryProductionDocumentCommand,

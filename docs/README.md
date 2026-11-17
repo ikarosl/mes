@@ -92,3 +92,4 @@
 - [追踪卡工作台与终检产出](adr/0027-tracking-card-workbench-and-terminal-output.md)：实验分支的轻量生产模型、可接受的数据误差及旧方案取代范围
 - [仓库收货、来料报告与补单独立办理](adr/0028-independent-warehouse-receipt-and-inspection.md)：到货来源、独立报告、实际入库与补单的解耦及实验空库边界
 - [终检待入库、人工归批与任务恢复](adr/0029-terminal-output-manual-inbound-and-task-reopen.md)：产出与交仓分离、同任务归批及恢复执行，保留已有数据增量升级
+- [按库存对象统一出入库单据管理](adr/0030-unified-stock-document-management.md)：物料／成品分区、公共单据查询、方向编号及人工结束入库

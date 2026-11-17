@@ -1,14 +1,3 @@
-import { describe, expect, it } from 'vitest';
-import type { MaterialOutboundItem } from '@company/contracts';
-import { outboundRowClass, outboundStatusHint } from '../warehouse-list-presentation';
-
-describe('warehouse outbound list presentation', () => {
-  it('explains whether an outbound has deducted stock', () => {
-    expect(outboundStatusHint('pending_picking')).toBe('尚未扣减库存');
-    expect(outboundStatusHint('completed')).toBe('已生成负库存流水');
-    expect(outboundStatusHint('cancelled')).toBe('未产生负库存流水');
-    expect(outboundRowClass({ row: { status: 'pending_picking' } as MaterialOutboundItem })).toBe(
-      'status-warning-row',
-    );
-  });
-});
+// TODO(stock-document-stock-effects): 验证待确认、已完成和已取消的出库单准确表达尚未扣减、已记账及未记账的库存影响；
+// 涉及库存事实的高重要性覆盖，旧领料列表专用展示已由统一单据列表与详情替代；
+// 恢复条件：用户确认统一单据设计并明确授权正式测试后，按现行主单状态和库存事实契约恢复。

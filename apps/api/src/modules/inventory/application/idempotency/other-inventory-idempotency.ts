@@ -32,6 +32,7 @@ const order = z
     id: positiveId,
     orderNo: z.string(),
     direction: z.enum(['inbound', 'outbound']),
+    itemKind: z.enum(['material', 'finished_product']),
     status: z.enum(['pending', 'pending_picking', 'completed', 'cancelled']),
     version: z.number().int().nonnegative(),
     reason: z.string(),

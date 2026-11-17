@@ -8,6 +8,7 @@
 | [采购金额](prepare-procurement-amount-demo.mjs)       | 报价、含税总额、舍入、正式单更正及审计                                       |
 | [追踪卡](prepare-tracking-workbench-demo.mjs)         | 扫码、异常结算、末站产出与库存                                               |
 | [审批开关](prepare-optional-approval-demo.mjs)         | 独立 BOM 草稿及研发人工需求，保留给人工提交、更正与关闭                      |
+| [仓库单据](prepare-warehouse-documents-demo.mjs) | 物料／成品单种多行其他入出库、草稿／确认／取消、方向共号及直接流水单号 |
 
 ## 前置准备
 
@@ -89,3 +90,19 @@ node tools/demo/prepare-tracking-workbench-demo.mjs prepare
 第二盘先登记影响3件的异常，按返修1件与新增报废2件一次结算；另两条各影响2件的异常分别引用相同的已有报废，不再次扣量，也不累计耗用引用额度。场景记录同幂等键重放的盘量、未结异常扫码拒绝、最终剩余量产出和全报废无产出的观察结果。盘量更正与报废结算分别留痕，历史过站5件保持原值。本组有效产出25件、入库19件、待入库6件，另保留一条2件已撤销记录及回到末站的卡；全报废卡无产出和库存。数量不包含任务原有事实，计划量不阻止这些样例实际产出。
 
 `prepare` 通过公开 API 写入以上单据、处理事实及库存，不自动结束任务；留下正量未结、零量未结和未用卡供人工继续办理。重复同 TAG 只读取报告，不覆盖、修复或续写已存在的样例，准备中断后换新 TAG 建立另一组；确认成品入库需要 warehouse:inbound:confirm-finished，工具不自动修改角色授权。`report` 只读取该组当前状态，不重新执行历史观察；准备时输出的 `preparedObservations` 可保存到 `temp/`。业务语义见[追踪卡所有者](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
+
+## 仓库单据整合样例
+
+[仓库单据工具](prepare-warehouse-documents-demo.mjs)只通过其他入／出库命令，为物料、成品各准备一张多行草稿、一张多行已确认单及一张多行已取消单，共十二张主单。确认入库使用新批次，出库只引用本组已入库的批次；所有样例先保存一次草稿修改。工具不新增采购、生产或质量来源，不覆盖其他单据和库存。
+
+```powershell
+$env:ALLOW_DEMO_SEED='1'
+$env:WAREHOUSE_DOCUMENTS_DEMO_API_BASE_URL='http://127.0.0.1:3005/api'
+$env:WAREHOUSE_DOCUMENTS_DEMO_TAG='acceptance_01'
+node tools/demo/prepare-warehouse-documents-demo.mjs prepare
+node tools/demo/prepare-warehouse-documents-demo.mjs report
+```
+
+地址默认本机 3005，拒绝远程主机、URL 凭证、查询串、片段及重定向。TAG 默认 sample，接受 1～40 位字母、数字、下划线或连字符并统一小写；备注标记为 `[demo-warehouse-documents-v1:TAG]`。运行前要求已有 `demo-stock-multi-v1-A/B` 两个启用物料版本，以及 `demo-stock-product`、`demo-stock-product-second` 两个启用成品。所有主数据候选在首次写入前读取，资格仍由各命令核验。
+
+创建顺序交错物料与成品，以方向日序列展示共同取号；报告读取统一单据列表、详情及批次流水，列出当前单据状态、两条明细和实际主单编号引用。编号不要求无缺口，报告不将用户后续操作改回初始样例。相同 TAG 任一单据已存在时，prepare 只输出当前报告，不补缺、续写或覆盖；中断后先 report，再用新 TAG 准备另一组。报告输出可保存在 `temp/`，场景准备和观测不代表正式测试或用户验收通过。

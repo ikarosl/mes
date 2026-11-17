@@ -396,13 +396,8 @@ describe('productionApi', () => {
     });
   });
 
-  it('uses real material outbound list, detail, candidate, confirm and cancel endpoints', async () => {
+  it('uses material outbound detail, candidate, confirm and cancel endpoints', async () => {
     const { productionMaterialOutboundsApi } = await import('../production/material-outbounds');
-    await productionMaterialOutboundsApi.listMaterialOutboundOrders({
-      page: 1,
-      pageSize: 20,
-      status: 'pending_picking',
-    });
     await productionMaterialOutboundsApi.getMaterialOutbound('8');
     await productionMaterialOutboundsApi.listMaterialOutboundBatchOptions();
     await productionMaterialOutboundsApi.listMaterialOutboundCandidates('3');
@@ -411,13 +406,7 @@ describe('productionApi', () => {
       version: 1,
       reason: '计划调整',
     });
-    expect(request.mock.calls.slice(-6).map(([config]) => config)).toEqual([
-      {
-        url: '/production/material-outbounds',
-        params: { page: 1, pageSize: 20, status: 'pending_picking' },
-        signal: undefined,
-        skipErrorHandling: true,
-      },
+    expect(request.mock.calls.slice(-5).map(([config]) => config)).toEqual([
       { url: '/production/material-outbounds/8', signal: undefined, skipErrorHandling: true },
       {
         url: '/production/material-outbounds/batch-options',
@@ -443,21 +432,11 @@ describe('productionApi', () => {
     ]);
   });
 
-  it('uses read-only Production purchase inbound and inventory endpoints', async () => {
-    const { productionInboundsApi } = await import('../production/inbounds');
+  it('uses read-only Production inventory endpoints', async () => {
     const { productionInventoryApi } = await import('../production/inventory');
-    await productionInboundsApi.listPurchaseInbounds({ page: 1, pageSize: 20, status: 'pending' });
-    await productionInboundsApi.getPurchaseInbound('7');
     await productionInventoryApi.listInventoryBatches({ page: 1, pageSize: 20 });
     await productionInventoryApi.getInventoryBatch('9');
-    expect(request.mock.calls.slice(-4).map(([config]) => config)).toEqual([
-      {
-        url: '/production/purchase-inbounds',
-        params: { page: 1, pageSize: 20, status: 'pending' },
-        signal: undefined,
-        skipErrorHandling: true,
-      },
-      { url: '/production/purchase-inbounds/7', signal: undefined, skipErrorHandling: true },
+    expect(request.mock.calls.slice(-2).map(([config]) => config)).toEqual([
       {
         url: '/production/inventory-batches',
         params: { page: 1, pageSize: 20 },

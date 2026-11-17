@@ -4,7 +4,6 @@ import type {
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
   MaterialOutboundItem,
-  MaterialOutboundQuery,
 } from '@company/contracts';
 import { normalizeMaterialOutboundPayload } from '@company/utils';
 import { productionMaterialOutboundsApi } from '../../../api/production/material-outbounds';
@@ -15,11 +14,6 @@ import {
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 
 export const useMaterialOutboundOrders = () => {
-  const rows = ref<MaterialOutboundItem[]>([]);
-  const total = ref(0);
-  const loading = ref(false);
-  const detail = ref<MaterialOutboundItem | null>(null);
-  const detailLoading = ref(false);
   const batchOptions = ref<MaterialOutboundBatchOption[]>([]);
   const optionLoading = ref(false);
   const candidates = ref<MaterialOutboundCandidateItem[]>([]);
@@ -35,52 +29,25 @@ export const useMaterialOutboundOrders = () => {
   const confirmIntent = useIdempotentIntent('整单出库确认');
   const confirmIntentStatus = ref<IdempotentIntentStatus>('idle');
   const confirmSubmitting = ref(false),
-    confirmingId = ref(''),
     confirmingNo = ref('');
   let confirmRequest: { outboundId: string; version: number } | null = null;
-  const listRead = useLatestReadRequest(() => (loading.value = false));
-  const detailRead = useLatestReadRequest(() => (detailLoading.value = false));
+  const detailRead = useLatestReadRequest(() => undefined);
   const optionRead = useLatestReadRequest(() => (optionLoading.value = false));
   const candidateRead = useLatestReadRequest(() => (candidateLoading.value = false));
-
-  const load = async (query: MaterialOutboundQuery): Promise<void> => {
-    if (!listRead.isActive()) return;
-    const current = listRead.begin();
-    loading.value = true;
-    try {
-      const result = await productionMaterialOutboundsApi.listMaterialOutboundOrders(
-        query,
-        current.signal,
-      );
-      if (current.isCurrent()) {
-        rows.value = result.items;
-        total.value = result.total;
-      }
-    } catch (error) {
-      if (current.isCurrent()) throw error;
-    } finally {
-      if (current.isCurrent()) loading.value = false;
-    }
-  };
 
   const loadDetail = async (outboundId: string): Promise<MaterialOutboundItem | null> => {
     if (!detailRead.isActive()) return null;
     const current = detailRead.begin();
-    if (detail.value?.outboundId !== outboundId) detail.value = null;
-    detailLoading.value = true;
     try {
       const result = await productionMaterialOutboundsApi.getMaterialOutbound(
         outboundId,
         current.signal,
       );
       if (!current.isCurrent()) return null;
-      detail.value = result;
       return result;
     } catch (error) {
       if (current.isCurrent()) throw error;
       return null;
-    } finally {
-      if (current.isCurrent()) detailLoading.value = false;
     }
   };
 
@@ -166,7 +133,6 @@ export const useMaterialOutboundOrders = () => {
     if (confirmSubmitting.value) return null;
     if (!confirmRequest && row) {
       confirmRequest = { outboundId: row.outboundId, version: row.version };
-      confirmingId.value = row.outboundId;
       confirmingNo.value = row.outboundNo;
     }
     const command = confirmRequest;
@@ -196,7 +162,6 @@ export const useMaterialOutboundOrders = () => {
       confirmIntentStatus.value = confirmIntent.getStatus();
       if (confirmIntentStatus.value === 'idle') {
         confirmRequest = null;
-        confirmingId.value = '';
         confirmingNo.value = '';
       }
       confirmSubmitting.value = false;
@@ -208,7 +173,6 @@ export const useMaterialOutboundOrders = () => {
     confirmIntent.reset();
     confirmIntentStatus.value = 'idle';
     confirmRequest = null;
-    confirmingId.value = '';
     confirmingNo.value = '';
   };
 
@@ -236,26 +200,17 @@ export const useMaterialOutboundOrders = () => {
   };
 
   return {
-    rows,
-    total,
-    loading,
-    detail,
-    detailLoading,
     batchOptions,
     optionLoading,
     candidates,
     candidateLoading,
     pendingKeys,
-    getCreateIntentStatus: createIntent.getStatus,
     createIntentStatus,
     resetCreateIntent,
     confirmIntentStatus,
     confirmSubmitting,
-    confirmingId,
     confirmingNo,
     resetConfirmIntent,
-    cancelDetailRead: detailRead.invalidate,
-    load,
     loadDetail,
     loadBatchOptions,
     loadCandidates,

@@ -133,7 +133,7 @@
           <template #default="{ row }">
             <template v-if="row.inbound">
               <el-button
-                v-if="canAccessRoute({ name: 'warehouse-inbound-finished' })"
+                v-if="canAccessRoute({ name: 'warehouse-finished-inbound' })"
                 link
                 type="primary"
                 @click="openInbound(row)"
@@ -576,8 +576,8 @@ async function openCard(item: ProductionOutputItem): Promise<void> {
 async function openInbound(item: ProductionOutputItem): Promise<void> {
   if (item.inbound)
     await router.push({
-      name: 'warehouse-inbound-finished',
-      query: { inventoryBatchId: item.inbound.itemBatchId },
+      name: 'warehouse-finished-inbound',
+      query: { documentId: item.inbound.inboundId, sourceType: 'finished_product' },
     });
 }
 async function loadCandidates(): Promise<void> {

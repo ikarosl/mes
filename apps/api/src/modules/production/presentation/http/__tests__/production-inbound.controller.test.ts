@@ -8,7 +8,7 @@ describe('ProductionInboundController contract', () => {
   it('uses inventory permissions for stock and supply-demand reads', () => {
     expect(
       Reflect.getMetadata(REQUIRED_PERMISSION, ProductionInboundController.prototype.inventory),
-    ).toBe(PERMISSIONS.warehouse.inventory.view);
+    ).toEqual([PERMISSIONS.warehouse.inventory.view, PERMISSIONS.warehouse.inbound.view]);
     expect(
       Reflect.getMetadata(
         REQUIRED_PERMISSION,

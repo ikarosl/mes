@@ -23,6 +23,7 @@
 | 采购、到货与分配               | [Procurement](../../apps/api/src/modules/procurement/README.md)、[查询语义](../../apps/api/src/modules/procurement/docs/receipt-queries.md)                        |
 | 检验事实与数量建议             | [Quality](../../apps/api/src/modules/quality/README.md)                                                                                                            |
 | 库存的物料／成品身份及入库来源 | [Inventory](../../apps/api/src/modules/inventory/docs/database.md)；外购历史来源投影见[公开能力](../../apps/api/src/modules/inventory/docs/public-contracts.md)    |
+| 统一出入库主单与精确详情       | [Inventory 统一查询](../../apps/api/src/modules/inventory/docs/public-contracts.md#统一出入库主单)；契约为 `stock-documents.ts` |
 | 审批人员与证据                 | [Approval](../../apps/api/src/modules/approval/README.md)                                                                                                          |
 
 ## 验证

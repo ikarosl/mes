@@ -27,7 +27,7 @@ FK：purchase_order_id→procurement_order，created_by/updated_by/voided_by→u
 
 ## procurement_receipt_line
 
-职责：固定本次来货勾选的采购物料及其精确版本；本行不拥有数量、检查办理或唯一库存批次。
+职责：固定本次来货勾选的采购物料及其精确版本，保存人工结束／恢复入库的当前开关；本行不拥有数量、检查办理或唯一库存批次。
 
 | 字段                           | 类型、空值和默认                            | 含义                             |
 | ------------------------------ | ------------------------------------------- | -------------------------------- |
@@ -37,15 +37,18 @@ FK：purchase_order_id→procurement_order，created_by/updated_by/voided_by→u
 | line_no                        | INT NOT NULL                                | CHECK >0；固定到货行号           |
 | item_id / material_variant_id  | ID NOT NULL                                 | 原采购行的物料精确身份           |
 | supplier_batch_code            | VARCHAR(100) NULL                           | 供应商批号，暂不使用，保留已有值 |
+| inbound_closed | TINYINT NOT NULL DEFAULT 0，CHECK IN(0,1) | 0 继续入库，1 已结束入库；只控制后续新增实际入库 |
 | created_by / updated_by        | ID NOT NULL                                 | 创建与最近修改人员               |
 | created_at / updated_at        | DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 后者 ON UPDATE CURRENT_TIMESTAMP |
-| version                        | INT NOT NULL DEFAULT 0                      | CHECK >=0；实际入库或作废时递增  |
+| version                        | INT NOT NULL DEFAULT 0                      | CHECK >=0；实际入库、结束／恢复入库或作废时递增  |
 
 供应商批号字段暂不在管理端采集或展示；管理端新到货登记不提交该字段，落库为 NULL。保留数据库列、已有值及现有 API 字段与查询能力，不清空历史值，也不将其转换为到货单号、报告来料批次号或库存批号。
 
 组合 FK：(receipt_id,purchase_order_id)→receipt(id,purchase_order_id)，(purchase_order_line_id,purchase_order_id)→order_line(id,purchase_order_id)，(purchase_order_line_id,item_id,material_variant_id)→order_line(id,item_id,material_variant_id)。人员列引用 users。组合 FK 防止冗余根与物料身份成为独立事实。
 
 唯一键：(receipt_id,line_no)、(receipt_id,purchase_order_line_id)、(id,item_id,material_variant_id)、(id,purchase_order_line_id)、(id,receipt_id)。前两者保证同次勾选不重复；其余供库存、补单和报告的组合引用。业务查询索引 (purchase_order_line_id,id)，组合 FK 与人员 FK 有支撑索引。供应商和单位沿固定原采购取得，不复制可变供应商字段；物料名称按公共规则取当前名称。
+
+结束／恢复入库使用现有 version 和 updated_by/at，并通过通用成功审计追溯，不另存开关人、时间或动作表；切换不要求存在入库、报告或说明，作废行也可切换，但不能恢复已作废到货的办理资格。新增字段的初始值表示切换后默认继续办理，不补造历史关闭决策；来源与库存既有事实保持不变。
 
 trg_procurement_receipt_identity_update 禁止修改来源身份与供应商批号，trg_procurement_receipt_line_no_delete 禁止物理删除。应用原子比较版本并推进，同来源本次多个目标仅推进一次。报告、分组和独立说明均不推进本行版本。实际数量与目标逐笔沿 Inventory 入库明细及原始正流水追溯；说明沿下表追溯。
 

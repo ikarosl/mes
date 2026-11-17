@@ -16,3 +16,4 @@ export const CONFIRM_PROCUREMENT_INBOUND_SCOPE = 'procurement.inbound.confirm.v1
 export const VOID_RECEIPT_SCOPE = 'procurement.receipt.void.v4' as const;
 
 export const RECORD_RECEIPT_HANDLING_SCOPE = 'procurement.receipt.handle.v1' as const;
+export const SET_RECEIPT_INBOUND_STATUS_SCOPE = 'procurement.receipt.inbound-status.v1' as const;

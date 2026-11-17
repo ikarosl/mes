@@ -2,10 +2,8 @@ import type {
   CreateMaterialOutboundPayload,
   MaterialOutboundCommandResult,
   MaterialOutboundItem,
-  MaterialOutboundQuery,
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
-  PageResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
@@ -16,9 +14,6 @@ export abstract class ProductionMaterialOutboundRepository {
     context: CommandContext,
   ): Promise<MaterialOutboundCommandResult>;
   abstract listOutbounds(batchId: string): Promise<MaterialOutboundItem[]>;
-  abstract listOutboundOrders(
-    query: MaterialOutboundQuery,
-  ): Promise<PageResult<MaterialOutboundItem>>;
   abstract getOutbound(outboundId: string): Promise<MaterialOutboundItem>;
   abstract listOutboundBatchOptions(): Promise<MaterialOutboundBatchOption[]>;
   abstract listOutboundCandidates(batchId: string): Promise<MaterialOutboundCandidateItem[]>;

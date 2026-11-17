@@ -100,6 +100,9 @@
                   {{ selectedLine.unit }}</strong
                 >
               </el-descriptions-item>
+              <el-descriptions-item label="入库状态">{{
+                RECEIPT_INBOUND_STATUS_LABELS[selectedLine.inboundClosed ? 'closed' : 'open']
+              }}</el-descriptions-item>
               <el-descriptions-item label="报告记录">
                 <span v-if="!canViewQuality || reportSummary.forbidden.value"
                   >无查看检验报告权限</span
@@ -251,7 +254,10 @@
 
 <script setup lang="ts">
 import { computed, nextTick, ref } from 'vue';
-import { QUALITY_INSPECTION_METHOD_LABELS } from '@company/constants';
+import {
+  QUALITY_INSPECTION_METHOD_LABELS,
+  RECEIPT_INBOUND_STATUS_LABELS,
+} from '@company/constants';
 import type { ProcurementReceiptDetail, ReceiptHandlingItem } from '@company/contracts';
 import { procurementApi } from '../../../api/procurement';
 import { useRouteAccess } from '../../../composables/useRouteAccess';

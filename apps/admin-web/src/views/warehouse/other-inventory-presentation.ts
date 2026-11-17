@@ -5,21 +5,11 @@ import type {
   OtherInventoryStatus,
   OtherStockMaterial,
 } from '@company/contracts';
-import { OTHER_INVENTORY_ORDER_STATUSES } from '@company/constants';
 import type { OtherInventoryDraftLine } from './other-inventory-draft';
 
 export const otherInventoryPendingStatus = (
   direction: OtherInventoryDirection,
 ): OtherInventoryStatus => (direction === 'inbound' ? 'pending' : 'pending_picking');
-export const otherInventoryStatuses = (
-  direction: OtherInventoryDirection,
-): OtherInventoryStatus[] =>
-  OTHER_INVENTORY_ORDER_STATUSES.filter(
-    (status) =>
-      status === otherInventoryPendingStatus(direction) ||
-      status === 'completed' ||
-      status === 'cancelled',
-  );
 export const otherInventoryStatusTag = (
   status: OtherInventoryStatus,
 ): 'success' | 'info' | 'warning' => {
@@ -39,14 +29,6 @@ export const otherInventoryQuantitySummary = (order: OtherInventoryOrder): strin
     .map(([unit, quantity]) => `${otherInventoryQuantity(quantity)} ${unit}`)
     .join('；');
 };
-export const otherInventoryObjectSummary = (order: OtherInventoryOrder): string =>
-  [
-    ...new Set(
-      activeOtherInventoryLines(order).map((line) =>
-        line.materialVariantCode ? `${line.itemCode} · ${line.materialVariantCode}` : line.itemCode,
-      ),
-    ),
-  ].join('；');
 export const otherInventoryNewBatchGroupLabel = (
   order: OtherInventoryOrder,
   line: OtherInventoryLine,

@@ -27,12 +27,12 @@ flowchart TD
 | 内容 | 唯一维护位置 |
 | --- | --- |
 | 采购身份、供应商、金额、补单及采购状态 | [采购订单](../apps/api/src/modules/procurement/docs/purchase-orders.md) |
-| 到货来源、作废、其他处理与实际入库编排 | [到货命令](../apps/api/src/modules/procurement/docs/receipts.md) |
+| 到货来源、作废、人工入库开关、其他处理与实际入库编排 | [到货命令](../apps/api/src/modules/procurement/docs/receipts.md) |
 | 检查事实及来料／成品职责差异 | [统一检验模型](../apps/api/src/modules/quality/docs/unified-inspection-model.md) |
 | 库存单据、批次和唯一账本 | [Inventory](../apps/api/src/modules/inventory/docs/database.md) |
 | 列表、候选与历史查询 | [查询契约](../apps/api/src/modules/procurement/docs/receipt-queries.md) |
 | 前端特有交互 | [采购与入库](../apps/admin-web/docs/procurement-inbound.md)、[来料检验](../apps/admin-web/docs/incoming-inspection-adoption.md) |
 
-来源模块核验有效到货身份，Quality 与 Inventory 分别写自己的事实；跨模块原子性、调用方向和锁序由[库存协作协议](inventory-extraction-design.md)维护。采购结束只停止新增到货，已经登记的来源继续办理；补单不改变原到货及实际入库的归属。
+来源模块核验有效到货身份，实际入库另核验其人工入库开关，Quality 与 Inventory 分别写自己的事实；跨模块原子性、调用方向和锁序由[库存协作协议](inventory-extraction-design.md)维护。采购结束只停止新增到货，已经登记的来源继续按各自办理规则使用；补单不改变原到货及实际入库的归属。
 
 范围和排除项见[产品范围](product-scope.md)，结构切换见[迁移安全](../packages/database/docs/migration-safety.md)。

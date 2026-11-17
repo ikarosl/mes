@@ -16,6 +16,7 @@ import {
   INSPECT_RECEIPT_SCOPE,
   CONFIRM_PROCUREMENT_INBOUND_SCOPE,
   VOID_RECEIPT_SCOPE,
+  SET_RECEIPT_INBOUND_STATUS_SCOPE,
 } from '../../application/idempotency/procurement-idempotency-scopes.contract.js';
 import { QualityInboundQuery, QualityCommandError } from '../../../quality/public.js';
 import { ProcurementDomainExceptionFilter } from './procurement-domain-exception.filter.js';
@@ -30,6 +31,7 @@ import {
   InspectReceiptDto,
   ConfirmProcurementInboundDto,
   VoidProcurementReceiptDto,
+  SetReceiptInboundStatusDto,
 } from './receipt.dto.js';
 
 @Controller('procurement')
@@ -109,6 +111,17 @@ export class ProcurementReceiptController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.voidReceipt(id, body, context);
+  }
+  @Post('receipt-lines/:id/inbound-status')
+  @RequirePermission(PERMISSIONS.warehouse.receipts.handle)
+  @AuditInApplication()
+  @IdempotentEndpoint({ scope: SET_RECEIPT_INBOUND_STATUS_SCOPE })
+  setInboundStatus(
+    @Param() { id }: PurchaseOrderIdDto,
+    @Body() body: SetReceiptInboundStatusDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.setInboundStatus(id, body, context);
   }
   @Post('receipt-lines/:id/inspect')
   @RequirePermission(PERMISSIONS.quality.inboundInspections.inspect)

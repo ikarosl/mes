@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Query, UseFilters } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, UseFilters } from '@nestjs/common';
 import { PERMISSIONS } from '@company/constants';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import {
@@ -15,7 +15,6 @@ import { ProductionDomainExceptionFilter } from './production-domain-exception.f
 import {
   CreateReturnOrderDto,
   ReturnIdParamDto,
-  ReturnOrderQueryDto,
   WarehouseBatchIdParamDto,
 } from './dto/warehouse.dto.js';
 
@@ -24,16 +23,6 @@ import {
 export class ProductionReturnController {
   constructor(private readonly service: ProductionReturnService) {}
 
-  @Get('return-orders')
-  @RequirePermission(PERMISSIONS.warehouse.returns.view)
-  listReturns(@Query() query: ReturnOrderQueryDto) {
-    return this.service.listReturnOrders({
-      page: query.page,
-      pageSize: query.pageSize,
-      keyword: query.keyword?.trim() || undefined,
-      status: query.status,
-    });
-  }
   @Get('return-orders/batch-options')
   @RequirePermission(PERMISSIONS.warehouse.returns.view)
   returnBatchOptions() {

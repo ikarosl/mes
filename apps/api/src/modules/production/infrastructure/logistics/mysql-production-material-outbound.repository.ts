@@ -17,10 +17,8 @@ import type {
   CreateMaterialOutboundPayload,
   MaterialOutboundCommandResult,
   MaterialOutboundItem,
-  MaterialOutboundQuery,
   MaterialOutboundBatchOption,
   MaterialOutboundCandidateItem,
-  PageResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../../common/audit/transactional-audit-writer.js';
@@ -142,10 +140,6 @@ export class MysqlProductionMaterialOutboundRepository extends ProductionMateria
 
   listOutbounds(batchId: string): Promise<MaterialOutboundItem[]> {
     return this.read.listOutbounds(batchId);
-  }
-
-  listOutboundOrders(query: MaterialOutboundQuery): Promise<PageResult<MaterialOutboundItem>> {
-    return this.read.listOutboundOrders(query);
   }
 
   getOutbound(outboundId: string): Promise<MaterialOutboundItem> {

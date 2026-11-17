@@ -1,4 +1,4 @@
-import type { PageQuery, ReasonedVersionedCommand } from '../common.js';
+import type { ReasonedVersionedCommand } from '../common.js';
 import type {
   ProductionBatchStatus,
   OutboundOrderStatus,
@@ -82,11 +82,6 @@ export interface MaterialOutboundCommandResult {
   batchStatus: ProductionBatchStatus;
   batchVersion: number;
   outbound: MaterialOutboundItem;
-}
-
-export interface MaterialOutboundQuery extends PageQuery {
-  keyword?: string;
-  status?: OutboundOrderStatus;
 }
 
 export interface MaterialOutboundBatchOption {

@@ -56,6 +56,11 @@ type TransactionRow = RowDataPacket & {
   stock_status: InventoryBatchTransactionItem['stockStatus'];
   reference_type: InventoryBatchTransactionItem['referenceType'];
   reference_detail_id: number;
+  reference_order_id: number;
+  reference_order_no_snapshot: string;
+  direction: InventoryBatchTransactionItem['direction'];
+  item_kind: InventoryBatchTransactionItem['itemKind'];
+  document_source_type: InventoryBatchTransactionItem['sourceType'];
   transaction_group_key: string | null;
   reversal_of_transaction_id: number | null;
   remark: string | null;
@@ -144,8 +149,16 @@ export async function getInventoryBatch(
   const rows = await loadInventories(db, [id], variants);
   if (!rows[0]) throw new InventoryDomainError('NOT_FOUND', '库存批次不存在');
   const [transactions] = await db.query<TransactionRow[]>(
-    `SELECT id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,transaction_group_key,reversal_of_transaction_id,remark,created_at
-     FROM inventory_transaction WHERE batch_id=? ORDER BY created_at DESC,id DESC`,
+    `SELECT tx.id,tx.transaction_type,tx.quantity,tx.unit_snapshot,tx.stock_status,tx.reference_type,
+       tx.reference_detail_id,tx.reference_order_id,tx.reference_order_no_snapshot,
+       CASE tx.reference_type WHEN 'inbound_detail' THEN 'inbound' WHEN 'outbound_detail' THEN 'outbound' END direction,
+       CASE WHEN tx.product_id IS NULL THEN 'material' ELSE 'finished_product' END item_kind,
+       COALESCE(inbound.source_type,outbound.source_type) document_source_type,
+       tx.transaction_group_key,tx.reversal_of_transaction_id,tx.remark,tx.created_at
+     FROM inventory_transaction tx
+     LEFT JOIN inbound_order inbound ON tx.reference_type='inbound_detail' AND inbound.id=tx.reference_order_id
+     LEFT JOIN outbound_order outbound ON tx.reference_type='outbound_detail' AND outbound.id=tx.reference_order_id
+     WHERE tx.batch_id=? ORDER BY tx.created_at DESC,tx.id DESC`,
     [id],
   );
   return {
@@ -158,6 +171,11 @@ export async function getInventoryBatch(
       stockStatus: row.stock_status,
       referenceType: row.reference_type,
       referenceDetailId: String(row.reference_detail_id),
+      referenceOrderId: String(row.reference_order_id),
+      referenceOrderNoSnapshot: row.reference_order_no_snapshot,
+      direction: row.direction,
+      itemKind: row.item_kind,
+      sourceType: row.document_source_type,
       transactionGroupKey: row.transaction_group_key,
       reversalOfInventoryTransactionId: nullableId(row.reversal_of_transaction_id),
       remark: row.remark,

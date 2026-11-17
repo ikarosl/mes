@@ -54,6 +54,7 @@ export interface ProcurementReceiptLineOverview {
   supplierBatchCode: string | null;
   version: number;
   stage: ReceiptLineStage;
+  inboundClosed: boolean;
   quantities: ReceiptQuantitySummary;
   handlingCount: number;
   otherHandlingNote: string | null;
@@ -113,6 +114,15 @@ export interface ReceiptInboundHistoryItem {
   batchCode: string;
   quantity: string;
   confirmedAt: string;
+}
+export interface SetReceiptInboundStatusPayload {
+  inboundClosed: boolean;
+  version: number;
+}
+export interface ReceiptInboundStatusResult {
+  receiptLineId: string;
+  inboundClosed: boolean;
+  version: number;
 }
 export interface RecordReceiptHandlingPayload {
   otherHandlingNote: string;

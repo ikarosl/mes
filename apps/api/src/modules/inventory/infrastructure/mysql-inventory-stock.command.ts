@@ -149,6 +149,28 @@ export class MysqlInventoryStockCommand extends InventoryStockCommand {
     returning: boolean,
   ): Promise<void> {
     return withTransaction(this.pool, async (db) => {
+      const orderTable = returning ? 'inbound_order' : 'outbound_order';
+      const numberColumn = returning ? 'inbound_no' : 'outbound_no';
+      const detailTable = returning ? 'inbound_detail' : 'outbound_detail';
+      const parentColumn = returning ? 'inbound_id' : 'outbound_id';
+      const [[order]] = await db.query<(RowDataPacket & { order_no: string })[]>(
+        `SELECT ${numberColumn} order_no FROM ${orderTable} WHERE id=? AND item_kind='material' AND source_type=? AND status=? FOR UPDATE`,
+        [
+          orderId,
+          returning ? 'return_inbound' : 'production_material',
+          returning ? 'pending' : 'pending_picking',
+        ],
+      );
+      if (!order) throw new InventoryDomainError('INVALID_STATE', '生产库存主单不存在或不可确认');
+      const detailIds = sortIds(lines.map((line) => line.detailId));
+      if (!detailIds.length || detailIds.length !== lines.length)
+        throw new InventoryDomainError('INVALID_INPUT', '库存明细不能为空或重复');
+      const [details] = await db.query<RowDataPacket[]>(
+        `SELECT id FROM ${detailTable} WHERE ${parentColumn}=? AND is_deleted=0 AND id IN (${detailIds.map(() => '?').join(',')}) ORDER BY id FOR SHARE`,
+        [orderId, ...detailIds],
+      );
+      if (details.length !== detailIds.length)
+        throw new InventoryDomainError('INVALID_INPUT', '库存明细不属于当前主单');
       const batches = await this.lockMaterialBatches(lines.map((line) => line.batchId));
       const byId = new Map(batches.map((batch) => [batch.id, batch]));
       const totals = new Map<string, number>();
@@ -183,8 +205,8 @@ export class MysqlInventoryStockCommand extends InventoryStockCommand {
           compareId(a.detailId, b.detailId),
       )) {
         await db.execute(
-          `INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,idempotency_key,transaction_group_key,remark,created_by)
-           VALUES (?,?,?,?,?,?,'available',?,?,?,?,?,?)`,
+          `INSERT INTO inventory_transaction (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,reference_type,reference_detail_id,reference_order_id,reference_order_no_snapshot,idempotency_key,transaction_group_key,remark,created_by)
+           VALUES (?,?,?,?,?,?,'available',?,?,?,?,?,?,?,?)`,
           [
             line.itemId,
             line.materialVariantId,
@@ -194,6 +216,8 @@ export class MysqlInventoryStockCommand extends InventoryStockCommand {
             line.unit,
             returning ? 'inbound_detail' : 'outbound_detail',
             line.detailId,
+            orderId,
+            order.order_no,
             returning ? `INBOUND:${line.detailId}` : `OUTBOUND:${line.detailId}`,
             returning ? `RETURN:${orderId}` : null,
             line.remark ?? null,

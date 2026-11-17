@@ -50,6 +50,8 @@ import type {
   ReceiptInboundHistoryItem,
   ReceiptHandlingItem,
   RecordReceiptHandlingPayload,
+  SetReceiptInboundStatusPayload,
+  ReceiptInboundStatusResult,
   QualityIncomingInspectionReportInput,
   QualityIncomingInspectionReportItem,
   QualityIncomingInspectionReportPage,
@@ -126,8 +128,6 @@ export const procurementApi = {
     request({ url: `/procurement/receipt-lines/${id}/location`, signal, skipErrorHandling: true }),
   getReceipt: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptDetail> =>
     request({ url: `/procurement/receipts/${id}`, signal, skipErrorHandling: true }),
-  getReceiptLine: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptLine> =>
-    request({ url: `/procurement/receipt-lines/${id}`, signal, skipErrorHandling: true }),
   receiptVoiding: (id: string, signal?: AbortSignal): Promise<ProcurementReceiptVoidingDetail> =>
     request({ url: `/procurement/receipts/${id}/voiding`, signal, skipErrorHandling: true }),
   receiptOrderOptions: (
@@ -154,6 +154,12 @@ export const procurementApi = {
     key: string,
   ): Promise<QualityIncomingInspectionReportItem> =>
     command(`/procurement/receipt-lines/${id}/inspect`, data, key),
+  setReceiptInboundStatus: (
+    id: string,
+    data: SetReceiptInboundStatusPayload,
+    key: string,
+  ): Promise<ReceiptInboundStatusResult> =>
+    command(`/procurement/receipt-lines/${id}/inbound-status`, data, key),
   recordReceiptHandling: (
     id: string,
     body: RecordReceiptHandlingPayload,

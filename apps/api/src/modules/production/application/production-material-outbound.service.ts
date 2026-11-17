@@ -1,9 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import type {
-  CreateMaterialOutboundPayload,
-  MaterialOutboundItem,
-  MaterialOutboundQuery,
-} from '@company/contracts';
+import type { CreateMaterialOutboundPayload, MaterialOutboundItem } from '@company/contracts';
 import { normalizeMaterialOutboundPayload } from '@company/utils';
 import type {
   CommandContext,
@@ -51,13 +47,6 @@ export class ProductionMaterialOutboundService {
   }
   async listOutbounds(batchId: string) {
     return this.enrichOutbounds(await this.outbounds.listOutbounds(batchId));
-  }
-  async listOutboundOrders(query: MaterialOutboundQuery) {
-    const result = await this.outbounds.listOutboundOrders(query);
-    return {
-      ...result,
-      items: await this.enrichOutbounds(result.items),
-    };
   }
   async getOutbound(outboundId: string) {
     return this.enrichOutbound(await this.outbounds.getOutbound(outboundId));

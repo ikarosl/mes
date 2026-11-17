@@ -5,13 +5,11 @@ import { ProductionInboundService } from '../../application/production-inbound.s
 import { ProductionSupplyDemandService } from '../../application/production-supply-demand.service.js';
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import {
-  InboundIdParamDto,
   InventoryBatchIdParamDto,
   InventoryBatchQueryDto,
   InventoryItemIdParamDto,
   InventoryMaterialDemandTraceQueryDto,
   InventoryMaterialSupplyDemandQueryDto,
-  PurchaseInboundQueryDto,
 } from './dto/production-inbound.dto.js';
 
 @Controller('production')
@@ -21,21 +19,6 @@ export class ProductionInboundController {
     private readonly service: ProductionInboundService,
     private readonly supplyDemand: ProductionSupplyDemandService,
   ) {}
-  @Get('purchase-inbounds') @RequirePermission(PERMISSIONS.warehouse.inbound.view) list(
-    @Query() q: PurchaseInboundQueryDto,
-  ) {
-    return this.service.list({
-      page: q.page,
-      pageSize: q.pageSize,
-      keyword: q.keyword?.trim() || undefined,
-      status: q.status,
-    });
-  }
-  @Get('purchase-inbounds/:inboundId') @RequirePermission(PERMISSIONS.warehouse.inbound.view) get(
-    @Param() p: InboundIdParamDto,
-  ) {
-    return this.service.get(p.inboundId);
-  }
   @Get('inventory-batches')
   @RequirePermission([PERMISSIONS.warehouse.inventory.view, PERMISSIONS.warehouse.inbound.view])
   inventory(@Query() q: InventoryBatchQueryDto) {

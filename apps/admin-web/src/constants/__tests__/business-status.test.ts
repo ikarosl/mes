@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import {
-  inventoryReferenceTypeLabels,
   inventorySourceTypeLabels,
   inventoryTransactionTypeLabels,
   stockStatusLabels,
@@ -11,6 +10,5 @@ describe('business status labels', () => {
     expect(inventorySourceTypeLabels.purchased).toBe('外购物料入库');
     expect(stockStatusLabels.pending_inspection).toBe('待检');
     expect(inventoryTransactionTypeLabels.production_material_outbound).toBe('生产领料出库');
-    expect(inventoryReferenceTypeLabels.outbound_detail).toBe('出库明细');
   });
 });

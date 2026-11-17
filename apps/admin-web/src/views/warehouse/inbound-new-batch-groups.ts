@@ -11,7 +11,7 @@ export interface InboundNewBatchGroup extends NewBatchGroupChoice {
   hasConflictingIdentity: boolean;
 }
 
-export interface InboundBatchIdentity {
+interface InboundBatchIdentity {
   itemKind: OtherInventoryItemKind;
   itemId?: string;
   materialVariantId?: string;

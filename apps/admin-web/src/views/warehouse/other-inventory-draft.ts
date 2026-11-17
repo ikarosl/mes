@@ -29,11 +29,14 @@ export interface OtherInventoryDraftLineUpdate {
 
 export const newOtherInventoryBatchKey = (): string => `draft-${crypto.randomUUID()}`;
 
-export const newOtherInventoryDraftLine = (isInbound: boolean): OtherInventoryDraftLine => {
+export const newOtherInventoryDraftLine = (
+  isInbound: boolean,
+  itemKind: OtherInventoryItemKind = 'material',
+): OtherInventoryDraftLine => {
   const key = newOtherInventoryBatchKey();
   return {
     key,
-    itemKind: 'material',
+    itemKind,
     material: null,
     materialVerified: false,
     object: null,

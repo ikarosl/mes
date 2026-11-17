@@ -13,12 +13,10 @@ import {
   Min,
   ValidateNested,
 } from 'class-validator';
-import { OUTBOUND_ORDER_STATUSES } from '@company/constants';
 import type {
   MaterialDemandManagementQuery,
   CreateMaterialAllocationsPayload,
   CreateMaterialOutboundPayload,
-  MaterialOutboundQuery,
 } from '@company/contracts';
 import { PageQueryDto } from '../../../../../presentation/http/dto/page-query.dto.js';
 
@@ -33,11 +31,6 @@ export class AllocationParamDto extends BatchIdParamDto {
 }
 export class OutboundIdParamDto {
   @IsString() @MaxLength(20) outboundId!: string;
-}
-
-export class MaterialOutboundQueryDto extends PageQueryDto implements MaterialOutboundQuery {
-  @IsOptional() @IsString() @MaxLength(100) keyword?: string;
-  @IsOptional() @IsIn(OUTBOUND_ORDER_STATUSES) status?: MaterialOutboundQuery['status'];
 }
 
 export class CreateMaterialAllocationLineDto {

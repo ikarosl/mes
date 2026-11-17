@@ -140,6 +140,7 @@ export class ProductionController {
     PERMISSIONS.production.tasks.view,
     PERMISSIONS.production.workbench.view,
     PERMISSIONS.production.tracking.view,
+    PERMISSIONS.warehouse.inbound.view,
   ])
   batches(@Query() query: ProductionBatchQueryDto) {
     return this.service.listBatches({ ...query, keyword: query.keyword?.trim() || undefined });

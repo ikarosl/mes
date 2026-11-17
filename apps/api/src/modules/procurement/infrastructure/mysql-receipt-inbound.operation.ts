@@ -51,6 +51,8 @@ export async function confirmReceiptInbound(
   for (const detail of payload.details) {
     const line = byId.get(detail.receiptLineId);
     if (!line) return receiptError('到货明细不存在', 'RECEIPT_NOT_FOUND');
+    if (Number(line.inbound_closed) === 1)
+      return receiptError('到货明细已结束入库，请恢复后再办理', 'RECEIPT_STATE');
     requireOptimisticUpdate(line.version === detail.version ? 1 : 0);
     requireQuantity(detail.quantity, '实际入库数量');
     if (!detail.target) return receiptError('实际入库须选择目标库存批次');

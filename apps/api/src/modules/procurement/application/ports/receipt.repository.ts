@@ -9,9 +9,16 @@ import type {
   VoidProcurementReceiptCommandResult,
   QualityIncomingInspectionReportInput,
   QualityIncomingInspectionReportItem,
+  SetReceiptInboundStatusPayload,
+  ReceiptInboundStatusResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 export abstract class ProcurementReceiptRepository {
+  abstract setInboundStatus(
+    id: string,
+    payload: SetReceiptInboundStatusPayload,
+    context: CommandContext,
+  ): Promise<ReceiptInboundStatusResult>;
   abstract recordHandling(
     id: string,
     payload: RecordReceiptHandlingPayload,

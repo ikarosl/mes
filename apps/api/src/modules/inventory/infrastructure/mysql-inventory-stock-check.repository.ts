@@ -320,8 +320,8 @@ export class MysqlInventoryStockCheckRepository extends InventoryStockCheckRepos
           await db.execute(
             `INSERT INTO inventory_transaction
              (item_id,material_variant_id,batch_id,transaction_type,quantity,unit_snapshot,stock_status,
-              reference_type,reference_detail_id,idempotency_key,transaction_group_key,remark,created_by)
-             VALUES (?,?,?,'stock_check_adjustment',?,?,?,'stock_check_detail',?,?,?,?,?)`,
+              reference_type,reference_detail_id,reference_order_id,reference_order_no_snapshot,idempotency_key,transaction_group_key,remark,created_by)
+             VALUES (?,?,?,'stock_check_adjustment',?,?,?,'stock_check_detail',?,?,?,?,?,?,?)`,
             [
               line.item_id,
               line.material_variant_id,
@@ -330,6 +330,8 @@ export class MysqlInventoryStockCheckRepository extends InventoryStockCheckRepos
               line.unit_snapshot,
               line.stock_status,
               line.id,
+              stockCheckId,
+              order.check_no,
               `STOCKCHECK:${line.id}`,
               `STOCKCHECK:${stockCheckId}`,
               line.remark,

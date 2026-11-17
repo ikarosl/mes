@@ -85,10 +85,11 @@ const navigationGroups: readonly NavigationGroup[] = [
       { routeNames: ['procurement-receipts'] },
       { routeNames: ['warehouse-inventory'] },
       {
-        routeNames: ['warehouse-inbound', 'warehouse-inbound-finished', 'warehouse-other-inbounds'],
+        routeNames: ['warehouse-material-inbound', 'warehouse-material-outbound'],
       },
-      { routeNames: ['warehouse-outbound', 'warehouse-other-outbounds'] },
-      { routeNames: ['warehouse-returns'] },
+      {
+        routeNames: ['warehouse-finished-inbound', 'warehouse-finished-outbound'],
+      },
       { routeNames: ['warehouse-scraps'] },
     ],
   },

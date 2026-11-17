@@ -2,19 +2,25 @@
   <tbody class="draft-line">
     <tr class="draft-line-main">
       <td class="kind-cell">
-        <el-select
-          :model-value="line.itemKind"
-          :disabled="disabled"
-          aria-label="明细类型"
-          @change="changeKind"
+        <el-form-item
+          ref="itemKindField"
+          :prop="fieldPath('itemKind')"
+          :rules="lineRules.itemKind"
+          class="line-field"
         >
-          <el-option
-            v-for="kind in INVENTORY_ITEM_KINDS"
-            :key="kind"
-            :value="kind"
-            :label="INVENTORY_ITEM_KIND_LABELS[kind]"
-          />
-        </el-select>
+          <el-select
+            :model-value="line.itemKind"
+            disabled
+            aria-label="明细类型"
+          >
+            <el-option
+              v-for="kind in INVENTORY_ITEM_KINDS"
+              :key="kind"
+              :value="kind"
+              :label="INVENTORY_ITEM_KIND_LABELS[kind]"
+            />
+          </el-select>
+        </el-form-item>
         <div class="secondary-text">
           第 {{ rowIndex + 1 }} 行<template v-if="line.lineNo">
             · 原明细 {{ line.lineNo }}</template
@@ -26,61 +32,82 @@
           v-if="line.target.mode === 'new' && line.itemKind === 'material'"
           class="identity-select"
         >
-          <RemoteSearchSelect
-            :model-value="line.material?.id ?? null"
-            :options="options.materialOptions.value"
-            :loading="options.materialLoading.value"
-            :error="options.materialError.value"
-            :has-more="options.materialHasMore.value"
-            :disabled="disabled"
-            placeholder="搜索物料编码或名称"
-            :missing-selection-label="
-              line.material ? `${otherStockMaterialLabel(line.material)}（待核验）` : undefined
-            "
-            @update:model-value="chooseMaterial"
-            @open="options.refreshMaterials"
-            @refresh="options.refreshMaterials"
-            @search="options.searchMaterials"
-          />
-          <RemoteSearchSelect
-            :model-value="line.object?.id ?? null"
-            :options="options.objectOptions.value"
-            :loading="options.objectLoading.value"
-            :error="options.objectError.value"
-            :has-more="options.objectHasMore.value"
-            :disabled="disabled || !line.material || !line.materialVerified"
-            placeholder="选择精确版本"
-            :missing-selection-label="
-              line.object
-                ? `${line.object.materialVariantCode || line.object.id}（待核验）`
-                : undefined
-            "
-            @update:model-value="chooseObject"
-            @open="options.refreshObjects"
-            @refresh="options.refreshObjects"
-            @search="options.searchObjects"
-          />
+          <el-form-item
+            ref="materialField"
+            :prop="fieldPath('material')"
+            :rules="lineRules.material"
+            class="line-field"
+          >
+            <RemoteSearchSelect
+              :model-value="line.material?.id ?? null"
+              :options="options.materialOptions.value"
+              :loading="options.materialLoading.value"
+              :error="options.materialError.value"
+              :has-more="options.materialHasMore.value"
+              :disabled="disabled"
+              placeholder="搜索物料编码或名称"
+              :missing-selection-label="
+                line.material ? `${otherStockMaterialLabel(line.material)}（待核验）` : undefined
+              "
+              @update:model-value="chooseMaterial"
+              @open="options.refreshMaterials"
+              @refresh="options.refreshMaterials"
+              @search="options.searchMaterials"
+            />
+          </el-form-item>
+          <el-form-item
+            ref="objectField"
+            :prop="fieldPath('object')"
+            :rules="lineRules.object"
+            class="line-field"
+          >
+            <RemoteSearchSelect
+              :model-value="line.object?.id ?? null"
+              :options="options.objectOptions.value"
+              :loading="options.objectLoading.value"
+              :error="options.objectError.value"
+              :has-more="options.objectHasMore.value"
+              :disabled="disabled || !line.material || !line.materialVerified"
+              placeholder="选择精确版本"
+              :missing-selection-label="
+                line.object
+                  ? `${line.object.materialVariantCode || line.object.id}（待核验）`
+                  : undefined
+              "
+              @update:model-value="chooseObject"
+              @open="options.refreshObjects"
+              @refresh="options.refreshObjects"
+              @search="options.searchObjects"
+            />
+          </el-form-item>
         </div>
         <div
           v-else-if="line.target.mode === 'new'"
           class="identity-select"
         >
-          <RemoteSearchSelect
-            :model-value="line.object?.id ?? null"
-            :options="options.objectOptions.value"
-            :loading="options.objectLoading.value"
-            :error="options.objectError.value"
-            :has-more="options.objectHasMore.value"
-            :disabled="disabled"
-            placeholder="搜索成品编码或名称"
-            :missing-selection-label="
-              line.object ? `${line.object.code} · ${line.object.name}（待核验）` : undefined
-            "
-            @update:model-value="chooseObject"
-            @open="options.refreshObjects"
-            @refresh="options.refreshObjects"
-            @search="options.searchObjects"
-          />
+          <el-form-item
+            ref="objectField"
+            :prop="fieldPath('object')"
+            :rules="lineRules.object"
+            class="line-field"
+          >
+            <RemoteSearchSelect
+              :model-value="line.object?.id ?? null"
+              :options="options.objectOptions.value"
+              :loading="options.objectLoading.value"
+              :error="options.objectError.value"
+              :has-more="options.objectHasMore.value"
+              :disabled="disabled"
+              placeholder="搜索成品编码或名称"
+              :missing-selection-label="
+                line.object ? `${line.object.code} · ${line.object.name}（待核验）` : undefined
+              "
+              @update:model-value="chooseObject"
+              @open="options.refreshObjects"
+              @refresh="options.refreshObjects"
+              @search="options.searchObjects"
+            />
+          </el-form-item>
           <div class="secondary-text">
             {{ line.object ? `成品编码：${line.object.code}` : '选择成品后显示编码' }}
           </div>
@@ -113,39 +140,46 @@
         </p>
       </td>
       <td class="batch-cell">
-        <InboundBatchModeSwitch
-          v-if="direction === 'inbound'"
-          :model-value="line.target.mode"
-          :disabled="disabled"
-          @update:model-value="changeTargetMode"
-        />
-        <RemoteSearchSelect
-          v-if="line.target.mode === 'existing'"
-          class="batch-select"
-          :model-value="line.target.batchId || null"
-          :options="options.batchOptions.value"
-          :loading="options.batchLoading.value"
-          :error="options.batchError.value"
-          :has-more="options.batchHasMore.value"
-          :disabled="disabled"
-          placeholder="搜索库存批号、对象编码或名称"
-          :missing-selection-label="
-            line.batch ? `${line.batch.batchCode} · ${line.batch.itemName}` : undefined
-          "
-          @update:model-value="chooseBatch"
-          @open="options.refreshBatches"
-          @refresh="options.refreshBatches"
-          @search="options.searchBatches"
-        />
-        <InboundNewBatchSelect
-          v-else
-          class="batch-select"
-          :model-value="line.object ? line.target.clientKey : ''"
-          :groups="newBatchGroups"
-          :disabled="disabled || !line.object"
-          scope-label="本单"
-          @update:model-value="changeNewBatchKey"
-        />
+        <el-form-item
+          ref="targetField"
+          :prop="fieldPath('target')"
+          :rules="lineRules.target"
+          class="line-field"
+        >
+          <InboundBatchModeSwitch
+            v-if="direction === 'inbound'"
+            :model-value="line.target.mode"
+            :disabled="disabled"
+            @update:model-value="changeTargetMode"
+          />
+          <RemoteSearchSelect
+            v-if="line.target.mode === 'existing'"
+            class="batch-select"
+            :model-value="line.target.batchId || null"
+            :options="options.batchOptions.value"
+            :loading="options.batchLoading.value"
+            :error="options.batchError.value"
+            :has-more="options.batchHasMore.value"
+            :disabled="disabled"
+            placeholder="搜索库存批号、对象编码或名称"
+            :missing-selection-label="
+              line.batch ? `${line.batch.batchCode} · ${line.batch.itemName}` : undefined
+            "
+            @update:model-value="chooseBatch"
+            @open="options.refreshBatches"
+            @refresh="options.refreshBatches"
+            @search="options.searchBatches"
+          />
+          <InboundNewBatchSelect
+            v-else
+            class="batch-select"
+            :model-value="line.object ? line.target.clientKey : ''"
+            :groups="newBatchGroups"
+            :disabled="disabled || !line.object"
+            scope-label="本单"
+            @update:model-value="changeNewBatchKey"
+          />
+        </el-form-item>
         <div
           v-if="line.target.mode === 'new'"
           class="secondary-text batch-summary"
@@ -169,30 +203,44 @@
         </div>
       </td>
       <td class="quantity-cell">
-        <el-input-number
-          :model-value="line.quantity"
-          :disabled="disabled"
-          :min="1"
-          :max="99_999_999"
-          :step="1"
-          :precision="0"
-          controls-position="right"
-          aria-label="本次数量"
-          @update:model-value="update({ quantity: $event })"
-        />
+        <el-form-item
+          ref="quantityField"
+          :prop="fieldPath('quantity')"
+          :rules="lineRules.quantity"
+          class="line-field"
+        >
+          <el-input-number
+            :model-value="line.quantity"
+            :disabled="disabled"
+            :min="1"
+            :max="99_999_999"
+            :step="1"
+            :precision="0"
+            controls-position="right"
+            aria-label="本次数量"
+            @update:model-value="update({ quantity: $event })"
+          />
+        </el-form-item>
       </td>
       <td class="unit-cell">{{ line.object?.unit || line.material?.unit || '-' }}</td>
       <td class="remark-cell">
-        <el-input
-          :model-value="line.remark"
-          :disabled="disabled"
-          type="textarea"
-          :autosize="{ minRows: 1, maxRows: 3 }"
-          maxlength="5000"
-          placeholder="可选，补充本行说明"
-          aria-label="行备注"
-          @update:model-value="update({ remark: $event })"
-        />
+        <el-form-item
+          ref="remarkField"
+          :prop="fieldPath('remark')"
+          :rules="lineRules.remark"
+          class="line-field"
+        >
+          <el-input
+            :model-value="line.remark"
+            :disabled="disabled"
+            type="textarea"
+            :autosize="{ minRows: 1, maxRows: 3 }"
+            maxlength="5000"
+            placeholder="可选，补充本行说明"
+            aria-label="行备注"
+            @update:model-value="update({ remark: $event })"
+          />
+        </el-form-item>
       </td>
       <td class="actions-cell">
         <el-button
@@ -208,11 +256,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
+import type { FormItemInstance, FormItemRule } from 'element-plus';
 import { INVENTORY_ITEM_KINDS, INVENTORY_ITEM_KIND_LABELS } from '@company/constants';
 import type {
   OtherInventoryDirection,
-  OtherInventoryItemKind,
   OtherStockMaterial,
   OtherStockObject,
 } from '@company/contracts';
@@ -223,6 +271,11 @@ import {
   type OtherInventoryDraftLineUpdate,
 } from '../other-inventory-draft';
 import { otherStockMaterialLabel } from '../other-inventory-presentation';
+import {
+  otherInventoryFieldRule,
+  type OtherInventoryDraftLineErrors,
+  type OtherInventoryDraftLineField,
+} from '../other-inventory-validation';
 import { useOtherStockLineOptions } from '../composables/useOtherStockLineOptions';
 import type { NewBatchGroupChoice } from '../inbound-new-batch-groups';
 import InboundBatchModeSwitch from './InboundBatchModeSwitch.vue';
@@ -236,6 +289,7 @@ const props = defineProps<{
   disabled: boolean;
   newBatchGroups: readonly NewBatchGroupChoice[];
   batchSummary: string;
+  errors: OtherInventoryDraftLineErrors;
 }>();
 const emit = defineEmits<{
   updateLine: [update: OtherInventoryDraftLineUpdate];
@@ -243,6 +297,43 @@ const emit = defineEmits<{
 }>();
 const update = (patch: OtherInventoryDraftLineUpdate['patch']): void =>
   emit('updateLine', { key: props.line.key, patch });
+const itemKindField = ref<FormItemInstance>();
+const materialField = ref<FormItemInstance>();
+const objectField = ref<FormItemInstance>();
+const targetField = ref<FormItemInstance>();
+const quantityField = ref<FormItemInstance>();
+const remarkField = ref<FormItemInstance>();
+const lineRules: Record<OtherInventoryDraftLineField, FormItemRule> = {
+  itemKind: otherInventoryFieldRule(() => props.errors.itemKind),
+  material: otherInventoryFieldRule(() => props.errors.material, true),
+  object: otherInventoryFieldRule(() => props.errors.object, true),
+  target: otherInventoryFieldRule(() => props.errors.target, true),
+  quantity: otherInventoryFieldRule(() => props.errors.quantity, true),
+  remark: otherInventoryFieldRule(() => props.errors.remark),
+};
+const fieldPath = (field: OtherInventoryDraftLineField): string[] => [
+  'lineByKey',
+  props.line.key,
+  field,
+];
+watch(
+  () => props.errors,
+  () => {
+    // 异步对象核验与跨行批次关系变化只刷新已有反馈，不让未操作的新行提前报错。
+    for (const field of [
+      itemKindField.value,
+      materialField.value,
+      objectField.value,
+      targetField.value,
+      quantityField.value,
+      remarkField.value,
+    ]) {
+      if (field?.validateState === 'error' || field?.validateState === 'success')
+        void field.validate('change').catch(() => false);
+    }
+  },
+  { flush: 'post' },
+);
 const options = useOtherStockLineOptions(
   () => props.line,
   props.direction,
@@ -278,21 +369,6 @@ function verifyMaterial(material: OtherStockMaterial | null): void {
 function verifyObject(object: OtherStockObject | null): void {
   if (props.line.target.mode !== 'new') return;
   update({ object: object ?? props.line.object, objectVerified: Boolean(object) });
-}
-function changeKind(value: OtherInventoryItemKind): void {
-  if (props.disabled || value === props.line.itemKind) return;
-  update({
-    itemKind: value,
-    material: null,
-    materialVerified: false,
-    object: null,
-    objectVerified: false,
-    batch: null,
-    target:
-      props.line.target.mode === 'new'
-        ? { mode: 'new', clientKey: newOtherInventoryBatchKey() }
-        : { mode: 'existing', batchId: '' },
-  });
 }
 function changeTargetMode(value: unknown): void {
   if (
@@ -405,6 +481,18 @@ td {
 .identity-select {
   display: grid;
   gap: 8px;
+}
+.line-field {
+  margin-bottom: 0;
+}
+.line-field :deep(.el-form-item__content) {
+  display: block;
+  min-width: 0;
+}
+.line-field :deep(.el-form-item__error) {
+  position: static;
+  padding-top: 4px;
+  line-height: 1.4;
 }
 .kind-cell .el-select,
 .quantity-cell .el-input-number {

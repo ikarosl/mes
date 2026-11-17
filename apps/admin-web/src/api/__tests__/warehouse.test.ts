@@ -11,7 +11,6 @@ describe('warehouseApi', () => {
 
   it('uses the return-order endpoints and versioned actions', async () => {
     const { warehouseApi } = await import('../warehouse');
-    await warehouseApi.listReturnOrders({ page: 1, pageSize: 20, status: 'pending' });
     await warehouseApi.listReturnCandidates('8');
     await warehouseApi.createReturnOrder({
       productionBatchId: '8',
@@ -20,13 +19,9 @@ describe('warehouseApi', () => {
     await warehouseApi.confirmReturnOrder('20', 2);
 
     expect(request).toHaveBeenNthCalledWith(1, {
-      url: '/warehouse/return-orders',
-      params: { page: 1, pageSize: 20, status: 'pending' },
-    });
-    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/warehouse/return-orders/batches/8/candidates',
     });
-    expect(request).toHaveBeenNthCalledWith(3, {
+    expect(request).toHaveBeenNthCalledWith(2, {
       url: '/warehouse/return-orders',
       method: 'POST',
       data: {
@@ -34,7 +29,7 @@ describe('warehouseApi', () => {
         details: [{ allocationId: '12', returnQuantity: 3 }],
       },
     });
-    expect(request).toHaveBeenNthCalledWith(4, {
+    expect(request).toHaveBeenNthCalledWith(3, {
       url: '/warehouse/return-orders/20/actions/confirm',
       method: 'POST',
       data: { version: 2 },
