@@ -3,6 +3,7 @@ import type { ProductionBatchItem } from '@company/contracts';
 import { productionTasksApi } from '../../../api/production/tasks';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { EMessage } from '../../../utils/message';
+import { batchStatusMeta } from '../shared/production-status';
 
 export function useTrackingTaskSearch(selected: () => ProductionBatchItem | null) {
   const tasks = ref<ProductionBatchItem[]>([]),
@@ -42,7 +43,7 @@ export function useTrackingTaskSearch(selected: () => ProductionBatchItem | null
     if (current && !values.some((item) => item.id === current.id)) values.unshift(current);
     return values.map((item) => ({
       value: item.id,
-      label: `${item.batchNo} / ${item.productName}`,
+      label: `${item.batchNo} / ${item.productName}（${batchStatusMeta(item.status).label}）`,
     }));
   });
   return { loading, error, hasMore, options, search };
