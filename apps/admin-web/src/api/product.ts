@@ -30,8 +30,6 @@ import type {
   PageResult,
   ProductPayload,
   ProductUpdatePayload,
-  TechnicalFileListItem,
-  TechnicalFileQuery,
   TechnicalFileUploadPayload,
   UserOption,
 } from '@company/contracts';
@@ -53,12 +51,6 @@ const request = async <T>(config: RetryRequestConfig) => {
 
 const base = '/product';
 export const productApi = {
-  technicalFiles: (params: TechnicalFileQuery, options: ReadRequestOptions = {}) =>
-    request<PageResult<TechnicalFileListItem>>({
-      ...options,
-      url: `${base}/technical-files`,
-      params,
-    }),
   uploadTechnicalFile: (
     file: File,
     metadata: TechnicalFileUploadPayload,

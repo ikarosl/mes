@@ -6,7 +6,6 @@ import type {
   PageResult,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
-import type { StoredTechnicalFile } from './technical-file.repository.js';
 
 export abstract class ProcessStepRepository {
   abstract listProcessSteps(query: ProcessStepQuery): Promise<PageResult<ProcessStepListItem>>;
@@ -21,11 +20,7 @@ export abstract class ProcessStepRepository {
     audit: CommandContext,
   ): Promise<void>;
   abstract setProcessStepStatus(id: string, status: number, audit: CommandContext): Promise<void>;
-  abstract attachProcessStepSop(
-    id: string,
-    file: StoredTechnicalFile,
-    audit: CommandContext,
-  ): Promise<void>;
+  abstract attachProcessStepSop(id: string, fileId: string, audit: CommandContext): Promise<void>;
   abstract setProcessStepDefaultSop(
     id: string,
     fileId: string | null,

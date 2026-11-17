@@ -12,6 +12,7 @@ export * from './upload.js';
 export * from './approval.js';
 export * from './notification.js';
 export * from './template.js';
+export * from './attachment.js';
 export * from './procurement.js';
 export * from './procurement-orders.js';
 export * from './procurement-receipts.js';

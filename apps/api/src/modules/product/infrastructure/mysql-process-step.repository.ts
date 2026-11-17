@@ -5,6 +5,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { AttachmentReferenceService, AttachmentService } from '../../attachment/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 
@@ -17,11 +18,14 @@ import type {
   PageResult,
 } from '@company/contracts';
 import { type ProcessStepRepository } from '../application/ports/process-step.repository.js';
-import type { StoredTechnicalFile } from '../application/ports/technical-file.repository.js';
 
 @Injectable()
 export class MysqlProcessStepRepository implements ProcessStepRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly attachments: AttachmentService,
+    private readonly attachmentReferences: AttachmentReferenceService,
+  ) {}
 
   async listProcessSteps(query: ProcessStepQuery): Promise<PageResult<ProcessStepListItem>> {
     const page = query.page ?? 1;
@@ -49,25 +53,25 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
         step_name: string;
         description: string | null;
         default_sop_file_id: number | null;
-        sop_file_name: string | null;
         status: number;
         remark: string | null;
         updated_at: Date | null;
       })[]
     >(
-      `SELECT ps.id,ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id,tf.file_name sop_file_name,
+      `SELECT ps.id,ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id,
                     ps.status,ps.remark,ps.updated_at
-             FROM process_steps ps LEFT JOIN technical_files tf ON tf.id=ps.default_sop_file_id AND tf.is_deleted=0
+             FROM process_steps ps
              WHERE ${where} ORDER BY ps.step_code,ps.id LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
+    const sopFiles = await this.sopFiles(rows.map((row) => row.default_sop_file_id));
     const items = rows.map((row) => ({
       id: String(row.id),
       stepCode: row.step_code,
       stepName: row.step_name,
       description: row.description,
       defaultSopFileId: row.default_sop_file_id === null ? null : String(row.default_sop_file_id),
-      sopFileName: row.sop_file_name,
+      sopFileName: sopFiles.get(String(row.default_sop_file_id))?.fileName ?? null,
       status: row.status,
       remark: row.remark,
       updatedAt: this.date(row.updated_at),
@@ -81,16 +85,17 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
         id: number;
         step_code: string;
         step_name: string;
-        sop_file_name: string | null;
+        default_sop_file_id: number | null;
       })[]
-    >(`SELECT ps.id,ps.step_code,ps.step_name,tf.file_name sop_file_name
-         FROM process_steps ps LEFT JOIN technical_files tf ON tf.id=ps.default_sop_file_id AND tf.is_deleted=0
+    >(`SELECT ps.id,ps.step_code,ps.step_name,ps.default_sop_file_id
+         FROM process_steps ps
          WHERE ps.is_deleted=0 AND ps.status=1 ORDER BY ps.step_code,ps.id`);
+    const sopFiles = await this.sopFiles(rows.map((row) => row.default_sop_file_id));
     return rows.map((row) => ({
       id: String(row.id),
       stepCode: row.step_code,
       stepName: row.step_name,
-      sopFileName: row.sop_file_name,
+      sopFileName: sopFiles.get(String(row.default_sop_file_id))?.fileName ?? null,
     }));
   }
 
@@ -161,61 +166,42 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
     });
   }
 
-  async attachProcessStepSop(id: string, file: StoredTechnicalFile, audit: CommandContext) {
-    await withTransaction(this.pool, async (connection) => {
-      const before = await this.processStepRecord(connection, id);
-      const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO technical_files (file_name,original_name,storage_provider,bucket,object_key,mime_type,size_bytes,checksum_sha256,file_type,version_no,status,created_by,updated_by)
-         VALUES (?,?,?,?,?,?,?,?,?,?,1,?,?)`,
-        [
-          file.fileName,
-          file.originalName,
-          file.storageProvider,
-          file.bucket,
-          file.objectKey,
-          file.mimeType,
-          file.sizeBytes,
-          file.checksumSha256,
-          file.fileType,
-          file.versionNo,
-          audit.actorId,
-          audit.actorId,
-        ],
-      );
-      await connection.execute(
-        'UPDATE process_steps SET default_sop_file_id=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [result.insertId, audit.actorId, id],
-      );
-      await this.audit(
-        connection,
-        audit,
-        'process-step.upload-sop',
-        id,
-        { defaultSopFileId: before.default_sop_file_id },
-        { defaultSopFileId: String(result.insertId), fileName: file.fileName },
-      );
-    });
+  async attachProcessStepSop(id: string, fileId: string, audit: CommandContext): Promise<void> {
+    await this.bindDefaultSop(id, fileId, audit, 'process-step.upload-sop');
   }
 
-  async setProcessStepDefaultSop(id: string, fileId: string | null, audit: CommandContext) {
+  async setProcessStepDefaultSop(
+    id: string,
+    fileId: string | null,
+    audit: CommandContext,
+  ): Promise<void> {
+    await this.bindDefaultSop(id, fileId, audit, 'process-step.default-sop');
+  }
+
+  private async bindDefaultSop(
+    id: string,
+    fileId: string | null,
+    audit: CommandContext,
+    action: string,
+  ): Promise<void> {
     await withTransaction(this.pool, async (connection) => {
       const before = await this.processStepRecord(connection, id);
-      if (fileId) {
-        const [[file]] = await connection.query<RowDataPacket[]>(
-          `SELECT id FROM technical_files
-            WHERE id=? AND file_type='sop' AND status=1 AND is_deleted=0 FOR UPDATE`,
-          [fileId],
-        );
-        if (!file) throw new ProductDomainError('NOT_FOUND', '可关联的 SOP 技术文件不存在');
-      }
+      if (fileId) await this.attachments.requireAvailable([fileId], 'sop');
       await connection.execute(
         'UPDATE process_steps SET default_sop_file_id=?,updated_by=? WHERE id=? AND is_deleted=0',
         [fileId, audit.actorId, id],
       );
+      await this.attachmentReferences.setReference(
+        'product_process_step',
+        id,
+        'default_sop',
+        fileId,
+        audit,
+      );
       await this.audit(
         connection,
         audit,
-        'process-step.default-sop',
+        action,
         id,
         { defaultSopFileId: before.default_sop_file_id },
         { defaultSopFileId: fileId },
@@ -233,11 +219,17 @@ export class MysqlProcessStepRepository implements ProcessStepRepository {
         default_sop_file_id: number | null;
       })[]
     >(
-      'SELECT id,step_code,step_name,status,default_sop_file_id FROM process_steps WHERE id=? AND is_deleted=0',
+      'SELECT id,step_code,step_name,status,default_sop_file_id FROM process_steps WHERE id=? AND is_deleted=0 FOR UPDATE',
       [id],
     );
     if (!row) throw new ProductDomainError('NOT_FOUND', '标准工序不存在');
     return row;
+  }
+
+  private async sopFiles(ids: Array<number | null>) {
+    const fileIds = [...new Set(ids.filter((id): id is number => id !== null).map(String))];
+    const files = await this.attachments.getManyTechnicalFiles(fileIds);
+    return new Map(files.filter((file) => file.fileType === 'sop').map((file) => [file.id, file]));
   }
   private async audit(
     db: Db,

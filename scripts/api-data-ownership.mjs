@@ -51,6 +51,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
   ]),
   notification: Object.freeze(['notifications', 'notification_recipients']),
   template: Object.freeze(['business_templates']),
+  attachment: Object.freeze(['attachments', 'attachment_references']),
   approval: Object.freeze([
     'approval_flow_definitions',
     'approval_flow_versions',
@@ -79,7 +80,7 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'materials',
     'material_variants',
     'product_materials',
-    'technical_files',
+    'technical_files', // Historical name; attachments is now owned by Attachment.
     'process_steps',
     'process_routes',
     'process_route_steps',

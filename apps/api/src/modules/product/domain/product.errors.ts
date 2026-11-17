@@ -8,8 +8,7 @@ export type ProductErrorCode =
   | 'IMMUTABLE_ROUTE'
   | 'ROUTE_STEPS_REQUIRED'
   | 'ROUTE_IN_USE'
-  | 'INVALID_INPUT'
-  | 'STORAGE_UNAVAILABLE';
+  | 'INVALID_INPUT';
 
 export class ProductDomainError extends Error {
   constructor(

@@ -190,6 +190,7 @@ export interface UpdateUserCandidateConfigRequest {
 export const OPERATION_LOG_MODULE_OPTIONS = [
   { label: '认证登录', value: 'auth' },
   { label: '系统管理', value: 'system' },
+  { label: '附件管理', value: 'attachment' },
   { label: '产品资料', value: 'product' },
   { label: '生产管理', value: 'production' },
   { label: '审批管理', value: 'approval' },

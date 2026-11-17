@@ -60,13 +60,6 @@ export interface ProcessRouteDisplayReference {
   versionNo: string;
 }
 
-export interface EnabledSopFileSnapshot {
-  id: string;
-  fileName: string;
-  objectKey: string;
-  versionNo: string;
-}
-
 /**
  * Product 模块的公开读边界失败结果。预期业务失败（目标不存在、数据不可用）不作为异常抛出，
  * 由调用方（如 Production）按 status 分支；意外的技术错误仍然抛出。
@@ -93,7 +86,4 @@ export abstract class ProductSnapshotQuery {
   abstract getApprovedBomSnapshot(
     productId: string,
   ): Promise<ProductQueryResult<ProductBomSnapshot>>;
-  abstract getEnabledSopFileSnapshot(
-    fileId: string,
-  ): Promise<ProductQueryResult<EnabledSopFileSnapshot>>;
 }

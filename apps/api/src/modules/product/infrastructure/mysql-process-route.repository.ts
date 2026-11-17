@@ -5,6 +5,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { AttachmentReferenceService } from '../../attachment/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 
@@ -21,7 +22,10 @@ import { type ProcessRouteRepository } from '../application/ports/process-route.
 
 @Injectable()
 export class MysqlProcessRouteRepository implements ProcessRouteRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly attachmentReferences: AttachmentReferenceService,
+  ) {}
 
   async listRoutes(query: ProcessRouteQuery): Promise<PageResult<ProcessRouteListItem>> {
     const page = query.page ?? 1;
@@ -184,6 +188,19 @@ export class MysqlProcessRouteRepository implements ProcessRouteRepository {
       const before = await this.routeRecord(connection, id, true);
       if (before.status !== 'draft')
         throw new ProductDomainError('IMMUTABLE_ROUTE', '只有从未启用的草稿路线可以删除');
+      const [steps] = await connection.query<(RowDataPacket & { id: number })[]>(
+        'SELECT id FROM process_route_steps WHERE route_id=? AND is_deleted=0 ORDER BY id FOR UPDATE',
+        [id],
+      );
+      for (const step of steps) {
+        await this.attachmentReferences.setReference(
+          'product_route_step',
+          String(step.id),
+          'sop',
+          null,
+          audit,
+        );
+      }
       await connection.execute(
         'UPDATE process_route_steps SET is_deleted=1,deleted_by=?,deleted_at=NOW(),updated_by=? WHERE route_id=? AND is_deleted=0',
         [audit.actorId, audit.actorId, id],

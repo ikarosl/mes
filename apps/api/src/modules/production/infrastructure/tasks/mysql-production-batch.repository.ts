@@ -18,6 +18,7 @@ import { writeTransactionalAudit } from '../../../../common/audit/transactional-
 import { toDateOnlyString } from '../../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
 import type { ProcessRouteSnapshot } from '../../../product/public.js';
+import { AttachmentReferenceService, AttachmentService } from '../../../attachment/public.js';
 import { InventoryProductionDocumentCommand } from '../../../inventory/public.js';
 import type {
   ProductionBatchUpdateContext,
@@ -49,6 +50,8 @@ export class MysqlProductionBatchRepository {
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly documents: InventoryProductionDocumentCommand,
+    private readonly attachments: AttachmentService,
+    private readonly attachmentReferences: AttachmentReferenceService,
   ) {}
 
   async list(query: ProductionBatchQuery): Promise<PageResult<ProductionBatchItem>> {
@@ -301,14 +304,7 @@ export class MysqlProductionBatchRepository {
         [route?.routeCode ?? null, route?.versionNo ?? null, audit.actorId, id, version],
       );
       this.assertVersion(result, '生产任务已被其他操作修改，请刷新后重试');
-      await this.insertRouteSteps(
-        connection,
-        id,
-        route,
-        stepOverrides,
-        order.unit_snapshot,
-        audit.actorId,
-      );
+      await this.insertRouteSteps(connection, id, route, stepOverrides, order.unit_snapshot, audit);
       const after = await findBatch(connection, id, true);
       await this.audit(connection, audit, 'production-batch.release', id, batchAudit(before), {
         ...batchAudit(after),
@@ -325,12 +321,19 @@ export class MysqlProductionBatchRepository {
     route: ProcessRouteSnapshot | null,
     stepOverrides: ResolvedBatchStepOverride[],
     unit: string,
-    actorId: CommandContext['actorId'],
+    audit: CommandContext,
   ): Promise<void> {
     const overrides = new Map(stepOverrides.map((override) => [override.routeStepId, override]));
+    await this.attachments.requireAvailable(
+      (route?.steps ?? []).flatMap((step) => {
+        const actualSop = overrides.get(step.routeStepId)?.actualSop;
+        return [...(step.sop ? [step.sop.id] : []), ...(actualSop ? [actualSop.id] : [])];
+      }),
+      'sop',
+    );
     for (const step of route?.steps ?? []) {
       const override = overrides.get(step.routeStepId);
-      await connection.execute(
+      const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO batch_step_records (production_batch_id,route_step_id,step_order_snapshot,step_code_snapshot,step_name_snapshot,sop_file_id_snapshot,sop_file_name_snapshot,sop_object_key_snapshot,sop_version_no_snapshot,actual_sop_file_id,actual_sop_file_name_snapshot,actual_sop_object_key_snapshot,actual_sop_version_no_snapshot,unit_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         [
           batchId,
@@ -347,10 +350,29 @@ export class MysqlProductionBatchRepository {
           override?.actualSop?.objectKey ?? null,
           override?.actualSop?.versionNo ?? null,
           unit,
-          actorId,
-          actorId,
+          audit.actorId,
+          audit.actorId,
         ],
       );
+      const stepRecordId = String(result.insertId);
+      if (step.sop) {
+        await this.attachmentReferences.bindReference(
+          'production_batch_step',
+          stepRecordId,
+          'default_sop',
+          step.sop.id,
+          audit,
+        );
+      }
+      if (override?.actualSop) {
+        await this.attachmentReferences.bindReference(
+          'production_batch_step',
+          stepRecordId,
+          'actual_sop',
+          override.actualSop.id,
+          audit,
+        );
+      }
     }
   }
 

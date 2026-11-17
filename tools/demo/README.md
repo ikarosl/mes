@@ -8,6 +8,7 @@
 | [采购金额](prepare-procurement-amount-demo.mjs)       | 报价、含税总额、舍入、正式单更正及审计                                       |
 | [追踪卡](prepare-tracking-workbench-demo.mjs)         | 扫码、异常结算、末站产出与库存                                               |
 | [审批开关](prepare-optional-approval-demo.mjs)         | 独立 BOM 草稿及研发人工需求，保留给人工提交、更正与关闭                      |
+| [统一附件](prepare-attachment-demo.mjs)               | 真实 PDF／图片、当前工序引用、替换后无引用文件、归档路线保留、回收与物理清理 |
 
 ## 前置准备
 
@@ -62,6 +63,32 @@ node tools/demo/prepare-optional-approval-demo.mjs report
 工具不开始生产、不分配或领料，不生成库存事实，也不改动既有需求。`OPTIONAL_APPROVAL_DEMO_TAG` 默认 `sample`，接受 1～40 位字母、数字、下划线或连字符并统一为小写；备注标记为 `[demo-optional-approval-v1:TAG]`，工单外部订单号同新成品编码。发现同 TAG 任一成品或工单后，`prepare` 只报告现状，不覆盖、补缺或继续上次写入；中断后先 `report`，另一组准备使用新 TAG，不移除原标记。
 
 在审批配置页人工选择待验收开关与已发布流程，再从成品 BOM 页面和新任务的物料需求入口手工提交。开启／关闭可各用不同 TAG，数量更正和关闭使用上述两条独立需求。`report` 读取两个场景当前开关、BOM 当前版本／锁定／审批关联，以及各需求的当前可更正条件、数量、替代历史和生效状态；建议数量仅随当前事实计算，不自动执行，提交时仍须由页面重新核对。业务语义分别由 [Product](../../apps/api/src/modules/product/docs/product-rules.md#bom-命令与审批) 和 [Production](../../apps/api/src/modules/production/docs/database/demand-allocation-and-outbound.md#正式需求更正与替代)维护。
+
+## 统一附件样例
+
+附件工具只提供 `prepare`／`report`，省略模式时为 `report`。须先完成增量 migration、附件权限目录发布及 S3 Bucket 准备，并启动匹配 API；不因附件模块变更重建既有库。API 默认 `http://127.0.0.1:3003/api`，`ATTACHMENT_DEMO_API_BASE_URL` 可指定其他本机地址；拒绝远程主机、URL 凭证、查询串、片段及重定向。登录管理员须具备技术文件上传／绑定、工序／路线维护和系统附件查看／管理权限，工具不修改角色授权。
+
+```powershell
+$env:ALLOW_DEMO_SEED='1'
+$env:ATTACHMENT_DEMO_TAG='attachment_01'
+node tools/demo/prepare-attachment-demo.mjs prepare
+node tools/demo/prepare-attachment-demo.mjs report
+```
+
+`ATTACHMENT_DEMO_TAG` 默认 `sample`，接受 1～40 位字母、数字、下划线或连字符并转为小写。新工序和路线使用 `demo-attachment-TAG` 编码，备注带 `[demo-attachment-v1:TAG]`；上传文件名使用 `demo-attachment-TAG--` 前缀。发现同 TAG 任一附件、工序或路线后，`prepare` 仅报告现状，不覆盖、补缺或续写；中断后先 `report`，另一组样例使用新 TAG。
+
+| 样例文件 | 准备行为与人工观察 |
+| --- | --- |
+| `route-retained.pdf` | 先作为工序默认 SOP，冻结到独立路线并启用、归档；工序后来换文件，旧文件仍由路线步骤保留 |
+| `replaced-old-unreferenced.pdf` | 短暂绑定工序后再次替换，留下无引用的正常附件 |
+| `current-process-sop.pdf` | 工序最终当前 SOP，引用指向新建工序 |
+| `unattached-image.png` | 未关联的真实 240×120 PNG，可下载检查图片内容 |
+| `trashed.pdf` | 新建独立规格书后移入回收站，保留对象供回收状态验收 |
+| `purged.pdf` | 新建独立规格书后回收并请求物理清理；目录保留元数据，报告读取实际清理结果 |
+
+PDF 均为工具生成的可打开单页样例，PNG 包含真实 RGB 像素，全部通过正式上传入口写入对象存储，不伪造 locator、不直接写 SQL。回收和清理只允许本次执行中新上传的附件 ID；不选取、清理或替换既有业务附件。对象存储未能确认物理删除时保留实际失败／处理中状态，不声称完成，也不自动重试。
+
+`report` 只读取本组附件当前生命周期、清理结果、引用明细、工序当前 SOP 和路线快照，不以初始预期覆盖用户后续修改。工具不创建产品、BOM、工单、任务或库存；生产下达后的默认／实际 SOP 历史保留须在已有合格任务上另行人工验收。本工具是人工验收数据准备，不代表正式测试通过。附件生命周期与业务保留边界分别见 [Attachment](../../apps/api/src/modules/attachment/README.md) 和 [Product](../../apps/api/src/modules/product/docs/technical-files.md)。
 
 ## 其他工具配置
 

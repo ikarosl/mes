@@ -87,6 +87,7 @@ describe('ProductionService first-stage commands', () => {
       executingIdempotencyExecutor as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await expect(
@@ -127,6 +128,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await expect(service.listWorkOrderOptions()).resolves.toEqual(options);
@@ -161,6 +163,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await service.releaseWorkOrder('11', 4, audit);
@@ -196,6 +199,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await expect(service.releaseWorkOrder('11', 4, audit)).rejects.toMatchObject({
@@ -217,6 +221,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await service.cancelWorkOrder('11', 2, '  计划取消  ', audit);
@@ -237,6 +242,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await expect(service.cancelBatch('8', 2, '   ', audit)).rejects.toMatchObject({
@@ -259,6 +265,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await service.updateWorkOrder('11', { version: 4 }, audit);
@@ -304,6 +311,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
     const payload = { version: 4, productId: '9', plannedQuantity: 25.5 };
 
@@ -322,6 +330,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
 
     await expect(
@@ -353,6 +362,7 @@ describe('ProductionService first-stage commands', () => {
       {} as never,
       eligibleOwners as never,
       eligibleOwners as never,
+      {} as never,
     );
     const payload = { version: 2, planStartDate: '2026-08-01', planEndDate: '2026-08-02' };
 
@@ -393,6 +403,7 @@ describe('ProductionService first-stage commands', () => {
       replayingExecutor as never,
       eligibleOwners as never,
       taskOwners as never,
+      {} as never,
     );
 
     const result = await service.createBatch(

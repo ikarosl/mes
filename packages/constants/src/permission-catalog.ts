@@ -25,6 +25,36 @@ export interface PermissionCatalogEntry {
  */
 export const PERMISSION_CATALOG = [
   {
+    code: PERMISSIONS.system.attachments.view,
+    name: '附件管理',
+    parentCode: PERMISSIONS.system.view,
+    type: 'page',
+    routePath: '/system/attachments',
+    sortOrder: 80,
+    apiMethod: null,
+    apiPath: null,
+  },
+  {
+    code: PERMISSIONS.system.attachments.manage,
+    name: '回收与清理附件',
+    parentCode: PERMISSIONS.system.attachments.view,
+    type: 'api',
+    routePath: null,
+    sortOrder: 10,
+    apiMethod: null,
+    apiPath: null,
+  },
+  {
+    code: PERMISSIONS.system.attachments.download,
+    name: '预览与下载附件',
+    parentCode: PERMISSIONS.system.attachments.view,
+    type: 'api',
+    routePath: null,
+    sortOrder: 20,
+    apiMethod: null,
+    apiPath: null,
+  },
+  {
     code: PERMISSIONS.dashboard.view,
     name: '首页',
     parentCode: null,

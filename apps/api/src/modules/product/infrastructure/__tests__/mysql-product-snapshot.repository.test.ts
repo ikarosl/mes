@@ -12,7 +12,7 @@ describe('MysqlProductSnapshotRepository', () => {
           [],
         ]),
     };
-    const repository = new MysqlProductSnapshotRepository(pool as never);
+    const repository = new MysqlProductSnapshotRepository(pool as never, {} as never);
 
     await expect(repository.listInventoryItemDisplayReferencesByIds(['2'])).resolves.toEqual([
       { id: '2', itemCode: 'MAT-2', productName: '停用物料', unit: 'pcs' },
@@ -29,7 +29,7 @@ describe('MysqlProductSnapshotRepository', () => {
     const connection = transactionConnection();
     const pool = { getConnection: vi.fn().mockResolvedValue(connection) };
     connection.query.mockResolvedValueOnce([[productRow], []]);
-    const repository = new MysqlProductSnapshotRepository(pool as never);
+    const repository = new MysqlProductSnapshotRepository(pool as never, {} as never);
 
     await withTransaction(pool as never, async () => repository.getProductionProduct('9'));
 
@@ -85,6 +85,7 @@ const transactionConnection = () => ({
 });
 
 const repositoryWith = (connection: ReturnType<typeof transactionConnection>) =>
-  new MysqlProductSnapshotRepository({
-    getConnection: vi.fn().mockResolvedValue(connection),
-  } as never);
+  new MysqlProductSnapshotRepository(
+    { getConnection: vi.fn().mockResolvedValue(connection) } as never,
+    {} as never,
+  );

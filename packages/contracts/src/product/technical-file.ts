@@ -1,8 +1,13 @@
 import type { PageQuery } from '../common.js';
+import type {
+  AttachmentFile,
+  AttachmentFileType,
+  AttachmentStorageProvider,
+} from '../attachment.js';
 
-export type TechnicalFileStorageProvider = 's3';
+export type TechnicalFileStorageProvider = AttachmentStorageProvider;
 
-export type TechnicalFileType = 'sop' | 'specification';
+export type TechnicalFileType = AttachmentFileType;
 
 export interface TechnicalFileQuery extends PageQuery {
   keyword?: string;
@@ -17,20 +22,5 @@ export interface TechnicalFileUploadPayload {
   fileType?: TechnicalFileType;
 }
 
-export interface TechnicalFileListItem {
-  id: string;
-  fileName: string;
-  originalName: string;
-  storageProvider: TechnicalFileStorageProvider;
-  bucket: string | null;
-  objectKey: string;
-  mimeType: string;
-  sizeBytes: number;
-  checksumSha256: string;
-  fileType: TechnicalFileType;
-  /** SOP 保留版本快照，规格书没有版本号。 */
-  versionNo: string | null;
-  status: number;
-  createdAt: string | null;
-  updatedAt: string | null;
-}
+/** Product 的技术文件展示复用唯一附件元数据契约。 */
+export type TechnicalFileListItem = AttachmentFile;

@@ -6,9 +6,18 @@ import SystemUserCandidates from '../../views/system/SystemUserCandidates.vue';
 import PermissionsPage from '../../views/system/PermissionsPage.vue';
 import LogsPage from '../../views/system/LogsPage.vue';
 import PersonnelPage from '../../views/system/PersonnelPage.vue';
+import AttachmentsPage from '../../views/attachment/AttachmentsPage.vue';
 import { page } from '../page';
 
 export const systemRoutes: RouteRecordRaw[] = [
+  page(
+    'system/attachments',
+    'system-attachments',
+    '附件管理',
+    AttachmentsPage,
+    PERMISSIONS.system.attachments.view,
+    'AttachmentsPage',
+  ),
   page(
     'system/personnel',
     'system-personnel',

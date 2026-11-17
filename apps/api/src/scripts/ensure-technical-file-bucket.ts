@@ -1,6 +1,5 @@
 import { loadTechnicalFileStorageConfig } from '../config/env.js';
-import { ensureS3Bucket } from '../modules/product/infrastructure/s3-bucket.js';
-import { createS3Client } from '../modules/product/infrastructure/s3-technical-file.storage.js';
+import { createS3Client, ensureS3Bucket } from '../modules/attachment/public.js';
 
 const config = loadTechnicalFileStorageConfig();
 const client = createS3Client(config);

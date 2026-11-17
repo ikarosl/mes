@@ -14,6 +14,7 @@ import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { AttachmentReferenceService, AttachmentService } from '../../attachment/public.js';
 import { ProductInventoryEligibility } from '../application/product-inventory-eligibility.query.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireEnabledCompatibleMaterialVariant } from '../domain/material-variant.policy.js';
@@ -24,10 +25,7 @@ import {
   type MaterialVariantDisplayReference,
 } from '../application/ports/material-variant.repository.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
-import {
-  readSpecificationFiles,
-  requireSpecificationFile,
-} from './mysql-specification-file.persistence.js';
+import { readSpecificationFiles, requireSpecificationFile } from './specification-files.js';
 
 type Db = Pool | PoolConnection;
 type VariantRow = RowDataPacket & {
@@ -58,6 +56,8 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
   constructor(
     @Inject(DATABASE_POOL) private readonly pool: Pool,
     private readonly eligibility: ProductInventoryEligibility,
+    private readonly attachments: AttachmentService,
+    private readonly attachmentReferences: AttachmentReferenceService,
   ) {
     super();
   }
@@ -86,7 +86,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       [...parameters, pageSize, (page - 1) * pageSize],
     );
     const files = await readSpecificationFiles(
-      this.pool,
+      this.attachments,
       rows.map((row) => row.specification_file_id),
     );
     return {
@@ -116,7 +116,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       parameters,
     );
     const files = await readSpecificationFiles(
-      this.pool,
+      this.attachments,
       rows.map((row) => row.specification_file_id),
     );
     return rows.map((row) => this.map(row, files));
@@ -157,7 +157,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         ids,
       );
       const files = await readSpecificationFiles(
-        db,
+        this.attachments,
         rows.map((row) => row.specification_file_id),
       );
       return rows.map((row) => this.map(row, files));
@@ -256,7 +256,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         }
       }
       const files = await readSpecificationFiles(
-        queryable,
+        this.attachments,
         rows.map((row) => row.specification_file_id),
       );
       return rows.map((row) => {
@@ -298,7 +298,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       // The external code is deterministic and server-owned. Keep the base
       // code intact so all BOMs continue to resolve to the same material.
       const variantCode = `${material.material_code}-${majorVersion}-${minorVersion}`;
-      await requireSpecificationFile(connection, command.specificationFileId);
+      await requireSpecificationFile(this.attachments, command.specificationFileId);
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO material_variants
           (material_id,major_version,minor_version,variant_code,specification_file_id,remark,created_by,updated_by)
@@ -313,6 +313,13 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
           context.actorId,
           context.actorId,
         ],
+      );
+      await this.attachmentReferences.setReference(
+        'material_variant',
+        String(result.insertId),
+        'specification',
+        command.specificationFileId,
+        context,
       );
       await this.audit(
         connection,
@@ -384,11 +391,18 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       if (payload.expectedSpecificationFileId !== currentFileId) {
         throw new ProductDomainError('CONFLICT', '规格书已被其他人修改，请刷新后重试');
       }
-      await requireSpecificationFile(connection, payload.specificationFileId);
+      await requireSpecificationFile(this.attachments, payload.specificationFileId);
       if (payload.specificationFileId === currentFileId) return;
       await connection.execute(
         'UPDATE material_variants SET specification_file_id=?,updated_by=? WHERE id=? AND is_deleted=0',
         [payload.specificationFileId, context.actorId, id],
+      );
+      await this.attachmentReferences.setReference(
+        'material_variant',
+        id,
+        'specification',
+        payload.specificationFileId,
+        context,
       );
       await this.audit(
         connection,

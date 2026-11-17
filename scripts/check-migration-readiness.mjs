@@ -5,6 +5,8 @@ import path from 'node:path';
 const root = process.cwd();
 const migrationsDir = path.join(root, 'packages/database/migrations');
 const allowedTables = new Set([
+  'attachments',
+  'attachment_references',
   'procurement_supplier',
   'purchase_order',
   'purchase_order_line',

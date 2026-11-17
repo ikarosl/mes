@@ -1,7 +1,6 @@
 import type {
   ProductBomSnapshot,
   ProcessRouteDisplayReference,
-  EnabledSopFileSnapshot,
   ProductionProductSnapshot,
   InventoryItemDisplayReference,
   InventoryItemReference,
@@ -17,5 +16,4 @@ export abstract class ProductSnapshotRepository {
   ): Promise<InventoryItemDisplayReference[]>;
   abstract getProductionProduct(productId: string): Promise<ProductionProductSnapshot>;
   abstract getApprovedBomSnapshot(productId: string): Promise<ProductBomSnapshot>;
-  abstract getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot>;
 }

@@ -101,6 +101,8 @@ completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复�
 
 一任务同一路线步骤唯一，id+production_batch_id供追踪事实组合引用。actual_sop_*表示生成快照时显式覆盖的 SOP，既有创建快照保持原样；下载优先该快照，否则使用默认 SOP 快照。当前主数据变化不回写历史。
 
+下达在保存每条工序快照的同一事务内，以该 `batch_step_records.id` 为 owner ID，分别追加 `production_batch_step/default_sop` 和 `production_batch_step/actual_sop` 统一附件引用；即使两者指向同一文件也保留两个槽。无文件的槽不造引用。任务取消、结束、恢复和路线归档均不解除这些历史保留引用。附件对象及清理由 [Attachment](../../../attachment/README.md) 唯一拥有；历史下载经其公开能力核验冻结文件 ID 与对象键，业务外键和快照不替代统一保留引用。
+
 ### 字段
 
 | 字段                             | SQL定义                                                                   | 含义                                                 |
@@ -138,11 +140,11 @@ KEY `fk_batch_step_records_sop` (`sop_file_id_snapshot`);
 KEY `fk_batch_step_records_created_by` (`created_by`);
 KEY `fk_batch_step_records_updated_by` (`updated_by`);
 KEY `idx_batch_step_records_actual_sop` (`actual_sop_file_id`);
-CONSTRAINT `fk_batch_step_records_actual_sop` FOREIGN KEY (`actual_sop_file_id`) REFERENCES `technical_files` (`id`) ON DELETE SET NULL;
+CONSTRAINT `fk_batch_step_records_actual_sop` FOREIGN KEY (`actual_sop_file_id`) REFERENCES `attachments` (`id`) ON DELETE SET NULL;
 CONSTRAINT `fk_batch_step_records_batch` FOREIGN KEY (`production_batch_id`) REFERENCES `production_batches` (`id`);
 CONSTRAINT `fk_batch_step_records_created_by` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
 CONSTRAINT `fk_batch_step_records_route_step` FOREIGN KEY (`route_step_id`) REFERENCES `process_route_steps` (`id`);
-CONSTRAINT `fk_batch_step_records_sop` FOREIGN KEY (`sop_file_id_snapshot`) REFERENCES `technical_files` (`id`) ON DELETE SET NULL;
+CONSTRAINT `fk_batch_step_records_sop` FOREIGN KEY (`sop_file_id_snapshot`) REFERENCES `attachments` (`id`) ON DELETE SET NULL;
 CONSTRAINT `fk_batch_step_records_updated_by` FOREIGN KEY (`updated_by`) REFERENCES `users` (`id`);
 CONSTRAINT `chk_batch_step_records_order` CHECK ((`step_order_snapshot` > 0));
 CONSTRAINT `chk_batch_step_records_version` CHECK ((`version` >= 0));

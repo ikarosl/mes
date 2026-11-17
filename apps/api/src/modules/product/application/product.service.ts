@@ -22,14 +22,11 @@ import type {
   TechnicalFileQuery,
   TechnicalFileUploadPayload,
 } from '@company/contracts';
-import {
-  TECHNICAL_FILE_EXTENSIONS,
-  TECHNICAL_FILE_MAX_SIZE_BYTES,
-  TECHNICAL_FILE_MIME_TYPES_BY_EXTENSION,
-  TECHNICAL_FILE_TYPES,
-} from '@company/constants';
+import { TECHNICAL_FILE_TYPES } from '@company/constants';
 import { normalizeJsonTable } from '@company/utils';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
+import { toBeijingCompactTimestamp } from '../../../common/time/date-time.js';
+import { AttachmentService, type AttachmentUpload } from '../../attachment/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { requireValidBomReplacement } from '../domain/product-bom.policy.js';
 import { ProcessRouteRepository } from './ports/process-route.repository.js';
@@ -37,21 +34,18 @@ import { ProcessRouteStepRepository } from './ports/process-route-step.repositor
 import { ProcessStepRepository } from './ports/process-step.repository.js';
 import { ProductCatalogRepository } from './ports/product-catalog.repository.js';
 import { ProductCategoryRepository } from './ports/product-category.repository.js';
-import { TechnicalFileRepository } from './ports/technical-file.repository.js';
-import { TechnicalFileStorage, type TechnicalFileUpload } from './ports/technical-file.storage.js';
 import { MaterialVariantRepository } from './ports/material-variant.repository.js';
 import { MaterialRepository } from './ports/material.repository.js';
 
 @Injectable()
 export class ProductService {
   constructor(
-    private readonly technicalFiles: TechnicalFileRepository,
+    private readonly technicalFiles: AttachmentService,
     private readonly categories: ProductCategoryRepository,
     private readonly catalog: ProductCatalogRepository,
     private readonly processSteps: ProcessStepRepository,
     private readonly routes: ProcessRouteRepository,
     private readonly routeSteps: ProcessRouteStepRepository,
-    private readonly storage: TechnicalFileStorage,
     private readonly materialVariants: MaterialVariantRepository,
     private readonly materials: MaterialRepository,
   ) {}
@@ -66,26 +60,24 @@ export class ProductService {
     return this.technicalFiles.listTechnicalFiles(query);
   }
   async uploadTechnicalFile(
-    file: TechnicalFileUpload,
+    file: AttachmentUpload,
     audit: CommandContext,
     payload: TechnicalFileUploadPayload = {},
   ) {
-    this.validateTechnicalFile(file);
     const fileType = payload.fileType ?? 'sop';
     if (!(TECHNICAL_FILE_TYPES as readonly string[]).includes(fileType)) {
       throw new ProductDomainError('INVALID_INPUT', '技术文件用途不合法');
     }
-    const stored = await this.storage.store(file, fileType);
-    try {
-      return await this.technicalFiles.createTechnicalFile(stored, audit);
-    } catch (error) {
-      await this.storage.remove(stored).catch(() => undefined);
-      throw error;
-    }
+    return this.technicalFiles.upload(
+      file,
+      fileType,
+      fileType === 'sop' ? toBeijingCompactTimestamp(new Date()) : null,
+      audit,
+    );
   }
   async downloadTechnicalFile(id: string) {
-    const file = await this.technicalFiles.getTechnicalFile(id);
-    return { file, stream: await this.storage.read(file) };
+    const { stream, ...file } = await this.technicalFiles.readCurrent(id);
+    return { file, stream };
   }
   listProducts(query: ProductListQuery) {
     return this.catalog.listProducts(query);
@@ -196,15 +188,9 @@ export class ProductService {
   setProcessStepStatus(id: string, status: number, audit: CommandContext) {
     return this.processSteps.setProcessStepStatus(id, status, audit);
   }
-  async uploadProcessStepSop(id: string, file: TechnicalFileUpload, audit: CommandContext) {
-    this.validateTechnicalFile(file);
-    const stored = await this.storage.store(file, 'sop');
-    try {
-      await this.processSteps.attachProcessStepSop(id, stored, audit);
-    } catch (error) {
-      await this.storage.remove(stored).catch(() => undefined);
-      throw error;
-    }
+  async uploadProcessStepSop(id: string, file: AttachmentUpload, audit: CommandContext) {
+    const uploaded = await this.uploadTechnicalFile(file, audit, { fileType: 'sop' });
+    await this.processSteps.attachProcessStepSop(id, uploaded.id, audit);
   }
   setProcessStepDefaultSop(id: string, fileId: string | null, audit: CommandContext) {
     return this.processSteps.setProcessStepDefaultSop(id, fileId, audit);
@@ -247,27 +233,6 @@ export class ProductService {
       categoryName: payload.categoryName.trim(),
       remark: payload.remark?.trim() || null,
     };
-  }
-  private validateTechnicalFile(file: TechnicalFileUpload) {
-    if (!file.buffer.length) throw new ProductDomainError('INVALID_INPUT', '上传文件不能为空');
-    if (file.buffer.length > TECHNICAL_FILE_MAX_SIZE_BYTES) {
-      throw new ProductDomainError('INVALID_INPUT', '技术文件不能超过 20 MiB');
-    }
-    if (!file.originalName.trim()) throw new ProductDomainError('INVALID_INPUT', '文件名不能为空');
-    if (file.originalName.length > 255) {
-      throw new ProductDomainError('INVALID_INPUT', '原始文件名不能超过 255 个字符');
-    }
-    const extension = file.originalName.split('.').at(-1)?.toLowerCase();
-    if (!(TECHNICAL_FILE_EXTENSIONS as readonly string[]).includes(extension ?? '')) {
-      throw new ProductDomainError('INVALID_INPUT', '不支持的技术文件类型');
-    }
-    const allowed =
-      TECHNICAL_FILE_MIME_TYPES_BY_EXTENSION[
-        extension as (typeof TECHNICAL_FILE_EXTENSIONS)[number]
-      ];
-    if (!(allowed as readonly string[]).includes(file.mimeType)) {
-      throw new ProductDomainError('INVALID_INPUT', '文件 MIME 类型与扩展名不匹配');
-    }
   }
   private cleanProduct(payload: ProductPayload): ProductPayload {
     return {

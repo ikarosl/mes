@@ -64,7 +64,7 @@ pnpm verify
 - 编码规范：[docs/coding-standards.md](docs/coding-standards.md)
 - 数据库公共约定：[docs/database-conventions.md](docs/database-conventions.md)
 - 数据库运行与迁移：[packages/database/README.md](packages/database/README.md)
-- 技术文件存储：[apps/api/src/modules/product/docs/technical-files.md](apps/api/src/modules/product/docs/technical-files.md)
+- 附件存储与清理：[Attachment](apps/api/src/modules/attachment/README.md)；[SOP 与规格书](apps/api/src/modules/product/docs/technical-files.md)
 - 测试策略：[docs/testing-strategy.md](docs/testing-strategy.md)
 - 产品范围：[docs/product-scope.md](docs/product-scope.md)
 - 路线图：[docs/roadmap.md](docs/roadmap.md)

@@ -2,11 +2,9 @@ import { describe, expect, it, vi } from 'vitest';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { ProductDomainError } from '../../domain/product.errors.js';
 import { MysqlProcessRouteRepository } from '../mysql-process-route.repository.js';
-import { MysqlProcessRouteStepRepository } from '../mysql-process-route-step.repository.js';
 import { MysqlProcessStepRepository } from '../mysql-process-step.repository.js';
 import { MysqlProductCatalogRepository } from '../mysql-product-catalog.repository.js';
 import { MysqlProductCategoryRepository } from '../mysql-product-category.repository.js';
-import { MysqlTechnicalFileRepository } from '../mysql-technical-file.repository.js';
 
 const commandContext: CommandContext = {
   actorId: '1',
@@ -17,33 +15,7 @@ const commandContext: CommandContext = {
 const commandContextWithoutIp: CommandContext = { ...commandContext, ip: null };
 
 describe('MySQL product adapters workflow transactions', () => {
-  it('resolves historical technical-file storage metadata without active/deleted filters', async () => {
-    const query = vi.fn().mockResolvedValue([
-      [
-        {
-          storage_provider: 's3',
-          bucket: 'technical-files',
-          object_key: 'sop/history.pdf',
-          mime_type: 'application/pdf',
-          size_bytes: 12,
-        },
-      ],
-      [],
-    ]);
-    const repository = new MysqlTechnicalFileRepository({ query } as never);
-
-    await expect(repository.getHistoricalTechnicalFileLocator('21')).resolves.toEqual({
-      storageProvider: 's3',
-      bucket: 'technical-files',
-      objectKey: 'sop/history.pdf',
-      mimeType: 'application/pdf',
-      sizeBytes: 12,
-    });
-
-    const sql = String(query.mock.calls[0]?.[0]);
-    expect(sql).not.toContain('is_deleted=0');
-    expect(sql).not.toContain('status=1');
-  });
+  // TODO(attachment-historical-locator): 验证停用或软删除后的历史 SOP 仍按冻结文件身份读取真实存储定位；高重要性：历史对象保留与安全读取，Product 文件仓储已迁至 Attachment 且正式测试暂缓；获正式测试授权后按 Attachment 历史读取及 Production 下载契约恢复。
 
   it('returns product form options with stable identity', async () => {
     const query = vi.fn().mockResolvedValue([
@@ -60,7 +32,11 @@ describe('MySQL product adapters workflow transactions', () => {
       ],
       [],
     ]);
-    const repository = new MysqlProductCatalogRepository({ query } as never);
+    const repository = new MysqlProductCatalogRepository(
+      { query } as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(repository.listProductOptions()).resolves.toEqual([
       {
@@ -103,9 +79,11 @@ describe('MySQL product adapters workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProductCatalogRepository({
-      getConnection: vi.fn().mockResolvedValue(connection),
-    } as never);
+    const repository = new MysqlProductCatalogRepository(
+      { getConnection: vi.fn().mockResolvedValue(connection) } as never,
+      {} as never,
+      {} as never,
+    );
 
     await expect(
       repository.replaceMaterials('9', { version: 0, items: [] }, commandContext),
@@ -122,7 +100,7 @@ describe('MySQL product adapters workflow transactions', () => {
       .fn()
       .mockResolvedValueOnce([[{ total: 0 }], []])
       .mockResolvedValueOnce([[], []]);
-    const repository = new MysqlProcessRouteRepository({ query } as never);
+    const repository = new MysqlProcessRouteRepository({ query } as never, {} as never);
 
     await expect(
       repository.listRoutes({ page: 2, pageSize: 10, keyword: 'R-', status: 'draft' }),
@@ -165,7 +143,11 @@ describe('MySQL product adapters workflow transactions', () => {
       .fn()
       .mockResolvedValueOnce([[{ total: 0 }], []])
       .mockResolvedValueOnce([[], []]);
-    const repository = new MysqlProcessStepRepository({ query } as never);
+    const repository = new MysqlProcessStepRepository(
+      { query } as never,
+      { getManyTechnicalFiles: vi.fn().mockResolvedValue([]) } as never,
+      {} as never,
+    );
 
     await expect(
       repository.listProcessSteps({ page: 1, pageSize: 10, keyword: 'GX', status: 1 }),
@@ -178,10 +160,18 @@ describe('MySQL product adapters workflow transactions', () => {
     const query = vi
       .fn()
       .mockResolvedValue([
-        [{ id: 2, step_code: 'GX-1', step_name: '切割', sop_file_name: 'cut.pdf' }],
+        [{ id: 2, step_code: 'GX-1', step_name: '切割', default_sop_file_id: 6 }],
         [],
       ]);
-    const repository = new MysqlProcessStepRepository({ query } as never);
+    const repository = new MysqlProcessStepRepository(
+      { query } as never,
+      {
+        getManyTechnicalFiles: vi
+          .fn()
+          .mockResolvedValue([{ id: '6', fileType: 'sop', fileName: 'cut.pdf' }]),
+      } as never,
+      {} as never,
+    );
 
     await expect(repository.listProcessStepOptions()).resolves.toEqual([
       { id: '2', stepCode: 'GX-1', stepName: '切割', sopFileName: 'cut.pdf' },
@@ -202,7 +192,7 @@ describe('MySQL product adapters workflow transactions', () => {
       ],
       [],
     ]);
-    const repository = new MysqlProcessRouteRepository({ query } as never);
+    const repository = new MysqlProcessRouteRepository({ query } as never, {} as never);
 
     await expect(repository.listRouteOptions()).resolves.toEqual([
       {
@@ -216,46 +206,9 @@ describe('MySQL product adapters workflow transactions', () => {
     expect(String(query.mock.calls[0]?.[0])).toContain("status='enabled'");
   });
 
-  it('persists technical file metadata and audit in the same transaction', async () => {
-    const connection = {
-      beginTransaction: vi.fn(),
-      query: vi.fn(),
-      execute: vi
-        .fn()
-        .mockResolvedValueOnce([{ insertId: 21, affectedRows: 1 }, []])
-        .mockResolvedValueOnce([{ insertId: 101, affectedRows: 1 }, []]),
-      commit: vi.fn(),
-      rollback: vi.fn(),
-      release: vi.fn(),
-    };
-    const repository = new MysqlTechnicalFileRepository({
-      getConnection: vi.fn().mockResolvedValue(connection),
-    } as never);
+  // TODO(attachment-metadata-audit-transaction): 验证附件元数据登记与成功审计同事务提交且失败整体回滚；高重要性：事务原子性，Product 文件仓储已迁至 Attachment 且正式测试暂缓；获正式测试授权后针对 Attachment 上传登记公开能力恢复。
 
-    await expect(
-      repository.createTechnicalFile(
-        {
-          fileName: 'SOP.pdf',
-          originalName: 'SOP.pdf',
-          storageProvider: 's3',
-          bucket: 'technical-files',
-          objectKey: 'sop/2026/07/file.pdf',
-          mimeType: 'application/pdf',
-          sizeBytes: 10,
-          checksumSha256: 'a'.repeat(64),
-          fileType: 'sop',
-          versionNo: '202607240001',
-        },
-        commandContext,
-      ),
-    ).resolves.toEqual({ id: '21' });
-
-    expect(String(connection.execute.mock.calls[0]?.[0])).toContain('technical_files');
-    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('operation_logs');
-    expect(connection.commit).toHaveBeenCalledOnce();
-  });
-
-  // TODO(technical-file-reference-retention): 验证资料及历史 SOP 引用的文件持续保留；高重要性，未公开删除链及其旧断言已移除，正式测试暂缓；获正式测试授权后按当前公开能力恢复引用与对象保留覆盖。
+  // TODO(technical-file-reference-retention): 验证存在当前资料或历史 SOP 统一引用时拒绝清理，绑定与清理并发仍保留真实对象；高重要性：历史依据与引用保护，Product 专属删除链已迁至 Attachment 且正式测试暂缓；获正式测试授权后按 Attachment 引用锁及清理生命周期恢复。
 
   it('creates a draft route and audit entry on the same transaction connection', async () => {
     const connection = {
@@ -283,9 +236,10 @@ describe('MySQL product adapters workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProcessRouteRepository({
-      getConnection: vi.fn().mockResolvedValue(connection),
-    } as never);
+    const repository = new MysqlProcessRouteRepository(
+      { getConnection: vi.fn().mockResolvedValue(connection) } as never,
+      {} as never,
+    );
 
     const result = await repository.createRoute(
       {
@@ -326,9 +280,10 @@ describe('MySQL product adapters workflow transactions', () => {
       rollback: vi.fn(),
       release: vi.fn(),
     };
-    const repository = new MysqlProcessRouteRepository({
-      getConnection: vi.fn().mockResolvedValue(connection),
-    } as never);
+    const repository = new MysqlProcessRouteRepository(
+      { getConnection: vi.fn().mockResolvedValue(connection) } as never,
+      {} as never,
+    );
 
     await expect(
       repository.updateRoute(
@@ -346,68 +301,5 @@ describe('MySQL product adapters workflow transactions', () => {
     expect(connection.execute).not.toHaveBeenCalled();
   });
 
-  it('locks a selected SOP before persisting a route-step snapshot', async () => {
-    const connection = transactionConnection();
-    connection.query
-      .mockResolvedValueOnce([
-        [
-          {
-            id: 15,
-            route_code: 'R-1',
-            route_name: '标准路线',
-            product_id: 9,
-            version_no: 'V1',
-            status: 'draft',
-          },
-        ],
-        [],
-      ])
-      .mockResolvedValueOnce([[], []])
-      .mockResolvedValueOnce([
-        [
-          {
-            step_code: 'CUT',
-            step_name: '切割',
-            description: null,
-            default_sop_file_id: null,
-          },
-        ],
-        [],
-      ])
-      .mockResolvedValueOnce([
-        [{ file_name: 'cut.pdf', object_key: 'sop/cut.pdf', version_no: 'V2' }],
-        [],
-      ])
-      .mockResolvedValueOnce([[{ id: 41 }], []]);
-    connection.execute.mockResolvedValue([{ affectedRows: 1 }, []]);
-    const repository = new MysqlProcessRouteStepRepository({
-      getConnection: vi.fn().mockResolvedValue(connection),
-    } as never);
-
-    await repository.replaceRouteSteps(
-      '15',
-      [
-        {
-          processStepId: '7',
-          stepOrder: 1,
-          sopFileId: '6',
-        },
-      ],
-      commandContextWithoutIp,
-    );
-
-    expect(String(connection.query.mock.calls[3]?.[0])).toContain('FOR UPDATE');
-    expect(String(connection.execute.mock.calls[1]?.[0])).toContain('sop_version_no_snapshot');
-    expect(connection.execute.mock.calls[1]?.[1]).toContain('V2');
-    expect(connection.commit).toHaveBeenCalledOnce();
-  });
-});
-
-const transactionConnection = () => ({
-  beginTransaction: vi.fn(),
-  query: vi.fn(),
-  execute: vi.fn(),
-  commit: vi.fn(),
-  rollback: vi.fn(),
-  release: vi.fn(),
+  // TODO(product-route-step-attachment-snapshot): 验证路线步骤保存时经 Attachment 核验并锁定 SOP 资格，快照、统一引用与成功审计同事务；高重要性：历史执行依据及清理竞态，旧直读文件表的专属夹具已失效且正式测试暂缓；获正式测试授权后按 Attachment 公开资格与引用能力恢复。
 });

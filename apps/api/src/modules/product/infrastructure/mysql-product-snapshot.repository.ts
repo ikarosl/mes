@@ -2,13 +2,13 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withTransaction } from '@company/database';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { AttachmentService } from '../../attachment/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import type {
   ProcessRouteSnapshot,
   ProcessRouteDisplayReference,
   ProductBomSnapshot,
   ProductionProductSnapshot,
-  EnabledSopFileSnapshot,
   InventoryItemDisplayReference,
   InventoryItemReference,
 } from '../application/product-snapshot.query.js';
@@ -46,15 +46,16 @@ type RouteStepRow = RowDataPacket & {
   sop_file_name_snapshot: string | null;
   sop_object_key_snapshot: string | null;
   sop_version_no_snapshot: string | null;
-  sop_status: number | null;
-  sop_is_deleted: number | null;
 };
 
 @Injectable()
 export class MysqlProductSnapshotRepository
   implements ProductSnapshotRepository, ProductProductionDefinitionRepository
 {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly attachments: AttachmentService,
+  ) {}
 
   async listProcessRouteDisplayReferencesByIds(
     routeIds: string[],
@@ -254,30 +255,6 @@ export class MysqlProductSnapshotRepository
     });
   }
 
-  async getEnabledSopFileSnapshot(fileId: string): Promise<EnabledSopFileSnapshot> {
-    return withTransaction(this.pool, async (connection) => {
-      const [[file]] = await connection.query<
-        (RowDataPacket & {
-          id: number;
-          file_name: string;
-          object_key: string;
-          version_no: string;
-        })[]
-      >(
-        `SELECT id,file_name,object_key,version_no FROM technical_files
-         WHERE id=? AND file_type='sop' AND status=1 AND is_deleted=0 FOR UPDATE`,
-        [fileId],
-      );
-      if (!file) throw new ProductDomainError('NOT_FOUND', 'SOP 文件不存在或不可用');
-      return {
-        id: String(file.id),
-        fileName: file.file_name,
-        objectKey: file.object_key,
-        versionNo: file.version_no,
-      };
-    });
-  }
-
   private async routeSnapshot(db: Db, routeId: string): Promise<ProcessRouteSnapshot> {
     const [[route]] = await db.query<RouteRow[]>(
       `SELECT r.id,r.route_code,r.route_name,r.version_no
@@ -289,16 +266,19 @@ export class MysqlProductSnapshotRepository
     const [steps] = await db.query<RouteStepRow[]>(
       `SELECT rs.id route_step_id,rs.step_order,rs.process_step_id,rs.step_code_snapshot,rs.step_name_snapshot,
                 rs.description_snapshot,rs.sop_file_id,rs.sop_file_name_snapshot,
-                rs.sop_object_key_snapshot,rs.sop_version_no_snapshot,tf.status sop_status,
-                tf.is_deleted sop_is_deleted
+                rs.sop_object_key_snapshot,rs.sop_version_no_snapshot
          FROM process_route_steps rs
-         LEFT JOIN technical_files tf ON tf.id=rs.sop_file_id AND tf.file_type='sop'
         WHERE rs.route_id=? AND rs.status=1 AND rs.is_deleted=0
         ORDER BY rs.step_order FOR UPDATE`,
       [routeId],
     );
     if (steps.length === 0)
       throw new ProductDomainError('ROUTE_STEPS_REQUIRED', '已启用的工艺路线没有可用工序');
+    const sopFiles = await this.attachments.requireAvailable(
+      steps.flatMap((step) => (step.sop_file_id === null ? [] : [String(step.sop_file_id)])),
+      'sop',
+    );
+    const sopFilesById = new Map(sopFiles.map((file) => [file.id, file]));
     if (
       steps.some(
         (step) =>
@@ -306,8 +286,9 @@ export class MysqlProductSnapshotRepository
           (!step.sop_file_name_snapshot ||
             !step.sop_object_key_snapshot ||
             !step.sop_version_no_snapshot ||
-            step.sop_status !== 1 ||
-            step.sop_is_deleted !== 0),
+            sopFilesById.get(String(step.sop_file_id))?.objectKey !==
+              step.sop_object_key_snapshot ||
+            sopFilesById.get(String(step.sop_file_id))?.versionNo !== step.sop_version_no_snapshot),
       )
     ) {
       throw new ProductDomainError('NOT_FOUND', '工艺路线包含不可用的 SOP 快照');

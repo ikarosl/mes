@@ -4,8 +4,8 @@ import { withTransaction } from '@company/database';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { writeTransactionalAudit } from '../../../common/audit/transactional-audit-writer.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { AttachmentReferenceService, AttachmentService } from '../../attachment/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
-import { lockTechnicalFileSnapshot } from './mysql-product-reference-locks.js';
 import type {
   ProcessRouteStatus,
   ProcessRouteStepItem,
@@ -17,7 +17,11 @@ type Db = Pool | PoolConnection;
 
 @Injectable()
 export class MysqlProcessRouteStepRepository implements ProcessRouteStepRepository {
-  constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
+  constructor(
+    @Inject(DATABASE_POOL) private readonly pool: Pool,
+    private readonly attachments: AttachmentService,
+    private readonly attachmentReferences: AttachmentReferenceService,
+  ) {}
 
   async listRouteSteps(routeId: string): Promise<ProcessRouteStepItem[]> {
     await this.routeRecord(this.pool, routeId);
@@ -91,7 +95,7 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         >(
           `SELECT ps.step_code,ps.step_name,ps.description,ps.default_sop_file_id
                 FROM process_steps ps
-                WHERE ps.id=? AND ps.is_deleted=0 AND ps.status=1`,
+                WHERE ps.id=? AND ps.is_deleted=0 AND ps.status=1 FOR SHARE`,
           [item.processStepId],
         );
         if (!step) throw new ProductDomainError('NOT_FOUND', '路线引用的工序不存在或已停用');
@@ -99,17 +103,20 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
           item.sopFileId ??
           (step.default_sop_file_id === null ? null : String(step.default_sop_file_id));
         const sop = resolvedSopFileId
-          ? await lockTechnicalFileSnapshot(connection, resolvedSopFileId)
+          ? (await this.attachments.requireAvailable([resolvedSopFileId], 'sop'))[0]
           : null;
+        if (resolvedSopFileId && (!sop || !sop.versionNo)) {
+          throw new ProductDomainError('NOT_FOUND', '路线引用的 SOP 缺少有效版本');
+        }
         snapshots.push({
           ...item,
           stepCode: step.step_code,
           stepName: step.step_name,
           description: step.description,
           sopFileId: resolvedSopFileId,
-          sopFileName: sop?.file_name ?? null,
-          sopObjectKey: sop?.object_key ?? null,
-          sopVersionNo: sop?.version_no ?? null,
+          sopFileName: sop?.fileName ?? null,
+          sopObjectKey: sop?.objectKey ?? null,
+          sopVersionNo: sop?.versionNo ?? null,
         });
       }
       await connection.execute(
@@ -140,6 +147,28 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
             audit.actorId,
             audit.actorId,
           ],
+        );
+      }
+      const currentSteps = await this.listRouteStepRecords(connection, routeId);
+      const currentStepIds = new Set(currentSteps.map((step) => String(step.id)));
+      for (const removed of before) {
+        if (!currentStepIds.has(String(removed.id))) {
+          await this.attachmentReferences.setReference(
+            'product_route_step',
+            String(removed.id),
+            'sop',
+            null,
+            audit,
+          );
+        }
+      }
+      for (const step of currentSteps) {
+        await this.attachmentReferences.setReference(
+          'product_route_step',
+          String(step.id),
+          'sop',
+          step.sop_file_id === null ? null : String(step.sop_file_id),
+          audit,
         );
       }
       await this.audit(
@@ -177,9 +206,10 @@ export class MysqlProcessRouteStepRepository implements ProcessRouteStepReposito
         step_order: number;
         step_code_snapshot: string;
         step_name_snapshot: string;
+        sop_file_id: number | null;
       })[]
     >(
-      'SELECT id,process_step_id,step_order,step_code_snapshot,step_name_snapshot FROM process_route_steps WHERE route_id=? AND is_deleted=0 ORDER BY step_order',
+      'SELECT id,process_step_id,step_order,step_code_snapshot,step_name_snapshot,sop_file_id FROM process_route_steps WHERE route_id=? AND is_deleted=0 ORDER BY step_order',
       [routeId],
     );
     return rows;

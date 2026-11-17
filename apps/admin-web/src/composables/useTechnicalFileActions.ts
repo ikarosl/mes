@@ -8,6 +8,8 @@ import { useLatestReadRequest } from './requests/useLatestReadRequest';
 export function useTechnicalFileActions(
   getFile: () => Pick<TechnicalFileListItem, 'id' | 'originalName'> | null,
   active: () => boolean = () => true,
+  readContent: (id: string, signal: AbortSignal) => Promise<Blob> = (id, signal) =>
+    productApi.technicalFileContent(id, { signal, skipErrorHandling: true }),
 ) {
   const pendingAction = ref<'preview' | 'download' | null>(null);
   const reads = useLatestReadRequest(() => (pendingAction.value = null));
@@ -18,10 +20,7 @@ export function useTechnicalFileActions(
     const { isCurrent, signal } = reads.begin(() => active() && getFile()?.id === file.id);
     pendingAction.value = action;
     try {
-      const blob = await productApi.technicalFileContent(file.id, {
-        signal,
-        skipErrorHandling: true,
-      });
+      const blob = await readContent(file.id, signal);
       if (!isCurrent()) return;
       const mime = previewMimeOf(file.originalName, blob.type);
       const target =

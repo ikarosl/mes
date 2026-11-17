@@ -24,7 +24,7 @@ import {
   type IdempotencyResultCodec,
 } from '../../../common/idempotency/idempotency-executor.js';
 import { PersonnelService } from '../../identity/public.js';
-import { TechnicalFileContentQuery } from '../../product/public.js';
+import { AttachmentService } from '../../attachment/public.js';
 import { ProductionDomainError } from '../domain/production.errors.js';
 import { ProductionTrackingRepository } from './ports/production-tracking.repository.js';
 import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
@@ -41,7 +41,7 @@ export class ProductionTrackingService {
     private readonly repository: ProductionTrackingRepository,
     private readonly personnel: PersonnelService,
     private readonly idempotency: IdempotencyExecutor,
-    private readonly files: TechnicalFileContentQuery,
+    private readonly files: AttachmentService,
   ) {}
 
   list(query: ProductionTrackingCardQuery) {

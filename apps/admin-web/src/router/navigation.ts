@@ -41,6 +41,7 @@ const navigationGroups: readonly NavigationGroup[] = [
       { routeNames: ['system-permissions'] },
       { routeNames: ['system-logs'] },
       { routeNames: ['system-templates'] },
+      { routeNames: ['system-attachments'] },
     ],
   },
   {

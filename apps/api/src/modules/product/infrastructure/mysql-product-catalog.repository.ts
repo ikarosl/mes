@@ -13,6 +13,7 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
+import { AttachmentReferenceService, AttachmentService } from '../../attachment/public.js';
 import type { ProductCatalogRepository } from '../application/ports/product-catalog.repository.js';
 import { MysqlProductCatalogQuery } from './mysql-product-catalog.query.js';
 import { MysqlProductCommands } from './mysql-product.commands.js';
@@ -27,9 +28,13 @@ export class MysqlProductCatalogRepository implements ProductCatalogRepository {
   private readonly bom: MysqlProductBomEditor;
   private readonly approvals: MysqlProductBomApproval;
 
-  constructor(@Inject(DATABASE_POOL) pool: Pool) {
-    this.queries = new MysqlProductCatalogQuery(pool);
-    this.products = new MysqlProductCommands(pool);
+  constructor(
+    @Inject(DATABASE_POOL) pool: Pool,
+    attachments: AttachmentService,
+    attachmentReferences: AttachmentReferenceService,
+  ) {
+    this.queries = new MysqlProductCatalogQuery(pool, attachments);
+    this.products = new MysqlProductCommands(pool, attachments, attachmentReferences);
     this.bom = new MysqlProductBomEditor(pool);
     this.approvals = new MysqlProductBomApproval(pool);
   }

@@ -10,7 +10,7 @@
 
 独立模块应具备独立业务语言、规则与状态、明确数据所有权、少量公开能力及独立测试价值。共享业务语言、所有权和事务的功能留在同一模块，按变化原因拆 Controller、Service、Port 和 Adapter；一张表、一个页面或文件过长都不是建模块的充分理由。
 
-Product 的目录、技术文件、工序和路线仍属于同一模块。只有工艺能力形成独立生命周期、所有权或大量外部调用时才评估提取；Production 与 Inventory 的分工见[生产职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)。
+Product 拥有目录、SOP／规格书的业务用途、工序和路线；Attachment 拥有文件元数据、对象存储、统一引用与清理生命周期。各业务通过 Attachment 公开能力在同事务登记引用，附件模块不接管业务授权或历史保留决策。只有工艺能力形成独立生命周期、所有权或大量外部调用时才评估提取；Production 与 Inventory 的分工见[生产职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)。
 
 `common` 只放跨模块且不含业务知识的抽象与工具，不拥有业务表。审计 Writer 是下节明确登记的例外；HTTP 幂等抽象放 `common/idempotency`，MySQL 实现与装配放 `infrastructure/idempotency`，不能把 `common` 变成绕过模块边界的入口。
 
@@ -72,7 +72,7 @@ Port 按调用者需要和变化原因保持窄而明确；一个 Adapter 可以
 
 - MySQL 是业务事实来源，HTTP 幂等使用其唯一约束与事务，不增加服务端幂等键预领取入口。
 - Redis 只在多实例协调等需求获批后通过窄端口引入，见 [ADR-0002](adr/0002-optional-redis.md)。
-- 技术文件统一使用 S3，业务保存对象身份和元数据；SDK 只在 infrastructure，详见[技术文件](../apps/api/src/modules/product/docs/technical-files.md)。
+- 附件统一使用 S3，对象元数据和清理归 [Attachment](../apps/api/src/modules/attachment/README.md)，SDK 只在其 infrastructure；SOP 版本和业务快照仍归业务模块。
 - 数据库和接口时间遵守[统一类型与状态规则](database-conventions.md#统一类型与状态规则)。
 
 ## 8. 前端结构

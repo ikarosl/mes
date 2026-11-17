@@ -4,7 +4,8 @@ import type { ProductPayload, ProductUpdatePayload } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
-import { requireSpecificationFile } from './mysql-specification-file.persistence.js';
+import type { AttachmentReferenceService, AttachmentService } from '../../attachment/public.js';
+import { requireSpecificationFile } from './specification-files.js';
 import {
   readProductCatalogRecord,
   requireProductCatalogCategory,
@@ -13,12 +14,16 @@ import {
 
 /** 成品主数据写入及成功审计在同一事务中提交。 */
 export class MysqlProductCommands {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly attachments: AttachmentService,
+    private readonly attachmentReferences: AttachmentReferenceService,
+  ) {}
 
   async createProduct(payload: ProductPayload, audit: CommandContext): Promise<{ id: string }> {
     return withTransaction(this.pool, async (connection) => {
       await requireProductCatalogCategory(connection, payload.categoryId);
-      await requireSpecificationFile(connection, payload.specificationFileId);
+      await requireSpecificationFile(this.attachments, payload.specificationFileId);
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,specification_file_id,status,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
@@ -35,6 +40,13 @@ export class MysqlProductCommands {
           audit.actorId,
           audit.actorId,
         ],
+      );
+      await this.attachmentReferences.setReference(
+        'product',
+        String(result.insertId),
+        'specification',
+        payload.specificationFileId,
+        audit,
       );
       await writeProductCatalogAudit(
         connection,
@@ -88,7 +100,7 @@ export class MysqlProductCommands {
         );
       }
       await requireProductCatalogCategory(connection, payload.categoryId);
-      await requireSpecificationFile(connection, payload.specificationFileId);
+      await requireSpecificationFile(this.attachments, payload.specificationFileId);
       if (payload.acquireMethod !== 'self_made') {
         const [[dependent]] = await connection.query<(RowDataPacket & { bom_count: number })[]>(
           `SELECT (SELECT COUNT(*) FROM product_materials WHERE product_id=? AND is_deleted=0) bom_count`,
@@ -115,6 +127,13 @@ export class MysqlProductCommands {
           audit.actorId,
           id,
         ],
+      );
+      await this.attachmentReferences.setReference(
+        'product',
+        id,
+        'specification',
+        payload.specificationFileId,
+        audit,
       );
       await writeProductCatalogAudit(
         connection,

@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { ProductDomainError } from '../domain/product.errors.js';
 import {
   ProductSnapshotQuery,
-  type EnabledSopFileSnapshot,
   type ProcessRouteDisplayReference,
   type ProductBomSnapshot,
   type ProductQueryFailure,
@@ -41,10 +40,6 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
   getApprovedBomSnapshot(productId: string): Promise<ProductQueryResult<ProductBomSnapshot>> {
     return this.toResult(() => this.snapshots.getApprovedBomSnapshot(productId));
   }
-  getEnabledSopFileSnapshot(fileId: string): Promise<ProductQueryResult<EnabledSopFileSnapshot>> {
-    return this.toResult(() => this.snapshots.getEnabledSopFileSnapshot(fileId));
-  }
-
   private async toResult<T>(operation: () => Promise<T>): Promise<ProductQueryResult<T>> {
     try {
       return { status: 'success', value: await operation() };

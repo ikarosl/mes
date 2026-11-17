@@ -11,11 +11,6 @@ export {
 export { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 export { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
 export {
-  TechnicalFileContentQuery,
-  type HistoricalTechnicalFileContent,
-  type HistoricalTechnicalFileSnapshotLocator,
-} from './application/technical-file-content.query.js';
-export {
   ProductSnapshotQuery,
   type ProductQueryFailure,
   type ProductQueryResult,
@@ -27,7 +22,6 @@ export {
   type ProductionProductSnapshot,
   type InventoryItemDisplayReference,
   type InventoryItemReference,
-  type EnabledSopFileSnapshot,
 } from './application/product-snapshot.query.js';
 export {
   MaterialVariantQuery,

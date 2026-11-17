@@ -18,6 +18,13 @@ import { MysqlRbacRepository } from '../../../apps/api/src/modules/identity/infr
 import { ProductBomApprovalHandler } from '../../../apps/api/src/modules/product/application/product-bom-approval.handler.js';
 import { MysqlProductCatalogRepository } from '../../../apps/api/src/modules/product/infrastructure/mysql-product-catalog.repository.js';
 import {
+  AttachmentReferenceService,
+  AttachmentService,
+} from '../../../apps/api/src/modules/attachment/public.js';
+import { MysqlAttachmentRepository } from '../../../apps/api/src/modules/attachment/infrastructure/mysql-attachment.repository.js';
+import { MysqlAttachmentLifecycleRepository } from '../../../apps/api/src/modules/attachment/infrastructure/mysql-attachment-lifecycle.repository.js';
+import { MysqlAttachmentReferenceRepository } from '../../../apps/api/src/modules/attachment/infrastructure/mysql-attachment-reference.repository.js';
+import {
   flushAfterCommit,
   createFixture,
   publishFlow,
@@ -83,7 +90,25 @@ describeMysql('Approval BOM workflow (real MySQL)', () => {
     setApprovalFixture(fixture);
     identity = new IdentityDirectoryService(new MysqlRbacRepository(pool));
     handlers = new ApprovalSubjectHandlerRegistry();
-    products = new MysqlProductCatalogRepository(pool);
+    // BOM 命令只使用数据库；意外访问对象存储须显式失败，不能引入 S3 环境依赖。
+    const unexpectedStorageCall = async (): Promise<never> => {
+      throw new Error('Approval BOM tests must not access attachment object storage');
+    };
+    const attachments = new AttachmentService(
+      new MysqlAttachmentRepository(pool),
+      new MysqlAttachmentLifecycleRepository(pool),
+      {
+        store: unexpectedStorageCall,
+        read: unexpectedStorageCall,
+        remove: unexpectedStorageCall,
+      },
+      identity,
+    );
+    products = new MysqlProductCatalogRepository(
+      pool,
+      attachments,
+      new AttachmentReferenceService(new MysqlAttachmentReferenceRepository(pool)),
+    );
     bomHandler = new ProductBomApprovalHandler(products, handlers);
     bomHandler.onModuleInit();
     flows = new MysqlApprovalFlowRepository(pool, identity, handlers);

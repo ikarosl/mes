@@ -32,6 +32,7 @@
 - [API](../apps/api/README.md)：[命令上下文](../apps/api/docs/command-context.md)、[事务审计](../apps/api/docs/audit.md)、[幂等性](../apps/api/docs/idempotency.md)
 - [Identity](../apps/api/src/modules/identity/README.md)：[数据库设计](../apps/api/src/modules/identity/docs/database.md)
 - [Product](../apps/api/src/modules/product/README.md)：[数据库设计](../apps/api/src/modules/product/docs/database.md)
+- [Attachment](../apps/api/src/modules/attachment/README.md)：统一对象存储、引用与清理；[数据库设计](../apps/api/src/modules/attachment/docs/database.md)
 - [Template](../apps/api/src/modules/template/README.md)：独立系统模板、通用 JSON 表格内容与[数据库设计](../apps/api/src/modules/template/docs/database.md)
 - [Production](../apps/api/src/modules/production/README.md)：[数据库设计](../apps/api/src/modules/production/docs/database/README.md)、[跨模块职责](../apps/api/src/modules/production/docs/database/cross-module-rules.md)
 - [Procurement](../apps/api/src/modules/procurement/README.md)：供应商、采购、到货来源、其他处理记录和实际收货编排
@@ -41,7 +42,7 @@
 - [Notification](../apps/api/src/modules/notification/README.md)：[数据库设计](../apps/api/src/modules/notification/docs/database.md)
 - [管理端](../apps/admin-web/README.md)：[架构](../apps/admin-web/docs/architecture.md)、[视觉设计](../apps/admin-web/docs/visual-design.md)、[路由/弹窗/标签页](../apps/admin-web/docs/route-dialogs-and-tabs.md)、[HTTP 错误处理](../apps/admin-web/docs/http-error-handling.md)
 - [数据库基础设施包](../packages/database/README.md)
-- [技术文件与对象存储](../apps/api/src/modules/product/docs/technical-files.md)
+- [附件生命周期与对象存储](../apps/api/src/modules/attachment/docs/lifecycle.md)；[Product 技术文件](../apps/api/src/modules/product/docs/technical-files.md)维护 SOP 与规格书业务用途
 
 ## 共享 Workspace
 

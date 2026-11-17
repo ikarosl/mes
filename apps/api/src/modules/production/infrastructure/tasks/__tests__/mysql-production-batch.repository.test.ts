@@ -7,7 +7,12 @@ describe('MysqlProductionBatchRepository persistence', () => {
       .fn()
       .mockResolvedValueOnce([[{ total: 0 }], []])
       .mockResolvedValueOnce([[], []]);
-    const repository = new MysqlProductionBatchRepository({ query } as never, {} as never);
+    const repository = new MysqlProductionBatchRepository(
+      { query } as never,
+      {} as never,
+      {} as never,
+      {} as never,
+    );
 
     await repository.list({});
 
@@ -31,6 +36,8 @@ describe('MysqlProductionBatchRepository persistence', () => {
       {
         getConnection: vi.fn().mockResolvedValue(connection),
       } as never,
+      {} as never,
+      {} as never,
       {} as never,
     );
 

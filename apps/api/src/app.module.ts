@@ -11,6 +11,7 @@ import { ProductionModule } from './modules/production/public.js';
 import { ApprovalModule } from './modules/approval/public.js';
 import { NotificationModule } from './modules/notification/public.js';
 import { TemplateModule } from './modules/template/public.js';
+import { AttachmentModule } from './modules/attachment/public.js';
 import { HttpExceptionFilter } from './presentation/http/http-exception.filter.js';
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { HttpExceptionFilter } from './presentation/http/http-exception.filter.j
     IdentityModule,
     NotificationModule,
     TemplateModule,
+    AttachmentModule,
     ApprovalModule,
     ProductModule,
     ProcurementModule,

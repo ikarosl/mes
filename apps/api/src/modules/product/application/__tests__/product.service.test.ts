@@ -31,7 +31,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
     const input = {
       routeCode: ' R-1 ',
@@ -59,7 +58,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       repository as never,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -102,7 +100,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       {} as never,
-      {} as never,
     );
 
     expect(() =>
@@ -128,7 +125,6 @@ describe('ProductService workflow safeguards', () => {
       {} as never,
       {} as never,
       repository as never,
-      {} as never,
       {} as never,
       {} as never,
       {} as never,
@@ -166,7 +162,6 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       {} as never,
-      {} as never,
     );
 
     await expect(
@@ -184,13 +179,12 @@ describe('ProductService workflow safeguards', () => {
 
   // TODO(production-personnel-eligibility): 验证登记人员启用状态、身份快照及独立账号权限；高重要性，Product旧默认登录负责人模型已退役且正式测试暂未授权；恢复条件：设计验收并获正式测试授权后，按Identity人员目录和Production登记资格恢复覆盖。
 
-  // TODO(technical-file-compensation): 验证 SOP 绑定入库失败时只补偿刚上传的对象；高重要性，旧存储入口及 mock 已失效且正式测试暂缓；获正式测试授权后按统一 store 端口恢复。
+  // TODO(technical-file-compensation): 验证上传登记失败的对象补偿与已登记附件绑定失败后的保留边界；高重要性：对象和元数据一致性，Product 存储端口已迁至 Attachment 且正式测试暂缓；获正式测试授权后按 Attachment 上传补偿与 Product 独立绑定契约恢复。
 
-  // TODO(technical-file-retention): 验证已登记技术文件及历史对象持续保留；高重要性，未公开删除链已移除且正式测试暂缓；获正式测试授权后按当前文件生命周期恢复覆盖。
+  // TODO(technical-file-retention): 验证 SOP 改绑不删除已登记附件，当前或历史引用仍阻止对象清理；高重要性：历史依据保留，Product 存储端口已迁至 Attachment 且正式测试暂缓；获正式测试授权后按独立绑定与统一清理生命周期恢复。
 
-  it('associates an existing SOP without deleting the previous file', async () => {
+  it('forwards an existing SOP association to the process-step repository', async () => {
     const repository = { setProcessStepDefaultSop: vi.fn().mockResolvedValue(undefined) };
-    const storage = { remove: vi.fn() };
     const service = new ProductService(
       {} as never,
       {} as never,
@@ -198,7 +192,6 @@ describe('ProductService workflow safeguards', () => {
       repository as never,
       {} as never,
       {} as never,
-      storage as never,
       {} as never,
       {} as never,
     );
@@ -206,6 +199,5 @@ describe('ProductService workflow safeguards', () => {
     await service.setProcessStepDefaultSop('2', '8', audit);
 
     expect(repository.setProcessStepDefaultSop).toHaveBeenCalledWith('2', '8', audit);
-    expect(storage.remove).not.toHaveBeenCalled();
   });
 });

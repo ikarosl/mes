@@ -23,6 +23,7 @@ import type {
 } from '../../../common/audit/audit.types.js';
 import { IdempotencyExecutor } from '../../../common/idempotency/idempotency-executor.js';
 import { IdentityDirectoryService } from '../../identity/public.js';
+import { AttachmentService } from '../../attachment/public.js';
 import {
   ProductSnapshotQuery,
   ProductProductionDefinitionCommand,
@@ -55,6 +56,7 @@ export class ProductionService {
     private readonly idempotency: IdempotencyExecutor,
     private readonly workOrderOwners: ProductionWorkOrderOwnerService,
     private readonly taskOwners: ProductionTaskOwnerService,
+    private readonly attachments: AttachmentService,
     private readonly productDefinitions?: ProductProductionDefinitionCommand,
   ) {}
 
@@ -479,15 +481,26 @@ export class ProductionService {
         throw new ProductionDomainError('INVALID_INPUT', '同一工序只能提交一次执行参数覆盖');
       seen.add(override.routeStepId);
     }
-    return Promise.all(
-      overrides.map(async (override) => ({
-        routeStepId: override.routeStepId,
-        actualSop: override.actualSopFileId
-          ? this.requireProduct(
-              await this.products.getEnabledSopFileSnapshot(override.actualSopFileId!),
-            )
-          : null,
-      })),
+    const files = await this.attachments.requireAvailable(
+      overrides.flatMap((override) => (override.actualSopFileId ? [override.actualSopFileId] : [])),
+      'sop',
     );
+    const filesById = new Map(files.map((file) => [file.id, file]));
+    return overrides.map((override) => {
+      if (!override.actualSopFileId) return { routeStepId: override.routeStepId, actualSop: null };
+      const file = filesById.get(override.actualSopFileId);
+      if (!file || !file.versionNo) {
+        throw new ProductionDomainError('INVALID_INPUT', '覆盖 SOP 文件不存在或缺少有效版本');
+      }
+      return {
+        routeStepId: override.routeStepId,
+        actualSop: {
+          id: file.id,
+          fileName: file.fileName,
+          objectKey: file.objectKey,
+          versionNo: file.versionNo,
+        },
+      };
+    });
   }
 }

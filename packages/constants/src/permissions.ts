@@ -60,6 +60,11 @@ export const PERMISSIONS = {
       create: 'system:templates:create',
       update: 'system:templates:update',
     },
+    attachments: {
+      view: 'system:attachments:view',
+      manage: 'system:attachments:manage',
+      download: 'system:attachments:download',
+    },
   },
   product: {
     view: 'product:view',

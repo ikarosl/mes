@@ -9,13 +9,17 @@ import type {
   TechnicalFileListItem,
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../common/time/date-time.js';
-import { readSpecificationFiles } from './mysql-specification-file.persistence.js';
+import type { AttachmentService } from '../../attachment/public.js';
+import { readSpecificationFiles } from './specification-files.js';
 import { readProductCatalogRecord } from './mysql-product-catalog.persistence.js';
 import { readProductSpecTable } from './mysql-product.shared.js';
 
 /** 展示读取与候选投影不承担 BOM 编辑或审批资格判断。 */
 export class MysqlProductCatalogQuery {
-  constructor(private readonly pool: Pool) {}
+  constructor(
+    private readonly pool: Pool,
+    private readonly attachments: AttachmentService,
+  ) {}
 
   async listProducts(query: ProductListQuery): Promise<PageResult<ProductListItem>> {
     const page = query.page ?? 1;
@@ -79,7 +83,7 @@ export class MysqlProductCatalogQuery {
       [...parameters, pageSize, (page - 1) * pageSize],
     );
     const files = await readSpecificationFiles(
-      this.pool,
+      this.attachments,
       rows.map((row) => row.specification_file_id),
     );
     const items = rows.map((row) => this.mapProduct(row, files));

@@ -3,6 +3,7 @@ import { ApprovalModule } from '../approval/public.js';
 import { InventoryModule } from '../inventory/public.js';
 import { IdentityModule } from '../identity/public.js';
 import { ProductModule } from '../product/public.js';
+import { AttachmentModule } from '../attachment/public.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { IdempotencyModule } from '../../infrastructure/idempotency/idempotency.module.js';
 import { ProductionService } from './application/production.service.js';
@@ -62,6 +63,7 @@ import { ProductionTrackingController } from './presentation/http/production-tra
     IdempotencyModule,
     IdentityModule,
     ProductModule,
+    AttachmentModule,
     InventoryModule,
     ApprovalModule,
   ],

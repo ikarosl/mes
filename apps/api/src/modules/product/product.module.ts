@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
-import { loadTechnicalFileStorageConfig } from '../../config/env.js';
 import { DatabaseModule } from '../../infrastructure/database/database.module.js';
 import { ApprovalModule } from '../approval/public.js';
+import { AttachmentModule } from '../attachment/public.js';
 import { ProductService } from './application/product.service.js';
 import { ProductInventoryEligibility } from './application/product-inventory-eligibility.query.js';
 import { MysqlProductInventoryEligibility } from './infrastructure/mysql-product-inventory-eligibility.query.js';
@@ -11,7 +11,6 @@ import { ProductSnapshotQuery } from './application/product-snapshot.query.js';
 import { ProductSnapshotService } from './application/product-snapshot.service.js';
 import { ProductProductionDefinitionCommand } from './application/product-production-definition.command.js';
 import { ProductProductionDefinitionService } from './application/product-production-definition.service.js';
-import { TechnicalFileContentQuery } from './application/technical-file-content.query.js';
 import { ProductSnapshotRepository } from './application/ports/product-snapshot.repository.js';
 import { ProductProductionDefinitionRepository } from './application/ports/product-production-definition.repository.js';
 import { ProcessRouteRepository } from './application/ports/process-route.repository.js';
@@ -23,8 +22,6 @@ import {
   MaterialVariantQuery,
   MaterialVariantRepository,
 } from './application/ports/material-variant.repository.js';
-import { TechnicalFileRepository } from './application/ports/technical-file.repository.js';
-import { TechnicalFileStorage } from './application/ports/technical-file.storage.js';
 import { MysqlProcessRouteRepository } from './infrastructure/mysql-process-route.repository.js';
 import { MysqlProcessRouteStepRepository } from './infrastructure/mysql-process-route-step.repository.js';
 import { MysqlProcessStepRepository } from './infrastructure/mysql-process-step.repository.js';
@@ -33,14 +30,12 @@ import { MysqlProductCategoryRepository } from './infrastructure/mysql-product-c
 import { MysqlMaterialVariantRepository } from './infrastructure/mysql-material-variant.repository.js';
 import { MaterialRepository } from './application/ports/material.repository.js';
 import { MysqlMaterialRepository } from './infrastructure/mysql-material.repository.js';
-import { MysqlTechnicalFileRepository } from './infrastructure/mysql-technical-file.repository.js';
 import { MysqlProductSnapshotRepository } from './infrastructure/mysql-product-snapshot.repository.js';
-import { S3TechnicalFileStorage } from './infrastructure/s3-technical-file.storage.js';
 import { ProductController } from './presentation/http/product.controller.js';
 import { ProductBomApprovalHandler } from './application/product-bom-approval.handler.js';
 
 @Module({
-  imports: [DatabaseModule, ApprovalModule],
+  imports: [DatabaseModule, ApprovalModule, AttachmentModule],
   controllers: [ProductController],
   providers: [
     ProductService,
@@ -51,9 +46,7 @@ import { ProductBomApprovalHandler } from './application/product-bom-approval.ha
     ProductBomApprovalHandler,
     ProductSnapshotService,
     ProductProductionDefinitionService,
-    TechnicalFileContentQuery,
     MysqlProductSnapshotRepository,
-    MysqlTechnicalFileRepository,
     MysqlProductCatalogRepository,
     MysqlProductCategoryRepository,
     MysqlMaterialVariantRepository,
@@ -61,7 +54,6 @@ import { ProductBomApprovalHandler } from './application/product-bom-approval.ha
     MysqlProcessStepRepository,
     MysqlProcessRouteRepository,
     MysqlProcessRouteStepRepository,
-    { provide: TechnicalFileRepository, useExisting: MysqlTechnicalFileRepository },
     { provide: ProductCatalogRepository, useExisting: MysqlProductCatalogRepository },
     { provide: ProductCategoryRepository, useExisting: MysqlProductCategoryRepository },
     { provide: MaterialVariantRepository, useExisting: MysqlMaterialVariantRepository },
@@ -80,17 +72,12 @@ import { ProductBomApprovalHandler } from './application/product-bom-approval.ha
       provide: ProductProductionDefinitionCommand,
       useExisting: ProductProductionDefinitionService,
     },
-    {
-      provide: TechnicalFileStorage,
-      useFactory: () => new S3TechnicalFileStorage(loadTechnicalFileStorageConfig()),
-    },
   ],
   exports: [
     ProductInventoryEligibility,
     ProductOtherStockQuery,
     ProductSnapshotQuery,
     ProductProductionDefinitionCommand,
-    TechnicalFileContentQuery,
     MaterialVariantQuery,
   ],
 })
