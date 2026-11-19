@@ -108,6 +108,6 @@ export const TRACKING_ACTION_LABELS: Record<TrackingCardAction, string> = {
   quantity: '更正盘量',
   void: '作废追踪卡',
   abnormality: '登记随盘异常',
-  handling: '处理异常并结算',
+  handling: '处理异常',
   output: '终检确认产出',
 };

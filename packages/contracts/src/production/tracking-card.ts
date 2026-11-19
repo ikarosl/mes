@@ -6,6 +6,7 @@ import type { WorkOrderStatus } from './statuses.js';
 export type ProductionTrackingCardStatus =
   'unused' | 'in_progress' | 'completed' | 'scrapped' | 'voided';
 export type ProductionTrackingAbnormalityStatus = 'open' | 'resolved';
+export type ProductionTrackingAbnormalityResolution = 'repair' | 'scrap';
 
 export interface ProductionTrackingPersonnelSnapshot {
   personnelId: string;
@@ -35,6 +36,8 @@ export interface ProductionTrackingCardItem extends ProductionTrackingPersonnelS
   currentStepRecordId: string | null;
   currentStepName: string | null;
   openAbnormalityCount: number;
+  /** 本卡所有异常的独立描述标签，包含已处理异常，按首次出现去重。 */
+  abnormalityLabels: string[];
   isPaused: boolean;
   availableQuantity: string | null;
   remark: string | null;
@@ -89,6 +92,8 @@ export interface ProductionTrackingAbnormality extends ProductionTrackingPersonn
   affectedQuantity: string;
   status: ProductionTrackingAbnormalityStatus;
   description: string;
+  /** 每枚标签独立保存；历史完整说明作为单枚标签保留。 */
+  descriptionLabels: string[];
   createdBy: string;
   createdAt: string;
   resolvedAt: string | null;
@@ -182,19 +187,31 @@ export interface VoidProductionTrackingCardPayload extends VersionedCommand {
 }
 
 export interface CreateProductionTrackingAbnormalityPayload extends VersionedCommand {
-  /** 涉及工序，省略时采用当前站；指定值必须是本卡已到站的工序。 */
+  /** 可选关联工序；省略或 null 表示未关联，指定值必须是本卡已到站的工序。 */
   stepRecordId?: string | null;
   personnelId: string;
   affectedQuantity: number;
-  description: string;
+  descriptionLabels: string[];
+  /** 与 mixedScrappedQuantity 互斥；返修表示全部返修完成，报废扣减本次影响数量。 */
+  resolution?: ProductionTrackingAbnormalityResolution;
+  /** 同次混合处置的新增报废数量；返修数量由影响数量减去此值派生，两者均须为正。 */
+  mixedScrappedQuantity?: number;
+}
+
+export interface ProductionTrackingAbnormalityDescriptionQuery extends PageQuery {
+  /** 省略或 null 查询未关联工序的通用标签；指定值必须是本卡已到站的工序。 */
+  stepRecordId?: string | null;
+  keyword?: string;
 }
 
 export interface HandleProductionTrackingAbnormalityPayload extends VersionedCommand {
   personnelId: string;
-  content: string;
-  repairedQuantity: number;
-  scrappedQuantity: number;
-  scrapReferences: { handlingId: string; quantity: number }[];
+  /** 与高级数量结算字段互斥。 */
+  resolution?: ProductionTrackingAbnormalityResolution;
+  content?: string;
+  repairedQuantity?: number;
+  scrappedQuantity?: number;
+  scrapReferences?: { handlingId: string; quantity: number }[];
 }
 
 export interface ConfirmProductionTrackingOutputPayload extends VersionedCommand {

@@ -168,6 +168,7 @@
                   maxlength="160"
                   clearable
                   @input="scanInputChanged"
+                  @blur="normalizeScanText"
                 >
                   <template #prefix
                     ><el-icon><FullScreen /></el-icon
@@ -212,11 +213,18 @@
               @update:locked="createLocked = $event"
               @update:busy="createBusy = $event"
               @created="cardCreated"
+              @settings="printerSettingsVisible = true"
             />
             <el-button
               :disabled="!canWork || scanning || createBusy || bulkVisible"
               @click="bulkVisible = true"
               >批量预生成</el-button
+            >
+            <el-button
+              :icon="Printer"
+              :disabled="printer.busy.value"
+              @click="printerSettingsVisible = true"
+              >打印设置</el-button
             >
             <el-button
               v-if="context && canAccessRoute({ name: 'production-tracking' })"
@@ -309,8 +317,14 @@
     />
     <TrackingLabelDialog
       v-model:visible="labelVisible"
+      route-name="production-workbench"
       :card="labelCard"
       :cards="labelCards"
+      @settings="printerSettingsVisible = true"
+    />
+    <LabelPrinterSettingsDialog
+      v-model:visible="printerSettingsVisible"
+      route-name="production-workbench"
     />
     <WorkbenchBulkCreateDialog
       v-model:visible="bulkVisible"
@@ -320,6 +334,7 @@
       :personnel-name="selectedPersonnel?.name || ''"
       @created="loadContext"
       @print="openBulkLabels"
+      @settings="printerSettingsVisible = true"
     />
   </div>
 </template>
@@ -328,8 +343,9 @@
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ArrowRight, FullScreen, InfoFilled, Refresh } from '@element-plus/icons-vue';
+import { ArrowRight, FullScreen, InfoFilled, Printer, Refresh } from '@element-plus/icons-vue';
 import type { InputInstance } from 'element-plus';
+import { normalizeTrackingCardNo } from '@company/utils';
 import type {
   ScanProductionTrackingCardPayload,
   PersonnelOption,
@@ -345,6 +361,7 @@ import RemoteSearchSelect from '../../../components/RemoteSearchSelect.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
+import { useLabelPrinter } from '../../../composables/printing/use-label-printer';
 import {
   useIdempotentIntent,
   type IdempotentIntentStatus,
@@ -357,6 +374,7 @@ import { batchStatusMeta } from '../shared/production-status';
 import TrackingCardEvidence from './TrackingCardEvidence.vue';
 import TrackingCardActionDialog from './TrackingCardActionDialog.vue';
 import TrackingLabelDialog from './TrackingLabelDialog.vue';
+import LabelPrinterSettingsDialog from './LabelPrinterSettingsDialog.vue';
 import type { TrackingCardAction } from './tracking-presentation';
 import { useTrackingTaskSearch } from './use-tracking-task-search';
 import { useWorkbenchReports } from './use-workbench-reports';
@@ -371,6 +389,8 @@ defineOptions({ name: 'ProductionWorkbenchPage' });
 const route = useRoute(),
   router = useRouter();
 const { canAccessRoute } = useRouteAccess();
+const printer = useLabelPrinter();
+const printerSettingsVisible = ref(false);
 const batchId = ref<string | null>(null),
   stepId = ref(''),
   personnelId = ref('');
@@ -517,6 +537,10 @@ function scanInputChanged(): void {
   clearCurrentCard();
   scanError.value = '';
 }
+function normalizeScanText(): void {
+  if (scanning.value || scanRecovery.value) return;
+  scanText.value = normalizeTrackingCardNo(scanText.value);
+}
 const detailVisible = ref(false);
 const detailTarget = ref<{ cardId: string; batchId: string } | null>(null);
 const selectedCard = ref<ProductionTrackingCardDetail | null>(null);
@@ -581,7 +605,8 @@ async function scan(): Promise<void> {
     return;
   if (!scanSubmission) {
     if (!batchId.value || !canWork.value) return;
-    const cardNo = scanText.value.trim();
+    normalizeScanText();
+    const cardNo = scanText.value;
     if (!cardNo) {
       EMessage.warning('请扫描或输入追踪码');
       return;

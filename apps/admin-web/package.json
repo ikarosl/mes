@@ -18,6 +18,7 @@
     "@company/auth-client": "workspace:*",
     "@company/constants": "workspace:*",
     "@company/contracts": "workspace:*",
+    "@company/printing": "workspace:*",
     "@company/request": "workspace:*",
     "@company/utils": "workspace:*",
     "@element-plus/icons-vue": "catalog:",

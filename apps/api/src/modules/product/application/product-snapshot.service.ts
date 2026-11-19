@@ -18,6 +18,10 @@ export class ProductSnapshotService extends ProductSnapshotQuery {
     super();
   }
 
+  getHistoricalRouteStepProcessId(routeStepId: string): Promise<string | null> {
+    return this.snapshots.getHistoricalRouteStepProcessId(routeStepId);
+  }
+
   listProcessRouteDisplayReferencesByIds(
     routeIds: string[],
   ): Promise<ProcessRouteDisplayReference[]> {

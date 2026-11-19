@@ -36,7 +36,7 @@ const handling = z
     createdAt: time,
   })
   .strict();
-const abnormality = z
+const legacyAbnormality = z
   .object({
     ...person,
     id,
@@ -52,6 +52,7 @@ const abnormality = z
     handling: handling.nullable(),
   })
   .strict();
+const abnormality = legacyAbnormality.extend({ descriptionLabels: z.array(z.string()).min(1) });
 const visit = z
   .object({
     ...person,
@@ -72,7 +73,7 @@ const visit = z
     unit: z.string(),
   })
   .strict();
-const card = z
+const legacyCard = z
   .object({
     ...person,
     id,
@@ -108,23 +109,47 @@ const card = z
         })
         .strict(),
     ),
-    abnormalities: z.array(abnormality),
+    abnormalities: z.array(legacyAbnormality),
     output: output.nullable(),
   })
   .strict();
+const card = legacyCard.extend({
+  abnormalityLabels: z.array(z.string()),
+  abnormalities: z.array(abnormality),
+});
+// A legacy result has no label fields anywhere and is strictly parsed before projection.
+// Each complete original description is one label, matching the additive migration.
+// Never split old text, invent label IDs or read the card's current database state.
+const compatibleCard = z.union([
+  card,
+  legacyCard.transform((value) => ({
+    ...value,
+    abnormalityLabels: [...new Set(value.abnormalities.map((row) => row.description))],
+    abnormalities: value.abnormalities.map((row) => ({
+      ...row,
+      descriptionLabels: [row.description],
+    })),
+  })),
+]);
 const scan = z.object({ card, duplicate: z.boolean(), completedVisitId: id.nullable() }).strict();
+const compatibleScan = z
+  .object({ card: compatibleCard, duplicate: z.boolean(), completedVisitId: id.nullable() })
+  .strict();
 const createdCards = z
   .object({ cards: z.array(card).min(1).max(PRODUCTION_TRACKING_CARD_BATCH_LIMIT) })
+  .strict();
+const compatibleCreatedCards = z
+  .object({ cards: z.array(compatibleCard).min(1).max(PRODUCTION_TRACKING_CARD_BATCH_LIMIT) })
   .strict();
 
 export const trackingCardResultCodec: IdempotencyResultCodec<ProductionTrackingCardDetail> = {
   encode: (value) => card.parse(value),
-  decode: (value) => card.parse(value),
+  decode: (value) => compatibleCard.parse(value),
 };
 export const trackingCardsCreatedResultCodec: IdempotencyResultCodec<ProductionTrackingCardsCreatedResult> =
   {
     encode: (value) => createdCards.parse(value),
-    decode: (value) => createdCards.parse(value),
+    decode: (value) => compatibleCreatedCards.parse(value),
   };
 export const trackingOutputResultCodec: IdempotencyResultCodec<ProductionTrackingOutput> = {
   encode: (value) => output.parse(value),
@@ -132,5 +157,5 @@ export const trackingOutputResultCodec: IdempotencyResultCodec<ProductionTrackin
 };
 export const trackingScanResultCodec: IdempotencyResultCodec<ProductionTrackingScanResult> = {
   encode: (value) => scan.parse(value),
-  decode: (value) => scan.parse(value),
+  decode: (value) => compatibleScan.parse(value),
 };

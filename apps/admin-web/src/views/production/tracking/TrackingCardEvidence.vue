@@ -1,7 +1,7 @@
 ﻿<template>
   <el-dialog
     :model-value="visible"
-    title="工序追踪 / 异常处理"
+    title="追踪卡详情"
     :width="DialogWidth.xl"
     @update:model-value="$emit('update:visible', $event)"
   >
@@ -243,11 +243,11 @@
                   link
                   :disabled="actionsDisabled"
                   @click="$emit('action', 'handling', item)"
-                  >处理并结算</el-button
+                  >处理异常</el-button
                 >
               </div>
               <div class="record-meta">
-                涉及工序：{{ item.stepName || '未到站' }} · 登记人 {{ item.personnelName }} ·
+                关联工序：{{ item.stepName || '未指定' }} · 登记人 {{ item.personnelName }} ·
                 {{ formatDateTimeForDisplay(item.createdAt) }}
               </div>
               <p class="description">{{ item.description }}</p>

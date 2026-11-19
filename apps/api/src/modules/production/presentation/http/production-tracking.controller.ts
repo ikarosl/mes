@@ -34,6 +34,7 @@ import {
   HandleProductionTrackingAbnormalityDto,
   ProductionTrackingCardQueryDto,
   ProductionTrackingReportQueryDto,
+  ProductionTrackingAbnormalityDescriptionQueryDto,
   ReopenProductionTrackingTaskDto,
   ScanProductionTrackingCardDto,
   StartProductionTrackingTaskDto,
@@ -138,6 +139,18 @@ export class ProductionTrackingController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.createAbnormality(cardId, body, context);
+  }
+  @Get('tracking-cards/:cardId/abnormality-description-options')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  abnormalityDescriptionOptions(
+    @Param() { cardId }: TrackingCardParamDto,
+    @Query() query: ProductionTrackingAbnormalityDescriptionQueryDto,
+  ) {
+    return this.service.abnormalityDescriptionOptions(cardId, query);
   }
   @Post('tracking-cards/:cardId/abnormalities/:abnormalityId/handlings')
   @RequirePermission(PERMISSIONS.production.workbench.operate)

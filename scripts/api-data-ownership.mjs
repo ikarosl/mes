@@ -95,6 +95,8 @@ export const API_DATA_OWNERSHIP = Object.freeze({
     'production_tracking_visit',
     'production_tracking_quantity_change',
     'production_tracking_abnormality',
+    'production_tracking_abnormality_label',
+    'production_tracking_abnormality_label_assignment',
     'production_tracking_abnormality_handling',
     'production_tracking_scrap_reference',
     'production_tracking_output',

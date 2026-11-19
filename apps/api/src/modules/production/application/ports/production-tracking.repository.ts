@@ -13,6 +13,7 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
+  ProductionTrackingAbnormalityDescriptionQuery,
   ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
   ProductionTrackingPersonnelSnapshot,
@@ -26,9 +27,21 @@ import type {
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 
+export interface ProductionTrackingCardListQuery extends ProductionTrackingCardQuery {
+  exactCardNo?: string;
+}
+
 export abstract class ProductionTrackingRepository {
+  abstract abnormalityStepReference(
+    cardId: string,
+    stepRecordId?: string | null,
+  ): Promise<{ stepRecordId: string; routeStepId: string } | null>;
+  abstract abnormalityDescriptionOptions(
+    processStepId: string | null,
+    query: ProductionTrackingAbnormalityDescriptionQuery,
+  ): Promise<PageResult<string>>;
   abstract list(
-    query: ProductionTrackingCardQuery,
+    query: ProductionTrackingCardListQuery,
   ): Promise<PageResult<ProductionTrackingCardItem>>;
   abstract get(cardId: string): Promise<ProductionTrackingCardDetail>;
   abstract workbench(batchId: string): Promise<ProductionTrackingWorkbench>;
@@ -73,6 +86,7 @@ export abstract class ProductionTrackingRepository {
   abstract createAbnormality(
     cardId: string,
     payload: CreateProductionTrackingAbnormalityPayload,
+    processStepId: string | null,
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
   ): Promise<ProductionTrackingCardDetail>;

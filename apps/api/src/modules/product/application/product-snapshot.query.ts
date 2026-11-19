@@ -72,6 +72,8 @@ export type ProductQueryResult<T> = { status: 'success'; value: T } | ProductQue
 
 /** 生产编排的公共读取边界。返回稳定的结果联合，绝不返回模块内部错误。 */
 export abstract class ProductSnapshotQuery {
+  /** 冻结路线的历史工序身份；允许停用或软删除，不授予新增生产资格。 */
+  abstract getHistoricalRouteStepProcessId(routeStepId: string): Promise<string | null>;
   abstract listProcessRouteDisplayReferencesByIds(
     routeIds: string[],
   ): Promise<ProcessRouteDisplayReference[]>;

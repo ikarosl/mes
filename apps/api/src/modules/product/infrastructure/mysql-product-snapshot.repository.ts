@@ -57,6 +57,16 @@ export class MysqlProductSnapshotRepository
     private readonly attachments: AttachmentService,
   ) {}
 
+  async getHistoricalRouteStepProcessId(routeStepId: string): Promise<string | null> {
+    return withTransaction(this.pool, async (db) => {
+      const [[row]] = await db.query<(RowDataPacket & { processStepId: string })[]>(
+        'SELECT CAST(process_step_id AS CHAR) processStepId FROM process_route_steps WHERE id=?',
+        [routeStepId],
+      );
+      return row?.processStepId ?? null;
+    });
+  }
+
   async listProcessRouteDisplayReferencesByIds(
     routeIds: string[],
   ): Promise<ProcessRouteDisplayReference[]> {

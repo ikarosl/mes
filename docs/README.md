@@ -52,6 +52,7 @@
 - [传输契约](../packages/contracts/README.md)
 - [数据库基础设施](../packages/database/README.md)
 - [HTTP 请求基础设施](../packages/request/README.md)
+- [浏览器打印代理](../packages/printing/README.md)
 - [纯数据规范化与计算工具](../packages/utils/README.md)
 - [跨模块测试](../tests/README.md)
 

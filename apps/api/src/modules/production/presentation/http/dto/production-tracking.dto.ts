@@ -1,6 +1,7 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
   ArrayUnique,
   IsArray,
   IsIn,
@@ -13,6 +14,7 @@ import {
   Max,
   MaxLength,
   Min,
+  ValidateIf,
   ValidateNested,
 } from 'class-validator';
 import type {
@@ -25,6 +27,7 @@ import type {
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
   ProductionTrackingCardQuery,
+  ProductionTrackingAbnormalityDescriptionQuery,
   ProductionTrackingReportQuery,
   ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
@@ -32,6 +35,9 @@ import type {
 } from '@company/contracts';
 import {
   PRODUCTION_TRACKING_ABNORMALITY_STATUSES,
+  PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS,
+  PRODUCTION_TRACKING_ABNORMALITY_LABEL_LIMIT,
+  PRODUCTION_TRACKING_ABNORMALITY_LABEL_MAX_LENGTH,
   PRODUCTION_TRACKING_CARD_STATUSES,
   PRODUCTION_TASK_FINISH_MODES,
 } from '@company/constants';
@@ -69,6 +75,13 @@ export class ProductionTrackingReportQueryDto
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) stepRecordId?: string;
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId?: string;
 }
+export class ProductionTrackingAbnormalityDescriptionQueryDto
+  extends PageQueryDto
+  implements ProductionTrackingAbnormalityDescriptionQuery
+{
+  @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) stepRecordId?: string | null;
+  @IsOptional() @IsString() @MaxLength(5000) keyword?: string;
+}
 export class CreateProductionTrackingCardDto implements CreateProductionTrackingCardPayload {
   @Type(() => Number) @IsInt() @Min(1) @Max(99999999) quantity!: number;
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
@@ -105,7 +118,23 @@ export class CreateProductionTrackingAbnormalityDto
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) stepRecordId?: string | null;
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
   @Type(() => Number) @IsInt() @Min(1) @Max(99999999) affectedQuantity!: number;
-  @IsString() @IsNotEmpty() @MaxLength(5000) description!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(PRODUCTION_TRACKING_ABNORMALITY_LABEL_LIMIT)
+  @ArrayUnique()
+  @IsString({ each: true })
+  @IsNotEmpty({ each: true })
+  @MaxLength(PRODUCTION_TRACKING_ABNORMALITY_LABEL_MAX_LENGTH, { each: true })
+  descriptionLabels!: string[];
+  @IsOptional()
+  @IsIn(PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS)
+  resolution?: CreateProductionTrackingAbnormalityPayload['resolution'];
+  @ValidateIf((_object, value: unknown) => value !== undefined)
+  @Type(() => Number)
+  @IsInt()
+  @Min(1)
+  @Max(99999999)
+  mixedScrappedQuantity?: number;
 }
 export class ProductionTrackingScrapReferenceDto {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) handlingId!: string;
@@ -116,16 +145,20 @@ export class HandleProductionTrackingAbnormalityDto
   implements HandleProductionTrackingAbnormalityPayload
 {
   @IsString() @Matches(/^[1-9]\d{0,19}$/) personnelId!: string;
-  @IsString() @IsNotEmpty() @MaxLength(5000) content!: string;
-  @Type(() => Number) @IsInt() @Min(0) @Max(99999999) repairedQuantity!: number;
-  @Type(() => Number) @IsInt() @Min(0) @Max(99999999) scrappedQuantity!: number;
+  @IsOptional()
+  @IsIn(PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS)
+  resolution?: HandleProductionTrackingAbnormalityPayload['resolution'];
+  @IsOptional() @IsString() @IsNotEmpty() @MaxLength(5000) content?: string;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(99999999) repairedQuantity?: number;
+  @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(99999999) scrappedQuantity?: number;
+  @IsOptional()
   @IsArray()
   @ArrayMaxSize(100)
   @ArrayUnique((reference: ProductionTrackingScrapReferenceDto | null) => reference?.handlingId)
   @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => ProductionTrackingScrapReferenceDto)
-  scrapReferences!: ProductionTrackingScrapReferenceDto[];
+  scrapReferences?: ProductionTrackingScrapReferenceDto[];
 }
 export class ConfirmProductionTrackingOutputDto
   extends VersionedCommandDto

@@ -5,7 +5,6 @@ import type {
   ProductionTrackingAbnormalityHandling,
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
-  ProductionTrackingCardQuery,
   ProductionTrackingOutput,
   ProductionTrackingQuantityChange,
   ProductionTrackingReportQuery,
@@ -15,8 +14,10 @@ import type {
 } from '@company/contracts';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
+import type { ProductionTrackingCardListQuery } from '../../application/ports/production-tracking.repository.js';
 import type { Db } from '../shared/mysql-production-db.js';
 import { selectBatchOverview } from '../tasks/mysql-production-batch.read.js';
+import { selectTrackingCardLabels } from './mysql-production-tracking-labels.js';
 
 const PERSON = `CAST(o.personnel_id AS CHAR) personnelId,o.personnel_code_snapshot personnelCode,o.personnel_name_snapshot personnelName`;
 const CARD_SELECT = `SELECT CAST(c.id AS CHAR) id,c.card_no cardNo,CAST(c.production_batch_id AS CHAR) productionBatchId,
@@ -42,6 +43,7 @@ const VISIT_SELECT = `SELECT CAST(v.id AS CHAR) id,CAST(v.tracking_card_id AS CH
 function mapCard(row: RowDataPacket & ProductionTrackingCardItem): ProductionTrackingCardItem {
   return {
     ...row,
+    abnormalityLabels: row.abnormalityLabels ?? [],
     quantity: String(row.quantity),
     openAbnormalityCount: Number(row.openAbnormalityCount),
     isPaused: Boolean(row.isPaused),
@@ -76,7 +78,7 @@ export async function selectTrackingOutput(
 }
 export async function listTrackingCards(
   db: Db,
-  query: ProductionTrackingCardQuery,
+  query: ProductionTrackingCardListQuery,
 ): Promise<PageResult<ProductionTrackingCardItem>> {
   const conditions = ['1=1'];
   const values: Array<string | number> = [];
@@ -98,7 +100,10 @@ export async function listTrackingCards(
     );
     values.push(query.abnormalityStatus);
   }
-  if (query.keyword) {
+  if (query.exactCardNo) {
+    conditions.push('c.card_no=?');
+    values.push(query.exactCardNo);
+  } else if (query.keyword) {
     conditions.push(
       '(c.card_no LIKE ? OR b.batch_no LIKE ? OR wo.work_order_no LIKE ? OR wo.product_code_snapshot LIKE ? OR wo.product_name_snapshot LIKE ?)',
     );
@@ -115,7 +120,21 @@ export async function listTrackingCards(
     `${CARD_SELECT} WHERE ${where} ORDER BY c.created_at DESC,c.id DESC LIMIT ? OFFSET ?`,
     [...values, pageSize, (page - 1) * pageSize],
   );
-  return { items: rows.map(mapCard), total: Number(count?.total ?? 0), page, pageSize };
+  const labels = await selectTrackingCardLabels(
+    db,
+    rows.map((row) => row.id),
+  );
+  return {
+    items: rows.map((row) => ({
+      ...mapCard(row),
+      abnormalityLabels: [
+        ...new Set(labels.filter((label) => label.cardId === row.id).map((label) => label.label)),
+      ],
+    })),
+    total: Number(count?.total ?? 0),
+    page,
+    pageSize,
+  };
 }
 export async function selectTrackingCard(
   db: Db,
@@ -170,9 +189,11 @@ export async function selectTrackingCard(
     ]),
   );
   const output = await selectTrackingOutput(db, card.productionBatchId, id, lock);
+  const labels = await selectTrackingCardLabels(db, [id], lock);
   const openAbnormalityCount = abnormalities.filter((row) => row.status === 'open').length;
   return {
     ...mapCard(card),
+    abnormalityLabels: [...new Set(labels.map((label) => label.label))],
     openAbnormalityCount,
     isPaused: openAbnormalityCount > 0,
     availableQuantity: output?.quantity ?? null,
@@ -183,6 +204,9 @@ export async function selectTrackingCard(
     })),
     abnormalities: abnormalities.map((row) => ({
       ...row,
+      descriptionLabels: labels
+        .filter((label) => label.abnormalityId === row.id)
+        .map((label) => label.label),
       affectedQuantity: String(row.affectedQuantity),
       createdAt: toBeijingISOString(row.createdAt),
       resolvedAt: row.resolvedAt === null ? null : toBeijingISOString(row.resolvedAt),

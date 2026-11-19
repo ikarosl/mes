@@ -184,6 +184,9 @@ importers:
       '@company/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@company/printing':
+        specifier: workspace:*
+        version: link:../../packages/printing
       '@company/request':
         specifier: workspace:*
         version: link:../../packages/request
@@ -394,6 +397,15 @@ importers:
       tsx:
         specifier: 'catalog:'
         version: 4.23.1
+      typescript:
+        specifier: 'catalog:'
+        version: 5.9.3
+      vitest:
+        specifier: 'catalog:'
+        version: 3.2.7(@types/node@22.20.1)(happy-dom@15.11.7)(tsx@4.23.1)(yaml@2.9.0)
+
+  packages/printing:
+    devDependencies:
       typescript:
         specifier: 'catalog:'
         version: 5.9.3

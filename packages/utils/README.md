@@ -1,6 +1,6 @@
 # @company/utils
 
-前后端共享的纯数据规范化与计算函数，覆盖数量、采购金额、日期时间、JSON 表格和请求规范化；导出见 [src/index.ts](src/index.ts)。
+前后端共享的纯数据规范化与计算函数，覆盖数量、采购金额、日期时间、JSON 表格、[追踪卡短码](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#任务内卡号)和请求规范化；导出见 [src/index.ts](src/index.ts)。
 
 本包不访问网络、数据库或应用状态，也不拥有业务用例；新增函数必须确有跨消费者复用价值，并保持确定性和无副作用。
 

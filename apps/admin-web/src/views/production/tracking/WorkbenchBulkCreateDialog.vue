@@ -10,7 +10,7 @@
     <InlineHint>按本次分盘总量生成追踪卡，尚不到站；实物进入首工序时扫码到站。</InlineHint>
     <el-form
       label-position="top"
-      @submit.prevent="submit"
+      @submit.prevent="submit()"
     >
       <div class="quantity-fields">
         <el-form-item label="本次分盘总量">
@@ -54,17 +54,24 @@
         </template>
       </el-alert>
       <InlineHint v-if="!result.length"
-        >本次分盘总量由现场填写，不计完成量或库存。生成后可选择全部或部分标签打印。</InlineHint
+        >本次分盘总量由现场填写，不计完成量或库存。选择“生成并打印追踪卡”将自动打印全部标签。</InlineHint
       >
     </el-form>
+    <el-alert
+      v-if="printerCheckError"
+      :title="printerCheckError"
+      type="error"
+      show-icon
+      :closable="false"
+    />
     <SubmissionRecoveryNotice
       v-if="recovery"
       :status="status"
       :busy="creating"
       records-label="追踪卡管理"
-      :retry-disabled="!active || !visible"
+      :retry-disabled="!active || !visible || (!!submission?.shouldPrint && printer.busy.value)"
       allow-restart
-      @retry="submit"
+      @retry="submit()"
       @restart="restartSubmission"
     />
     <template v-if="result.length">
@@ -78,6 +85,22 @@
         {{ result[0]?.cardNo }} 至 {{ result[result.length - 1]?.cardNo }} · 共
         {{ result.length }} 张
       </p>
+      <el-alert
+        v-if="printError"
+        :title="printError"
+        type="warning"
+        show-icon
+        :closable="false"
+      >
+        <el-button
+          link
+          type="primary"
+          :loading="creating"
+          :disabled="creating || printer.busy.value || !active"
+          @click="reprintBatch"
+          >补打本批原标签</el-button
+        >
+      </el-alert>
       <el-table
         :data="result"
         max-height="300"
@@ -103,38 +126,57 @@
     </template>
     <template #footer>
       <el-button
+        :disabled="creating || printer.busy.value"
+        @click="$emit('settings')"
+        >打印设置</el-button
+      >
+      <el-button
         :disabled="creating"
         @click="requestClose"
         >关闭</el-button
       >
       <template v-if="result.length">
-        <el-button @click="result = []">继续生成下一批</el-button>
+        <el-button
+          :disabled="creating || (resultShouldPrint && printer.busy.value)"
+          @click="nextBatch"
+          >继续生成下一批</el-button
+        >
         <el-button
           type="primary"
-          @click="$emit('print', result)"
+          :disabled="creating || printer.busy.value"
+          @click="openLabels"
           >选择标签 / 打印</el-button
         >
       </template>
-      <el-button
-        v-else
-        type="primary"
-        :loading="creating"
-        :disabled="locked || !valid"
-        @click="submit"
-        >生成追踪卡</el-button
-      >
+      <template v-else>
+        <el-button
+          v-if="isDevelopment"
+          :loading="creating"
+          :disabled="locked || !valid"
+          @click="submit(false)"
+          >仅生成追踪卡（开发）</el-button
+        >
+        <el-button
+          type="primary"
+          :loading="creating"
+          :disabled="locked || printer.busy.value || !valid"
+          @click="submit()"
+          >生成并打印追踪卡</el-button
+        >
+      </template>
     </template>
   </el-dialog>
 </template>
 
 <script setup lang="ts">
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
-import { computed, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onScopeDispose, ref, shallowRef, watch } from 'vue';
 import { PRODUCTION_TRACKING_CARD_BATCH_LIMIT } from '@company/constants';
 import type {
   CreateProductionTrackingCardsPayload,
   ProductionTrackingCardDetail,
 } from '@company/contracts';
+import { checkLabelPrinter, printBarcodeLabels } from '@company/printing';
 import { productionTrackingApi } from '../../../api/production/tracking';
 import InlineHint from '../../../components/InlineHint.vue';
 import {
@@ -142,12 +184,19 @@ import {
   type IdempotentIntentStatus,
 } from '../../../composables/idempotency/useIdempotentIntent';
 import { useTabsStore } from '../../../stores/tabs';
+import { useLabelPrinter } from '../../../composables/printing/use-label-printer';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
 import { RouteMessageBox } from '../../../utils/route-message-box';
+import {
+  confirmTrackingLabelReprint,
+  trackingBarcodeLabels,
+  trackingPrintFailure,
+} from './tracking-label-printing';
 
 defineOptions({ name: 'WorkbenchBulkCreateDialog' });
+const isDevelopment = import.meta.env.DEV === true;
 const props = defineProps<{
   visible: boolean;
   batchId: string | null;
@@ -159,6 +208,7 @@ const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
   (event: 'created'): void;
   (event: 'print', cards: ProductionTrackingCardDetail[]): void;
+  (event: 'settings'): void;
 }>();
 const active = ref(true);
 onActivated(() => {
@@ -170,12 +220,21 @@ onDeactivated(() => {
 const totalQuantity = ref<number>();
 const quantityPerCard = ref<number>();
 const creating = ref(false);
+const printer = useLabelPrinter();
+const printerCheckError = ref('');
+const printError = ref('');
+const printUnknown = ref(false);
 const status = ref<IdempotentIntentStatus>('idle');
 const intent = useIdempotentIntent('批量生成追踪卡');
 const recovery = computed(() => status.value !== 'idle');
 const locked = computed(() => creating.value || recovery.value);
 const result = ref<ProductionTrackingCardDetail[]>([]);
-let submission: { batchId: string; body: CreateProductionTrackingCardsPayload } | null = null;
+const resultShouldPrint = ref(true);
+const submission = shallowRef<{
+  batchId: string;
+  body: CreateProductionTrackingCardsPayload;
+  shouldPrint: boolean;
+} | null>(null);
 let baseline = '';
 const draftKey = () => JSON.stringify([totalQuantity.value, quantityPerCard.value]);
 const preview = computed(() => {
@@ -199,7 +258,14 @@ const valid = computed(
 function resetIntent(): void {
   intent.reset();
   status.value = 'idle';
-  submission = null;
+  submission.value = null;
+}
+function resetPrintResult(): void {
+  result.value = [];
+  resultShouldPrint.value = true;
+  printerCheckError.value = '';
+  printError.value = '';
+  printUnknown.value = false;
 }
 watch(
   () => props.batchId,
@@ -207,7 +273,7 @@ watch(
     if (locked.value) return;
     totalQuantity.value = undefined;
     quantityPerCard.value = undefined;
-    result.value = [];
+    resetPrintResult();
     baseline = draftKey();
   },
 );
@@ -215,7 +281,7 @@ watch(
   () => props.visible,
   (visible) => {
     if (visible && !locked.value) {
-      result.value = [];
+      resetPrintResult();
       resetIntent();
       baseline = draftKey();
     }
@@ -224,15 +290,15 @@ watch(
 async function allowClose(): Promise<boolean> {
   if (!props.visible) return true;
   if (creating.value) return false;
-  if (!recovery.value && (result.value.length || draftKey() === baseline)) return true;
+  if (!recovery.value && !printError.value && (result.value.length || draftKey() === baseline))
+    return true;
   try {
-    await RouteMessageBox.confirm(
-      recovery.value
-        ? '请先在追踪卡管理中核对本批是否已生成。确认放弃本次未确认提交并关闭？'
-        : '本次分盘数量尚未提交，确认放弃并关闭？',
-      '关闭批量生成',
-      { type: 'warning' },
-    );
+    let message = '本次分盘数量尚未提交，确认放弃并关闭？';
+    if (recovery.value)
+      message = '请先在追踪卡管理中核对本批是否已生成。确认放弃本次未确认提交并关闭？';
+    else if (printError.value)
+      message = '本批追踪卡已生成，标签尚未确认打印。关闭后可在追踪卡管理中补打原卡。确认关闭？';
+    await RouteMessageBox.confirm(message, '关闭批量生成', { type: 'warning' });
     resetIntent();
     totalQuantity.value = undefined;
     quantityPerCard.value = undefined;
@@ -241,6 +307,23 @@ async function allowClose(): Promise<boolean> {
     return false;
   }
 }
+
+async function openLabels(): Promise<void> {
+  if (
+    !active.value ||
+    !props.visible ||
+    creating.value ||
+    printer.busy.value ||
+    !result.value.length
+  )
+    return;
+  if (!(await confirmTrackingLabelReprint(printUnknown.value))) return;
+  if (!active.value || !props.visible || creating.value || printer.busy.value) return;
+  emit(
+    'print',
+    result.value.map((card) => ({ ...card })),
+  );
+}
 async function requestClose(): Promise<void> {
   if (await allowClose()) emit('update:visible', false);
 }
@@ -248,11 +331,14 @@ function restartSubmission(): void {
   if (!active.value || creating.value) return;
   resetIntent();
 }
-async function submit(): Promise<void> {
+async function submit(shouldPrint = true): Promise<void> {
+  if (!shouldPrint && !isDevelopment) return;
   if (!active.value || !props.visible || creating.value || result.value.length) return;
-  if (!submission) {
+  const recovering = recovery.value;
+  let candidate = submission.value;
+  if (!candidate) {
     if (!valid.value || !props.batchId || !totalQuantity.value || !quantityPerCard.value) return;
-    submission = {
+    candidate = {
       batchId: props.batchId,
       body: {
         totalQuantity: totalQuantity.value,
@@ -260,31 +346,134 @@ async function submit(): Promise<void> {
         personnelId: props.personnelId,
         remark: null,
       },
+      shouldPrint,
     };
   }
-  const frozen = submission;
+  const frozen = candidate;
+  if (!frozen.shouldPrint && !isDevelopment) return;
+  if (frozen.shouldPrint && printer.busy.value) return;
   creating.value = true;
-  try {
-    const created = await intent.execute(
-      {
-        intentType: 'production.tracking.create-bulk',
-        params: { batchId: frozen.batchId },
-        query: {},
-        body: frozen.body,
-      },
-      (key) => productionTrackingApi.createBulk(frozen.batchId, frozen.body, key),
-    );
-    result.value = created.cards;
+  printerCheckError.value = '';
+  async function executeCreate(): Promise<ProductionTrackingCardDetail[] | null> {
+    submission.value = frozen;
+    let cards: ProductionTrackingCardDetail[];
+    try {
+      const created = await intent.execute(
+        {
+          intentType: 'production.tracking.create-bulk',
+          params: { batchId: frozen.batchId },
+          query: {},
+          body: frozen.body,
+        },
+        (key) => productionTrackingApi.createBulk(frozen.batchId, frozen.body, key),
+      );
+      cards = created.cards;
+    } catch (error) {
+      if (active.value) EMessage.error(error, '批量生成失败');
+      return null;
+    } finally {
+      status.value = intent.getStatus();
+      if (!recovery.value) submission.value = null;
+    }
+    result.value = cards.map((card) => ({ ...card }));
+    resultShouldPrint.value = frozen.shouldPrint;
     baseline = draftKey();
     emit('created');
-    EMessage.success(`已生成 ${created.cards.length} 张追踪卡，尚未到站`);
+    if (active.value) EMessage.success(`已生成 ${cards.length} 张追踪卡，尚未到站`);
+    return cards;
+  }
+  try {
+    if (!frozen.shouldPrint) {
+      await executeCreate();
+      return;
+    }
+    await printer.runOperation(async (settings) => {
+      if (!recovering) {
+        try {
+          await checkLabelPrinter(settings);
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : '本机打印服务检查失败';
+          printerCheckError.value = `本次尚未提交批量生成。${reason}`;
+          return;
+        }
+        if (!active.value || !props.visible || props.batchId !== frozen.batchId) return;
+      }
+      const cards = await executeCreate();
+      if (!cards) return;
+      try {
+        await printBarcodeLabels(trackingBarcodeLabels(cards), settings);
+        printError.value = '';
+        printUnknown.value = false;
+        if (active.value) EMessage.success('本批标签已提交打印服务，请核对实际出纸');
+      } catch (error) {
+        const failure = trackingPrintFailure(error);
+        printError.value = failure.message;
+        printUnknown.value = failure.unknown;
+        if (active.value) EMessage.warning('本批追踪卡已生成，请核对标签打印结果');
+      }
+    });
   } catch (error) {
-    EMessage.error(error, '批量生成失败');
+    if (active.value)
+      EMessage.error(
+        error,
+        frozen.shouldPrint
+          ? '处理未完成，请核对本批追踪卡与标签打印结果'
+          : '处理未完成，请核对本批追踪卡结果',
+      );
   } finally {
-    status.value = intent.getStatus();
-    if (!recovery.value) submission = null;
     creating.value = false;
   }
+}
+
+async function reprintBatch(): Promise<void> {
+  if (
+    !active.value ||
+    !props.visible ||
+    creating.value ||
+    printer.busy.value ||
+    !result.value.length
+  )
+    return;
+  const cards = result.value.map((card) => ({ id: card.id, cardNo: card.cardNo }));
+  if (!(await confirmTrackingLabelReprint(printUnknown.value))) return;
+  if (!active.value || !props.visible || creating.value || printer.busy.value) return;
+  creating.value = true;
+  try {
+    const labels = trackingBarcodeLabels(cards);
+    await printer.runOperation((settings) => printBarcodeLabels(labels, settings));
+    printError.value = '';
+    printUnknown.value = false;
+    if (active.value) EMessage.success('本批原标签已提交打印服务，请核对实际出纸');
+  } catch (error) {
+    const failure = trackingPrintFailure(error);
+    printError.value = failure.message;
+    printUnknown.value = failure.unknown;
+  } finally {
+    creating.value = false;
+  }
+}
+
+async function nextBatch(): Promise<void> {
+  if (!active.value || creating.value || (resultShouldPrint.value && printer.busy.value)) return;
+  if (printError.value) {
+    try {
+      await RouteMessageBox.confirm(
+        '本批追踪卡已生成，标签尚未确认打印。请先核对打印队列和实物，之后仍可在追踪卡管理中补打原卡。确认继续下一批？',
+        '继续生成下一批',
+        { type: 'warning' },
+      );
+    } catch {
+      return;
+    }
+  }
+  if (
+    !active.value ||
+    !props.visible ||
+    creating.value ||
+    (resultShouldPrint.value && printer.busy.value)
+  )
+    return;
+  resetPrintResult();
 }
 const unregister = useTabsStore().registerCloseGuard('production-workbench', allowClose);
 onScopeDispose(unregister);

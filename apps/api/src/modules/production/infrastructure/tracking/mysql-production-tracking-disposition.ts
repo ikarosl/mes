@@ -4,7 +4,10 @@ import type {
   ProductionTrackingPersonnelSnapshot,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
-import { requireTrackingDispositionQuantities } from '../../domain/production-tracking-disposition.policy.js';
+import {
+  requireTrackingDispositionQuantities,
+  resolveTrackingAbnormalityDisposition,
+} from '../../domain/production-tracking-disposition.policy.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
 import { writeProductionAudit } from '../shared/mysql-production-audit.js';
 
@@ -27,14 +30,18 @@ export async function settleTrackingAbnormality(
     throw new ProductionDomainError('CONCURRENT_MODIFICATION', '异常已经变化，请刷新后重试');
   if (abnormality.status !== 'open')
     throw new ProductionDomainError('INVALID_STATE', '该异常已经完成最终结算，不能重复处理');
+  const disposition = resolveTrackingAbnormalityDisposition(
+    payload,
+    Number(abnormality.affected_quantity),
+  );
   requireTrackingDispositionQuantities(
     Number(abnormality.affected_quantity),
     Number(card.quantity),
-    payload,
+    disposition,
   );
   // The card root lock serializes all its settlements. Reference facts are immutable;
   // their quantities explain overlap and are deliberately not globally consumed.
-  for (const reference of payload.scrapReferences) {
+  for (const reference of disposition.scrapReferences) {
     const [[identity]] = await db.query<(RowDataPacket & { trackingCardId: string })[]>(
       `SELECT CAST(a.tracking_card_id AS CHAR) trackingCardId FROM production_tracking_abnormality_handling h
        JOIN production_tracking_abnormality a ON a.id=h.abnormality_id WHERE h.id=?`,
@@ -72,16 +79,16 @@ export async function settleTrackingAbnormality(
     if (reference.quantity > source.scrapped_quantity)
       throw new ProductionDomainError('INVALID_INPUT', '关联数量不能超过该来源实际新增报废数量');
   }
-  const remainingQuantity = Number(card.quantity) - payload.scrappedQuantity;
+  const remainingQuantity = Number(card.quantity) - disposition.scrappedQuantity;
   const [created] = await db.execute<ResultSetHeader>(
     `INSERT INTO production_tracking_abnormality_handling
      (abnormality_id,content,repaired_quantity,scrapped_quantity,previous_card_quantity,remaining_card_quantity,personnel_id,personnel_code_snapshot,personnel_name_snapshot,created_by)
      VALUES (?,?,?,?,?,?,?,?,?,?)`,
     [
       abnormalityId,
-      payload.content,
-      payload.repairedQuantity,
-      payload.scrappedQuantity,
+      disposition.content,
+      disposition.repairedQuantity,
+      disposition.scrappedQuantity,
       card.quantity,
       remainingQuantity,
       person.personnelId,
@@ -91,7 +98,7 @@ export async function settleTrackingAbnormality(
     ],
   );
   const handlingId = String(created.insertId);
-  for (const reference of payload.scrapReferences)
+  for (const reference of disposition.scrapReferences)
     await db.execute(
       'INSERT INTO production_tracking_scrap_reference (handling_id,referenced_handling_id,quantity) VALUES (?,?,?)',
       [handlingId, reference.handlingId, reference.quantity],
@@ -122,6 +129,7 @@ export async function settleTrackingAbnormality(
     { status: abnormality.status, cardQuantity: String(card.quantity), cardStatus: card.status },
     {
       ...payload,
+      ...disposition,
       ...person,
       handlingId,
       trackingCardId: card.id,

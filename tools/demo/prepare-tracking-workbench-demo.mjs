@@ -168,15 +168,9 @@ async function prepare(config, request) {
       ...(stepRecordId ? { stepRecordId } : {}),
       personnelId: registrant.id,
       affectedQuantity,
-      description: `${config.marker} ${description}`,
+      descriptionLabels: [`${config.marker} ${description}`],
     });
-  const disposition = (
-    card,
-    abnormalityId,
-    repairedQuantity,
-    scrappedQuantity,
-    scrapReferences,
-  ) => {
+  const disposition = (card, abnormalityId, resolution) => {
     const abnormality = card.abnormalities.find((item) => item.id === abnormalityId);
     if (!abnormality) throw new Error('异常事实缺失');
     return request(
@@ -184,10 +178,7 @@ async function prepare(config, request) {
       {
         version: abnormality.version,
         personnelId: registrant.id,
-        content: `${config.marker} 人工核对实物重叠后一次最终结算`,
-        repairedQuantity,
-        scrappedQuantity,
-        scrapReferences,
+        resolution,
       },
     );
   };
@@ -215,14 +206,14 @@ async function prepare(config, request) {
     '外观问题影响3件，返修1件、新增报废2件',
     workbench.steps[0].stepRecordId,
   );
-  const sourceAbnormalityId = newestAbnormalityId(corrected);
-  corrected = await discover(corrected, 2, '尺寸问题与外观报废的同2件重叠');
-  const overlapAbnormalityId = newestAbnormalityId(corrected);
-  corrected = await discover(corrected, 2, '第三个问题也由同2件报废实物解释，不累计耗用引用额度');
-  const secondOverlapId = newestAbnormalityId(corrected);
-  const handlingPath = `/production/tracking-cards/${corrected.id}/abnormalities/${sourceAbnormalityId}/handlings`;
+  const mixedAbnormalityId = newestAbnormalityId(corrected);
+  corrected = await discover(corrected, 2, '另2件存在尺寸问题，与外观问题涉及的3件分别核对');
+  const sizeAbnormalityId = newestAbnormalityId(corrected);
+  corrected = await discover(corrected, 2, '其余2件存在另一问题，三次独立发现合计影响本盘7件');
+  const otherAbnormalityId = newestAbnormalityId(corrected);
+  const handlingPath = `/production/tracking-cards/${corrected.id}/abnormalities/${mixedAbnormalityId}/handlings`;
   const handlingBody = {
-    version: corrected.abnormalities.find((item) => item.id === sourceAbnormalityId).version,
+    version: corrected.abnormalities.find((item) => item.id === mixedAbnormalityId).version,
     personnelId: registrant.id,
     content: `${config.marker} 影响3=返修1+新增报废2`,
     repairedQuantity: 1,
@@ -234,20 +225,18 @@ async function prepare(config, request) {
   const replay = await request(handlingPath, handlingBody, 'POST', { idempotencyKey });
   if (corrected.quantity !== '5' || replay.quantity !== corrected.quantity)
     throw new Error('一次处理或同键重放的盘量不符合7-2=5');
-  const sourceHandling = corrected.abnormalities.find(
-    (item) => item.id === sourceAbnormalityId,
+  const mixedHandling = corrected.abnormalities.find(
+    (item) => item.id === mixedAbnormalityId,
   ).handling;
-  if (!sourceHandling) throw new Error('一次结算未返回handling');
-  for (const abnormalityId of [overlapAbnormalityId, secondOverlapId]) {
-    corrected = await disposition(corrected, abnormalityId, 0, 0, [
-      { handlingId: sourceHandling.id, quantity: 2 },
-    ]);
-    if (corrected.quantity !== '5') throw new Error('关联已有报废重复扣减了盘量');
+  if (!mixedHandling) throw new Error('一次结算未返回handling');
+  for (const abnormalityId of [sizeAbnormalityId, otherAbnormalityId]) {
+    corrected = await disposition(corrected, abnormalityId, 'repair');
+    if (corrected.quantity !== '5') throw new Error('返修处理改变了剩余盘量');
   }
   corrected = await confirm(corrected);
   if (corrected.output?.quantity !== '5') throw new Error('末站确认未按剩余盘量5生成产出');
   observations.push({
-    scenario: '3=1返修+2新增报废；两个重叠异常分别关联同2件且不再扣量',
+    scenario: '三次独立发现合计7件：首条3=1返修+2新增报废，另两条各返修2件',
     cardId: corrected.id,
     outputQuantity: corrected.output.quantity,
     replayQuantity: replay.quantity,
@@ -360,20 +349,9 @@ async function prepare(config, request) {
   for (const step of workbench.steps.slice(0, 2)) scrapped = await scan(scrapped, step);
   scrapped = await discover(scrapped, 3, '全部3件实际报废');
   const fullScrapId = newestAbnormalityId(scrapped);
-  scrapped = await discover(scrapped, 2, '另一异常影响其中2件，待关联已有报废关闭');
-  const fullScrapOverlapId = newestAbnormalityId(scrapped);
-  scrapped = await disposition(scrapped, fullScrapId, 0, 3, []);
+  scrapped = await disposition(scrapped, fullScrapId, 'scrap');
   if (
     scrapped.quantity !== '0' ||
-    scrapped.status !== 'in_progress' ||
-    scrapped.openAbnormalityCount !== 1
-  )
-    throw new Error('零盘量未结异常未保留继续结算状态');
-  const fullScrapHandling = scrapped.abnormalities.find((item) => item.id === fullScrapId).handling;
-  scrapped = await disposition(scrapped, fullScrapOverlapId, 0, 0, [
-    { handlingId: fullScrapHandling.id, quantity: 2 },
-  ]);
-  if (
     scrapped.status !== 'scrapped' ||
     scrapped.output !== null ||
     scrapped.openAbnormalityCount !== 0
@@ -386,14 +364,17 @@ async function prepare(config, request) {
     completedVisits: scrapped.visits.filter((visit) => visit.completedAt !== null).length,
   });
 
-  let zeroPending = await scan(
-    await create('零盘量仍有异常待人工关联报废结算', 3),
+  let capacityPending = await scan(
+    await create('本盘3件全部受影响，异常额度占满待人工处理', 3),
     workbench.steps[0],
   );
-  zeroPending = await discover(zeroPending, 3, '全部3件实际报废');
-  const zeroSourceId = newestAbnormalityId(zeroPending);
-  zeroPending = await discover(zeroPending, 2, '影响其中2件，保留人工选择已有报废的待处理场景');
-  await disposition(zeroPending, zeroSourceId, 0, 3, []);
+  capacityPending = await discover(capacityPending, 3, '本盘3件全部待处理，人工确认返修或报废');
+  observations.push({
+    scenario: '本盘3件全部登记为未处理异常，新增异常额度已占满',
+    cardId: capacityPending.id,
+    quantity: capacityPending.quantity,
+    openAbnormalityCount: capacityPending.openAbnormalityCount,
+  });
   return { ...(await report(config, request)), preparedObservations: observations };
 }
 

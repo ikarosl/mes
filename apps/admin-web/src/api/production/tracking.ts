@@ -13,6 +13,7 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
+  ProductionTrackingAbnormalityDescriptionQuery,
   ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
   ProductionTrackingReportQuery,
@@ -35,6 +36,16 @@ export const productionTrackingApi = {
     request({ ...options, url: '/production/tracking-cards', params }),
   detail: (id: string, options: ReadRequestOptions = {}): Promise<ProductionTrackingCardDetail> =>
     request({ ...options, url: `/production/tracking-cards/${id}` }),
+  abnormalityDescriptionOptions: (
+    id: string,
+    params: ProductionTrackingAbnormalityDescriptionQuery,
+    options: ReadRequestOptions = {},
+  ): Promise<PageResult<string>> =>
+    request({
+      ...options,
+      url: `/production/tracking-cards/${id}/abnormality-description-options`,
+      params,
+    }),
   workbench: (id: string, options: ReadRequestOptions = {}): Promise<ProductionTrackingWorkbench> =>
     request({ ...options, url: `/production/batches/${id}/tracking-workbench` }),
   startCheck: (
