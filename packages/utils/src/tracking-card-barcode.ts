@@ -2,7 +2,7 @@ import { BUSINESS_NUMBER_PREFIX } from '@company/constants';
 import { normalizeDateOnly } from './date-time.js';
 
 const MAX_SEQUENCE = 18446744073709551615n;
-const CARD_NUMBER_PATTERN = /^(\d{8})-([1-9]\d{0,19})-k-(\d{3,20})$/;
+const CARD_NUMBER_PATTERN = /^(\d{8})-([1-9]\d{0,19})-k-([1-9]\d{0,19})$/;
 const BARCODE_PATTERN = /^(\d{6})([1-9]\d{0,19})k([1-9]\d{0,19})$/;
 
 interface TrackingCardNumberParts {
@@ -30,15 +30,8 @@ function readCardNumber(cardNo: string): TrackingCardNumberParts | null {
   const suffix = cardNo.slice(prefix.length);
   const match = CARD_NUMBER_PATTERN.exec(suffix);
   if (!cardNo.startsWith(prefix) || !match || match[0] !== suffix) return null;
-  const [, date, taskSequence, paddedCardSequence] = match;
-  const cardSequence = BigInt(paddedCardSequence).toString();
-  if (
-    !isCalendarDate(date) ||
-    !isSequence(taskSequence) ||
-    !isSequence(cardSequence) ||
-    paddedCardSequence !== cardSequence.padStart(3, '0')
-  )
-    return null;
+  const [, date, taskSequence, cardSequence] = match;
+  if (!isCalendarDate(date) || !isSequence(taskSequence) || !isSequence(cardSequence)) return null;
   return { date, taskSequence, cardSequence };
 }
 
@@ -61,7 +54,7 @@ export function decodeTrackingCardBarcode(value: string): string | null {
   const [, shortDate, taskSequence, cardSequence] = match;
   const date = `20${shortDate}`;
   if (!isCalendarDate(date) || !isSequence(taskSequence) || !isSequence(cardSequence)) return null;
-  return `${BUSINESS_NUMBER_PREFIX.production_batch}${date}-${taskSequence}-k-${cardSequence.padStart(3, '0')}`;
+  return `${BUSINESS_NUMBER_PREFIX.production_batch}${date}-${taskSequence}-k-${cardSequence}`;
 }
 
 /** Keep manual card numbers and ordinary search text available to the owning use case. */

@@ -12,6 +12,7 @@ import type {
   ProductionTrackingAbnormality,
   ProductionTrackingAbnormalityResolution,
   ProductionTrackingCardDetail,
+  ProductionTrackingStep,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import { personnelApi } from '../../../api/personnel';
@@ -28,23 +29,32 @@ import { formatQuantity } from '../../../utils/quantity';
 import {
   TRACKING_ACTION_LABELS,
   trackingCardStatus,
+  trackingItemMarkOutputBlocked,
   type TrackingCardAction,
 } from './tracking-presentation';
 import { useTrackingAbnormalityDescriptionSearch } from './use-tracking-abnormality-description-search';
 
+export interface TrackingCardActionStepContext {
+  productionBatchId: string;
+  steps: Pick<ProductionTrackingStep, 'stepRecordId' | 'stepOrder'>[];
+}
 export interface TrackingCardActionProps {
   visible: boolean;
   action: TrackingCardAction;
   card: ProductionTrackingCardDetail | null;
+  stepContext: TrackingCardActionStepContext | null;
   abnormality?: ProductionTrackingAbnormality | null;
   defaultPersonnelId?: string;
+  contextGuard?: (card: ProductionTrackingCardDetail, action: TrackingCardAction) => string;
   routeName: string;
 }
 interface TrackingCardActionEmit {
   (event: 'update:visible', value: boolean): void;
   (event: 'changed', card: ProductionTrackingCardDetail): void;
+  (event: 'basis-refreshed', card: ProductionTrackingCardDetail): void;
 }
 export type TrackingAbnormalityDisposition = ProductionTrackingAbnormalityResolution | 'mixed';
+
 export function useTrackingCardAction(
   props: TrackingCardActionProps,
   emit: TrackingCardActionEmit,
@@ -60,19 +70,17 @@ export function useTrackingCardAction(
         body: HandleProductionTrackingAbnormalityPayload;
       }
     | { action: 'output'; cardId: string; body: ConfirmProductionTrackingOutputPayload };
-  type AbnormalityDispositionSubmission =
-    | { kind: 'pending' }
-    | { kind: 'resolved'; resolution: ProductionTrackingAbnormalityResolution }
-    | { kind: 'mixed'; repairedQuantity: number; scrappedQuantity: number };
   const editingCard = ref<ProductionTrackingCardDetail | null>(null),
     editingAbnormality = ref<ProductionTrackingAbnormality | null>(null),
+    editingStepContext = ref<TrackingCardActionStepContext | null>(null),
     editingAction = ref<TrackingCardAction>('abnormality');
   const form = reactive<{
     personnelId: string;
     quantity: number | undefined;
     affectedQuantity: number | undefined;
-    scrappedQuantity: number | undefined;
-    disposition: TrackingAbnormalityDisposition | '';
+    scrappedItemMarkIds: string[];
+    legacyScrappedQuantity: number | undefined;
+    resolution: TrackingAbnormalityDisposition | '';
     descriptionLabels: string[];
     stepRecordId: string;
     text: string;
@@ -80,8 +88,9 @@ export function useTrackingCardAction(
     personnelId: '',
     quantity: 1,
     affectedQuantity: 1,
-    scrappedQuantity: undefined,
-    disposition: '',
+    scrappedItemMarkIds: [],
+    legacyScrappedQuantity: undefined,
+    resolution: '',
     descriptionLabels: [],
     stepRecordId: '',
     text: '',
@@ -96,6 +105,71 @@ export function useTrackingCardAction(
   let pendingSubmission: TrackingActionSubmission | null = null;
   const recovery = computed(() => intentStatus.value !== 'idle');
   const formLocked = computed(() => submitting.value || recovery.value || succeeded.value);
+  const contextBlockedReason = computed(() =>
+    editingCard.value ? (props.contextGuard?.(editingCard.value, editingAction.value) ?? '') : '',
+  );
+  const isAtLastStep = computed(() => {
+    const card = editingCard.value;
+    const context = editingStepContext.value;
+    if (!card) return undefined;
+    if (!card.currentStepRecordId) return false;
+    if (context?.productionBatchId !== card.productionBatchId || !context.steps.length)
+      return undefined;
+    if (!context.steps.some((step) => step.stepRecordId === card.currentStepRecordId))
+      return undefined;
+    const lastStep = context.steps.reduce((last, step) =>
+      step.stepOrder > last.stepOrder ? step : last,
+    );
+    return card.currentStepRecordId === lastStep.stepRecordId;
+  });
+  const isLegacyHandling = computed(() => editingAction.value === 'handling');
+  const hasChosenScrap = ref(false);
+  const isMixedHandling = computed(() => isLegacyHandling.value && form.resolution === 'mixed');
+  const allowMixedHandling = computed(
+    () => isLegacyHandling.value && (form.affectedQuantity ?? 0) >= 2,
+  );
+  const scrapQuantity = computed(() => {
+    if (form.resolution === 'scrap') return form.affectedQuantity;
+    if (isMixedHandling.value) return form.legacyScrappedQuantity;
+    return undefined;
+  });
+  const showScrapItemMarks = computed(
+    () => (form.resolution === 'scrap' || isMixedHandling.value) && isAtLastStep.value === true,
+  );
+  const mountScrapItemMarks = computed(
+    () => props.visible && isAtLastStep.value === true && hasChosenScrap.value,
+  );
+  const scrapError = computed(() => {
+    const card = editingCard.value;
+    const quantity = scrapQuantity.value;
+    if (!card || (form.resolution !== 'scrap' && !isMixedHandling.value)) return '';
+    if (isAtLastStep.value === undefined)
+      return '任务工序资料缺失或与本卡不一致，请关闭后刷新任务与追踪卡资料，再办理报废。';
+    if (isMixedHandling.value) {
+      const limit = (form.affectedQuantity ?? 0) - 1;
+      if (
+        quantity === undefined ||
+        !Number.isSafeInteger(quantity) ||
+        quantity < 1 ||
+        quantity > limit
+      )
+        return `请填写 1 至 ${formatQuantity(limit)} ${card.unit}的报废数量，其余计为返修完成。`;
+    }
+    if (quantity === undefined || !Number.isSafeInteger(quantity) || quantity <= 0) return '';
+    const selected = showScrapItemMarks.value ? form.scrappedItemMarkIds.length : 0;
+    if (isAtLastStep.value && !isLegacyHandling.value) {
+      if (quantity > card.itemMarking.activeCount)
+        return `本盘只有 ${card.itemMarking.activeCount} 个有效绑定，须先在编码绑定页补齐本次报废编码。`;
+      return selected === quantity ? '' : `请选择 ${formatQuantity(quantity)} 个实际报废编码。`;
+    }
+    if (selected > quantity) return '所选编码数不能超过本次报废数量。';
+    if (Number(card.quantity) - quantity < card.itemMarking.activeCount - selected) {
+      if (showScrapItemMarks.value)
+        return `未选编码的报废数量超过本盘未绑定数量，请补选实际报废编码。`;
+      return `报废后盘量不能小于有效绑定编码数 ${card.itemMarking.activeCount}，请核对异常数量和绑定记录。`;
+    }
+    return '';
+  });
   const openAbnormalityQuantity = computed(() =>
     (editingCard.value?.abnormalities ?? []).reduce(
       (total, item) => total + (item.status === 'open' ? Number(item.affectedQuantity) : 0),
@@ -128,22 +202,7 @@ export function useTrackingCardAction(
     };
   });
   const descriptionSearch = useTrackingAbnormalityDescriptionSearch(() => descriptionTarget.value);
-  const selectedResolution = computed(() => form.disposition);
-  const allowMixedResolution = computed(() => {
-    const quantity = form.affectedQuantity;
-    return quantity !== undefined && Number.isSafeInteger(quantity) && quantity >= 2;
-  });
-  const mixedResolutionError = computed(() => {
-    if (form.disposition !== 'mixed' || !editingCard.value) return '';
-    if (!allowMixedResolution.value)
-      return `混合处置至少需要 2 ${editingCard.value.unit}，请调整数量或取消、改选处置。`;
-    const affected = form.affectedQuantity;
-    const scrapped = form.scrappedQuantity;
-    if (affected === undefined || scrapped === undefined) return '';
-    if (!Number.isSafeInteger(scrapped) || scrapped <= 0 || scrapped >= affected)
-      return `报废数量须为 1 至 ${formatQuantity(affected - 1)} ${editingCard.value.unit}的整数。`;
-    return '';
-  });
+  const needsResolution = computed(() => ['abnormality', 'handling'].includes(editingAction.value));
   const handlingBlockedReason = computed(() => {
     if (editingAction.value !== 'handling' || !editingAbnormality.value || !editingCard.value)
       return '';
@@ -154,46 +213,28 @@ export function useTrackingCardAction(
     if (affected <= remaining) return '';
     return `原异常数量 ${formatQuantity(affected)} ${editingCard.value.unit} 超过当前剩余盘量 ${formatQuantity(remaining)} ${editingCard.value.unit}，可能涉及此前已报废的实物。当前表单不能直接处理，请先核对异常和原报废记录。`;
   });
-  const mixedRepairedQuantity = computed(() => {
-    const affected = form.affectedQuantity;
-    const scrapped = form.scrappedQuantity;
-    if (
-      form.disposition !== 'mixed' ||
-      !allowMixedResolution.value ||
-      affected === undefined ||
-      scrapped === undefined ||
-      !Number.isSafeInteger(scrapped) ||
-      scrapped <= 0 ||
-      scrapped >= affected
-    )
-      return undefined;
-    return affected - scrapped;
-  });
-  function setResolution(resolution: TrackingAbnormalityDisposition, checked: boolean): void {
-    if (formLocked.value) return;
-    if (checked && resolution === 'mixed' && !allowMixedResolution.value) return;
-    form.disposition = checked ? resolution : '';
+  function selectResolution(resolution: TrackingAbnormalityDisposition): void {
+    if (formLocked.value || (resolution === 'mixed' && !allowMixedHandling.value)) return;
+    if (resolution === 'scrap' || resolution === 'mixed') hasChosenScrap.value = true;
+    form.resolution = resolution;
   }
   const resolutionEffect = computed(() => {
-    const resolution = selectedResolution.value;
-    if (!editingCard.value || !['abnormality', 'handling'].includes(editingAction.value)) return '';
-    if (!resolution)
-      return editingAction.value === 'abnormality' ? '未选择处置，仅登记异常并暂停整盘流转。' : '';
+    const resolution = form.resolution;
+    if (!editingCard.value || !needsResolution.value || !resolution) return '';
     const quantity = form.affectedQuantity;
     if (quantity === undefined || !Number.isSafeInteger(quantity) || quantity <= 0) return '';
     if (handlingBlockedReason.value) return '';
-    if (resolution === 'mixed') {
-      if (mixedRepairedQuantity.value === undefined || form.scrappedQuantity === undefined)
-        return '';
-      const remaining = Number(editingCard.value.quantity) - form.scrappedQuantity;
-      if (remaining < 0) return '';
-      return `处理后剩余盘量 ${formatQuantity(remaining)} ${editingCard.value.unit}。`;
-    }
-    const amount = `${formatQuantity(quantity)} ${editingCard.value.unit}`;
-    if (resolution === 'repair') return `返修完成 ${amount}，盘量不变。`;
-    const remaining = Number(editingCard.value.quantity) - quantity;
+    const unit = editingCard.value.unit;
+    if (resolution === 'repair') return `返修完成 ${formatQuantity(quantity)} ${unit}，盘量不变。`;
+    const scrapped = scrapQuantity.value;
+    if (scrapped === undefined || scrapped <= 0 || (isMixedHandling.value && scrapped >= quantity))
+      return '';
+    const remaining = Number(editingCard.value.quantity) - scrapped;
     if (remaining < 0) return '';
-    return `报废 ${amount}，处理后剩余盘量 ${formatQuantity(remaining)} ${editingCard.value.unit}。`;
+    const repair = isMixedHandling.value
+      ? `返修完成 ${formatQuantity(quantity - scrapped)} ${unit}，`
+      : '';
+    return `${repair}报废 ${formatQuantity(scrapped)} ${unit}，处理后剩余盘量 ${formatQuantity(remaining)} ${unit}。`;
   });
   const needsPersonnel = computed(() =>
     ['abnormality', 'handling', 'output'].includes(editingAction.value),
@@ -231,6 +272,7 @@ export function useTrackingCardAction(
       if (!read.isCurrent()) return;
       if (card.id !== cardId) throw new Error('追踪卡资料与当前目标不一致，请重新核对');
       editingCard.value = card;
+      emit('basis-refreshed', card);
       if (editingAbnormality.value) {
         editingAbnormality.value =
           card.abnormalities.find((item) => item.id === editingAbnormality.value?.id) ?? null;
@@ -287,15 +329,23 @@ export function useTrackingCardAction(
         return;
       }
       editingCard.value = props.card ? { ...props.card } : null;
+      editingStepContext.value = props.stepContext
+        ? {
+            productionBatchId: props.stepContext.productionBatchId,
+            steps: props.stepContext.steps.map((step) => ({ ...step })),
+          }
+        : null;
       editingAbnormality.value = props.abnormality ? { ...props.abnormality } : null;
       editingAction.value = props.action;
+      hasChosenScrap.value = false;
       basisError.value = '';
       Object.assign(form, {
         personnelId: props.defaultPersonnelId || '',
         quantity: Number(props.card?.quantity ?? 1),
         affectedQuantity: 1,
-        scrappedQuantity: undefined,
-        disposition: '',
+        scrappedItemMarkIds: [],
+        legacyScrappedQuantity: undefined,
+        resolution: '',
         descriptionLabels: [],
         stepRecordId: '',
         text: '',
@@ -353,28 +403,12 @@ export function useTrackingCardAction(
   async function beforeClose(done: () => void): Promise<void> {
     if (await allowClose()) done();
   }
-  function readAbnormalityDisposition(): AbnormalityDispositionSubmission | null {
-    if (!form.disposition) {
-      if (editingAction.value === 'handling') {
-        EMessage.warning('请选择处置方式');
-        return null;
-      }
-      return { kind: 'pending' };
-    }
-    if (form.disposition !== 'mixed') return { kind: 'resolved', resolution: form.disposition };
-    if (mixedResolutionError.value) {
-      EMessage.warning(mixedResolutionError.value);
+  function readAbnormalityResolution(): TrackingAbnormalityDisposition | null {
+    if (!form.resolution || scrapError.value) {
+      EMessage.warning(scrapError.value || '请选择处置方式');
       return null;
     }
-    if (mixedRepairedQuantity.value === undefined || form.scrappedQuantity === undefined) {
-      EMessage.warning('请填写整数报废数量，其余数量计为返修完成');
-      return null;
-    }
-    return {
-      kind: 'mixed',
-      repairedQuantity: mixedRepairedQuantity.value,
-      scrappedQuantity: form.scrappedQuantity,
-    };
+    return form.resolution;
   }
   function createSubmission(card: ProductionTrackingCardDetail): TrackingActionSubmission | null {
     const action = editingAction.value;
@@ -408,6 +442,10 @@ export function useTrackingCardAction(
         EMessage.warning(
           `更正后盘量不能小于未处理异常数量 ${formatQuantity(openAbnormalityQuantity.value)} ${card.unit}`,
         );
+        return null;
+      }
+      if (form.quantity < card.itemMarking.activeCount) {
+        EMessage.warning('更正后盘量不能小于有效绑定编码数，请先核对并撤销误绑编码');
         return null;
       }
       return {
@@ -449,8 +487,8 @@ export function useTrackingCardAction(
         );
         return null;
       }
-      const disposition = readAbnormalityDisposition();
-      if (!disposition) return null;
+      const resolution = readAbnormalityResolution();
+      if (!resolution || resolution === 'mixed') return null;
       return {
         action,
         cardId: card.id,
@@ -460,9 +498,9 @@ export function useTrackingCardAction(
           affectedQuantity: form.affectedQuantity,
           stepRecordId: form.stepRecordId || null,
           descriptionLabels,
-          ...(disposition.kind === 'resolved' ? { resolution: disposition.resolution } : {}),
-          ...(disposition.kind === 'mixed'
-            ? { mixedScrappedQuantity: disposition.scrappedQuantity }
+          resolution,
+          ...(showScrapItemMarks.value
+            ? { scrappedItemMarkIds: [...form.scrappedItemMarkIds] }
             : {}),
         },
       };
@@ -477,9 +515,14 @@ export function useTrackingCardAction(
         EMessage.warning(handlingBlockedReason.value);
         return null;
       }
-      const disposition = readAbnormalityDisposition();
-      if (!disposition || disposition.kind === 'pending') return null;
-      if (disposition.kind === 'resolved') {
+      const resolution = readAbnormalityResolution();
+      if (!resolution) return null;
+      const scrappedItemMarkIds = showScrapItemMarks.value
+        ? [...form.scrappedItemMarkIds]
+        : undefined;
+      if (resolution === 'mixed' && scrapQuantity.value !== undefined) {
+        const scrappedQuantity = scrapQuantity.value;
+        const repairedQuantity = Number(item.affectedQuantity) - scrappedQuantity;
         return {
           action,
           cardId: card.id,
@@ -487,10 +530,15 @@ export function useTrackingCardAction(
           body: {
             version: item.version,
             personnelId: form.personnelId,
-            resolution: disposition.resolution,
+            content: `返修完成 ${repairedQuantity} ${card.unit}，本次报废 ${scrappedQuantity} ${card.unit}`,
+            repairedQuantity,
+            scrappedQuantity,
+            scrapReferences: [],
+            scrappedItemMarkIds,
           },
         };
       }
+      if (resolution === 'mixed') return null;
       return {
         action,
         cardId: card.id,
@@ -498,15 +546,17 @@ export function useTrackingCardAction(
         body: {
           version: item.version,
           personnelId: form.personnelId,
-          content: `返修完成 ${disposition.repairedQuantity} ${card.unit}；本次报废 ${disposition.scrappedQuantity} ${card.unit}`,
-          repairedQuantity: disposition.repairedQuantity,
-          scrappedQuantity: disposition.scrappedQuantity,
-          scrapReferences: [],
+          resolution,
+          scrappedItemMarkIds,
         },
       };
     }
     if (card.openAbnormalityCount > 0) {
       EMessage.warning('请先处理本盘全部异常');
+      return null;
+    }
+    if (trackingItemMarkOutputBlocked(card)) {
+      EMessage.warning('终检前须绑齐单件刻码，有效绑定量须等于当前剩余盘量');
       return null;
     }
     return {
@@ -541,7 +591,11 @@ export function useTrackingCardAction(
       submitting.value ||
       succeeded.value ||
       !reads.isActive() ||
-      (!recovery.value && (basisChanged.value || basisLoading.value || Boolean(basisError.value)))
+      (!recovery.value &&
+        (basisChanged.value ||
+          basisLoading.value ||
+          Boolean(basisError.value) ||
+          Boolean(contextBlockedReason.value)))
     )
       return;
     const submission = pendingSubmission ?? createSubmission(card);
@@ -583,12 +637,16 @@ export function useTrackingCardAction(
     editingAction,
     form,
     formLocked,
+    contextBlockedReason,
+    showScrapItemMarks,
+    mountScrapItemMarks,
+    isLegacyHandling,
+    isMixedHandling,
+    allowMixedHandling,
+    scrapError,
     availableAbnormalityQuantity,
-    selectedResolution,
-    setResolution,
-    allowMixedResolution,
-    mixedRepairedQuantity,
-    mixedResolutionError,
+    needsResolution,
+    selectResolution,
     handlingBlockedReason,
     recovery,
     intentStatus,

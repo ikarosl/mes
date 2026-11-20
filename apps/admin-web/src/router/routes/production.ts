@@ -3,6 +3,8 @@ import { PERMISSIONS } from '@company/constants';
 import ProductionOrdersPage from '../../views/production/work-orders/ProductionOrdersPage.vue';
 import ProductionTasksPage from '../../views/production/tasks/ProductionTasksPage.vue';
 import ProductionWorkbenchPage from '../../views/production/tracking/ProductionWorkbenchPage.vue';
+import ProductionWorkbenchOperationsPanel from '../../views/production/tracking/ProductionWorkbenchOperationsPanel.vue';
+import ProductionCodeBindingPanel from '../../views/production/tracking/ProductionCodeBindingPanel.vue';
 import ProductionTrackingPage from '../../views/production/tracking/ProductionTrackingPage.vue';
 import { page } from '../page';
 
@@ -23,14 +25,32 @@ export const productionRoutes: RouteRecordRaw[] = [
     PERMISSIONS.production.tasks.view,
     'ProductionTasksPage',
   ),
-  page(
-    'production/workbench',
-    'production-workbench',
-    '员工工作台',
-    ProductionWorkbenchPage,
-    PERMISSIONS.production.workbench.view,
-    'ProductionWorkbenchPage',
-  ),
+  {
+    path: 'production/workbench',
+    name: 'production-workbench',
+    component: ProductionWorkbenchPage,
+    redirect: { name: 'production-workbench-operations' },
+    meta: {
+      title: '员工工作台',
+      permission: PERMISSIONS.production.workbench.view,
+      tab: true,
+      tabName: 'production-workbench',
+      menuPath: '/production/workbench',
+      keepAliveName: 'ProductionWorkbenchPage',
+    },
+    children: [
+      {
+        path: 'operations',
+        name: 'production-workbench-operations',
+        component: ProductionWorkbenchOperationsPanel,
+      },
+      {
+        path: 'code-binding',
+        name: 'production-workbench-code-binding',
+        component: ProductionCodeBindingPanel,
+      },
+    ],
+  },
   page(
     'production/tracking',
     'production-tracking',

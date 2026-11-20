@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { loadWorkspaceEnv } from '../../packages/config/dist/index.js';
+import { allocateDemoMarkCodes } from './item-marking-demo-codes.mjs';
 
 loadWorkspaceEnv({ quiet: true });
 
@@ -70,14 +71,10 @@ async function client(config) {
     });
     const value = await response.json().catch(() => null);
     if (!response.ok) {
-      if (options.expectedCode && value?.code === options.expectedCode)
-        return { status: response.status, code: value.code };
       throw new Error(
         `${method} ${path} 失败：HTTP ${response.status} ${typeof value?.code === 'string' && /^[A-Z_]+$/.test(value.code) ? value.code : 'UNKNOWN'}`,
       );
     }
-    if (options.expectedCode)
-      throw new Error(`${method} ${path} 应拒绝 ${options.expectedCode}，实际却已成功`);
     if (value === null) throw new Error(`${method} ${path} 未返回 JSON`);
     return value;
   };
@@ -98,12 +95,30 @@ async function cards(request, batchId) {
   throw new Error('追踪卡查询超出演示工具安全上限');
 }
 
+async function itemMarks(request, cardId) {
+  const items = [];
+  for (let page = 1; page <= 1000; page += 1) {
+    const result = await request(
+      `/production/tracking-item-marks?${cardId ? `cardId=${cardId}&` : ''}page=${page}&pageSize=100`,
+    );
+    if (!Array.isArray(result.items) || !Number.isSafeInteger(result.total))
+      throw new Error('单件刻码分页契约错误');
+    items.push(...result.items);
+    if (items.length >= result.total) return items;
+    if (!result.items.length) throw new Error('单件刻码分页提前结束');
+  }
+  throw new Error('单件刻码查询超出演示工具安全上限');
+}
+
 async function report(config, request) {
   const selected = (await cards(request, config.batchId)).filter((card) =>
     card.remark?.startsWith(config.marker),
   );
   const details = [];
-  for (const card of selected) details.push(await request(`/production/tracking-cards/${card.id}`));
+  for (const card of selected) {
+    const detail = await request(`/production/tracking-cards/${card.id}`);
+    details.push({ ...detail, itemMarks: await itemMarks(request, card.id) });
+  }
   const outputs = [];
   for (let page = 1; page <= 1000; page += 1) {
     const result = await request(
@@ -115,6 +130,8 @@ async function report(config, request) {
     if (page * 100 >= result.total) break;
     if (!result.items.length || page === 1000) throw new Error('产出分页未完整返回');
   }
+  for (const detail of details)
+    detail.outputFacts = outputs.find((output) => output.id === detail.output?.id) ?? null;
   return {
     marker: config.marker,
     workbench: await request(`/production/batches/${config.batchId}/tracking-workbench`),
@@ -138,6 +155,8 @@ async function prepare(config, request) {
   const people = await request('/identity/personnel/options');
   const registrant = people[0];
   if (!registrant) throw new Error('场景要求至少一名启用的现场人员');
+  const currentCodes = new Set((await itemMarks(request)).map((mark) => mark.markCode));
+  const codesByCard = new Map();
   const create = (name, quantity) =>
     request(`/production/batches/${config.batchId}/tracking-cards`, {
       quantity,
@@ -156,40 +175,54 @@ async function prepare(config, request) {
     for (const step of workbench.steps) card = await scan(card, step);
     return card;
   };
+  const bindExamples = async (card) => {
+    if (card.itemMarking.activeCount !== 0 || card.itemMarking.totalCount !== 0)
+      throw new Error('示例绑定仅用于本次新建且尚无刻码历史的卡，请先报告现状');
+    const quantity = Number(card.quantity);
+    if (!Number.isSafeInteger(quantity) || quantity <= 0 || quantity > 10)
+      throw new Error('示例绑定只接受本工具场景的1～10件盘量');
+    const codes = allocateDemoMarkCodes(currentCodes, card.id, quantity);
+    codesByCard.set(card.id, codes);
+    for (const markCode of codes) {
+      card = await request(`/production/tracking-cards/${card.id}/item-marks`, {
+        version: card.version,
+        personnelId: registrant.id,
+        markCode,
+      });
+    }
+    return card;
+  };
+  const selectedScrapMarkIds = async (card, positions) => {
+    const marks = await itemMarks(request, card.id);
+    const examples = codesByCard.get(card.id);
+    if (!examples) throw new Error('本次新建卡的示例刻码缺失，请保留现状并report');
+    return positions.map((position) => {
+      const markCode = examples[position - 1];
+      const selected = marks.find((mark) => mark.markCode === markCode && mark.status === 'active');
+      if (!selected) throw new Error(`本卡待报废示例刻码 ${markCode} 已变化，请先报告现状`);
+      return selected.id;
+    });
+  };
   const confirm = (card) =>
     request(`/production/tracking-cards/${card.id}/actions/confirm-output`, {
       version: card.version,
       personnelId: registrant.id,
       remark: `${config.marker} 登记人员确认完成，按服务器剩余盘量登记待入库产出`,
     });
-  const discover = (card, affectedQuantity, description, stepRecordId) =>
+  const register = (card, resolution, affectedQuantity, description, scrappedItemMarkIds = []) =>
     request(`/production/tracking-cards/${card.id}/abnormalities`, {
       version: card.version,
-      ...(stepRecordId ? { stepRecordId } : {}),
       personnelId: registrant.id,
+      resolution,
       affectedQuantity,
       descriptionLabels: [`${config.marker} ${description}`],
+      ...(scrappedItemMarkIds.length ? { scrappedItemMarkIds } : {}),
     });
-  const disposition = (card, abnormalityId, resolution) => {
-    const abnormality = card.abnormalities.find((item) => item.id === abnormalityId);
-    if (!abnormality) throw new Error('异常事实缺失');
-    return request(
-      `/production/tracking-cards/${card.id}/abnormalities/${abnormalityId}/handlings`,
-      {
-        version: abnormality.version,
-        personnelId: registrant.id,
-        resolution,
-      },
-    );
-  };
-  const newestAbnormalityId = (card) => {
-    const abnormality = card.abnormalities.at(-1);
-    if (!abnormality) throw new Error('异常登记未返回事实');
-    return abnormality.id;
-  };
   const observations = [];
 
-  const first = await confirm(await completeRoute(await create('正常流转及待入库10件', 10)));
+  const first = await confirm(
+    await bindExamples(await completeRoute(await create('正常流转及待入库10件', 10))),
+  );
   let corrected = await completeRoute(await create('交接后改量保留历史', 5));
   corrected = await request(
     `/production/tracking-cards/${corrected.id}/quantity`,
@@ -200,43 +233,27 @@ async function prepare(config, request) {
     },
     'PATCH',
   );
-  corrected = await discover(
-    corrected,
-    3,
-    '外观问题影响3件，返修1件、新增报废2件',
-    workbench.steps[0].stepRecordId,
-  );
-  const mixedAbnormalityId = newestAbnormalityId(corrected);
-  corrected = await discover(corrected, 2, '另2件存在尺寸问题，与外观问题涉及的3件分别核对');
-  const sizeAbnormalityId = newestAbnormalityId(corrected);
-  corrected = await discover(corrected, 2, '其余2件存在另一问题，三次独立发现合计影响本盘7件');
-  const otherAbnormalityId = newestAbnormalityId(corrected);
-  const handlingPath = `/production/tracking-cards/${corrected.id}/abnormalities/${mixedAbnormalityId}/handlings`;
-  const handlingBody = {
-    version: corrected.abnormalities.find((item) => item.id === mixedAbnormalityId).version,
+  corrected = await bindExamples(corrected);
+  const scrapPath = `/production/tracking-cards/${corrected.id}/abnormalities`;
+  const scrapBody = {
+    version: corrected.version,
     personnelId: registrant.id,
-    content: `${config.marker} 影响3=返修1+新增报废2`,
-    repairedQuantity: 1,
-    scrappedQuantity: 2,
-    scrapReferences: [],
+    stepRecordId: workbench.steps[0].stepRecordId,
+    affectedQuantity: 2,
+    descriptionLabels: [`${config.marker} 终检确认两件实物报废，追溯首站外观问题`],
+    resolution: 'scrap',
+    scrappedItemMarkIds: await selectedScrapMarkIds(corrected, [2, 3]),
   };
   const idempotencyKey = randomUUID();
-  corrected = await request(handlingPath, handlingBody, 'POST', { idempotencyKey });
-  const replay = await request(handlingPath, handlingBody, 'POST', { idempotencyKey });
+  corrected = await request(scrapPath, scrapBody, 'POST', { idempotencyKey });
+  const replay = await request(scrapPath, scrapBody, 'POST', { idempotencyKey });
   if (corrected.quantity !== '5' || replay.quantity !== corrected.quantity)
-    throw new Error('一次处理或同键重放的盘量不符合7-2=5');
-  const mixedHandling = corrected.abnormalities.find(
-    (item) => item.id === mixedAbnormalityId,
-  ).handling;
-  if (!mixedHandling) throw new Error('一次结算未返回handling');
-  for (const abnormalityId of [sizeAbnormalityId, otherAbnormalityId]) {
-    corrected = await disposition(corrected, abnormalityId, 'repair');
-    if (corrected.quantity !== '5') throw new Error('返修处理改变了剩余盘量');
-  }
+    throw new Error('新增报废或同键重放的盘量不符合7-2=5');
+  corrected = await register(corrected, 'repair', 1, '其余外观异常一件已返修');
   corrected = await confirm(corrected);
   if (corrected.output?.quantity !== '5') throw new Error('末站确认未按剩余盘量5生成产出');
   observations.push({
-    scenario: '三次独立发现合计7件：首条3=1返修+2新增报废，另两条各返修2件',
+    scenario: '末站报废2件，另有1件返修完成，剩余5件确认产出',
     cardId: corrected.id,
     outputQuantity: corrected.output.quantity,
     replayQuantity: replay.quantity,
@@ -255,7 +272,7 @@ async function prepare(config, request) {
   const inboundBody = {
     outputIds: [first.output.id, corrected.output.id],
     target: { mode: 'new_batch' },
-    remark: `${config.marker} 两笔整盘产出合并到一个新成品库批`,
+    remark: `${config.marker} 选中两盘完整产出15件，合并到一个新成品库批`,
   };
   const inboundKey = randomUUID();
   const grouped = await request(
@@ -277,7 +294,7 @@ async function prepare(config, request) {
   )
     throw new Error('两笔整盘合并15件或同键入库重放结果不一致');
   const extra = await confirm(
-    await completeRoute(await create('后续产出4件接收入同一任务已有库批', 4)),
+    await bindExamples(await completeRoute(await create('后续产出4件接收入同一任务已有库批', 4))),
   );
   if (!extra.output?.id) throw new Error('后续产出事实缺失');
   const candidateQuery = new URLSearchParams({
@@ -300,9 +317,11 @@ async function prepare(config, request) {
   });
   if (appended.itemBatchId !== grouped.itemBatchId || appended.inboundQuantity !== '4')
     throw new Error('后续整盘产出未进入同任务既有库批');
-  const waiting = await confirm(await completeRoute(await create('终检完成待仓库选择入库6件', 6)));
+  const waiting = await confirm(
+    await bindExamples(await completeRoute(await create('终检完成待仓库选择入库6件', 6))),
+  );
   const revoked = await confirm(
-    await completeRoute(await create('未入库产出撤销后回到末站待重新确认', 2)),
+    await bindExamples(await completeRoute(await create('未入库产出撤销后回到末站待重新确认', 2))),
   );
   if (!revoked.output?.id) throw new Error('待撤销产出事实缺失');
   await request(`/production/outputs/${revoked.output.id}/actions/revoke`, {
@@ -318,21 +337,16 @@ async function prepare(config, request) {
     revokedOutputId: revoked.output.id,
   });
 
-  let paused = await scan(await create('未结异常阻止流转待人工处理', 4), workbench.steps[0]);
-  paused = await discover(paused, 2, '待人工检查，所有未结异常均阻止整盘后续流转');
+  const frontScrap = await register(
+    await create('前道无码报废供人工更正或作废', 4),
+    'scrap',
+    2,
+    '前道两件已报废',
+  );
   observations.push({
-    scenario: '未结异常阻止流转',
-    cardId: paused.id,
-    refusal: await request(
-      '/production/tracking-cards/scan',
-      {
-        cardNo: paused.cardNo,
-        stepRecordId: workbench.steps[1].stepRecordId,
-        personnelId: registrant.id,
-      },
-      'POST',
-      { expectedCode: 'CONFLICT' },
-    ),
+    scenario: '前道报废两件',
+    cardId: frontScrap.id,
+    quantity: frontScrap.quantity,
   });
   await request(`/production/batches/${config.batchId}/tracking-cards/bulk`, {
     totalQuantity: 3,
@@ -345,11 +359,16 @@ async function prepare(config, request) {
     version: voided.version,
     reason: `${config.marker} 现场取消该盘，已有到站事实保留`,
   });
-  let scrapped = await create('整盘报废保留已到站及交接事实', 3);
-  for (const step of workbench.steps.slice(0, 2)) scrapped = await scan(scrapped, step);
-  scrapped = await discover(scrapped, 3, '全部3件实际报废');
-  const fullScrapId = newestAbnormalityId(scrapped);
-  scrapped = await disposition(scrapped, fullScrapId, 'scrap');
+  const fullCard = await bindExamples(
+    await completeRoute(await create('末道整盘报废保留已交接事实', 3)),
+  );
+  const scrapped = await register(
+    fullCard,
+    'scrap',
+    3,
+    '末道三件全部报废',
+    await selectedScrapMarkIds(fullCard, [1, 2, 3]),
+  );
   if (
     scrapped.quantity !== '0' ||
     scrapped.status !== 'scrapped' ||
@@ -364,16 +383,20 @@ async function prepare(config, request) {
     completedVisits: scrapped.visits.filter((visit) => visit.completedAt !== null).length,
   });
 
-  let capacityPending = await scan(
-    await create('本盘3件全部受影响，异常额度占满待人工处理', 3),
-    workbench.steps[0],
+  const editable = await bindExamples(
+    await completeRoute(await create('终检报废供人工换码或改数', 5)),
   );
-  capacityPending = await discover(capacityPending, 3, '本盘3件全部待处理，人工确认返修或报废');
+  const registered = await register(
+    editable,
+    'scrap',
+    2,
+    '终检选码报废两件',
+    await selectedScrapMarkIds(editable, [2, 3]),
+  );
   observations.push({
-    scenario: '本盘3件全部登记为未处理异常，新增异常额度已占满',
-    cardId: capacityPending.id,
-    quantity: capacityPending.quantity,
-    openAbnormalityCount: capacityPending.openAbnormalityCount,
+    scenario: '可在原登记更正报废或作废',
+    cardId: registered.id,
+    quantity: registered.quantity,
   });
   return { ...(await report(config, request)), preparedObservations: observations };
 }

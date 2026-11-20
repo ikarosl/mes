@@ -1,6 +1,10 @@
 import type {
   ConfirmProductionResearchOutputPayload,
   ConfirmProductionTrackingOutputPayload,
+  BindProductionTrackingItemMarkPayload,
+  CancelProductionTrackingItemMarkPayload,
+  CorrectProductionTrackingItemMarkPayload,
+  CorrectProductionTrackingAbnormalityScrapPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
@@ -13,6 +17,14 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardQuery,
+  ProductionTrackingItemMark,
+  ProductionTrackingItemMarkCodeAvailability,
+  ProductionTrackingItemMarkQuery,
+  ProductionTrackingItemMarkWorkspaceQuery,
+  ProductionTrackingItemMarkWorkspaceRow,
+  SaveProductionTrackingItemMarkWorkspacePayload,
+  SaveProductionTrackingItemMarkWorkspaceResult,
+  ProductionTrackingItemMarkCorrection,
   ProductionTrackingAbnormalityDescriptionQuery,
   ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
@@ -22,6 +34,7 @@ import type {
   ProductionTrackingWorkbench,
   ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
+  VoidProductionTrackingAbnormalityPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import { IDEMPOTENCY_KEY_HEADER } from '@company/request';
@@ -29,6 +42,88 @@ import { request, type ReadRequestOptions } from './request';
 
 const headers = (key: string) => ({ [IDEMPOTENCY_KEY_HEADER]: key });
 export const productionTrackingApi = {
+  itemMarkWorkspace: (
+    params: ProductionTrackingItemMarkWorkspaceQuery,
+    options: ReadRequestOptions = {},
+  ): Promise<PageResult<ProductionTrackingItemMarkWorkspaceRow>> =>
+    request({ ...options, url: '/production/tracking-item-marks/workspace', params }),
+  saveItemMarkWorkspace: (
+    batchId: string,
+    data: SaveProductionTrackingItemMarkWorkspacePayload,
+    key: string,
+  ): Promise<SaveProductionTrackingItemMarkWorkspaceResult> =>
+    request({
+      url: `/production/batches/${batchId}/tracking-item-marks/workspace`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  itemMarkCodeAvailability: (
+    markCode: string,
+    options: ReadRequestOptions = {},
+  ): Promise<ProductionTrackingItemMarkCodeAvailability> =>
+    request({
+      ...options,
+      url: '/production/tracking-item-marks/code-availability',
+      params: { markCode },
+    }),
+  itemMark: (
+    cardId: string,
+    markId: string,
+    options: ReadRequestOptions = {},
+  ): Promise<ProductionTrackingItemMark> =>
+    request({ ...options, url: `/production/tracking-cards/${cardId}/item-marks/${markId}` }),
+  itemMarkCorrections: (
+    cardId: string,
+    markId: string,
+    params: { page: number; pageSize: number },
+    options: ReadRequestOptions = {},
+  ): Promise<PageResult<ProductionTrackingItemMarkCorrection>> =>
+    request({
+      ...options,
+      url: `/production/tracking-cards/${cardId}/item-marks/${markId}/corrections`,
+      params,
+    }),
+  correctItemMark: (
+    cardId: string,
+    markId: string,
+    data: CorrectProductionTrackingItemMarkPayload,
+    key: string,
+  ): Promise<ProductionTrackingCardDetail> =>
+    request({
+      url: `/production/tracking-cards/${cardId}/item-marks/${markId}/actions/correct`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  itemMarks: (
+    params: ProductionTrackingItemMarkQuery,
+    options: ReadRequestOptions = {},
+  ): Promise<PageResult<ProductionTrackingItemMark>> =>
+    request({ ...options, url: '/production/tracking-item-marks', params }),
+  bindItemMark: (
+    cardId: string,
+    data: BindProductionTrackingItemMarkPayload,
+    key: string,
+  ): Promise<ProductionTrackingCardDetail> =>
+    request({
+      url: `/production/tracking-cards/${cardId}/item-marks`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  cancelItemMark: (
+    cardId: string,
+    markId: string,
+    data: CancelProductionTrackingItemMarkPayload,
+    key: string,
+  ): Promise<ProductionTrackingCardDetail> =>
+    request({
+      url: `/production/tracking-cards/${cardId}/item-marks/${markId}/actions/cancel`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
   list: (
     params: ProductionTrackingCardQuery,
     options: ReadRequestOptions = {},
@@ -131,6 +226,30 @@ export const productionTrackingApi = {
   ): Promise<ProductionTrackingCardDetail> =>
     request({
       url: `/production/tracking-cards/${id}/abnormalities/${abnormalityId}/handlings`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  correctAbnormalityScrap: (
+    cardId: string,
+    abnormalityId: string,
+    data: CorrectProductionTrackingAbnormalityScrapPayload,
+    key: string,
+  ): Promise<ProductionTrackingCardDetail> =>
+    request({
+      url: `/production/tracking-cards/${cardId}/abnormalities/${abnormalityId}/scrap-correction`,
+      method: 'POST',
+      data,
+      headers: headers(key),
+    }),
+  voidAbnormality: (
+    cardId: string,
+    abnormalityId: string,
+    data: VoidProductionTrackingAbnormalityPayload,
+    key: string,
+  ): Promise<ProductionTrackingCardDetail> =>
+    request({
+      url: `/production/tracking-cards/${cardId}/abnormalities/${abnormalityId}/void`,
       method: 'POST',
       data,
       headers: headers(key),

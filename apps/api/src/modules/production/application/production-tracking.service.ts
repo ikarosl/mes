@@ -1,13 +1,27 @@
 import { Injectable } from '@nestjs/common';
-import { isCanonicalTrackingCardNo, normalizeTrackingCardNo } from '@company/utils';
+import {
+  isCanonicalTrackingCardNo,
+  normalizeTrackingCardNo,
+  normalizeTrackingItemMarkCode,
+  TRACKING_ITEM_MARK_CODE_ERROR_MESSAGE,
+  TRACKING_ITEM_MARK_CODE_PATTERN,
+} from '@company/utils';
 import {
   PRODUCTION_TRACKING_ABNORMALITY_LABEL_LIMIT,
   PRODUCTION_TRACKING_ABNORMALITY_LABEL_MAX_LENGTH,
 } from '@company/constants';
 import { PRODUCTION_TRACKING_SCOPES } from './idempotency/production-idempotency-scopes.contract.js';
 import type {
+  BindProductionTrackingItemMarkPayload,
+  CancelProductionTrackingItemMarkPayload,
+  CorrectProductionTrackingItemMarkPayload,
+  PageQuery,
+  ProductionTrackingItemMarkQuery,
+  ProductionTrackingItemMarkWorkspaceQuery,
+  SaveProductionTrackingItemMarkWorkspacePayload,
   ConfirmProductionTrackingOutputPayload,
   ConfirmProductionResearchOutputPayload,
+  CorrectProductionTrackingAbnormalityScrapPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
@@ -23,6 +37,7 @@ import type {
   ProductionTrackingReportQuery,
   ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
+  VoidProductionTrackingAbnormalityPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import type { IdempotentCommandContext } from '../../../common/audit/audit.types.js';
@@ -38,6 +53,7 @@ import { ProductionTrackingRepository } from './ports/production-tracking.reposi
 import { productionBatchResultCodec } from './idempotency/production-batch-result.codec.js';
 import {
   trackingCardResultCodec,
+  savedMarksResultCodec,
   trackingCardsCreatedResultCodec,
   trackingOutputResultCodec,
   trackingScanResultCodec,
@@ -63,6 +79,114 @@ export class ProductionTrackingService {
   }
   get(cardId: string) {
     return this.repository.get(cardId);
+  }
+  itemMarks(query: ProductionTrackingItemMarkQuery) {
+    return this.repository.itemMarks({
+      ...query,
+      cardNo: query.cardNo === undefined ? undefined : normalizeTrackingCardNo(query.cardNo),
+      keyword: query.keyword?.trim() || undefined,
+    });
+  }
+  itemMarkCodeAvailability(markCode: string) {
+    const code = normalizeTrackingItemMarkCode(markCode);
+    if (!TRACKING_ITEM_MARK_CODE_PATTERN.test(code))
+      throw new ProductionDomainError('INVALID_INPUT', TRACKING_ITEM_MARK_CODE_ERROR_MESSAGE);
+    return this.repository.itemMarkCodeAvailability(code);
+  }
+  itemMarkWorkspace(query: ProductionTrackingItemMarkWorkspaceQuery) {
+    return this.repository.itemMarkWorkspace({
+      ...query,
+      cardNo: normalizeTrackingCardNo(query.cardNo ?? '') || undefined,
+      keyword: query.keyword?.trim() || undefined,
+    });
+  }
+  saveItemMarkWorkspace(
+    batchId: string,
+    payload: SaveProductionTrackingItemMarkWorkspacePayload,
+    context: IdempotentCommandContext,
+  ) {
+    const body = {
+      personnelId: payload.personnelId,
+      reason: payload.reason?.trim() || '',
+      changes: payload.changes.map((row) => ({
+        ...row,
+        markCode: row.markCode === null ? null : normalizeTrackingItemMarkCode(row.markCode),
+      })),
+    };
+    return this.execute('item-mark.save', { batchId }, body, context, savedMarksResultCodec, () =>
+      this.repository.withBatchTransaction(batchId, async () =>
+        this.repository.saveItemMarkWorkspace(
+          batchId,
+          body,
+          await this.person(body.personnelId),
+          context,
+        ),
+      ),
+    );
+  }
+  itemMark(cardId: string, markId: string) {
+    return this.repository.itemMark(cardId, markId);
+  }
+  itemMarkCorrections(cardId: string, markId: string, query: PageQuery) {
+    return this.repository.itemMarkCorrections(cardId, markId, query);
+  }
+  bindItemMark(
+    cardId: string,
+    payload: BindProductionTrackingItemMarkPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    const body = {
+      version: payload.version,
+      personnelId: payload.personnelId,
+      markCode: normalizeTrackingItemMarkCode(payload.markCode),
+    };
+    return this.execute('item-mark.bind', { cardId }, body, context, trackingCardResultCodec, () =>
+      this.repository.withCardTransaction(cardId, false, async (id) =>
+        this.repository.bindItemMark(id, body, await this.person(body.personnelId), context),
+      ),
+    );
+  }
+  cancelItemMark(
+    cardId: string,
+    markId: string,
+    payload: CancelProductionTrackingItemMarkPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    const body = { version: payload.version, reason: this.reason(payload.reason) };
+    return this.execute(
+      'item-mark.cancel',
+      { cardId, markId },
+      body,
+      context,
+      trackingCardResultCodec,
+      () =>
+        this.repository.withCardTransaction(cardId, false, (id) =>
+          this.repository.cancelItemMark(id, markId, body, context),
+        ),
+    );
+  }
+  correctItemMark(
+    cardId: string,
+    markId: string,
+    payload: CorrectProductionTrackingItemMarkPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    const body = {
+      version: payload.version,
+      markCode: normalizeTrackingItemMarkCode(payload.markCode),
+      reason: this.reason(payload.reason),
+    };
+    return this.execute(
+      'item-mark.correct',
+      { cardId, markId },
+      body,
+      context,
+      trackingCardResultCodec,
+      () =>
+        this.repository.withCardTransaction(cardId, false, (id) =>
+          this.repository.correctItemMark(id, markId, body, context),
+        ),
+    );
   }
   workbench(batchId: string) {
     return this.repository.workbench(batchId);
@@ -186,9 +310,7 @@ export class ProductionTrackingService {
       affectedQuantity: payload.affectedQuantity,
       descriptionLabels: labels,
       resolution: payload.resolution,
-      ...(payload.mixedScrappedQuantity !== undefined
-        ? { mixedScrappedQuantity: payload.mixedScrappedQuantity }
-        : {}),
+      scrappedItemMarkIds: [...(payload.scrappedItemMarkIds ?? [])].sort(),
     };
     return this.execute(
       'abnormality.create',
@@ -215,19 +337,24 @@ export class ProductionTrackingService {
     payload: HandleProductionTrackingAbnormalityPayload,
     context: IdempotentCommandContext,
   ) {
-    const body = payload.resolution
-      ? this.simpleAbnormalityHandling(payload)
-      : {
-          version: payload.version,
-          personnelId: payload.personnelId,
-          content: this.reason(payload.content ?? ''),
-          repairedQuantity: payload.repairedQuantity,
-          scrappedQuantity: payload.scrappedQuantity,
-          scrapReferences: payload.scrapReferences?.map(({ handlingId, quantity }) => ({
-            handlingId,
-            quantity,
-          })),
-        };
+    let body: HandleProductionTrackingAbnormalityPayload;
+    if (payload.resolution) body = this.simpleAbnormalityHandling(payload);
+    else {
+      body = {
+        version: payload.version,
+        personnelId: payload.personnelId,
+        content: this.reason(payload.content ?? ''),
+        repairedQuantity: payload.repairedQuantity,
+        scrappedQuantity: payload.scrappedQuantity,
+        scrapReferences: payload.scrapReferences?.map(({ handlingId, quantity }) => ({
+          handlingId,
+          quantity,
+        })),
+        ...(payload.scrappedItemMarkIds !== undefined
+          ? { scrappedItemMarkIds: [...payload.scrappedItemMarkIds] }
+          : {}),
+      };
+    }
     return this.execute(
       'abnormality.handle',
       { cardId, abnormalityId },
@@ -243,6 +370,54 @@ export class ProductionTrackingService {
             await this.person(body.personnelId),
             context,
           ),
+        ),
+    );
+  }
+  correctAbnormalityScrap(
+    cardId: string,
+    abnormalityId: string,
+    payload: CorrectProductionTrackingAbnormalityScrapPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    const body = {
+      version: payload.version,
+      cardVersion: payload.cardVersion,
+      scrappedQuantity: payload.scrappedQuantity,
+      scrappedItemMarkIds: [...payload.scrappedItemMarkIds].sort(),
+      reason: this.reason(payload.reason),
+    };
+    return this.execute(
+      'abnormality.scrap-correction',
+      { cardId, abnormalityId },
+      body,
+      context,
+      trackingCardResultCodec,
+      () =>
+        this.repository.withCardTransaction(cardId, false, (id) =>
+          this.repository.correctAbnormalityScrap(id, abnormalityId, body, context),
+        ),
+    );
+  }
+  voidAbnormality(
+    cardId: string,
+    abnormalityId: string,
+    payload: VoidProductionTrackingAbnormalityPayload,
+    context: IdempotentCommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    const body = {
+      version: payload.version,
+      cardVersion: payload.cardVersion,
+      reason: this.reason(payload.reason),
+    };
+    return this.execute(
+      'abnormality.void',
+      { cardId, abnormalityId },
+      body,
+      context,
+      trackingCardResultCodec,
+      () =>
+        this.repository.withCardTransaction(cardId, false, (id) =>
+          this.repository.voidAbnormality(id, abnormalityId, body, context),
         ),
     );
   }
@@ -351,6 +526,9 @@ export class ProductionTrackingService {
       version: payload.version,
       personnelId: payload.personnelId,
       resolution: payload.resolution,
+      ...(payload.scrappedItemMarkIds !== undefined
+        ? { scrappedItemMarkIds: [...payload.scrappedItemMarkIds] }
+        : {}),
     };
   }
   private reason(value: string): string {

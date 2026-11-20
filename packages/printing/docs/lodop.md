@@ -16,8 +16,10 @@
 
 同一页面内检测、配置与打印按调用顺序串行；参数在进入队列前复制，避免等待时被消费者修改。不同浏览器页面／标签页的系统打印队列仍由本机服务与操作系统管理，本包不做跨页锁或服务端重试。
 
-每次作业重新初始化并显式设置设备、毫米纸张和份数；原生 `128Auto` 生成 Code 128 条码，扫描载荷与完整可读文字分开传入，不把二者相互推导。每个标签占一页，设置的份数应用于整份作业。标签布局、纸张规格和打印机驱动需用实际标签纸手工校准并验证扫码；公共基础库不判断业务编号或物理扫描质量。相关原生接口见 [设备选择](https://www.lodop.net/demolist/PrintSample7.html)、[纸张控制](https://www.lodop.net/demolist/PrintSample5.html)及 [原生条码](https://www.lodop.net/demolist/PrintSample11.html)。
+每次作业重新初始化，按精确名称选择设备并设置毫米纸张和份数。公共排版器按目标驱动报告的分辨率生成整页 PNG，保留 Code 128 两侧静区，将条码与完整文字整体居中。驱动未提供有效 DPI 时使用 203 DPI，大尺寸图像按同一比例限制栅格像素数，纸张毫米尺寸始终取自工位设置。每页通过 `ADD_PRINT_IMAGE` 从纸张原点等比输出一张原图，整批一次 `PRINT`。实物位置和扫码质量须在目标工位验收。[设备选择](https://www.lodop.net/demolist/PrintSample7.html) · [纸张控制](https://www.lodop.net/demolist/PrintSample5.html) · [图片打印](https://www.lodop.net/demolist/PrintSample8.html)
 
-`checkLabelPrinter` 仅验证参数、本机通信和目标设备可配置，不打印测试纸，也不能证明打印机在线、纸张已装好或纸面输出成功。`printBarcodeLabels` 对每次 `PRINT` 返回的 TaskID 关联 `On_Return` 回调，保留等待期间的回调并在结束后恢复；不接受其他任务的结果。回调 `true` 仅表示本机服务受理打印命令，Promise 成功不表示物理打印完成，也不回写业务事实，依据 [官方异步回调说明](https://www.lodop.net/blogs/Blog020.html)。
+打印深度（黑度）由工位在 Windows 对应打印队列的“打印首选项”中设置，标签作业沿用驱动配置。更换打印机时在工位选择新队列并按其驱动配置耗材和深度。
 
-`LodopPrintError.outcome` 为 `rejected` 时，参数／连接／准备失败或本机服务明确拒绝；为 `unknown` 时，已经调用 `PRINT`，但未取得有效 TaskID、通信异常、等待超时或回调结果无法确认，任务可能已进入打印队列。调用方必须提示先核对队列和已出标签，不能自动重试。原生 `PRINT` 的立即返回值不是打印成功标志，即使为 `null` 也不能认定未发送；厂商 SDK 可能仍有延迟发送。
+`checkLabelPrinter` 只验证参数、本机通信和目标设备可配置，检测及保存均不出纸。自动打印和预览补打均用提交返回的 TaskID 关联 `On_Return` 回调，等待结束后恢复之前的回调。回调 `true` 表示本机服务受理打印命令，实物出纸由现场核对。[官方异步回调说明](https://www.lodop.net/blogs/Blog020.html)
+
+`LodopPrintError.outcome` 为 `rejected` 表示参数、连接、准备失败或本机服务明确拒绝。调用 `PRINT` 后若未取得有效 TaskID、通信异常、超时或回调结果不明，结果为 `unknown`。此时任务可能已进入打印队列，调用方须提示先核对队列和已出标签，再由用户决定是否补打。

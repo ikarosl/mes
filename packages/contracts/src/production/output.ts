@@ -2,13 +2,15 @@ import type { PageQuery } from '../common.js';
 import type { ProductionTrackingOutput } from './tracking-card.js';
 
 export type ProductionOutputStatus =
-  'pending_inbound' | 'inbounded' | 'cancelled' | 'no_inbound_required';
+  'pending_inbound' | 'partially_inbounded' | 'inbounded' | 'cancelled' | 'no_inbound_required';
 export type ProductionTaskFinishMode = 'normal' | 'early';
 
 export interface ProductionOutputQuery extends PageQuery {
   batchId?: string;
   keyword?: string;
   status?: ProductionOutputStatus;
+  /** 仅返回尚无入库记录的正数产出。 */
+  pendingOnly?: boolean;
 }
 
 export interface ProductionOutputInboundResult {
@@ -34,7 +36,9 @@ export interface ProductionOutputItem extends ProductionTrackingOutput {
     createdBy: string;
     createdAt: string;
   } | null;
-  inbound: ProductionOutputInboundResult | null;
+  receivedQuantity: string;
+  pendingQuantity: string;
+  receipts: ProductionOutputInboundResult[];
 }
 
 export interface RevokeProductionOutputPayload {
@@ -42,7 +46,7 @@ export interface RevokeProductionOutputPayload {
 }
 
 export interface CreateProductionOutputInboundPayload {
-  /** 每笔产出完整接收，同一任务、同一成品，不接受自填数量。 */
+  /** 同一任务的有效正数产出，每笔只能整笔入库一次。 */
   outputIds: string[];
   target: { mode: 'new_batch' } | { mode: 'existing_batch'; itemBatchId: string; version: number };
   remark?: string | null;

@@ -40,6 +40,7 @@ async function open(): Promise<void> {
   opened = true;
 }
 function selectBatch(id: string): void {
+  if (inboundVisible.value) return;
   batch.value = { id };
   inboundVisible.value = true;
 }

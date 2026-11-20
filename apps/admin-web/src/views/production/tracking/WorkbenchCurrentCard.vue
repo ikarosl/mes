@@ -15,6 +15,7 @@
         </div>
         <el-button
           link
+          :disabled="disabled"
           @click="$emit('clear')"
           >清空当前显示</el-button
         >
@@ -67,6 +68,14 @@
             }}
             · 查看异常
           </el-button>
+          <el-button
+            v-else-if="card.abnormalities.length"
+            link
+            type="primary"
+            @click="$emit('detail')"
+          >
+            {{ card.abnormalities.length }} 条 · 查看异常
+          </el-button>
           <strong v-else>无待处理异常</strong>
         </div>
       </div>
@@ -84,6 +93,7 @@
         </span>
       </div>
       <p class="flow-hint">{{ flowHint }}</p>
+      <TrackingItemMarkSummary :card="card" />
     </section>
     <section
       v-else
@@ -102,7 +112,7 @@
       <el-button
         v-if="canConfirmOutput"
         type="primary"
-        :disabled="disabled || card.openAbnormalityCount > 0"
+        :disabled="disabled || card.openAbnormalityCount > 0 || trackingItemMarkOutputBlocked(card)"
         @click="$emit('action', 'output')"
       >
         终检确认产出
@@ -115,6 +125,33 @@
         @click="$emit('action', 'abnormality')"
         >上报异常</el-button
       >
+      <el-dropdown
+        v-if="canHandleAbnormality"
+        trigger="click"
+        :disabled="disabled"
+      >
+        <el-button
+          type="warning"
+          plain
+          :disabled="disabled"
+          >处理异常<el-icon><ArrowDown /></el-icon
+        ></el-button>
+        <template #dropdown>
+          <el-dropdown-menu>
+            <el-dropdown-item
+              v-for="item in openAbnormalities"
+              :key="item.id"
+              :disabled="disabled"
+              @click="$emit('action', 'handling', item)"
+            >
+              <span class="abnormality-option"
+                >{{ formatQuantity(item.affectedQuantity) }} {{ card.unit }} ·
+                {{ item.description }}</span
+              >
+            </el-dropdown-item>
+          </el-dropdown-menu>
+        </template>
+      </el-dropdown>
       <el-button @click="$emit('detail')">查看追踪</el-button>
     </div>
   </div>
@@ -122,10 +159,19 @@
 
 <script setup lang="ts">
 import { computed } from 'vue';
-import { FullScreen } from '@element-plus/icons-vue';
-import type { ProductionTrackingCardDetail, ProductionTrackingStep } from '@company/contracts';
+import { ArrowDown, FullScreen } from '@element-plus/icons-vue';
+import type {
+  ProductionTrackingAbnormality,
+  ProductionTrackingCardDetail,
+  ProductionTrackingStep,
+} from '@company/contracts';
 import { formatQuantity } from '../../../utils/quantity';
-import { trackingCardStatus, type TrackingCardAction } from './tracking-presentation';
+import {
+  trackingCardStatus,
+  trackingItemMarkOutputBlocked,
+  type TrackingCardAction,
+} from './tracking-presentation';
+import TrackingItemMarkSummary from './TrackingItemMarkSummary.vue';
 
 const props = defineProps<{
   card: ProductionTrackingCardDetail | null;
@@ -133,25 +179,39 @@ const props = defineProps<{
   stepId: string;
   personnelName: string;
   resultLabel: string;
+  readOnlyReason: string;
   disabled: boolean;
 }>();
 defineEmits<{
   (event: 'clear'): void;
   (event: 'detail'): void;
-  (event: 'action', action: TrackingCardAction): void;
+  (event: 'action', action: TrackingCardAction, abnormality?: ProductionTrackingAbnormality): void;
 }>();
 const selectedStep = computed(() => props.steps.find((step) => step.stepRecordId === props.stepId));
+const openAbnormalities = computed(() =>
+  (props.card?.abnormalities ?? []).filter((item) => item.status === 'open' && !item.handling),
+);
+const canHandleAbnormality = computed(
+  () =>
+    props.card &&
+    !props.readOnlyReason &&
+    !['voided', 'completed', 'scrapped'].includes(props.card.status) &&
+    openAbnormalities.value.length > 0,
+);
 const canReportAbnormality = computed(
   () =>
     props.card &&
+    !props.readOnlyReason &&
     Number(props.card.quantity) > 0 &&
     !['voided', 'completed', 'scrapped'].includes(props.card.status),
 );
 const canConfirmOutput = computed(
   () =>
     props.card?.status === 'in_progress' &&
+    !props.readOnlyReason &&
     Number(props.card.quantity) > 0 &&
     props.steps.length > 0 &&
+    props.stepId === props.card.currentStepRecordId &&
     props.card.currentStepRecordId === props.steps.at(-1)?.stepRecordId,
 );
 const location = computed(() => {
@@ -181,14 +241,18 @@ const attention = computed<{ type: 'error' | 'warning' | 'info'; message: string
 const flowHint = computed(() => {
   const card = props.card;
   if (!card) return '';
+  if (props.readOnlyReason) return props.readOnlyReason;
   if (card.status === 'voided') return '到站、报工与异常历史保留，可打开追踪详情核对。';
   if (card.status === 'scrapped')
-    return '整盘报废后保留到站、报工与异常结算记录，不能继续流转或更改盘量。';
+    return '整盘报废保留到站、报工与异常结算记录。报废登记有误时，请查看异常记录。';
   if (Number(card.quantity) === 0 && card.openAbnormalityCount > 0)
     return '剩余异常可关联本盘其他问题中已登记的报废记录，本次新增报废填写0。';
-  if (card.openAbnormalityCount > 0) return '请打开追踪详情逐条处理随盘问题，当前盘暂停流转。';
+  if (card.openAbnormalityCount > 0)
+    return '请通过下方“处理异常”逐条办理随盘问题，当前盘暂停流转。';
   if (card.availableQuantity !== null)
     return `实际可用产出已确认：${formatQuantity(card.availableQuantity)} ${card.unit}。`;
+  if (canConfirmOutput.value && trackingItemMarkOutputBlocked(card))
+    return '本盘已到达末站，终检前须绑齐单件刻码；请在工作台“编码绑定”中完成绑定。';
   if (card.status === 'unused') return '追踪卡已生成。建卡与打印不登记到站，请在首工序扫码。';
   if (canConfirmOutput.value)
     return '本盘已到达末站。加工完成并处理全部异常后，以当前剩余盘量确认终检产出；后续单独办理成品入库。';
@@ -368,5 +432,10 @@ function stepLabel(step: ProductionTrackingStep): string {
 }
 .card-actions .el-button + .el-button {
   margin-left: 0;
+}
+.abnormality-option {
+  max-width: 480px;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 </style>

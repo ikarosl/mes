@@ -18,9 +18,9 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 ## 任务内卡号
 
-新建追踪卡使用 `任务号-k-序号`，序号至少三位补零，例如 `SC20261112-1-k-001`；超过 999 后继续使用完整序号，不截断或换日重置。同一任务的现场单盘和批量预制共享一个计数，跨日、任务结束和恢复均继续递增；作废、报废或取消不回收已提交序号。卡号只表达可打印身份，不替代任务、卡及冻结工序 ID，不从编号解析写入资格。
+新建追踪卡使用 `任务号-k-序号`，序号使用不补零的完整正整数，例如 `SC20261119-8-k-1`；位数随序号自然增长，不截断或换日重置。同一任务的现场单盘和批量预制共享一个计数，跨日、任务结束和恢复均继续递增；作废、报废或取消不回收已提交序号。卡号只表达可打印身份，不替代任务、卡及冻结工序 ID，不从编号解析写入资格。
 
-标签条形码使用 `YYMMDD任务日序号k卡序号`，下方文字和数据库仍保存完整卡号，例如 `SC20261117-1-k-004` 编码为 `2611171k4`。两个序号均使用不补零的完整正整数，超过三位不截断；前六位是任务编号中的日期，`k` 分隔任务日序号与卡序号。两位年份固定对应 2000—2099，不按扫码当天推断世纪；不符合当前任务内卡号规则或年份范围的编号不生成短码。前后端共用纯转换规则，服务端在扫码及追踪码查询时还原完整卡号；手输完整卡号也可定位。转换只用于查找已有卡，权限、任务、工序顺序、人员和状态仍按原业务校验，不从短码推断写入资格。
+标签条形码使用 `YYMMDD任务日序号k卡序号`，下方文字和数据库仍保存完整卡号，例如 `SC20261119-8-k-1` 编码为 `2611198k1`，还原时也不补零。两个序号均使用不补零的完整正整数，超过三位不截断；前六位是任务编号中的日期，`k` 分隔任务日序号与卡序号。两位年份固定对应 2000—2099，不按扫码当天推断世纪；不符合当前任务内卡号规则或年份范围的编号不生成短码。前后端共用纯转换规则，服务端在扫码及追踪码查询时还原完整卡号；手输完整卡号也可定位。转换只用于查找已有卡，权限、任务、工序顺序、人员和状态仍按原业务校验，不从短码推断写入资格。
 
 计数由 Production 的 `production_tracking_card_sequence` 唯一保存，运行时只经 [mysql-production-tracking-number.ts](../../infrastructure/tracking/mysql-production-tracking-number.ts) 在当前业务事务中分配；一次批量锁定计数并分配完整区间，不扫描业务 MAX／COUNT，也不预领号。整批最终序号须处于 BIGINT UNSIGNED 范围，全部卡号须不超过 100 字符；溢出时整体拒绝。计数、卡、现场建卡的首站到站、成功审计及 HTTP 幂等结果同事务提交，失败整体回滚，成功重放不重新取号。
 
@@ -28,9 +28,29 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 ## 盘量更正与作废
 
-建卡数量为正整数。非终态且当前盘量为正时，可按卡版本更正为另一正整数，更正后的盘量不得小于本卡全部 open 异常影响数量合计，必须填写原因并追加更正前量、新量、操作人和时间。手工盘量更正是独立纠错，不能代替异常报废结算；更正影响后续交接和最终确认，已完成站点的报工快照保持原值，不能静默覆盖。
+建卡数量为正整数。非终态且当前盘量为正时，可按卡版本更正为另一正整数，更正后的盘量不得小于本卡全部 open 异常影响数量合计，也不得小于有效单件刻码数，必须填写原因并追加更正前量、新量、操作人和时间。手工盘量更正是独立纠错，不能代替异常报废结算；更正影响后续交接和最终确认，已完成站点的报工快照保持原值，不能静默覆盖。
 
-盘量为正的未用卡和已用卡均可填写原因作废；已用卡保留到站、报工、异常和更正历史。作废停止后续流转，不冲销此前交接事实。已确认产出的卡只可通过未入库产出撤销恢复终检办理；整盘报废不恢复。已入库后的库存补差由 Inventory 独立业务处理，不回写原盘产出。
+盘量为正的未用卡和已用卡可填写原因作废，已有到站、报工、异常和更正记录保留。整盘误报的纠错按[随盘异常](#随盘异常)办理。已确认产出的卡需先撤销未入库产出。入库后的库存补差由 Inventory 独立处理。
+
+## 单件刻码
+
+单件刻码是实物上的数字标记，与 Product 成品主数据编码不同。一条绑定表示本卡的一件实物，一卡一件和一卡多件使用相同模型。实物刻码全局唯一，以不带前导零的数字字符串保存、比较和展示，不得转成 JavaScript Number 导致长码精度丢失。新绑定、更正和查重均要求最多 32 位数字组成的正整数，`001` 规范化为 `1`。已有 `0` 及其关联按原值保留，继续按原有绑定状态参与生产流程，支持展示与追溯。现场确认录入错误时可通过带原因的更正命令填入正确刻码。仅凭实物刻码可定位当前绑定和原追踪卡，入库追溯再沿该卡的有效产出查询本盘入库单。卡号与刻码以 `-` 拼接的完整追溯码仅作组合展示，不再承担唯一性的范围限制；不重复保存任务、产品、完整码或恒为一的数量。
+
+所有使用追踪卡的批量任务均要求终检前绑齐单件刻码，不设置任务开关。执行中批量任务的 unused 预生成卡和 in_progress 流转卡均可绑定，不要求先到站，也不限制工序名称或位置；卡须没有待处理异常，登记人员须当前有效，绑定数不能超过剩余盘量。绑定只登记单件身份，不完成到站、交接或打标机操作。实际刻码由现场核对，输入自动递增不构成服务器分配全局号段。研发任务仍不使用追踪卡，产出按原研发规则办理。
+
+当前实物码在全库唯一，正常件和报废件都占码。录错号码可对同一件留因更正，包括已报废、已终检、已入库或任务结束的单件。更正保留原卡、登记人员、报废及产出关联。旧错误输入和已撤销绑定仅供历史查询；按实物码追溯时查当前归属。
+
+同一任务内可以一次提交多卡的绑定、改号、清空及号码互换。可办理的卡按当前剩余盘量减正常绑定数推导待绑名额。空位没有单件 ID、登记人员或绑定时间。清空错误绑定释放号码及本卡名额，盘量不变，已撤销的登记只读。报废件及已有有效终检产出的件只允许纠正同一件录错的号码，不能清空或参与号码互换。返修完成或误报恢复的实物继续使用原身份。
+
+整次保存按最终号码分配核验唯一性和逐卡容量。跨卡换绑在同一事务内完成，改动前后的卡和号码由全局操作日志记录。翻页或提交中的中间值不参与占号，任何一行冲突均回滚整次保存。
+
+新登记的前道报废只按数量扣盘，扣后盘量须容纳全部有效绑定。末道报废逐件指定本卡有效编码，数量须等于报废件数。系统以结算时本卡在冻结路线的实际位置决定规则，另选的异常关联工序仅用于追溯。历史未结异常沿原口径办理，无码数量只可来自未绑定余量。
+
+每张卡在终检确认时，必须满足有效、未报废、未撤销的绑定数等于当前剩余盘量，且原有末站及异常清零条件成立；按每张卡独立检查，不等待同任务其他卡。产出保存当次有效绑定关联，表示这些实物随本卡完成终检，不表示分别登记过独立检验结果。产出撤销保留原关联及绑定事实，再次确认按当时有效绑定重新建立关联。卡作废只停止所属卡办理，不把绑定转为实物报废；已入库后的处理继续遵守原产出和库存边界。
+
+绑定、释放、异常结算或纠错、盘量更正及终检在工单、任务和卡锁内核对资格。登记状态由当前占码及有效报废关联推导。同一实物在同一时刻最多归属一笔有效报废。
+
+正整数规则在应用命令层生效，沿用现有表结构。发布前结束旧客户端的绑定和更正操作，发布后刷新页面，按当前[幂等作用域](../../../../../docs/idempotency.md#13-scope-版本与保留升级)提交新意图。旧作用域的成功结果保留原快照。
 
 ## 随盘异常
 
@@ -40,19 +60,21 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 已登记的标签原文不可修改或删除，选中历史原文时保持首尾空白与大小写；仅真正的新输入去除首尾空白后登记，同域按完整文本精确去重，不拆分标点或换行。新上报的数量及长度上限由共享常量和 DTO 维护。卡列表与详情按发现及标签顺序汇总所有异常的标签，包含已处理记录并按原文去重；汇总不是新的异常事实或不良品数量。
 
-上报可以暂不选择处置，形成 open 异常并暂停整盘；选择返修或报废时，在同一提交中以原影响数量完成一次最终结算，分别记录全部返修或全部新增报废。也可同次上报混合处置：填写本次新增报废数量，返修数量由原影响数量减去新增报废数量派生，两者必须均为正整数；不能同时选择全部返修或全部报废，也不引用已有报废。同步处置仍须先通过同一新登记额度校验，不能绕过已有未处理数量占用。返修表示已经返修完成，不创建待办或返修过程。上报、标签登记、关联、处理、扣量、版本、审计和幂等结果原子提交，任何一步失败均不留下部分记录。后续处理同样支持直接选择返修或报废；与高级数量结算互斥，已有异常的重叠问题及返修／报废混合结果继续按下述原有结算规则办理。
+新登记使用已经确认的现场结果，一条异常选择返修或报废并当次结算。返修完成保持盘量及单件身份，报废扣减本次实际数量。结果不同的实物分别登记。原始异常量、标签、现场人员、原始处理及原扣量快照一并留存。
 
-全部未处理异常均阻止整盘向后流转，`isPaused` 由是否存在 open 异常推导。每条异常只允许一次最终结算，保存处理说明、人员、操作者、时间和数量结果，不记录返修过程或多次处理。结算满足：返修数量 + 本次新增报废数量 + 各关联已有报废数量 = 原异常影响数量；返修与本次新增报废数量之和不得超过当前剩余盘量。结清后该条不再占用未处理数量额度；只有本次新增报废扣减卡量，返修不加量，关联已有报废不再次扣量。
+历史 open 异常仍占用登记额度并阻止整盘后续流转，其一次性结算满足：返修数量 + 新增报废数量 + 各关联已有报废数量 = 原异常影响数量。返修与新增报废之和不超过当前盘量，只有本次新增报废扣量。
 
-已有报废只可引用同一卡其他异常已完成结算中实际新增报废大于零的 handling。一次结算中同一 handling 只能出现一次，引用数量不得超过该来源实际新增报废数量，不允许自引、跨卡或引用仅有关联而无新增报废的处理。同一来源允许被不同异常各自引用，不跨异常累计消耗引用额度；这表达人工判断的实物重叠，系统不声称自动按单件去重。
+历史重叠结算只可引用同一卡其他异常中仍有效的实际报废来源。同一来源在一笔结算内只用一次，引用量不超过来源有效报废量。不同异常可以分别引用同一来源。已形成历史重叠的处理及其被引用的来源保留原事实。
 
 新登记额度约束新上报及盘量更正命令，不将既有发现重释为实物互不重叠。历史发现、处理及关联事实保持原义，不按新额度回填、去重或改写；系统无法仅凭历史数量推断实物重叠关系，既有异常仍按原有高级结算规则办理。
 
-异常和卡在同一事务锁定，新登记和盘量更正均在卡根锁内以当前读核验全部 open 异常影响数量合计，避免事务旧快照漏算已提交发现。异常 version 防止并发覆盖，唯一键限制一次处理；处理事实、引用、盘量扣减、状态、卡版本和成功审计原子提交。原始发现不可改写，open 只允许转为 resolved，不恢复。重复提交由幂等结果重放或已结状态拒绝保护，不会再次扣量。写后详情采用当前读，避免等锁后把新卡量与旧异常快照混合返回。
+更正报废提交该笔更正后的正整数总数和原因。按首次结算冻结的前道或末道口径办理，末道同时提交更正后的完整编码集合。当前盘量增加原有效报废数，再减新数，仍须满足未结异常占量、有效绑定与数量上限。只换码时盘量保持原值。作废整笔报废恢复当前仍扣减的数量及编码，作废返修只登记作废。原始发现及结算快照保留，当前有效结果取最新纠错。
+
+纠错要求任务在执行中，卡无有效产出且未人工作废。混合结算及已有上下游重叠归因的记录保留历史口径。既有纯报废若缺少原站依据，允许依据原实扣与原编码整笔作废，更正数量或换码须能确定原结算口径。既往已完成交接的数量快照保留。异常与盘量按各自版本在同一卡锁内校验，纠错、编码归属、盘量、状态及成功审计原子提交。
 
 标签字典跨任务共享，新标签按摘要稳定顺序登记，再按用户选择顺序保存关联；写后不可变标签使用共享锁当前读，避免不同卡因外键共享锁升级互锁。兼容旧追踪卡幂等结果时，codec 严格识别完全没有标签字段的旧结构，将每条原始 description 原文投影为单标签，并由这些原结果汇总卡标签；不拆原文、不生成标签 ID、不读取当前业务状态，也不改持久化的旧快照。异常上报及处理使用新 scope，旧客户端意图不得自动迁入。
 
-卡量扣为零但仍有 open 异常时，保留原 unused 或 in_progress 状态和当前位置，仅允许继续完成异常结算；此时只能关联已有报废等不增加新增处置数量的结果，不能扫码、改量、作废或新增异常。零量且全部异常已处理时自动转为 scrapped（整盘报废）终态，不生成产出、入库或末站完成事实；此前到站、报工及人员历史全部保留。任务结束也不能绕过零量未结卡。
+卡量为零且仍有历史 open 异常时保持原位置，继续办理已有异常结算。零量且全部结清后为整盘报废，保留此前交接，无产出或库存。误报纠错使零盘恢复正量时，有到站位置的回到原站流转，未到站的回到未用状态。
 
 卡最终确认前必须处理全部未完成异常。异常结算不自动创建返工单、补产授权、物料需求或审批；实际需要更多物料时按[需求规则](demand-allocation-and-outbound.md)另行提需。产品新增报废由本节结算表达，与已领物料损耗分开。
 
@@ -76,11 +98,12 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 | in_progress → in_progress      | 无 open 异常时按冻结顺序交接到下一站                           |
 | unused／in_progress → 原状态   | 登记异常、独立改量、结算后仍有正量或零量未结异常；均推进卡版本 |
 | unused／in_progress → scrapped | 结算后卡量为零且无 open 异常                                   |
+| scrapped → unused／in_progress | 更正或作废原报废登记后恢复正量，回到原到站位置                   |
 | in_progress → completed        | 已到末站、无 open 异常、正量，登记现场人员并显式确认           |
 | unused／in_progress → voided   | 正量卡明确作废，保留全部已形成事实；任务结束不自动作废         |
 | completed → in_progress        | 未入库产出明确撤销，保留原末站到站与完成快照                   |
 
-completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复。scrapped 卡拒绝再次扫码，包括已到站的重复扫码。
+completed 仅可通过撤销未入库产出恢复。scrapped 只可因有据的异常纠错恢复盘量，voided 保留终态。整盘报废期间不能扫码。
 
 ## HTTP、权限与并发边界
 
@@ -93,13 +116,15 @@ completed 仅可通过未入库产出撤销恢复；scrapped、voided 不恢复�
 | GET tracking-reports                                                                                                  | tracking:view 或 workbench:view；逐站交接历史                   |
 | POST batches/:batchId/tracking-cards                                                                                  | tracking:manage 且 workbench:operate；现场建卡并首站到站         |
 | POST batches/:batchId/tracking-cards/bulk、PATCH tracking-cards/:cardId/quantity、POST tracking-cards/:cardId/actions/void | tracking:manage；批量预制、留痕更正和作废                       |
-| POST tracking-cards/scan、卡下 abnormalities 和 abnormality handlings                                                 | workbench:operate；现场到站、异常发现及处理                     |
+| POST tracking-cards/scan、abnormalities、handlings、更正报废与作废登记 | workbench:operate；现场办理与误报纠错 |
 | POST tracking-cards/:cardId/actions/confirm-output、batches/:batchId/actions/confirm-research-output                  | tracking:confirm-output；登记现场人员并显式确认最终产出         |
 | GET batches/:batchId/step-records/:recordId/sop                                                                       | tasks:view、tracking:view 或 workbench:view；冻结 SOP 下载      |
 
 上表权限均带 production 前缀；现场单盘建卡要求两项权限同时满足，其余列出的多项权限为 any-of。卡列表的 keyword 搜索卡号、任务号、工单号、成品编码或名称；精确筛选包括任务、卡状态、当前工序及是否具有指定状态的异常。交接历史按完成时间、ID 倒序分页，可按任务、工序和登记人员筛选。列表筛选不授予任何命令资格。
 
 命令按工单 → 任务 → 卡 → 现场人员资格及相关事实 → Inventory 所需库存对象锁定，共享同池事务。实际命令重新校验状态和版本，扫码用每卡每站唯一约束和卡根锁防重；不能依赖浏览器缓存。展示读取仅访问本模块表，不通过人员当前姓名覆盖历史快照。标签由管理端从真实卡号生成，不把条码解析为新的业务身份。
+
+刻码分页 `GET tracking-item-marks` 接受 tracking:view、workbench:view 或 workbench:operate 任一权限；绑定及误绑撤销均独立要求 workbench:operate，权限同样带 production 前缀。契约见 [tracking-item-mark.ts](../../../../../../../packages/contracts/src/production/tracking-item-mark.ts)，查询和选中记录不授予写入资格。
 
 ## 数据库逐表设计
 
@@ -166,7 +191,7 @@ CONSTRAINT `chk_batch_step_records_version` CHECK ((`version` >= 0));
 
 表示任务下一盘实物的稳定执行身份，维护当前剩余盘量、当前位置、五种状态和作废信息；历史事实另行追加。
 
-卡号永久唯一；复合来源键供到站、异常和最终产出引用。completed 和 scrapped 卡不可再修改，后者数量必须为零；completed、voided 数量保持正数。unused、in_progress 的零量只用于等待剩余异常结算，由事务保证其 open 异常与最终状态一致。当前指针和盘量由卡根锁串行推进，已用卡不可删除。
+卡号永久唯一，复合来源键供到站、异常和产出引用。整盘报废量必须为零，completed 与 voided 的盘量必须为正。未用或流转中的零量仅供历史未结异常收尾。卡根锁保护位置及盘量，已用卡不可删除。
 
 ### 字段
 
@@ -217,7 +242,7 @@ CONSTRAINT `chk_tracking_card_version` CHECK ((`version` >= 0));
 CONSTRAINT `chk_tracking_card_void` CHECK ((((`status` = 'voided') and (`void_reason` is not null) and (`voided_by` is not null) and (`voided_at` is not null)) or ((`status` <> 'voided') and (`void_reason` is null) and (`voided_by` is null) and (`voided_at` is null))));
 ```
 
-数据库触发器：trg_tracking_card_output_guard 在 202611090060 扩展为保护 completed 和 scrapped 不再更新，并始终保护卡号、任务及建卡身份；trg_tracking_card_used_no_delete 拒绝删除已用卡。跨行异常状态与卡量一致性由命令事务保证。
+trg_tracking_card_output_guard 保护卡号、建卡身份和版本，并校验已确认产出的撤销与整盘报废后的纠错恢复。trg_tracking_card_used_no_delete 保护已用卡的历史。跨行异常和编码资格由持锁命令复核。
 
 ## production_tracking_card_sequence
 
@@ -420,7 +445,8 @@ CONSTRAINT `chk_tracking_abnormality_version` CHECK ((`version` >= 0));
 | `abnormality_id`          | `bigint unsigned NOT NULL`                    | 所属原始异常；处理记录追加于此ID       |
 | `content`                 | `text NOT NULL`                               | 本次处理说明，不覆盖原始发现或之前处理 |
 | `repaired_quantity`       | `int NOT NULL`                                | 返修数量，不增加卡量                   |
-| `scrapped_quantity`       | `int NOT NULL`                                | 本次实际新增报废，唯一扣减卡量的部分   |
+| `scrapped_quantity`       | `int NOT NULL`                                | 原始结算时实际扣减的报废数量 |
+| `scrap_mode` | `varchar(16) NULL` | 新登记结算时的数量口径 `quantity_only` 或逐码口径 `item_marked`，旧结算缺少可证口径时为 NULL |
 | `previous_card_quantity`  | `int NOT NULL`                                | 本次处理前锁定的剩余盘量               |
 | `remaining_card_quantity` | `int NOT NULL`                                | 本次处理后盘量，等于前量减新增报废     |
 | `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号   |
@@ -440,6 +466,7 @@ CONSTRAINT `fk_tracking_handling_abnormality` FOREIGN KEY (`abnormality_id`) REF
 CONSTRAINT `fk_tracking_handling_actor` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
 CONSTRAINT `fk_tracking_handling_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
 CONSTRAINT `chk_tracking_handling_quantities` CHECK (repaired_quantity BETWEEN 0 AND 99999999 AND scrapped_quantity BETWEEN 0 AND 99999999);
+CONSTRAINT `chk_tracking_handling_scrap_mode` CHECK (scrap_mode IN ('quantity_only','item_marked'));
 CONSTRAINT `chk_tracking_handling_card_quantities` CHECK (previous_card_quantity BETWEEN 0 AND 99999999 AND remaining_card_quantity BETWEEN 0 AND 99999999 AND remaining_card_quantity=previous_card_quantity-scrapped_quantity AND repaired_quantity+scrapped_quantity<=previous_card_quantity);
 ```
 
@@ -471,11 +498,123 @@ CONSTRAINT chk_tracking_scrap_reference_other CHECK (handling_id<>referenced_han
 
 表与 trg_tracking_scrap_reference_no_update、trg_tracking_scrap_reference_no_delete 由 202611090060 新增。引用记录仅随最终结算同事务追加，不修改、删除或转移来源；普通下游查询不取得写入资格。
 
+## production_tracking_item_mark
+
+保存已登记的单件及原始登记人员快照。任务和产品经卡关联，完整追溯码派生。待绑名额不写表。单件处置由生效报废关联推导，所属卡状态及产出事实决定能否清空，解除占用后保留原登记供核查。
+
+| 字段 | SQL 定义 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 绑定身份 |
+| `tracking_card_id` | `BIGINT UNSIGNED NOT NULL` | 所属追踪卡 |
+| `mark_code` | `VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL` | 规范化数字字符串，历史记录可含 `0` |
+| `occupied_mark_code` | `VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NULL` | 当前独占的实物码；已释放的登记为 NULL |
+| `version` | `INT UNSIGNED NOT NULL DEFAULT 0` | 单件乐观锁版本；改号及已有行换码递增 |
+| `personnel_id` | `BIGINT UNSIGNED NOT NULL` | 登记时选择的现场人员 |
+| `personnel_code_snapshot` | `VARCHAR(100) NOT NULL` | 人员编码快照 |
+| `personnel_name_snapshot` | `VARCHAR(100) NOT NULL` | 人员姓名快照 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 实际登录操作者 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 绑定时间 |
+
+主键 `id`。`uk_tracking_item_mark_occupied_code(occupied_mark_code)` 保证当前实物码全局唯一，CHECK 约束生效占用值等于登记码。`idx_tracking_item_mark_card_order(tracking_card_id,created_at,id)` 支持按卡分页。直接外键分别指向 `production_tracking_card.id`、`personnel.id`、`users.id`，人员和账号具有外键支撑索引，均不级联删除。刻码格式、当前任务／卡资格、人员和容量在应用事务校验。
+
+## production_tracking_item_mark_correction
+
+保存同一件实物的录入更正前后值及原因。更正当前码、递增单件版本、追加历史及成功审计同事务，不更新卡版本或终态卡事实。更正次数仅表示本表记录数。换绑仅记全局操作日志，因此并发校验使用单件版本；涉及绑定名额或号码互换时同时核对卡版本。
+
+| 字段 | SQL 定义 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 更正事实主键 |
+| `item_mark_id` | `BIGINT UNSIGNED NOT NULL` | 原单件身份 |
+| `previous_mark_code` | `VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL` | 更正前错误输入 |
+| `corrected_mark_code` | `VARCHAR(32) CHARACTER SET ascii COLLATE ascii_bin NOT NULL` | 本次正确刻码 |
+| `reason` | `TEXT NOT NULL` | 更正原因 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 实际登录操作者 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 更正时间 |
+
+主键 `id`，按 `item_mark_id,created_at,id` 索引读取历史；`item_mark_id` 和 `created_by` 直接外键分别引用绑定与账号，不级联删除。历史值不加唯一键，不提供修改删除命令，不新增触发器。原始登记人员仍沿绑定读取，本次更正操作者沿本表读取。
+
+## production_tracking_item_mark_cancellation
+
+保存一次误绑定撤销。撤销与释放当前占码同事务提交，保留原登记供历史核查。实物报废独立归属原异常。
+
+| 字段 | SQL 定义 | 含义 |
+| --- | --- | --- |
+| `id` | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 撤销事实主键 |
+| `item_mark_id` | `BIGINT UNSIGNED NOT NULL` | 被撤销绑定 |
+| `reason` | `TEXT NOT NULL` | 撤销原因 |
+| `created_by` | `BIGINT UNSIGNED NOT NULL` | 实际登录操作者 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 撤销时间 |
+
+主键 `id`；`uk_tracking_item_mark_cancellation(item_mark_id)` 保证只撤销一次；绑定与账号直接外键分别指向 `production_tracking_item_mark.id`、`users.id`，账号具有外键支撑索引，均不级联删除。原因合法性、卡版本、当前状态及与报废互斥由卡锁内应用命令核验；仅追加，不提供修改、删除或恢复命令，不新增触发器。
+
+## production_tracking_item_mark_scrap
+
+把已绑定实物关联到实际新增报废的原异常处理，不保存第二份报废数量、原因或人员。
+
+| 字段 | SQL 定义 | 含义 |
+| --- | --- | --- |
+| `item_mark_id` | `BIGINT UNSIGNED NOT NULL` | 本次实际报废的绑定 |
+| `handling_id` | `BIGINT UNSIGNED NOT NULL` | 原异常最终结算 |
+| `mark_code_snapshot` | `VARCHAR(32) ASCII COLLATE ascii_bin NULL` | 登记报废时的刻码文本，旧资料缺失时留空 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 关联时间，操作者沿 handling 追溯 |
+
+复合主键 `(item_mark_id,handling_id)` 唯一确定该次原始报废关联。按 handling_id 的索引支持回查。两列分别外键到单件与结算。原始关联只追加，当前生效状态结合最近纠错取得。
+
+## production_tracking_abnormality_adjustment
+
+每次更正或作废留一条不可变记录。原始 handling 存第一次结算，按异常版本最大的调整记录读取有效结果。
+
+| 字段 | SQL 定义 | 用途 |
+| --- | --- | --- |
+| `id` | BIGINT UNSIGNED NOT NULL AUTO_INCREMENT | 纠错事实主键 |
+| `abnormality_id`, `version` | BIGINT UNSIGNED NOT NULL, INT NOT NULL | 原异常及纠错后的异常版本，成对唯一 |
+| `kind` | VARCHAR(8) NOT NULL | correct 更正或 void 整笔作废 |
+| `previous_scrapped_quantity`, `scrapped_quantity` | INT NOT NULL | 此次操作前后的有效报废数 |
+| `previous_card_version` | INT NOT NULL | 提交依据的卡版本 |
+| `previous_card_quantity`, `card_quantity` | INT NOT NULL | 操作前后盘量 |
+| `reason` | TEXT NOT NULL | 核实后的更正或作废原因 |
+| `created_by`, `created_at` | BIGINT UNSIGNED NOT NULL, DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP | 登录操作者和办理时间 |
+
+异常与操作者分别外键到 production_tracking_abnormality 和 users。按异常与版本的唯一键用于取最新结果，created_by 有外键索引。CHECK 校验操作种类、版本和数量范围，强制前盘量＋原报废数－新报废数＝后盘量，更正前后均有正数报废，作废后为零。更新与删除触发器保护事实。原报废操作的扣量、原到站与后续交接快照继续供追溯。
+
+## production_tracking_abnormality_adjustment_item_mark
+
+记录每笔纠错生效前后完整的编码集合。通过单件身份与刻码快照，可以在同一件实物后续更正刻码或再次登记报废后还原这笔纠错。
+
+| 字段 | SQL 定义 | 用途 |
+| --- | --- | --- |
+| `adjustment_id` | BIGINT UNSIGNED NOT NULL | 所属纠错 |
+| `set_kind` | VARCHAR(6) NOT NULL | before 或 after，CHECK 限定 |
+| `item_mark_id` | BIGINT UNSIGNED NOT NULL | 原卡的单件绑定身份 |
+| `mark_code_snapshot` | VARCHAR(32) ASCII COLLATE ascii_bin NOT NULL | 纠错时的实物编码 |
+
+主键为 (adjustment_id,set_kind,item_mark_id)，同一集合内每件只记录一次。纠错和单件分别外键到上述主表及 production_tracking_item_mark，单件有独立外键索引。更新与删除触发器保护快照。同卡归属、有效性、末站码数及盘量差额由持锁的纠错命令统一核对。升级与回退条件见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md#随盘异常纠错)。
+
+## production_tracking_output_item_mark
+
+保存某次产出确认时的有效单件集合。产出撤销不删除关联；重新确认使用新的产出 ID，以免后来更正绑定覆盖旧产出当时的单件范围。
+
+| 字段 | SQL 定义 | 含义 |
+| --- | --- | --- |
+| `production_output_id` | `BIGINT UNSIGNED NOT NULL` | 该次终检产出 |
+| `item_mark_id` | `BIGINT UNSIGNED NOT NULL` | 该次确认包含的有效绑定 |
+| `created_at` | `DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP` | 关联时间，操作者沿产出追溯 |
+
+复合主键 `(production_output_id,item_mark_id)` 保证同次确认不重复关联，`fk_tracking_output_item_mark_mark(item_mark_id)` 支持单件反查。两个直接外键分别指向 `production_tracking_output.id`、`production_tracking_item_mark.id`，不级联删除。相同绑定可出现在已撤销产出及其后重新确认的产出中；应用在原任务／卡锁内复核同卡、有效状态与齐码数量后，同事务写产出和关联。仅追加，不新增触发器。
+
+### 单件刻码数据升级
+
+`202611190010-tracking-item-marking` 直接建立绑定、更正、撤销、原报废及终检关联五张空表。当前占码唯一键和单件版本自首次绑定起生效。旧任务、卡、盘量和已确认产出保持原值，迁移不从数量推断实物编码。未确认的批量卡，以及撤销产出后重新确认的批量卡，均按当前规则齐码。
+
+切换前结束旧表单的提交意图并刷新。绑定、撤销和更正按各自的幂等作用域办理。旧成功结果保留原文，重放时忽略已退出契约的任务开关，缺少刻码摘要的旧结果按当时的零摘要解码。
+
+核验五表初始为空、占码唯一键及直接外键生效，且旧产出数量未变。逆序撤回后续迁移后，刻码 down 仅在五表均为空时允许。已有实物登记的不兼容降级使用匹配备份，见[迁移安全](../../../../../../../packages/database/docs/migration-safety.md#单件刻码)。
+
 ## production_tracking_output
 
 不可变产出确认事实。批量同一卡最多一条未撤销产出，数量等于锁定卡的正数剩余量；研发同任务可多笔，手填实际数量且允许0。正数待人工入库，整盘报废不建立本表记录。
 
-组合外键保证任务、工单、成品及卡归属一致。202611120010 移除旧卡唯一键、研发唯一键和 research_batch_id 生成列，保留原 fk_tracking_output_card 卡／任务索引支持历史查询；有效产出唯一性由任务／卡锁及插入守卫核验，撤销后允许再次确认。末站、异常清零、人员资格及当前剩余盘量由命令复核。Inventory 使用本表 ID 追溯整笔原始入库，后续库存调整不能改写本表。
+组合外键保证任务、工单、成品及卡归属一致。202611120010 移除旧卡唯一键、研发唯一键和 research_batch_id 生成列，保留原 fk_tracking_output_card 卡／任务索引支持历史查询；有效产出唯一性由任务／卡锁及插入守卫核验，撤销后允许再次确认。末站、异常清零、人员资格及当前剩余盘量由命令复核。Inventory 使用本表 ID 追溯对应的全部原始入库明细，历史分次入库与库存调整不能改写本表。
 
 ### 字段
 

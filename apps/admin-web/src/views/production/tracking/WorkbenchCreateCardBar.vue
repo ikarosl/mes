@@ -36,7 +36,7 @@
         >
       </el-tooltip>
     </form>
-    <span class="create-hint">现场建卡、登记首站到站并打印标签，沿用上方登记人员。</span>
+    <!-- <span class="create-hint">现场建卡、登记首站到站并打印标签，沿用上方登记人员。</span> 先不移除 -->
     <el-alert
       v-if="printerCheckError"
       :title="printerCheckError"

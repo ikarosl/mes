@@ -56,51 +56,25 @@
   </el-form-item>
   <el-form-item
     label="处置方式"
-    :required="resolutionRequired"
-  >
-    <el-checkbox
-      v-for="resolution in PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS"
-      :key="resolution"
-      :model-value="selectedResolution === resolution"
-      @change="emit('toggleResolution', resolution, Boolean($event))"
-      >全部{{ PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS[resolution] }}</el-checkbox
-    >
-    <el-checkbox
-      :model-value="selectedResolution === 'mixed'"
-      :disabled="!allowMixedResolution && selectedResolution !== 'mixed'"
-      @change="emit('toggleResolution', 'mixed', Boolean($event))"
-      >部分返修、部分报废<span v-if="!allowMixedResolution"
-        >（至少 2 {{ unit }}）</span
-      ></el-checkbox
-    >
-  </el-form-item>
-  <el-form-item
-    v-if="selectedResolution === 'mixed'"
-    label="报废数量"
     required
-    :error="mixedResolutionError"
   >
-    <el-input-number
-      :model-value="scrappedQuantity"
-      :disabled="!allowMixedResolution"
-      :min="1"
-      :precision="0"
-      :step="1"
-      placeholder="填写报废数量"
-      @update:model-value="emit('update:scrappedQuantity', $event)"
-    /><span class="unit">{{ unit }}</span>
-    <p
-      v-if="allowMixedResolution"
-      class="mixed-repair-quantity"
+    <el-radio-group
+      :model-value="selectedResolution"
+      aria-label="处置方式"
+      @update:model-value="updateResolution"
     >
-      <template v-if="mixedRepairedQuantity === undefined"
-        >报废须少于异常数量，其余数量计为返修完成。</template
+      <el-radio
+        v-for="resolution in PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS"
+        :key="resolution"
+        :value="resolution"
+        >{{ PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS[resolution] }}</el-radio
       >
-      <template v-else
-        >其余
-        <strong>{{ formatQuantity(mixedRepairedQuantity) }} {{ unit }}</strong> 返修完成。</template
+      <el-radio
+        v-if="allowMixedHandling"
+        value="mixed"
+        >部分返修、部分报废</el-radio
       >
-    </p>
+    </el-radio-group>
   </el-form-item>
 </template>
 
@@ -111,7 +85,6 @@ import {
 } from '@company/constants';
 import TrackingAbnormalityLabels from './TrackingAbnormalityLabels.vue';
 import type { TrackingAbnormalityDisposition } from './use-tracking-card-action';
-import { formatQuantity } from '../../../utils/quantity';
 
 interface AbnormalityFieldsValue {
   stepRecordId: string;
@@ -136,31 +109,28 @@ const props = withDefaults(
     selectedResolution: TrackingAbnormalityDisposition | '';
     unit: string;
     readonlyDetails?: boolean;
-    resolutionRequired?: boolean;
-    allowMixedResolution?: boolean;
-    scrappedQuantity?: number;
-    mixedRepairedQuantity?: number;
-    mixedResolutionError?: string;
+    allowMixedHandling?: boolean;
     labelSearch?: LabelSearchState;
   }>(),
   {
     readonlyDetails: false,
-    resolutionRequired: false,
-    allowMixedResolution: false,
-    scrappedQuantity: undefined,
-    mixedRepairedQuantity: undefined,
-    mixedResolutionError: '',
+    allowMixedHandling: false,
     labelSearch: undefined,
   },
 );
 const emit = defineEmits<{
   'update:modelValue': [value: AbnormalityFieldsValue];
-  'update:scrappedQuantity': [value: number | undefined];
-  toggleResolution: [resolution: TrackingAbnormalityDisposition, checked: boolean];
+  selectResolution: [resolution: TrackingAbnormalityDisposition];
   search: [value: string];
   refresh: [];
   loadMore: [];
 }>();
+
+function updateResolution(value: string | number | boolean | undefined): void {
+  const resolution = PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS.find((option) => option === value);
+  if (resolution) emit('selectResolution', resolution);
+  else if (value === 'mixed' && props.allowMixedHandling) emit('selectResolution', value);
+}
 
 function updateField<Key extends keyof AbnormalityFieldsValue>(
   key: Key,
@@ -172,11 +142,6 @@ function updateField<Key extends keyof AbnormalityFieldsValue>(
 </script>
 
 <style scoped>
-.mixed-repair-quantity {
-  width: 100%;
-  margin: 4px 0 0;
-  line-height: 1.5;
-}
 .unit {
   margin-left: 8px;
 }

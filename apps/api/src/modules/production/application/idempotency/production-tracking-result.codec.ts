@@ -1,10 +1,14 @@
 import { z } from 'zod';
-import { PRODUCTION_TRACKING_CARD_BATCH_LIMIT } from '@company/constants';
+import {
+  PRODUCTION_TRACKING_ABNORMALITY_SCRAP_MODES,
+  PRODUCTION_TRACKING_CARD_BATCH_LIMIT,
+} from '@company/constants';
 import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardsCreatedResult,
   ProductionTrackingOutput,
   ProductionTrackingScanResult,
+  SaveProductionTrackingItemMarkWorkspaceResult,
 } from '@company/contracts';
 import type { IdempotencyResultCodec } from '../../../../common/idempotency/idempotency-executor.js';
 
@@ -24,7 +28,7 @@ const output = z
     remark: z.string().nullable(),
   })
   .strict();
-const handling = z
+const legacyHandling = z
   .object({
     ...person,
     id,
@@ -36,6 +40,29 @@ const handling = z
     createdAt: time,
   })
   .strict();
+const scrappedItemMark = z.object({ itemMarkId: id, markCode: z.string() }).strict();
+const adjustment = { reason: z.string(), createdBy: id, createdAt: time };
+const scrapCorrection = z
+  .object({
+    ...adjustment,
+    id,
+    previousScrappedQuantity: quantity,
+    scrappedQuantity: quantity,
+    previousScrappedItemMarks: z.array(scrappedItemMark),
+    scrappedItemMarks: z.array(scrappedItemMark),
+  })
+  .strict();
+const handling = legacyHandling.extend({
+  scrapMode: z.enum(PRODUCTION_TRACKING_ABNORMALITY_SCRAP_MODES),
+  scrappedItemMarks: z.array(scrappedItemMark.extend({ markCode: z.string().nullable() })),
+  currentScrappedQuantity: quantity,
+  currentScrappedItemMarks: z.array(scrappedItemMark),
+  corrections: z.array(scrapCorrection),
+  voided: z.object(adjustment).strict().nullable(),
+  canCorrectScrap: z.boolean(),
+  scrapCorrectionBlockedReason: z.string().nullable(),
+  canVoid: z.boolean(),
+});
 const legacyAbnormality = z
   .object({
     ...person,
@@ -49,10 +76,13 @@ const legacyAbnormality = z
     createdAt: time,
     resolvedAt: time.nullable(),
     version: z.number().int().nonnegative(),
-    handling: handling.nullable(),
+    handling: legacyHandling.nullable(),
   })
   .strict();
-const abnormality = legacyAbnormality.extend({ descriptionLabels: z.array(z.string()).min(1) });
+const labelledAbnormality = legacyAbnormality.extend({
+  descriptionLabels: z.array(z.string()).min(1),
+});
+const abnormality = labelledAbnormality.extend({ handling: handling.nullable() });
 const visit = z
   .object({
     ...person,
@@ -113,24 +143,74 @@ const legacyCard = z
     output: output.nullable(),
   })
   .strict();
-const card = legacyCard.extend({
+const labelledCard = legacyCard.extend({
   abnormalityLabels: z.array(z.string()),
-  abnormalities: z.array(abnormality),
+  abnormalities: z.array(labelledAbnormality),
 });
-// A legacy result has no label fields anywhere and is strictly parsed before projection.
-// Each complete original description is one label, matching the additive migration.
-// Never split old text, invent label IDs or read the card's current database state.
-const compatibleCard = z.union([
-  card,
-  legacyCard.transform((value) => ({
+const emptyItemMarking = {
+  activeCount: 0,
+  scrappedCount: 0,
+  cancelledCount: 0,
+  totalCount: 0,
+};
+const itemMarking = z
+  .object({
+    activeCount: z.number().int().nonnegative(),
+    scrappedCount: z.number().int().nonnegative(),
+    cancelledCount: z.number().int().nonnegative(),
+    totalCount: z.number().int().nonnegative(),
+  })
+  .strict();
+const markedCard = labelledCard.extend({ itemMarking });
+const card = markedCard.extend({ abnormalities: z.array(abnormality) });
+const switchedCard = labelledCard
+  .extend({
+    itemMarking: itemMarking.extend({ required: z.boolean() }),
+  })
+  .transform(({ itemMarking: { required: _legacyRequired, ...summary }, ...value }) => ({
     ...value,
-    abnormalityLabels: [...new Set(value.abnormalities.map((row) => row.description))],
-    abnormalities: value.abnormalities.map((row) => ({
-      ...row,
-      descriptionLabels: [row.description],
+    itemMarking: summary,
+  }));
+// Strictly recognize each published shape. Results predating item marking project
+// zero counts; switched results only drop the obsolete flag. Older complete descriptions remain one label.
+// Prior snapshots preserve the then-effective quantity without claiming any unavailable item
+// identities or current command eligibility.
+const priorCard = z
+  .union([
+    markedCard,
+    switchedCard,
+    labelledCard.transform((value) => ({ ...value, itemMarking: { ...emptyItemMarking } })),
+    legacyCard.transform((value) => ({
+      ...value,
+      itemMarking: { ...emptyItemMarking },
+      abnormalityLabels: [...new Set(value.abnormalities.map((row) => row.description))],
+      abnormalities: value.abnormalities.map((row) => ({
+        ...row,
+        descriptionLabels: [row.description],
+      })),
     })),
-  })),
-]);
+  ])
+  .transform((value) => ({
+    ...value,
+    abnormalities: value.abnormalities.map((abnormality) => ({
+      ...abnormality,
+      handling: abnormality.handling
+        ? {
+            ...abnormality.handling,
+            scrapMode: 'unknown' as const,
+            scrappedItemMarks: null,
+            currentScrappedQuantity: abnormality.handling.scrappedQuantity,
+            currentScrappedItemMarks: null,
+            corrections: [],
+            voided: null,
+            canCorrectScrap: false,
+            scrapCorrectionBlockedReason: null,
+            canVoid: false,
+          }
+        : null,
+    })),
+  }));
+const compatibleCard = z.union([card, priorCard]);
 const scan = z.object({ card, duplicate: z.boolean(), completedVisitId: id.nullable() }).strict();
 const compatibleScan = z
   .object({ card: compatibleCard, duplicate: z.boolean(), completedVisitId: id.nullable() })
@@ -146,6 +226,12 @@ export const trackingCardResultCodec: IdempotencyResultCodec<ProductionTrackingC
   encode: (value) => card.parse(value),
   decode: (value) => compatibleCard.parse(value),
 };
+const savedMarks = z.object({ changedCount: z.number().int().positive() }).strict();
+export const savedMarksResultCodec: IdempotencyResultCodec<SaveProductionTrackingItemMarkWorkspaceResult> =
+  {
+    encode: (value) => savedMarks.parse(value),
+    decode: (value) => savedMarks.parse(value),
+  };
 export const trackingCardsCreatedResultCodec: IdempotencyResultCodec<ProductionTrackingCardsCreatedResult> =
   {
     encode: (value) => createdCards.parse(value),

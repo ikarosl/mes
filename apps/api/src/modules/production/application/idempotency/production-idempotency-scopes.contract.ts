@@ -18,13 +18,19 @@ export const CONFIRM_MATERIAL_LOSS_IDEMPOTENCY_SCOPE =
 export const CREATE_WORK_ORDER_IDEMPOTENCY_SCOPE = 'production.work-order.create.v7' as const;
 
 export const PRODUCTION_TRACKING_SCOPES = {
+  'item-mark.bind': 'production.tracking.item-mark.bind.v5',
+  'item-mark.correct': 'production.tracking.item-mark.correct.v4',
+  'item-mark.cancel': 'production.tracking.item-mark.cancel.v2',
+  'item-mark.save': 'production.tracking.item-mark.save.v1',
   create: 'production.tracking.create.v3',
   'create-bulk': 'production.tracking.create-bulk.v1',
   scan: 'production.tracking.scan.v2',
   'correct-quantity': 'production.tracking.correct-quantity.v3',
   void: 'production.tracking.void.v3',
-  'abnormality.create': 'production.tracking.abnormality.create.v5',
+  'abnormality.create': 'production.tracking.abnormality.create.v6',
   'abnormality.handle': 'production.tracking.abnormality.handle.v3',
+  'abnormality.scrap-correction': 'production.tracking.abnormality.scrap-correction.v1',
+  'abnormality.void': 'production.tracking.abnormality.void.v1',
   'confirm-output': 'production.tracking.confirm-output.v3',
   'confirm-research-output': 'production.tracking.confirm-research-output.v2',
   'task.start': 'production.tracking.task.start.v2',
@@ -33,6 +39,6 @@ export const PRODUCTION_TRACKING_SCOPES = {
 } as const;
 
 export const PRODUCTION_OUTPUT_SCOPES = {
-  revoke: 'production.output.revoke.v1',
-  inbound: 'production.output.inbound.v1',
+  revoke: 'production.output.revoke.v2',
+  inbound: 'production.output.inbound.v3',
 } as const;

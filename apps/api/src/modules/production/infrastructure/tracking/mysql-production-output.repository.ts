@@ -105,7 +105,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
           throw new ProductionDomainError('INVALID_INPUT', '只能合并同一任务、同一成品的产出');
         if (output.cancellation)
           throw new ProductionDomainError('CONFLICT', '所选产出已撤销，请刷新后重试');
-        if (Number(output.quantity) <= 0)
+        if (BigInt(output.quantity) <= 0n)
           throw new ProductionDomainError('INVALID_INPUT', '零产出无需办理库存入库');
         outputs.push({ outputId: output.id, quantity: output.quantity });
       }
@@ -134,7 +134,7 @@ export class MysqlProductionOutputRepository extends ProductionOutputRepository 
         'production_batch',
         batchId,
         null,
-        { outputIds: payload.outputIds, ...result },
+        { outputs, ...result },
       );
       return result;
     });

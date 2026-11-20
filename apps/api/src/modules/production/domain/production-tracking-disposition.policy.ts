@@ -75,25 +75,17 @@ interface TrackingAbnormalityDisposition {
 
 export function resolveTrackingAbnormalityReportHandling(
   payload: CreateProductionTrackingAbnormalityPayload,
-): HandleProductionTrackingAbnormalityPayload | null {
-  if (payload.mixedScrappedQuantity !== undefined) {
-    if (payload.resolution !== undefined)
-      throw new ProductionDomainError('INVALID_INPUT', '混合处置不能同时选择全部返修或全部报废');
-    requireQuantity(payload.affectedQuantity, 1);
-    requireQuantity(payload.mixedScrappedQuantity, 1);
-    if (payload.mixedScrappedQuantity >= payload.affectedQuantity)
-      throw new ProductionDomainError('INVALID_INPUT', '混合处置的报废数量必须小于异常影响数量');
-    return {
-      version: 0,
-      personnelId: payload.personnelId,
-      content: `${PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS.repair}并${PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS.scrap}`,
-      repairedQuantity: payload.affectedQuantity - payload.mixedScrappedQuantity,
-      scrappedQuantity: payload.mixedScrappedQuantity,
-      scrapReferences: [],
-    };
-  }
-  if (!payload.resolution) return null;
-  return { version: 0, personnelId: payload.personnelId, resolution: payload.resolution };
+): HandleProductionTrackingAbnormalityPayload {
+  if (!Object.hasOwn(PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS, payload.resolution))
+    throw new ProductionDomainError('INVALID_INPUT', '请选择已完成的返修或报废');
+  return {
+    version: 0,
+    personnelId: payload.personnelId,
+    resolution: payload.resolution,
+    ...(payload.scrappedItemMarkIds !== undefined
+      ? { scrappedItemMarkIds: [...payload.scrappedItemMarkIds] }
+      : {}),
+  };
 }
 
 export function resolveTrackingAbnormalityDisposition(

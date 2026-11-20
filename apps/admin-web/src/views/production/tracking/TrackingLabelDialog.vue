@@ -56,10 +56,14 @@
             :disabled="printing"
             @change="(checked: unknown) => selectLabel(label.id, Boolean(checked))"
           />
-          <div class="label-sheet">
+          <div
+            class="label-sheet"
+            :style="{ aspectRatio: `${label.image.widthMm} / ${label.image.heightMm}` }"
+          >
             <img
-              :src="label.url"
+              :src="label.image.pngDataUrl"
               :alt="`${label.cardNo} 条形码`"
+              :loading="labels.length > 1 ? 'lazy' : 'eager'"
             />
           </div>
         </div>
@@ -106,24 +110,25 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
+import { computed, onActivated, onDeactivated, onScopeDispose, ref, shallowRef, watch } from 'vue';
 import type { ProductionTrackingCardItem } from '@company/contracts';
-import { printBarcodeLabels } from '@company/printing';
+import {
+  DEFAULT_LABEL_DPI,
+  getLabelPrinterDpi,
+  printLabelImages,
+  renderBarcodeLabel,
+  type RenderedLabelImage,
+} from '@company/printing';
 import { encodeTrackingCardBarcode } from '@company/utils';
 import InlineHint from '../../../components/InlineHint.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { EMessage } from '../../../utils/message';
 import { useLabelPrinter } from '../../../composables/printing/use-label-printer';
 import { useTabsStore } from '../../../stores/tabs';
-import { code128Svg } from './code128';
-import {
-  confirmTrackingLabelReprint,
-  trackingBarcodeLabels,
-  trackingPrintFailure,
-} from './tracking-label-printing';
+import { confirmTrackingLabelReprint, trackingPrintFailure } from './tracking-label-printing';
 
 type LabelCard = Pick<ProductionTrackingCardItem, 'id' | 'cardNo'>;
-type PreparedLabel = LabelCard & { svg: string; url: string };
+type PreparedLabel = LabelCard & { image: RenderedLabelImage };
 const props = withDefaults(
   defineProps<{
     visible: boolean;
@@ -146,40 +151,96 @@ const printing = ref(false);
 const printError = ref('');
 const printUnknown = ref(false);
 const active = ref(true);
+const previewDpi = ref(DEFAULT_LABEL_DPI);
+let dpiRequest = 0;
 onActivated(() => {
   active.value = true;
 });
 onDeactivated(() => {
   active.value = false;
+  dpiRequest += 1;
 });
 onScopeDispose(() => {
   active.value = false;
+  dpiRequest += 1;
 });
-const prepared = computed<{ labels: PreparedLabel[]; error: string }>(() => {
+
+async function updatePreviewDpi(): Promise<void> {
+  const request = ++dpiRequest;
+  previewDpi.value = DEFAULT_LABEL_DPI;
+  const printerName = printer.settings.value.printerName;
+  if (!props.visible || !active.value || !printerName) return;
   try {
-    const labels = (props.card ? [props.card] : props.cards).map((card) => {
-      const svg = code128Svg(encodeTrackingCardBarcode(card.cardNo), card.cardNo);
-      return { ...card, svg, url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}` };
-    });
-    return { labels, error: '' };
-  } catch (error) {
-    return { labels: [], error: error instanceof Error ? error.message : '追踪卡标签生成失败' };
+    const dpi = await getLabelPrinterDpi(printerName);
+    if (
+      request !== dpiRequest ||
+      !active.value ||
+      !props.visible ||
+      printer.settings.value.printerName !== printerName
+    )
+      return;
+    if (Number.isFinite(dpi) && dpi > 0) previewDpi.value = dpi;
+  } catch {
+    // 设备未配置、离线或不提供分辨率时仍可预览，保留同一默认分辨率。
   }
+}
+watch([() => props.visible, () => printer.settings.value.printerName], updatePreviewDpi, {
+  immediate: true,
 });
-const labels = computed(() => prepared.value.labels);
-const previewError = computed(() => props.error || prepared.value.error);
+
+const sourceCards = computed<LabelCard[]>(() =>
+  (props.card ? [props.card] : props.cards).map(({ id, cardNo }) => ({ id, cardNo })),
+);
+const sourceKey = computed(() =>
+  JSON.stringify(sourceCards.value.map((card) => [card.id, card.cardNo])),
+);
+const labels = shallowRef<PreparedLabel[]>([]);
+const renderError = ref('');
+const previewError = computed(() => props.error || renderError.value);
 const selectedIds = ref<string[]>([]);
 let labelSourceKey = '';
+let renderedKey = '';
 watch(
-  [() => props.visible, labels],
+  [
+    () => props.visible,
+    active,
+    sourceKey,
+    () => printer.settings.value.widthMm,
+    () => printer.settings.value.heightMm,
+    previewDpi,
+    printing,
+  ],
   () => {
-    if (!props.visible || printing.value) return;
-    const key = JSON.stringify(labels.value.map((label) => [label.id, label.cardNo]));
-    if (key === labelSourceKey) return;
-    labelSourceKey = key;
-    selectedIds.value = labels.value.map((label) => label.id);
-    printError.value = '';
-    printUnknown.value = false;
+    // 工作台缓存和关闭的弹窗只保留已有图片，不因其他卡变化绘制整批画布。
+    if (!props.visible || !active.value || printing.value) return;
+    if (sourceKey.value !== labelSourceKey) {
+      labelSourceKey = sourceKey.value;
+      selectedIds.value = sourceCards.value.map((card) => card.id);
+      printError.value = '';
+      printUnknown.value = false;
+    }
+    const paper = {
+      widthMm: printer.settings.value.widthMm,
+      heightMm: printer.settings.value.heightMm,
+    };
+    const key = JSON.stringify([sourceKey.value, paper.widthMm, paper.heightMm, previewDpi.value]);
+    if (key === renderedKey) return;
+    try {
+      labels.value = sourceCards.value.map((card) => ({
+        ...card,
+        image: renderBarcodeLabel(
+          { barcode: encodeTrackingCardBarcode(card.cardNo), text: card.cardNo },
+          paper,
+          previewDpi.value,
+        ),
+      }));
+      renderedKey = key;
+      renderError.value = '';
+    } catch (error) {
+      renderedKey = '';
+      labels.value = [];
+      renderError.value = error instanceof Error ? error.message : '追踪卡标签生成失败';
+    }
   },
   { immediate: true },
 );
@@ -208,8 +269,11 @@ function download(): void {
     return;
   const label = selectedLabels.value[0];
   if (!label) return;
+  const { widthMm, heightMm, pngDataUrl } = label.image;
+  // SVG 仅包装当前整页 PNG，下载、预览和补打始终使用同一份像素数据。
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${widthMm}mm" height="${heightMm}mm" viewBox="0 0 ${widthMm} ${heightMm}"><image width="${widthMm}" height="${heightMm}" preserveAspectRatio="xMinYMin meet" href="${pngDataUrl}"/></svg>`;
   const link = document.createElement('a');
-  link.href = label.url;
+  link.href = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   link.download = `${label.cardNo}.svg`;
   link.click();
 }
@@ -228,13 +292,12 @@ async function printLabel(): Promise<void> {
     previewError.value
   )
     return;
-  const cards = selectedLabels.value.map((label) => ({ id: label.id, cardNo: label.cardNo }));
+  const images = selectedLabels.value.map((label) => ({ ...label.image }));
   printing.value = true;
   try {
     if (!(await confirmTrackingLabelReprint(printUnknown.value))) return;
     if (!active.value || !props.visible || printer.busy.value) return;
-    const frozenLabels = trackingBarcodeLabels(cards);
-    await printer.runOperation((settings) => printBarcodeLabels(frozenLabels, settings));
+    await printer.runOperation((settings) => printLabelImages(images, settings));
     printError.value = '';
     printUnknown.value = false;
     if (active.value && props.visible) EMessage.success('标签已提交打印服务，请核对实际出纸');
@@ -278,14 +341,17 @@ onScopeDispose(unregister);
   width: 380px;
   max-width: 100%;
   min-width: 0;
-  padding: 12px;
+  flex: 0 1 380px;
   margin: auto;
   background: white;
   color: black;
-  border: 1px solid var(--el-border-color);
+  outline: 1px solid var(--el-border-color);
 }
 .label-sheet img {
   display: block;
   width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: left top;
 }
 </style>

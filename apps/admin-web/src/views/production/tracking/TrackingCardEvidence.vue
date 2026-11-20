@@ -72,7 +72,7 @@
         />
         <el-alert
           v-if="card.status === 'scrapped'"
-          title="本盘已整盘报废，异常已全部结算，无产出、无需入库；不能继续流转或更改盘量。"
+          title="本盘已整盘报废，异常已全部结算，无产出、无需入库。报废登记有误时，请核对异常记录。"
           type="error"
           show-icon
           :closable="false"
@@ -130,7 +130,11 @@
           <el-button
             v-if="canConfirmOutput"
             type="primary"
-            :disabled="actionsDisabled || card.openAbnormalityCount > 0"
+            :disabled="
+              actionsDisabled ||
+              card.openAbnormalityCount > 0 ||
+              trackingItemMarkOutputBlocked(card)
+            "
             @click="$emit('action', 'output')"
             >终检确认产出</el-button
           >
@@ -143,6 +147,24 @@
             >作废追踪卡</el-button
           >
         </div>
+        <section class="evidence-section">
+          <div>
+            <h3 class="section-title">单件刻码记录</h3>
+            <InlineHint
+              v-if="trackingItemMarkOutputBlocked(card) && !isTerminal"
+              tone="warning"
+            >
+              本盘终检前须绑齐单件刻码；有效绑定量须等于当前剩余盘量。
+            </InlineHint>
+          </div>
+          <TrackingItemMarkSummary :card="card" />
+          <TrackingItemMarkList
+            :card-id="card.id"
+            :enabled="visible && !loading && !error"
+            :revision="card.version"
+            compact
+          />
+        </section>
 
         <section class="evidence-section">
           <h3 class="section-title">工序流转记录</h3>
@@ -230,21 +252,46 @@
             >
               <div class="abnormality-heading">
                 <div class="abnormality-status">
-                  <el-tag :type="item.status === 'resolved' ? 'success' : 'warning'">{{
-                    PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS[item.status]
-                  }}</el-tag>
+                  <el-tag
+                    v-if="item.handling?.voided"
+                    type="info"
+                    >{{ PRODUCTION_TRACKING_CARD_STATUS_LABELS.voided }}</el-tag
+                  >
+                  <el-tag
+                    v-else
+                    :type="item.status === 'resolved' ? 'success' : 'warning'"
+                    >{{ PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS[item.status] }}</el-tag
+                  >
                   <strong class="affected-quantity"
                     >登记影响 {{ formatQuantity(item.affectedQuantity) }} {{ card.unit }}</strong
                   >
                 </div>
-                <el-button
-                  v-if="item.status === 'open' && !isTerminal"
-                  type="primary"
-                  link
-                  :disabled="actionsDisabled"
-                  @click="$emit('action', 'handling', item)"
-                  >处理异常</el-button
-                >
+                <div class="action-bar">
+                  <el-button
+                    v-if="allowActions && item.status === 'open' && !isTerminal"
+                    type="primary"
+                    link
+                    :disabled="actionsDisabled"
+                    @click="$emit('action', 'handling', item)"
+                    >处理异常</el-button
+                  >
+                  <el-button
+                    v-if="canChangeAbnormality && item.handling?.canCorrectScrap"
+                    type="primary"
+                    link
+                    :disabled="actionsDisabled"
+                    @click="$emit('abnormality-correction', 'correct-scrap', item)"
+                    >更正报废</el-button
+                  >
+                  <el-button
+                    v-if="canChangeAbnormality && item.handling?.canVoid"
+                    type="danger"
+                    link
+                    :disabled="actionsDisabled"
+                    @click="$emit('abnormality-correction', 'void', item)"
+                    >作废登记</el-button
+                  >
+                </div>
               </div>
               <div class="record-meta">
                 关联工序：{{ item.stepName || '未指定' }} · 登记人 {{ item.personnelName }} ·
@@ -270,19 +317,30 @@
                   >
                 </div>
                 <div class="handling-quantities">
-                  <span
-                    >返修成功
+                  <span v-if="Number(item.handling.repairedQuantity) > 0"
+                    >{{ item.handling.voided ? '原登记返修' : '返修完成' }}
                     <strong
                       >{{ formatQuantity(item.handling.repairedQuantity) }} {{ card.unit }}</strong
                     ></span
                   >
-                  <span
-                    >本次新增报废
+                  <span v-if="Number(item.handling.scrappedQuantity) > 0"
+                    >{{
+                      item.handling.voided || item.handling.corrections.length
+                        ? '原登记报废'
+                        : '报废'
+                    }}
                     <strong
                       >{{ formatQuantity(item.handling.scrappedQuantity) }} {{ card.unit }}</strong
                     ></span
                   >
-                  <span
+                  <span v-if="!item.handling.voided && item.handling.corrections.length"
+                    >当前报废
+                    <strong
+                      >{{ formatQuantity(item.handling.currentScrappedQuantity) }}
+                      {{ card.unit }}</strong
+                    ></span
+                  >
+                  <span v-if="item.handling.scrapReferences.length"
                     >关联已报废
                     <strong
                       >{{ formatQuantity(trackingReferencedScrapQuantity(item.handling)) }}
@@ -290,7 +348,71 @@
                     >（不重复扣减）</span
                   >
                 </div>
-                <p class="description">{{ item.handling.content }}</p>
+                <p class="description">
+                  <template v-if="item.handling.voided || item.handling.corrections.length"
+                    >原处理说明 · </template
+                  >{{ item.handling.content }}
+                </p>
+                <div
+                  v-if="item.handling.scrappedItemMarks?.length"
+                  class="reference-evidence"
+                >
+                  原报废编码 · {{ formatScrapMarkCodes(item.handling.scrappedItemMarks) }}
+                </div>
+                <div
+                  v-if="
+                    !item.handling.voided &&
+                    item.handling.currentScrappedItemMarks?.length &&
+                    item.handling.corrections.length
+                  "
+                  class="reference-evidence"
+                >
+                  当前报废编码 · {{ formatScrapMarkCodes(item.handling.currentScrappedItemMarks) }}
+                </div>
+                <div
+                  v-if="item.handling.voided"
+                  class="reference-evidence"
+                >
+                  作废原因 · {{ item.handling.voided.reason }} ·
+                  {{ formatDateTimeForDisplay(item.handling.voided.createdAt) }}
+                </div>
+                <div
+                  v-else-if="canChangeAbnormality && item.handling.scrapCorrectionBlockedReason"
+                  class="reference-evidence"
+                >
+                  {{ item.handling.scrapCorrectionBlockedReason }}
+                </div>
+                <el-collapse
+                  v-if="item.handling.corrections.length"
+                  class="correction-history"
+                >
+                  <el-collapse-item
+                    :name="item.id"
+                    :title="`报废更正记录（${item.handling.corrections.length} 条）`"
+                  >
+                    <div
+                      v-for="correction in item.handling.corrections"
+                      :key="correction.id"
+                      class="correction-record reference-evidence"
+                    >
+                      <strong
+                        >{{ formatQuantity(correction.previousScrappedQuantity) }} →
+                        {{ formatQuantity(correction.scrappedQuantity) }} {{ card.unit }}</strong
+                      >
+                      · {{ formatDateTimeForDisplay(correction.createdAt) }}
+                      <div
+                        v-if="
+                          correction.previousScrappedItemMarks.length ||
+                          correction.scrappedItemMarks.length
+                        "
+                      >
+                        编码 · {{ formatScrapMarkCodes(correction.previousScrappedItemMarks) }} →
+                        {{ formatScrapMarkCodes(correction.scrappedItemMarks) }}
+                      </div>
+                      <div>更正原因 · {{ correction.reason }}</div>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
                 <div
                   v-for="reference in item.handling.scrapReferences"
                   :key="reference.handlingId"
@@ -373,13 +495,21 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingStep,
 } from '@company/contracts';
-import { PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS } from '@company/constants';
+import {
+  PRODUCTION_TRACKING_ABNORMALITY_STATUS_LABELS,
+  PRODUCTION_TRACKING_CARD_STATUS_LABELS,
+} from '@company/constants';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity } from '../../../utils/quantity';
+import InlineHint from '../../../components/InlineHint.vue';
+import TrackingItemMarkSummary from './TrackingItemMarkSummary.vue';
+import TrackingItemMarkList from './TrackingItemMarkList.vue';
+import type { TrackingAbnormalityCorrectionAction } from './use-tracking-abnormality-correction';
 import {
   trackingCardLocation,
   trackingCardStatus,
+  trackingItemMarkOutputBlocked,
   trackingFlowRows,
   trackingOutputLabel,
   trackingReferencedScrapQuantity,
@@ -395,6 +525,9 @@ const props = defineProps<{
   steps: ProductionTrackingStep[];
   loading?: boolean;
   error?: string;
+  allowActions?: boolean;
+  allowAbnormalityChanges?: boolean;
+  changeInProgress?: boolean;
 }>();
 
 defineEmits<{
@@ -402,32 +535,45 @@ defineEmits<{
   (event: 'refresh'): void;
   (event: 'label'): void;
   (
+    event: 'abnormality-correction',
+    action: TrackingAbnormalityCorrectionAction,
+    abnormality: ProductionTrackingAbnormality,
+  ): void;
+  (
     event: 'action',
     action: Exclude<TrackingCardAction, 'quantity'>,
     abnormality?: ProductionTrackingAbnormality,
   ): void;
 }>();
 
-const actionsDisabled = computed(() => Boolean(props.loading || props.error || !props.card));
+const actionsDisabled = computed(() =>
+  Boolean(props.loading || props.error || !props.card || props.changeInProgress),
+);
+const canChangeAbnormality = computed(() => props.allowActions || props.allowAbnormalityChanges);
 const isTerminal = computed(
   () => !!props.card && ['voided', 'completed', 'scrapped'].includes(props.card.status),
 );
 const flowRows = computed(() => trackingFlowRows(props.card, props.steps));
 const canConfirmOutput = computed(
   () =>
+    props.allowActions &&
     props.card?.status === 'in_progress' &&
     Number(props.card.quantity) > 0 &&
     props.steps.length > 0 &&
     props.card.currentStepRecordId === props.steps[props.steps.length - 1]?.stepRecordId,
 );
 const canChangeCard = computed(
-  () => !!props.card && !isTerminal.value && Number(props.card.quantity) > 0,
+  () =>
+    !!props.allowActions && !!props.card && !isTerminal.value && Number(props.card.quantity) > 0,
 );
 
 function scrapReferenceLabel(handlingId: string): string {
   const source = props.card?.abnormalities.find((item) => item.handling?.id === handlingId);
   if (!source?.handling) return '来源处理记录不可读取';
   return `${source.description} · ${source.handling.personnelName} · ${formatDateTimeForDisplay(source.handling.createdAt)}`;
+}
+function formatScrapMarkCodes(marks: { markCode: string | null }[]): string {
+  return marks.length ? marks.map((mark) => mark.markCode ?? '原码未记录').join('、') : '—';
 }
 </script>
 
@@ -592,5 +738,10 @@ function scrapReferenceLabel(handlingId: string): string {
   line-height: 1.8;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
+}
+.correction-record + .correction-record {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 </style>

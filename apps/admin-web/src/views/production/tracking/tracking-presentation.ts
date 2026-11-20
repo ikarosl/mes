@@ -3,10 +3,14 @@ import type {
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingCardStatus,
+  ProductionTrackingItemMarkStatus,
   ProductionTrackingStep,
   ProductionTrackingVisit,
 } from '@company/contracts';
-import { PRODUCTION_TRACKING_CARD_STATUS_LABELS } from '@company/constants';
+import {
+  PRODUCTION_TRACKING_CARD_STATUS_LABELS,
+  PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS,
+} from '@company/constants';
 import { formatQuantity } from '../../../utils/quantity';
 import type { StatusTagType } from '../shared/production-status';
 
@@ -17,6 +21,19 @@ const CARD_STATUS_TYPES: Record<ProductionTrackingCardStatus, StatusTagType> = {
   scrapped: 'danger',
   voided: 'info',
 };
+const ITEM_MARK_STATUS_TYPES: Record<ProductionTrackingItemMarkStatus, StatusTagType> = {
+  active: 'primary',
+  scrapped: 'danger',
+  cancelled: 'info',
+};
+export const trackingItemMarkStatus = (status: ProductionTrackingItemMarkStatus) => ({
+  label: PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS[status],
+  type: ITEM_MARK_STATUS_TYPES[status],
+});
+export const trackingItemMarkPending = (card: ProductionTrackingCardDetail): number =>
+  Math.max(0, Number(card.quantity) - card.itemMarking.activeCount);
+export const trackingItemMarkOutputBlocked = (card: ProductionTrackingCardDetail): boolean =>
+  card.itemMarking.activeCount !== Number(card.quantity);
 export const trackingCardStatus = (status: ProductionTrackingCardStatus) => ({
   label: PRODUCTION_TRACKING_CARD_STATUS_LABELS[status],
   type: CARD_STATUS_TYPES[status],

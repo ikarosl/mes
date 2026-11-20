@@ -1,42 +1,21 @@
+import { DEFAULT_LABEL_DPI, renderBarcodeLabel, type RenderedLabelImage } from './label-image.js';
+import {
+  checkLabelSize,
+  LABEL_PRINT_LIMITS,
+  type BarcodeLabel,
+  type LabelPrintSettings,
+} from './label-settings.js';
 import { getLodop } from './lodop-funcs.js';
 import type { LodopApi, LodopReturnHandler } from './lodop-types.js';
 import { LodopPrintError } from './print-error.js';
-
-export interface LabelPrintSettings {
-  printerName: string;
-  widthMm: number;
-  heightMm: number;
-  copies: number;
-}
-
-export interface BarcodeLabel {
-  barcode: string;
-  text: string;
-}
 
 export interface LodopPrinters {
   printers: string[];
   version: string;
 }
 
-export const LABEL_PRINT_LIMITS = Object.freeze({
-  minDimensionMm: 10,
-  maxDimensionMm: 300,
-  minCopies: 1,
-  maxCopies: 100,
-});
-
-export const DEFAULT_LABEL_PRINT_SETTINGS: Readonly<LabelPrintSettings> = Object.freeze({
-  printerName: '',
-  widthMm: 60,
-  heightMm: 40,
-  copies: 1,
-});
-
 const PRINT_CONFIRMATION_TIMEOUT_MS = 30_000;
 const MAX_LABELS_PER_JOB = 1_000;
-const MAX_BARCODE_LENGTH = 128;
-const MAX_TEXT_LENGTH = 200;
 
 let pendingOperation: Promise<void> = Promise.resolve();
 
@@ -54,20 +33,8 @@ function validateSettings(settings: LabelPrintSettings): LabelPrintSettings {
   if (typeof settings.printerName !== 'string' || !settings.printerName.trim()) {
     throw new LodopPrintError('INVALID_SETTINGS', '请先选择标签打印机');
   }
-  const { minDimensionMm, maxDimensionMm, minCopies, maxCopies } = LABEL_PRINT_LIMITS;
-  if (
-    !Number.isFinite(settings.widthMm) ||
-    !Number.isFinite(settings.heightMm) ||
-    settings.widthMm < minDimensionMm ||
-    settings.widthMm > maxDimensionMm ||
-    settings.heightMm < minDimensionMm ||
-    settings.heightMm > maxDimensionMm
-  ) {
-    throw new LodopPrintError(
-      'INVALID_SETTINGS',
-      `标签宽度和高度须为 ${minDimensionMm} 至 ${maxDimensionMm} 毫米`,
-    );
-  }
+  checkLabelSize(settings);
+  const { minCopies, maxCopies } = LABEL_PRINT_LIMITS;
   if (
     !Number.isInteger(settings.copies) ||
     settings.copies < minCopies ||
@@ -79,34 +46,6 @@ function validateSettings(settings: LabelPrintSettings): LabelPrintSettings {
     );
   }
   return { ...settings };
-}
-
-function validateLabels(labels: readonly BarcodeLabel[]): BarcodeLabel[] {
-  if (labels.length === 0 || labels.length > MAX_LABELS_PER_JOB) {
-    throw new LodopPrintError('INVALID_LABELS', `每次须打印 1 至 ${MAX_LABELS_PER_JOB} 张标签`);
-  }
-  return labels.map((label) => {
-    if (
-      typeof label.barcode !== 'string' ||
-      !label.barcode ||
-      label.barcode.length > MAX_BARCODE_LENGTH ||
-      !/^[\x20-\x7e]+$/.test(label.barcode)
-    ) {
-      throw new LodopPrintError(
-        'INVALID_LABELS',
-        '条码须为非空可打印 ASCII 文本，且不超过 128 字符',
-      );
-    }
-    if (
-      typeof label.text !== 'string' ||
-      !label.text.trim() ||
-      label.text.length > MAX_TEXT_LENGTH ||
-      /[\p{Cc}\p{Zl}\p{Zp}]/u.test(label.text)
-    ) {
-      throw new LodopPrintError('INVALID_LABELS', '标签文字须为非空单行文本，且不超过 200 字符');
-    }
-    return { barcode: label.barcode, text: label.text };
-  });
 }
 
 function listPrinters(client: LodopApi): string[] {
@@ -134,10 +73,9 @@ function ensureClientAvailable(client: LodopApi): void {
   }
 }
 
-function configurePrinter(client: LodopApi, settings: LabelPrintSettings): void {
-  ensureClientAvailable(client);
+function findPrinterIndex(client: LodopApi, printerName: string): number {
   const printers = listPrinters(client);
-  const printerIndex = printers.indexOf(settings.printerName);
+  const printerIndex = printers.indexOf(printerName);
   if (printerIndex < 0) {
     throw new LodopPrintError(
       'PRINTER_NOT_FOUND',
@@ -151,6 +89,23 @@ function configurePrinter(client: LodopApi, settings: LabelPrintSettings): void 
       '打印机名称与设备序号冲突，请在系统中重命名后刷新网页',
     );
   }
+  return printerIndex;
+}
+
+function readPrinterDpi(client: LodopApi, index: number): number {
+  try {
+    // Windows queues may report a negative quality preset instead of a physical resolution.
+    const dpi = Number(client.GET_PRINTER_NAME(`${index}:PrintQuality`));
+    if (Number.isInteger(dpi) && dpi >= 72 && dpi <= 1200) return dpi;
+  } catch {
+    // Older agents may expose queue names without the optional driver property.
+  }
+  return DEFAULT_LABEL_DPI;
+}
+
+function configurePrinter(client: LodopApi, settings: LabelPrintSettings): number {
+  ensureClientAvailable(client);
+  const printerIndex = findPrinterIndex(client, settings.printerName);
   // An empty task name prevents previously remembered maintenance settings overriding this job.
   if (!client.PRINT_INIT('')) {
     throw new LodopPrintError('INITIALIZATION_FAILED', '本机打印任务初始化失败');
@@ -162,62 +117,14 @@ function configurePrinter(client: LodopApi, settings: LabelPrintSettings): void 
       '所选标签打印机无法使用，请重新检测并选择打印机',
     );
   }
+  client.SET_PRINT_MODE('CATCH_PRINT_STATUS', false);
+  client.SET_PRINT_MODE('TRYLINKPRINTER_NOALERT', true);
+  client.SET_PRINT_MODE('POS_BASEON_PAPER', true);
   client.SET_PRINT_PAGESIZE(1, `${settings.widthMm}mm`, `${settings.heightMm}mm`, '');
   if (!client.SET_PRINT_COPIES(settings.copies)) {
     throw new LodopPrintError('CONFIGURATION_FAILED', '本机打印服务未能设置标签份数');
   }
-  client.SET_PRINT_MODE('CATCH_PRINT_STATUS', false);
-  client.SET_PRINT_MODE('TRYLINKPRINTER_NOALERT', true);
-}
-
-function mm(value: number): string {
-  return `${Number(value.toFixed(3))}mm`;
-}
-
-function fitLabelText(
-  text: string,
-  widthMm: number,
-  heightMm: number,
-): { text: string; fontSize: number } {
-  const characters = Array.from(text);
-  const widthPt = (widthMm * 72) / 25.4;
-  const heightPt = (heightMm * 72) / 25.4;
-  for (let fontSize = 10; fontSize >= 4; fontSize -= 0.5) {
-    // Reserve a full em per character so Chinese and wide Latin characters also fit.
-    const charactersPerLine = Math.max(1, Math.floor(widthPt / fontSize));
-    const lineCount = Math.ceil(characters.length / charactersPerLine);
-    if (lineCount * fontSize * 1.4 > heightPt) continue;
-    const lines: string[] = [];
-    for (let offset = 0; offset < characters.length; offset += charactersPerLine) {
-      lines.push(characters.slice(offset, offset + charactersPerLine).join(''));
-    }
-    return { text: lines.join('\n'), fontSize };
-  }
-  throw new LodopPrintError('INVALID_LABELS', '当前纸张无法完整容纳标签文字，请增大标签尺寸');
-}
-
-function addLabel(client: LodopApi, label: BarcodeLabel, settings: LabelPrintSettings): void {
-  const margin = Math.min(3, settings.widthMm / 10, settings.heightMm / 10);
-  const contentWidth = settings.widthMm - margin * 2;
-  const contentHeight = settings.heightMm - margin * 2;
-  const barcodeHeight = contentHeight * 0.65;
-  const textTop = margin + contentHeight * 0.72;
-  const textHeight = contentHeight * 0.28;
-  const textLayout = fitLabelText(label.text, contentWidth, textHeight);
-
-  client.ADD_PRINT_BARCODE(
-    mm(margin),
-    mm(margin),
-    mm(contentWidth),
-    mm(barcodeHeight),
-    '128Auto',
-    label.barcode,
-  );
-  client.SET_PRINT_STYLEA(0, 'ShowBarText', 0);
-  client.ADD_PRINT_TEXT(mm(textTop), mm(margin), mm(contentWidth), mm(textHeight), textLayout.text);
-  client.SET_PRINT_STYLEA(0, 'FontName', 'Arial');
-  client.SET_PRINT_STYLEA(0, 'FontSize', textLayout.fontSize);
-  client.SET_PRINT_STYLEA(0, 'Alignment', 2);
+  return printerIndex;
 }
 
 function submitPrint(client: LodopApi): Promise<void> {
@@ -306,7 +213,7 @@ function submitPrint(client: LodopApi): Promise<void> {
       taskId = String(returnedId);
       for (const result of earlyReturns) acceptReturn(result.taskId, result.value);
     } catch {
-      // Even an exception/null from PRINT cannot prove the vendor did not queue a delayed send.
+      // The SDK can queue a delayed send even when its submission call fails to return a task ID.
       finish(
         new LodopPrintError(
           'PRINT_UNCONFIRMED',
@@ -327,10 +234,19 @@ export async function getLodopPrinters(): Promise<LodopPrinters> {
   return serializeOperation(async () => {
     try {
       const client = await getLodop();
-      return { printers: listPrinters(client), version: client.CVERSION || client.VERSION };
+      const printers = listPrinters(client);
+      return { printers, version: client.CVERSION || client.VERSION };
     } catch (error) {
       mapPreparationError(error);
     }
+  });
+}
+
+/** Read-only lookup used to render a preview at the selected queue's dot pitch. */
+export function getLabelPrinterDpi(printerName: string): Promise<number> {
+  return serializeOperation(async () => {
+    const client = await getLodop();
+    return readPrinterDpi(client, findPrinterIndex(client, printerName));
   });
 }
 
@@ -346,24 +262,53 @@ export async function checkLabelPrinter(settings: LabelPrintSettings): Promise<v
   });
 }
 
-/** Resolution confirms submission to C-Lodop, never physical completion or scan quality. */
-export async function printBarcodeLabels(
-  labels: readonly BarcodeLabel[],
+/** Prepare every page before PRINT so layout failures cannot submit a partial batch. */
+async function printPages<T extends object>(
+  pages: readonly T[],
   settings: LabelPrintSettings,
+  prepare: (page: T, paper: LabelPrintSettings, dpi: number) => RenderedLabelImage,
 ): Promise<void> {
-  const settingsSnapshot = validateSettings(settings);
-  const labelsSnapshot = validateLabels(labels);
+  const snapshot = validateSettings(settings);
+  if (!pages.length || pages.length > MAX_LABELS_PER_JOB) {
+    throw new LodopPrintError('INVALID_LABELS', `每次须打印 1 至 ${MAX_LABELS_PER_JOB} 张标签`);
+  }
+  const frozenPages = pages.map((page) => ({ ...page }));
   return serializeOperation(async () => {
     const client = await getLodop();
     try {
-      configurePrinter(client, settingsSnapshot);
-      labelsSnapshot.forEach((label, index) => {
-        if (index > 0) client.NEWPAGE();
-        addLabel(client, label, settingsSnapshot);
+      const index = configurePrinter(client, snapshot);
+      const dpi = readPrinterDpi(client, index);
+      frozenPages.forEach((page, i) => {
+        const image = prepare(page, snapshot, dpi);
+        if (image.widthMm !== snapshot.widthMm || image.heightMm !== snapshot.heightMm) {
+          throw new LodopPrintError('INVALID_SETTINGS', '纸张尺寸已更改，请核对更新后的标签预览');
+        }
+        if (!image.pngDataUrl.startsWith('data:image/png;base64,iVBORw0KGgo')) {
+          throw new LodopPrintError('INVALID_LABELS', '标签原图无效，请重新打开预览');
+        }
+        if (i > 0) client.NEWPAGE();
+        client.ADD_PRINT_IMAGE(0, 0, `${image.widthMm}mm`, `${image.heightMm}mm`, image.pngDataUrl);
+        client.SET_PRINT_STYLEA(0, 'Stretch', 2);
       });
     } catch (error) {
       mapPreparationError(error);
     }
     await submitPrint(client);
   });
+}
+
+/** Submit the exact full-page PNGs displayed by the preview. */
+export function printLabelImages(
+  images: readonly RenderedLabelImage[],
+  settings: LabelPrintSettings,
+): Promise<void> {
+  return printPages(images, settings, (image) => image);
+}
+
+/** Automatic creation uses the same page renderer as manual preview and reprinting. */
+export function printBarcodeLabels(
+  labels: readonly BarcodeLabel[],
+  settings: LabelPrintSettings,
+): Promise<void> {
+  return printPages(labels, settings, renderBarcodeLabel);
 }

@@ -71,7 +71,7 @@ const navigationGroups: readonly NavigationGroup[] = [
     items: [
       { routeNames: ['production-orders'] },
       { routeNames: ['production-tasks'] },
-      { routeNames: ['production-workbench'] },
+      { routeNames: ['production-workbench-operations', 'production-workbench-code-binding'] },
       { routeNames: ['production-tracking'] },
     ],
   },

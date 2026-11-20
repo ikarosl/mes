@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="dialogTitle"
-    :width="DialogWidth.md"
+    :width="showScrapItemMarks ? DialogWidth.xl : DialogWidth.md"
     :before-close="beforeClose"
     @update:model-value="$emit('update:visible', $event)"
   >
@@ -41,6 +41,14 @@
         class="context"
       />
       <el-alert
+        v-if="contextBlockedReason && !recovery"
+        :title="contextBlockedReason"
+        type="warning"
+        show-icon
+        :closable="false"
+        class="context"
+      />
+      <el-alert
         v-if="basisError"
         :title="basisError"
         type="error"
@@ -57,6 +65,13 @@
         本次将以当前剩余盘量
         <strong>{{ formatQuantity(editingCard.quantity) }} {{ editingCard.unit }}</strong>
         确认终检产出并完成末站报工。成品入库另行办理；未入库产出可在任务产出记录中填写原因撤销后重新终检。
+      </InlineHint>
+      <InlineHint
+        v-if="editingAction === 'output' && trackingItemMarkOutputBlocked(editingCard)"
+        tone="warning"
+      >
+        本盘终检前须绑齐单件刻码，当前有效绑定 {{ editingCard.itemMarking.activeCount }}，剩余盘量
+        {{ formatQuantity(editingCard.quantity) }}。
       </InlineHint>
       <InlineHint v-else-if="editingAction === 'quantity'"
         >更正本盘后，各站后续沿用新盘量，已完成的交接报工保留原数量快照。</InlineHint
@@ -119,22 +134,65 @@
             editingAction === 'abnormality' || (editingAction === 'handling' && editingAbnormality)
           "
           v-model="abnormalityFields"
-          v-model:scrapped-quantity="form.scrappedQuantity"
           :steps="abnormalitySteps"
           :quantity-limit="availableAbnormalityQuantity"
-          :selected-resolution="selectedResolution"
+          :selected-resolution="form.resolution"
           :unit="editingCard.unit"
           :readonly-details="editingAction === 'handling'"
-          :resolution-required="editingAction === 'handling'"
-          :allow-mixed-resolution="allowMixedResolution"
-          :mixed-repaired-quantity="mixedRepairedQuantity"
-          :mixed-resolution-error="mixedResolutionError"
+          :allow-mixed-handling="allowMixedHandling"
           :label-search="labelSearch"
           @search="descriptionSearch.search"
           @refresh="descriptionSearch.retry"
           @load-more="descriptionSearch.loadMore"
-          @toggle-resolution="setResolution"
+          @select-resolution="selectResolution"
         />
+        <el-form-item
+          v-if="isMixedHandling"
+          label="报废数量"
+          required
+        >
+          <el-input-number
+            v-model="form.legacyScrappedQuantity"
+            :min="1"
+            :max="Math.max(1, (form.affectedQuantity ?? 0) - 1)"
+            :precision="0"
+            :step="1"
+          /><span class="unit">{{ editingCard.unit }}</span>
+        </el-form-item>
+        <el-form-item
+          v-if="mountScrapItemMarks"
+          v-show="showScrapItemMarks"
+          label="具体报废编码"
+          :required="!isLegacyHandling"
+        >
+          <div class="scrap-mark-picker">
+            <InlineHint v-if="isLegacyHandling"
+              >如报废实物已有绑定，请选择对应编码。其余报废数量从本盘未绑定数量中扣减。</InlineHint
+            >
+            <TrackingItemMarkList
+              v-model="form.scrappedItemMarkIds"
+              :card-id="editingCard.id"
+              :enabled="showScrapItemMarks && !basisLoading"
+              :revision="editingCard.version"
+              :locked="formLocked || basisChanged"
+              :selection-target="isLegacyHandling ? undefined : form.affectedQuantity"
+              selectable
+              compact
+            />
+            <el-text
+              v-if="scrapError"
+              type="danger"
+              role="status"
+              >{{ scrapError }}</el-text
+            >
+          </div>
+        </el-form-item>
+        <InlineHint
+          v-else-if="scrapError"
+          tone="warning"
+          class="settlement-summary"
+          >{{ scrapError }}</InlineHint
+        >
         <InlineHint
           v-if="handlingBlockedReason"
           tone="warning"
@@ -174,8 +232,13 @@
           basisChanged ||
           basisLoading ||
           Boolean(basisError) ||
+          Boolean(contextBlockedReason) ||
           Boolean(handlingBlockedReason) ||
-          Boolean(mixedResolutionError)
+          Boolean(scrapError) ||
+          (needsResolution && !form.resolution) ||
+          (editingAction === 'output' &&
+            !!editingCard &&
+            trackingItemMarkOutputBlocked(editingCard))
         "
         @click="submit"
         >{{ TRACKING_ACTION_LABELS[editingAction] }}</el-button
@@ -190,15 +253,17 @@ import type { ProductionTrackingCardDetail } from '@company/contracts';
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import TrackingAbnormalityFields from './TrackingAbnormalityFields.vue';
+import TrackingItemMarkList from './TrackingItemMarkList.vue';
 import { DialogWidth } from '../../../utils/dialog';
 import { formatQuantity } from '../../../utils/quantity';
-import { TRACKING_ACTION_LABELS } from './tracking-presentation';
+import { TRACKING_ACTION_LABELS, trackingItemMarkOutputBlocked } from './tracking-presentation';
 import { useTrackingCardAction, type TrackingCardActionProps } from './use-tracking-card-action';
 
 const props = defineProps<TrackingCardActionProps>();
 const emit = defineEmits<{
   (event: 'update:visible', value: boolean): void;
   (event: 'changed', card: ProductionTrackingCardDetail): void;
+  (event: 'basis-refreshed', card: ProductionTrackingCardDetail): void;
 }>();
 const {
   editingCard,
@@ -206,12 +271,16 @@ const {
   editingAction,
   form,
   formLocked,
+  contextBlockedReason,
+  showScrapItemMarks,
+  mountScrapItemMarks,
+  isLegacyHandling,
+  isMixedHandling,
+  allowMixedHandling,
+  scrapError,
   availableAbnormalityQuantity,
-  selectedResolution,
-  setResolution,
-  allowMixedResolution,
-  mixedRepairedQuantity,
-  mixedResolutionError,
+  needsResolution,
+  selectResolution,
   handlingBlockedReason,
   recovery,
   intentStatus,
@@ -294,5 +363,11 @@ const labelSearch = computed(() => ({
 }
 .settlement-summary {
   margin-bottom: 16px;
+}
+.scrap-mark-picker {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
 }
 </style>

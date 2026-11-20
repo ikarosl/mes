@@ -2,7 +2,8 @@
   <el-dialog
     :model-value="visible"
     title="任务产出与成品入库"
-    :width="DialogWidth.xl"
+    :width="DialogWidth.workbench"
+    workbench
     :before-close="beforeClose"
     @update:model-value="requestClose"
   >
@@ -16,7 +17,7 @@
         <el-descriptions-item label="成品"
           >{{ detail.productCode }} / {{ detail.productName }}</el-descriptions-item
         >
-        <el-descriptions-item label="终检产出"
+        <el-descriptions-item label="有效终检产出"
           ><BatchApprovedOutput :output="detail.finalOutput"
         /></el-descriptions-item>
         <el-descriptions-item label="入库 / 待入库"
@@ -24,9 +25,9 @@
           {{ formatQuantity(detail.finalOutput.pendingInboundQuantity) }}</el-descriptions-item
         >
       </el-descriptions>
-      <InlineHint
-        >终检只登记产出。选择同一任务的待入库记录，按整条产出合并入库；本次入库将增加库存，已入库记录不能撤销。任务结束后仍可入库。</InlineHint
-      >
+      <InlineHint>
+        终检只登记产出。按整笔待入库产出勾选，可合并同任务多张卡；本次入库将增加库存，已有入库记录的产出不能重复入库或撤销。任务结束后仍可入库。
+      </InlineHint>
       <SubmissionRecoveryNotice
         v-if="recovery"
         :status="intentStatus"
@@ -110,6 +111,15 @@
           ></el-table-column
         >
         <el-table-column
+          label="已入 / 待入"
+          width="140"
+          align="right"
+          ><template #default="{ row }"
+            >{{ formatQuantity(row.receivedQuantity) }} / {{ formatQuantity(row.pendingQuantity) }}
+            {{ row.unit }}</template
+          ></el-table-column
+        >
+        <el-table-column
           label="状态"
           min-width="120"
           ><template #default="{ row }"
@@ -131,23 +141,30 @@
           min-width="220"
         >
           <template #default="{ row }">
-            <template v-if="row.inbound">
+            <div
+              v-for="receipt in row.receipts"
+              :key="receipt.inboundId"
+              class="receipt-record"
+            >
               <el-button
                 v-if="canAccessRoute({ name: 'warehouse-finished-inbound' })"
                 link
                 type="primary"
-                @click="openInbound(row)"
-                >{{ row.inbound.inboundNo }}</el-button
-              ><span v-else>{{ row.inbound.inboundNo }}</span>
-              <div class="secondary">批次 {{ row.inbound.batchCode }}</div>
-            </template>
-            <template v-else-if="row.cancellation"
+                @click="openInbound(receipt)"
+                >{{ receipt.inboundNo }}</el-button
+              ><span v-else>{{ receipt.inboundNo }}</span>
+              <div class="secondary">
+                {{ formatQuantity(receipt.inboundQuantity) }} {{ row.unit }} · 批次
+                {{ receipt.batchCode }}
+              </div>
+            </div>
+            <template v-if="row.cancellation"
               ><div>{{ row.cancellation.reason }}</div>
               <div class="secondary">
                 {{ formatDateTimeForDisplay(row.cancellation.createdAt) }}
               </div></template
             >
-            <span v-else>{{
+            <span v-else-if="!row.receipts.length">{{
               Number(row.quantity) === 0 ? '已确认零产出，无需入库' : '等待人工入库'
             }}</span>
             <div
@@ -172,9 +189,9 @@
               @click="openRevoke(row)"
               >撤销产出</el-button
             ><span
-              v-else-if="row.status === 'inbounded'"
+              v-else-if="row.status === 'inbounded' || row.status === 'partially_inbounded'"
               class="secondary"
-              >已入库</span
+              >{{ outputStatusLabel(row.status) }}</span
             ></template
           >
         </el-table-column>
@@ -196,10 +213,10 @@
       <section class="inbound-form">
         <div class="selection-heading">
           <strong
-            >本次入库 {{ selected.length }} 条 · {{ formatQuantity(selectedQuantity) }}
+            >本次入库 {{ selectedCount }} 条产出 · {{ formatQuantity(selectedQuantity) }}
             {{ selectedUnit }}</strong
           ><el-button
-            :disabled="controlsLocked || !selected.length"
+            :disabled="controlsLocked || !selectedCount"
             @click="clearSelection"
             >清空选择</el-button
           >
@@ -256,7 +273,7 @@
                   :value="candidate.batchId"
                 /> </el-select
               ><el-button
-                :disabled="!selected.length"
+                :disabled="!selectedCount"
                 @click="loadCandidates"
                 >刷新批次</el-button
               >
@@ -379,6 +396,7 @@ import type {
   ProductionBatchDetail,
   ProductionBatchItem,
   ProductionOutputItem,
+  ProductionOutputInboundResult,
   ProductionOutputStatus,
 } from '@company/contracts';
 import { productionOutputsApi } from '../../../api/production/outputs';
@@ -421,6 +439,7 @@ const selected = ref<ProductionOutputItem[]>([]),
   targetMode = ref<CreateProductionOutputInboundPayload['target']['mode']>('new_batch'),
   candidateId = ref(''),
   remark = ref('');
+const selectedCount = computed(() => selected.value.length);
 const candidates = ref<InventoryInboundBatchCandidate[]>([]),
   selectedCandidate = ref<InventoryInboundBatchCandidate | null>(null),
   candidatesLoading = ref(false),
@@ -460,9 +479,7 @@ const selectionConflict = computed(() => {
     )
   )
     return '本次入库须来自同一任务、同一成品及单位，请重新选择。';
-  if (
-    selected.value.some((item) => item.status !== 'pending_inbound' || Number(item.quantity) <= 0)
-  )
+  if (selected.value.some((item) => !isPendingOutput(item)))
     return '已选记录状态已变化，请核对后清空选择并重新选择待入库产出。';
   return '';
 });
@@ -480,7 +497,7 @@ const canSubmit = computed(() => {
     !loading.value &&
     !error.value &&
     !!detail.value &&
-    selected.value.length > 0 &&
+    selectedCount.value > 0 &&
     !selectionConflict.value &&
     (targetMode.value === 'new_batch' ||
       (!!selectedCandidate.value &&
@@ -532,14 +549,14 @@ async function changePage(value: number): Promise<void> {
   page.value = value;
   await load();
 }
+function hasInbound(item: ProductionOutputItem): boolean {
+  return item.receipts.length > 0 || Number(item.receivedQuantity) > 0;
+}
+function isPendingOutput(item: ProductionOutputItem): boolean {
+  return item.status === 'pending_inbound' && Number(item.quantity) > 0 && !hasInbound(item);
+}
 function isSelectable(item: ProductionOutputItem): boolean {
-  return (
-    !controlsLocked.value &&
-    !loading.value &&
-    !error.value &&
-    item.status === 'pending_inbound' &&
-    Number(item.quantity) > 0
-  );
+  return !controlsLocked.value && !loading.value && !error.value && isPendingOutput(item);
 }
 function adoptCandidate(): void {
   if (controlsLocked.value) return;
@@ -554,7 +571,7 @@ function clearSelection(): void {
   selected.value = [];
 }
 function outputStatusType(value: ProductionOutputStatus): 'warning' | 'success' | 'info' {
-  if (value === 'pending_inbound') return 'warning';
+  if (value === 'pending_inbound' || value === 'partially_inbounded') return 'warning';
   if (value === 'inbounded') return 'success';
   return 'info';
 }
@@ -564,6 +581,7 @@ function outputStatusLabel(value: ProductionOutputStatus): string {
 function canRevoke(item: ProductionOutputItem): boolean {
   return (
     detail.value?.status === 'doing' &&
+    !hasInbound(item) &&
     (item.status === 'pending_inbound' || item.status === 'no_inbound_required')
   );
 }
@@ -573,36 +591,34 @@ async function openCard(item: ProductionOutputItem): Promise<void> {
     query: { batchId: item.productionBatchId, cardId: item.trackingCardId || undefined },
   });
 }
-async function openInbound(item: ProductionOutputItem): Promise<void> {
-  if (item.inbound)
-    await router.push({
-      name: 'warehouse-finished-inbound',
-      query: { documentId: item.inbound.inboundId, sourceType: 'finished_product' },
-    });
+async function openInbound(item: ProductionOutputInboundResult): Promise<void> {
+  await router.push({
+    name: 'warehouse-finished-inbound',
+    query: { documentId: item.inboundId, sourceType: 'finished_product' },
+  });
 }
 async function loadCandidates(): Promise<void> {
-  const item = selected.value[0];
+  const batch = detail.value;
   if (
     targetMode.value !== 'existing_batch' ||
     !props.visible ||
-    !item ||
+    !batch ||
+    !selectedCount.value ||
+    !selectedUnit.value ||
     !candidateReads.isActive()
   )
     return;
   const read = candidateReads.begin(
-    () =>
-      props.visible &&
-      props.batch?.id === item.productionBatchId &&
-      targetMode.value === 'existing_batch',
+    () => props.visible && props.batch?.id === batch.id && targetMode.value === 'existing_batch',
   );
   candidatesLoading.value = true;
   candidateError.value = '';
   try {
     const result = await productionOutputsApi.batchCandidates(
       {
-        productionBatchId: item.productionBatchId,
-        productId: item.productId,
-        unit: item.unit,
+        productionBatchId: batch.id,
+        productId: batch.productId,
+        unit: selectedUnit.value,
         keyword: candidateKeyword.value.trim() || undefined,
         page: 1,
         pageSize: 50,
@@ -634,7 +650,7 @@ watch(candidateId, (id) => {
     candidates.value.find((item) => item.batchId === id) ??
     (selectedCandidate.value?.batchId === id ? selectedCandidate.value : null);
 });
-watch(selectedUnit, () => {
+watch([selectedUnit, () => selectedCount.value > 0], () => {
   candidateReads.invalidate();
   candidates.value = [];
   if (targetMode.value === 'existing_batch') void loadCandidates();
@@ -770,6 +786,9 @@ async function submitRevoke(): Promise<void> {
       },
       (key) => productionOutputsApi.revoke(submission.outputId, { reason: submission.reason }, key),
     );
+    const selectedOutput = selected.value.find((output) => output.id === submission.outputId);
+    if (selectedOutput) tableRef.value?.toggleRowSelection(selectedOutput, false);
+    selected.value = selected.value.filter((output) => output.id !== submission.outputId);
     EMessage.success('产出已撤销，原记录和撤销原因已保留');
     revokingOutput.value = null;
     revokeReason.value = '';
@@ -820,7 +839,7 @@ async function allowClose(): Promise<boolean> {
   if (submitting.value || revokeSubmitting.value) return false;
   if (!props.visible) return true;
   if (!(await allowRevokeClose())) return false;
-  if (!recovery.value && !selected.value.length && !remark.value) return true;
+  if (!recovery.value && !selectedCount.value && !remark.value) return true;
   try {
     await RouteMessageBox.confirm(
       recovery.value
@@ -876,6 +895,9 @@ onScopeDispose(unregister);
   font-size: 12px;
   line-height: 1.6;
   overflow-wrap: anywhere;
+}
+.receipt-record + .receipt-record {
+  margin-top: 8px;
 }
 .record-footer,
 .selection-heading {

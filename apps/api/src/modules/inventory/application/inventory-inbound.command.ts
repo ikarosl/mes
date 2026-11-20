@@ -28,7 +28,7 @@ export abstract class InventoryInboundCommand {
     input: ConfirmPurchaseReceiptInput,
     context: CommandContext,
   ): Promise<ConfirmPurchaseReceiptResult>;
-  /** Production has locked and validated every whole, uncancelled output in this transaction. */
+  /** Production has locked and validated whole uncancelled outputs without prior receipts. */
   abstract postTrackingOutputs(
     input: TrackingOutputsInput,
     context: CommandContext,

@@ -35,7 +35,7 @@
             <el-option
               v-if="draft.printerName && !printers.includes(draft.printerName)"
               :value="draft.printerName"
-              :label="`${draft.printerName}（未找到）`"
+              :label="unresolvedPrinterLabel"
               disabled
             />
             <el-option
@@ -118,7 +118,7 @@
 </template>
 
 <script setup lang="ts">
-import { onScopeDispose, reactive, ref, watch } from 'vue';
+import { computed, onScopeDispose, reactive, ref, watch } from 'vue';
 import { getLodopPrinters, LABEL_PRINT_LIMITS } from '@company/printing';
 import InlineHint from '../../../components/InlineHint.vue';
 import { useLabelPrinter } from '../../../composables/printing/use-label-printer';
@@ -134,6 +134,7 @@ const emit = defineEmits<{ (event: 'update:visible', value: boolean): void }>();
 const printer = useLabelPrinter();
 const draft = reactive({ ...printer.settings.value });
 const printers = ref<string[]>([]);
+const printerReadStatus = ref<'idle' | 'ready' | 'error'>('idle');
 const loading = ref(false);
 const saving = ref(false);
 const serviceError = ref('');
@@ -143,21 +144,30 @@ let baseline = draftKey();
 const reads = useLatestReadRequest(() => {
   loading.value = false;
 });
-
+const unresolvedPrinterLabel = computed(() => {
+  if (loading.value) return `${draft.printerName}（检测中）`;
+  if (printerReadStatus.value === 'ready') return `${draft.printerName}（未找到）`;
+  return `${draft.printerName}（待确认）`;
+});
 async function loadPrinters(): Promise<void> {
   if (!props.visible || !reads.isActive() || saving.value || printer.busy.value) return;
   const read = reads.begin(() => props.visible);
+  printers.value = [];
+  printerReadStatus.value = 'idle';
   loading.value = true;
   serviceError.value = '';
   try {
     const result = await getLodopPrinters();
     if (!read.isCurrent()) return;
     printers.value = result.printers;
+    printerReadStatus.value = 'ready';
     if (!result.printers.length)
       serviceError.value = '本机未找到已安装的打印机，请安装后刷新整个页面';
   } catch (error) {
-    if (read.isCurrent())
+    if (read.isCurrent()) {
+      printerReadStatus.value = 'error';
       serviceError.value = error instanceof Error ? error.message : '本机打印服务连接失败';
+    }
   } finally {
     if (read.isCurrent()) loading.value = false;
   }
@@ -209,9 +219,13 @@ watch(
     if (!visible) return;
     Object.assign(draft, printer.settings.value);
     baseline = draftKey();
+    printers.value = [];
+    printerReadStatus.value = 'idle';
+    serviceError.value = '';
     saveError.value = '';
     void loadPrinters();
   },
+  { immediate: true },
 );
 const unregister = useTabsStore().registerCloseGuard(props.routeName, allowClose);
 onScopeDispose(unregister);

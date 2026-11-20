@@ -4,7 +4,9 @@
 
 > 终检即时入库、每产出建批、研发单次产出及任务结束后不恢复的边界由 [ADR-0029](0029-terminal-output-manual-inbound-and-task-reopen.md) 取代；以下相关文字保留为历史选择理由。
 
-> 异常必须先暂停再单独处理的交互边界已简化为上报时可同步完成返修／报废；同一卡支持多次登记，新登记及盘量更正受未处理异常数量占用限制。按工序复用多个描述标签，当前数量口径及历史重叠记录的保留边界由[追踪卡执行](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#随盘异常)维护。一次性结算、报废只扣一次、未处理异常阻断及不管理返修过程的边界保留。
+> 后续随盘异常按已经返修或报废的实物分条登记，允许对误报追加更正或作废事实。旧待处理及重叠结算保留原义。当前登记、纠错与异常占量边界由[追踪卡执行](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#随盘异常)维护，继续按盘流转与终检。
+
+> “系统不提供单件识别”的取舍仅对原有数量历史保留。已批准的[单件刻码](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#单件刻码)在全部批量任务中增加全局单件身份、留痕更正、具体报废关联和逐盘齐码门槛，绑定不依赖工序配置；[成品入库](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)仍按盘对应的整笔产出办理，刻码沿原盘追溯入库。沿用整盘流转、一次异常结算及整盘终检，不扩展逐件质量流程、逐件入库分配、第二套库存账本或历史实物推断。
 
 状态：Accepted，实验分支。只在独立空库实施，不转换旧生产执行及结案历史；设计获批不代表用户验收或正式测试通过。
 

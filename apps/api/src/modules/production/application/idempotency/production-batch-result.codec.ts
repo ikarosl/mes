@@ -13,9 +13,8 @@ import {
 /**
  * createBatch 幂等结果 codec，scope 与当前请求及结果结构绑定。
  *
- * 每个已发布 scope 的请求指纹规则、成功结果结构和本 Zod schema 保持固定；
- * 后续不兼容变更必须升级 scope 和对应 codec；旧 scope 记录不得由新 schema 猜测解析，
- * 形状不符即走 corrupt，不允许用新 schema 去猜旧记录。
+ * decode 分别严格识别当前结构和带历史刻码开关的完整旧结构，只剔除退出的响应字段，
+ * 不读取当前任务或猜造历史刻码；其他形状不符仍走 corrupt。
  *
  * encode 与 decode 都做完整嵌套运行时校验，不使用 `coerce`/`preprocess`、不做隐式类型转换，结构错误一律
  * 拒绝：
@@ -24,7 +23,7 @@ import {
  */
 const nullableString = z.string().nullable();
 
-export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
+export const productionBatchDetailSchema = z
   .object({
     id: z.string(),
     workOrderId: z.string(),
@@ -74,8 +73,15 @@ export const productionBatchDetailSchema: z.ZodType<ProductionBatchDetail> = z
   })
   .strict();
 
+const compatibleProductionBatchDetailSchema = z.union([
+  productionBatchDetailSchema,
+  productionBatchDetailSchema
+    .extend({ requiresItemMarking: z.boolean() })
+    .transform(({ requiresItemMarking: _legacyRequiresItemMarking, ...value }) => value),
+]);
+
 /**
- * 幂等结果 codec：encode/decode 都经 `productionBatchDetailSchema` 完整校验。
+ * 幂等结果 codec：encode 严格校验新结构，decode 完整校验新／旧明确结构。
  * 校验失败抛 ZodError，由 executor 统一映射为 corrupt（见 idempotency.md §5/§8）。
  * `scope` 字段与执行契约共用同一常量：结果结构与 scope 冻结在同一契约版本，形状变更必须 bump scope。
  */
@@ -90,7 +96,7 @@ export const productionBatchResultCodec: IdempotencyResultCodec<ProductionBatchD
     return parsed as unknown as JsonValue;
   },
   decode(stored) {
-    return productionBatchDetailSchema.parse(stored);
+    return compatibleProductionBatchDetailSchema.parse(stored);
   },
 };
 

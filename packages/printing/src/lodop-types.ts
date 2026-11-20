@@ -15,6 +15,7 @@ export interface LodopApi {
   PRINT_INIT(taskName: string): boolean;
   GET_PRINTER_COUNT(): number;
   GET_PRINTER_NAME(index: number): string;
+  GET_PRINTER_NAME(property: string): unknown;
   SET_PRINTER_INDEX(indexOrName: number | string): boolean;
   SET_PRINT_PAGESIZE(
     orientation: number,
@@ -24,15 +25,7 @@ export interface LodopApi {
   ): void;
   SET_PRINT_COPIES(copies: number): boolean;
   SET_PRINT_MODE(mode: string, value: boolean | string | number): void;
-  ADD_PRINT_BARCODE(
-    top: string,
-    left: string,
-    width: string,
-    height: string,
-    type: string,
-    value: string,
-  ): void;
-  ADD_PRINT_TEXT(top: string, left: string, width: string, height: string, text: string): void;
+  ADD_PRINT_IMAGE(top: number, left: number, width: string, height: string, image: string): void;
   SET_PRINT_STYLEA(item: number, style: string, value: string | number): void;
   NEWPAGE(): void;
   PRINT(): unknown;

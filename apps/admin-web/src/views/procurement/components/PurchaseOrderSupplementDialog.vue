@@ -359,7 +359,7 @@ import type { RelatedSupplementLocation } from '../purchase-order-location';
 
 defineOptions({ name: 'PurchaseOrderSupplementDialog' });
 const emit = defineEmits<{
-  saved: [string];
+  saved: [purchaseOrderId: string, originOrderId: string];
   'related-navigate': [RelatedSupplementLocation];
   'source-order': [{ orderId: string; reason?: PurchaseOrderSupplementReason }];
 }>();
@@ -386,7 +386,7 @@ const {
   removeLine,
   refreshOrder,
   save,
-} = usePurchaseOrderSupplement((id) => emit('saved', id));
+} = usePurchaseOrderSupplement((id) => emit('saved', id, order.value?.id ?? id));
 const isExcessSource = computed(() => order.value?.supplementReason === 'excess_purchase');
 const originTarget = computed(() => excessSupplementOrigin(order.value));
 const picker = ref<InstanceType<typeof PurchaseOrderSupplementPickerDialog>>();

@@ -2,7 +2,6 @@ import type { RowDataPacket } from 'mysql2/promise';
 import type {
   PageResult,
   ProductionTrackingAbnormality,
-  ProductionTrackingAbnormalityHandling,
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
   ProductionTrackingOutput,
@@ -17,19 +16,23 @@ import { ProductionDomainError } from '../../domain/production.errors.js';
 import type { ProductionTrackingCardListQuery } from '../../application/ports/production-tracking.repository.js';
 import type { Db } from '../shared/mysql-production-db.js';
 import { selectBatchOverview } from '../tasks/mysql-production-batch.read.js';
+import { trackingAdjustmentCardBlockedReason } from './mysql-production-tracking-abnormality-adjustment.js';
+import { selectTrackingAbnormalityHandlings } from './mysql-production-tracking-abnormality.read.js';
 import { selectTrackingCardLabels } from './mysql-production-tracking-labels.js';
+import { selectTrackingItemMarkingSummary } from './mysql-production-tracking-item-mark.js';
 
 const PERSON = `CAST(o.personnel_id AS CHAR) personnelId,o.personnel_code_snapshot personnelCode,o.personnel_name_snapshot personnelName`;
-const CARD_SELECT = `SELECT CAST(c.id AS CHAR) id,c.card_no cardNo,CAST(c.production_batch_id AS CHAR) productionBatchId,
+const CARD_COLUMNS = `CAST(c.id AS CHAR) id,c.card_no cardNo,CAST(c.production_batch_id AS CHAR) productionBatchId,
  b.batch_no batchNo,wo.work_order_no workOrderNo,wo.product_code_snapshot productCode,wo.product_name_snapshot productName,
  CAST(c.quantity AS CHAR) quantity,wo.unit_snapshot unit,c.status,CAST(c.current_step_record_id AS CHAR) currentStepRecordId,s.step_name_snapshot currentStepName,
  CAST(c.personnel_id AS CHAR) personnelId,c.personnel_code_snapshot personnelCode,c.personnel_name_snapshot personnelName,
  (SELECT COUNT(*) FROM production_tracking_abnormality a WHERE a.tracking_card_id=c.id AND a.status='open') openAbnormalityCount,
  EXISTS(SELECT 1 FROM production_tracking_abnormality a WHERE a.tracking_card_id=c.id AND a.status='open') isPaused,
  (SELECT CAST(o.quantity AS CHAR) FROM production_tracking_output o WHERE o.tracking_card_id=c.id AND NOT EXISTS(SELECT 1 FROM production_tracking_output_cancellation x WHERE x.production_output_id=o.id) ORDER BY o.id DESC LIMIT 1) availableQuantity,
- c.remark,c.void_reason voidReason,c.voided_at voidedAt,c.created_at createdAt,c.version
- FROM production_tracking_card c JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders wo ON wo.id=b.work_order_id
+ c.remark,c.void_reason voidReason,c.voided_at voidedAt,c.created_at createdAt,c.version`;
+const CARD_FROM = `FROM production_tracking_card c JOIN production_batches b ON b.id=c.production_batch_id JOIN work_orders wo ON wo.id=b.work_order_id
  LEFT JOIN batch_step_records s ON s.id=c.current_step_record_id`;
+const CARD_SELECT = `SELECT ${CARD_COLUMNS} ${CARD_FROM}`;
 const VISIT_SELECT = `SELECT CAST(v.id AS CHAR) id,CAST(v.tracking_card_id AS CHAR) trackingCardId,c.card_no cardNo,
  CAST(v.production_batch_id AS CHAR) productionBatchId,b.batch_no batchNo,CAST(v.batch_step_record_id AS CHAR) stepRecordId,
  s.step_order_snapshot stepOrder,s.step_code_snapshot stepCode,s.step_name_snapshot stepName,
@@ -142,11 +145,11 @@ export async function selectTrackingCard(
   lock = false,
 ): Promise<ProductionTrackingCardDetail> {
   const suffix = lock ? ' FOR UPDATE' : '';
-  const [[card]] = await db.query<(RowDataPacket & ProductionTrackingCardItem)[]>(
-    `${CARD_SELECT} WHERE c.id=?${suffix}`,
-    [id],
-  );
-  if (!card) throw new ProductionDomainError('NOT_FOUND', '追踪卡不存在');
+  const [[cardRow]] = await db.query<
+    (RowDataPacket & ProductionTrackingCardItem & { batchStatus: string })[]
+  >(`SELECT ${CARD_COLUMNS},b.status batchStatus ${CARD_FROM} WHERE c.id=?${suffix}`, [id]);
+  if (!cardRow) throw new ProductionDomainError('NOT_FOUND', '追踪卡不存在');
+  const { batchStatus, ...card } = cardRow;
   const [visits] = await db.query<(RowDataPacket & ProductionTrackingVisit)[]>(
     `${VISIT_SELECT} WHERE v.tracking_card_id=? ORDER BY s.step_order_snapshot,v.id${suffix}`,
     [id],
@@ -159,40 +162,18 @@ export async function selectTrackingCard(
     `SELECT CAST(a.id AS CHAR) id,CAST(a.batch_step_record_id AS CHAR) stepRecordId,s.step_name_snapshot stepName,CAST(a.affected_quantity AS CHAR) affectedQuantity,a.status,a.description,CAST(a.personnel_id AS CHAR) personnelId,a.personnel_code_snapshot personnelCode,a.personnel_name_snapshot personnelName,CAST(a.created_by AS CHAR) createdBy,a.created_at createdAt,a.resolved_at resolvedAt,a.version FROM production_tracking_abnormality a LEFT JOIN batch_step_records s ON s.id=a.batch_step_record_id WHERE a.tracking_card_id=? ORDER BY a.id${suffix}`,
     [id],
   );
-  const [handlings] = await db.query<
-    (RowDataPacket &
-      Omit<ProductionTrackingAbnormalityHandling, 'scrapReferences'> & { abnormalityId: string })[]
-  >(
-    `SELECT CAST(h.id AS CHAR) id,CAST(h.abnormality_id AS CHAR) abnormalityId,h.content,CAST(h.repaired_quantity AS CHAR) repairedQuantity,CAST(h.scrapped_quantity AS CHAR) scrappedQuantity,CAST(h.personnel_id AS CHAR) personnelId,h.personnel_code_snapshot personnelCode,h.personnel_name_snapshot personnelName,CAST(h.created_by AS CHAR) createdBy,h.created_at createdAt FROM production_tracking_abnormality_handling h JOIN production_tracking_abnormality a ON a.id=h.abnormality_id WHERE a.tracking_card_id=? ORDER BY h.id${suffix}`,
-    [id],
-  );
-  const [references] = await db.query<
-    (RowDataPacket & { ownerHandlingId: string; handlingId: string; quantity: string })[]
-  >(
-    `SELECT CAST(r.handling_id AS CHAR) ownerHandlingId,CAST(r.referenced_handling_id AS CHAR) handlingId,CAST(r.quantity AS CHAR) quantity
-     FROM production_tracking_scrap_reference r JOIN production_tracking_abnormality_handling h ON h.id=r.handling_id
-     JOIN production_tracking_abnormality a ON a.id=h.abnormality_id WHERE a.tracking_card_id=? ORDER BY r.handling_id,r.referenced_handling_id${suffix}`,
-    [id],
-  );
-  const handlingByAbnormality = new Map<string, ProductionTrackingAbnormalityHandling>(
-    handlings.map(({ abnormalityId, ...handling }) => [
-      abnormalityId,
-      {
-        ...handling,
-        repairedQuantity: String(handling.repairedQuantity),
-        scrappedQuantity: String(handling.scrappedQuantity),
-        scrapReferences: references
-          .filter((reference) => reference.ownerHandlingId === handling.id)
-          .map(({ handlingId, quantity }) => ({ handlingId, quantity: String(quantity) })),
-        createdAt: toBeijingISOString(handling.createdAt),
-      },
-    ]),
-  );
   const output = await selectTrackingOutput(db, card.productionBatchId, id, lock);
+  const handlingByAbnormality = await selectTrackingAbnormalityHandlings(
+    db,
+    id,
+    trackingAdjustmentCardBlockedReason(batchStatus, card.status, output !== null),
+    lock,
+  );
   const labels = await selectTrackingCardLabels(db, [id], lock);
   const openAbnormalityCount = abnormalities.filter((row) => row.status === 'open').length;
   return {
     ...mapCard(card),
+    itemMarking: await selectTrackingItemMarkingSummary(db, id, lock),
     abnormalityLabels: [...new Set(labels.map((label) => label.label))],
     openAbnormalityCount,
     isPaused: openAbnormalityCount > 0,
@@ -210,7 +191,8 @@ export async function selectTrackingCard(
       affectedQuantity: String(row.affectedQuantity),
       createdAt: toBeijingISOString(row.createdAt),
       resolvedAt: row.resolvedAt === null ? null : toBeijingISOString(row.resolvedAt),
-      handling: handlingByAbnormality.get(row.id) ?? null,
+      version: handlingByAbnormality.get(row.id)?.version ?? row.version,
+      handling: handlingByAbnormality.get(row.id)?.handling ?? null,
     })),
     output,
   };
@@ -226,13 +208,17 @@ export async function selectCreatedUnusedTrackingCards(
     [...cardIds],
   );
   if (rows.length !== cardIds.length) throw new Error('新建追踪卡结果不完整');
-  return rows.map((row) => ({
-    ...mapCard(row),
-    visits: [],
-    quantityHistory: [],
-    abnormalities: [],
-    output: null,
-  }));
+  const cards: ProductionTrackingCardDetail[] = [];
+  for (const row of rows)
+    cards.push({
+      ...mapCard(row),
+      itemMarking: await selectTrackingItemMarkingSummary(db, row.id, true),
+      visits: [],
+      quantityHistory: [],
+      abnormalities: [],
+      output: null,
+    });
+  return cards;
 }
 export async function listTrackingReports(
   db: Db,

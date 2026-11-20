@@ -18,9 +18,9 @@
 
 InventoryInboundCommand.confirmPurchaseReceipt 接收 Procurement 已锁定并核验的有效到货物料。输入只含 receiptLineId、供应商名称快照、物料精确身份与单位、实际正整数数量和 target，不带检验、实收修订或分配。采购支持多到货、多供应商合单、同来源拆多个目标和共用新批次键，目标精确身份及单位必须一致，规则见 [InventoryInboundTarget](../../../../../../packages/contracts/src/production/inventory-target.ts)。其他处理说明由 Procurement 的到货行独立命令保存，不通过实际入库确认提交，也不调用库存命令。
 
-`postTrackingOutputs` 接收 Production 在同池事务中锁定并核验的多条正数有效产出，来源必须同任务、同工单、同成品，数量取整笔产出。明确选择共建一个新批次或追加本任务已有批次；Inventory 核验历史身份、单位、批次状态、版本及原始同任务入库来源，保留逐产出明细。研发零产出、过程报废及整盘报废不调用库存。`getTrackingOutputReceipts` 提供已有入库事实当前读，供来源模块核验防重复及撤销资格。
+`postTrackingOutputs` 接收 Production 在同池事务中锁定并核验的多条正数有效产出，来源必须同任务、同工单、同成品，数量取整笔产出，不携带单件编码或 ID。明确选择共建一个新批次或追加本任务已有批次；Inventory 核验历史身份、单位、批次状态、版本及原始同任务入库来源，保留逐产出明细。研发零产出、过程报废及整盘报废不调用库存。`getTrackingOutputReceipts` 提供全部已有实际入库当前读，供来源模块核验防重复及撤销资格；历史多笔不压成一笔。
 
-确认按 pending 主单 → 来源明细 → 库存流水 → completed 主单顺序同事务提交；分组结果保存真实 inboundId、inboundNo、itemBatchId、batchCode 和 inboundQuantity；逐来源明细与流水保留在实际单据及审计。来源明细以 outputId 唯一，数据库守卫核对同任务／工单／成品、单位和整笔产出数量。来源业务门禁由 Production 负责，Inventory 只办理其库存事实，不写来源表。HTTP 幂等由人工确认入库命令承担，未知提交结果使用原请求恢复；终检确认使用独立幂等作用域且不写库存。
+确认按 pending 主单 → 来源明细 → 库存流水 → completed 主单顺序同事务提交；结果保存真实 inboundId、inboundNo、itemBatchId、batchCode 和 inboundQuantity。新入库在产出锁内要求无既有接收且数量等于整笔产出；应用与数据库守卫保护同任务／工单／成品、单位和重复办理。Inventory 只办理自有事实，不写来源表，也不再写单件入库关联。HTTP 幂等由人工确认入库命令承担，新整笔作用域与旧按码请求分开，未知提交结果使用原请求恢复；终检确认使用独立作用域且不写库存。
 
 InventoryInboundQuery.getReceiptInboundFacts({receiptLineIds}) 只累计已完成采购入库明细与匹配原始正流水，逐笔返回 inboundDetailId/quantity。它不关联检验或授权，也不从说明推算退回。采购与终检分别记 purchase_inbound 和 production_inbound，库存只以 inventory_transaction 为事实来源。
 

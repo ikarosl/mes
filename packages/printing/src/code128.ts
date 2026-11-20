@@ -156,31 +156,33 @@ function encodeSymbols(value: string): number[] {
   return [...codes, checksum, STOP];
 }
 
-export function code128Svg(value: string, displayText = value): string {
-  if (!value || !/^[\x20-\x7e]+$/.test(value)) throw new Error('追踪卡编号无法生成条形码');
+export interface Code128Bar {
+  x: number;
+  width: number;
+}
+
+export interface Code128Geometry {
+  width: number;
+  quietZone: number;
+  bars: readonly Code128Bar[];
+}
+
+/** Integer module geometry, including a quiet zone at both ends. */
+export function code128Geometry(value: string): Code128Geometry {
+  if (!value || !/^[\x20-\x7e]+$/.test(value)) {
+    throw new Error('条码内容无法生成 Code 128 条形码');
+  }
   const codes = encodeSymbols(value);
-  const barcodeWidth = codes.reduce(
-    (sum, code) =>
-      sum + Array.from(PATTERNS[code] ?? '', Number).reduce((total, size) => total + size, 0),
-    QUIET_ZONE * 2,
-  );
-  const textWidth = Array.from(displayText).length * 7;
-  const width = Math.max(barcodeWidth, textWidth + 8);
-  let position = QUIET_ZONE + (width - barcodeWidth) / 2;
-  const bars: string[] = [];
+  let position = QUIET_ZONE;
+  const bars: Code128Bar[] = [];
   for (const code of codes) {
     const pattern = PATTERNS[code];
     if (!pattern) throw new Error('条形码编码失败');
     Array.from(pattern).forEach((width, index) => {
       const size = Number(width);
-      if (index % 2 === 0) bars.push(`<rect x="${position}" y="3" width="${size}" height="33"/>`);
+      if (index % 2 === 0) bars.push({ x: position, width: size });
       position += size;
     });
   }
-  const escaped = displayText
-    .replaceAll('&', '&amp;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;')
-    .replaceAll('"', '&quot;');
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} 53" role="img" aria-label="${escaped}"><rect width="${width}" height="53" fill="white"/><g fill="black">${bars.join('')}</g><text x="${width / 2}" y="49" text-anchor="middle" font-size="11" font-family="monospace" fill="black">${escaped}</text></svg>`;
+  return { width: position + QUIET_ZONE, quietZone: QUIET_ZONE, bars };
 }

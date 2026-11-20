@@ -15,6 +15,7 @@
 | Inventory             | `inventory_batch_balance`                 | [批次余额](database/inventory-ledger-and-inbound.md#71-inventory_batch_balance)，成品 `product_id` 分支与物料 `item_id` 分支互斥 |
 | Inventory             | `inventory_material_variant_balance`      | [精确版本余额](database/inventory-ledger-and-inbound.md#73-inventory_material_variant_balance)，只覆盖物料                       |
 | Inventory             | `inbound_order`、`inbound_detail`         | [公共入库主从](database/inventory-ledger-and-inbound.md#34-入库表)，采购、终检成品、生产退料和其他入库                           |
+| Inventory             | `inbound_detail_item_mark`                | [历史单件入库归属](database/inventory-ledger-and-inbound.md#inbound_detail_item_mark)，既有关系只读保留，当前不再写入 |
 | Inventory             | `outbound_order`、`outbound_detail`       | [公共出库主从](database/inventory-ledger-and-inbound.md#36-出库表)，生产领料和其他出库；整表不能按来源拆写权                     |
 | Inventory             | `stock_check_order`、`stock_check_detail` | [盘点主从表](database/stock-check.md)，仅现有物料库存批次／库存状态                                                              |
 | Inventory，仅历史登记 | `inventory_item_balance`                  | 已删除投影；保留登记以检查不可修改的历史迁移，不恢复该表                                                                         |

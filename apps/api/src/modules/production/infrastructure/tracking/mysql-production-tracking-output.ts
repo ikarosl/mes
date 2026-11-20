@@ -10,6 +10,7 @@ import { writeProductionAudit } from '../shared/mysql-production-audit.js';
 import { findBatch } from '../tasks/mysql-production-batch.persistence.js';
 import { findWorkOrder } from '../tasks/mysql-work-order.persistence.js';
 import { selectTrackingOutput } from './mysql-production-tracking.read.js';
+import { snapshotTrackingOutputItemMarks } from './mysql-production-tracking-item-mark.js';
 
 export async function confirmResearchTrackingOutput(
   db: PoolConnection,
@@ -70,6 +71,7 @@ export async function insertTrackingOutput(
     ],
   );
   const outputId = String(created.insertId);
+  if (cardId !== null) await snapshotTrackingOutputItemMarks(db, outputId, cardId, quantity);
   await writeProductionAudit(
     db,
     context,

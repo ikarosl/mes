@@ -3,6 +3,7 @@ import type { ReceiptInboundFacts } from './inventory-purchase-inbound.types.js'
 
 export interface TrackingOutputReceipt {
   outputId: string;
+  inboundDetailId: string;
   inboundId: string;
   inboundNo: string;
   itemBatchId: string;
@@ -33,7 +34,7 @@ export abstract class InventoryInboundQuery {
     page: number;
     pageSize: number;
   }): Promise<PageResult<InventoryInboundBatchCandidate>>;
-  /** At most 100 outputs. Active transactions read current completed original receipts. */
+  /** At most 100 outputs. Returns every completed detail, including historical split receipts. */
   abstract getTrackingOutputReceipts(input: {
     outputIds: string[];
   }): Promise<TrackingOutputReceipt[]>;

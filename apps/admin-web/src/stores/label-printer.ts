@@ -9,7 +9,7 @@ import {
 
 const STORAGE_KEY = 'easy-mes.label-printer-settings.v1';
 
-function isSettings(value: unknown): value is LabelPrintSettings {
+function hasValidPrinterSettings(value: unknown): value is LabelPrintSettings {
   if (!value || typeof value !== 'object') return false;
   const settings = value as Record<string, unknown>;
   return (
@@ -43,7 +43,10 @@ function readSettings(): LabelPrintSettings {
   try {
     const stored = window.localStorage.getItem(STORAGE_KEY);
     const value: unknown = stored ? JSON.parse(stored) : null;
-    if (isSettings(value)) return copySettings(value);
+    if (hasValidPrinterSettings(value)) {
+      // 旧记录中的额外字段不进入内存设置；只保留有效的设备、尺寸和份数。
+      return copySettings(value);
+    }
   } catch {
     // 本机设置损坏或浏览器禁用存储时，恢复未选打印机的默认值，不恢复业务载荷。
   }
@@ -73,7 +76,8 @@ export const useLabelPrinterStore = defineStore('label-printer', () => {
     isCurrent: () => boolean,
   ): Promise<boolean> {
     const next = copySettings(draft);
-    if (!isSettings(next)) throw new Error('请选择打印机，并填写有效的纸张尺寸和打印份数');
+    if (!hasValidPrinterSettings(next))
+      throw new Error('请选择打印机，并填写有效的纸张尺寸和打印份数');
     return runOperation(async () => {
       await checkLabelPrinter(next);
       if (!isCurrent()) return false;
