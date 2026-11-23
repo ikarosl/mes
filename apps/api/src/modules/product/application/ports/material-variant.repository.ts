@@ -24,7 +24,7 @@ export interface CreateMaterialVariantCommand {
   materialId: string;
   majorVersion: string;
   minorVersion: string;
-  specificationFileId: string;
+  specificationFileIds: string[];
   remark: string | null;
 }
 

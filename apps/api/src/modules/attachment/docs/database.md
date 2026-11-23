@@ -46,7 +46,7 @@ Attachment 唯一拥有 `attachments` 和 `attachment_references`。公共审计
 
 Bucket 的物理可空性是历史结构，不提供新上传省略入口，也不能依赖含 NULL 的联合唯一键完成去重。大小、用途、版本和清理字段组合由数据库约束；状态转换、零引用、版本比较及引用并发由应用事务保证。
 
-Product 的工序、路线步骤、成品、精确物料版本，以及 Production 任务步骤仍可通过既有文件 ID 外键保存自身配置或快照。其业务字段由各模块拥有；`attachment_references` 统一表达哪些对象仍需保留，附件模块不跨表扫描并猜测业务绑定是否有效。
+Product 的工序、路线步骤及 Production 任务步骤通过文件 ID 外键保存配置或快照；成品和精确物料版本的当前规格文件采用 [Product JSON 字段](../../product/docs/database.md#27-规格文件-json)，逐项绑定资格由业务事务验证。其业务字段由各模块拥有；`attachment_references` 统一表达哪些对象仍需保留，附件模块不跨表扫描并猜测业务绑定是否有效。
 
 ## `attachment_references`
 
@@ -63,7 +63,7 @@ Product 的工序、路线步骤、成品、精确物料版本，以及 Producti
 
 | 约束／索引 | 定义与用途 |
 | --- | --- |
-| 主键 | `(owner_type,owner_id,slot,attachment_id)`，同一保留关系只登记一次，生产历史允许同用途保留多个文件 |
+| 主键 | `(owner_type,owner_id,slot,attachment_id)`，同一保留关系只登记一次；当前规格文件集合和生产历史允许同用途保留多个文件 |
 | `idx_attachment_references_file` | `(attachment_id)`，零引用判断和引用分页 |
 | `idx_attachment_references_created_by` | `(created_by)`，支撑操作者外键 |
 | `fk_attachment_references_file` | `attachment_id → attachments.id ON DELETE RESTRICT` |

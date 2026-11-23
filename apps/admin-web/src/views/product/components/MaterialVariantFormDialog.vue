@@ -1,7 +1,7 @@
 <template>
   <el-dialog
     :model-value="visible"
-    :title="variant ? '替换规格书' : '新增物料版本'"
+    :title="variant ? '管理规格文件' : '新增物料版本'"
     :width="DialogWidth.md"
     :close-on-press-escape="!busy"
     :show-close="!busy"
@@ -59,7 +59,7 @@
       >
         <SpecificationUpload
           :key="variant?.id ?? material?.id"
-          v-model="specificationFile"
+          v-model="specificationFiles"
           :active="visible"
           :disabled="submitting"
           @uploading="uploading = $event"
@@ -96,6 +96,7 @@
 </template>
 
 <script setup lang="ts">
+import { sameStringSet } from '@company/utils';
 import { computed, reactive, ref, watch } from 'vue';
 import type {
   MaterialListItem,
@@ -121,8 +122,8 @@ const emit = defineEmits<{
   (e: 'save-specification', value: MaterialVariantSpecificationPayload): void;
 }>();
 const form = reactive({ majorVersion: '', minorVersion: '', remark: '' });
-const specificationFile = ref<Pick<TechnicalFileListItem, 'id' | 'originalName'> | null>(null);
-const expectedFileId = ref<string | null>(null);
+const specificationFiles = ref<Pick<TechnicalFileListItem, 'id' | 'originalName'>[]>([]);
+const expectedFileIds = ref<string[]>([]);
 const uploading = ref(false);
 const busy = computed(() => props.submitting || uploading.value);
 const { close, beforeClose } = useDraftCloseGuard({
@@ -130,14 +131,20 @@ const { close, beforeClose } = useDraftCloseGuard({
   busy: () => busy.value,
   dirty: () =>
     Boolean(form.majorVersion || form.minorVersion || form.remark) ||
-    (specificationFile.value?.id ?? null) !== expectedFileId.value,
+    !sameStringSet(
+      specificationFiles.value.map((file) => file.id),
+      expectedFileIds.value,
+    ),
   label: '物料版本资料',
   onClose: () => emit('update:visible', false),
 });
 const canSubmit = computed(() => {
-  if (busy.value || !specificationFile.value) return false;
+  if (busy.value || !specificationFiles.value.length) return false;
   return props.variant
-    ? specificationFile.value.id !== expectedFileId.value
+    ? !sameStringSet(
+        specificationFiles.value.map((file) => file.id),
+        expectedFileIds.value,
+      )
     : Boolean(props.material && form.majorVersion.trim() && form.minorVersion.trim());
 });
 const variantCodePreview = computed(() =>
@@ -147,8 +154,8 @@ const variantCodePreview = computed(() =>
 );
 const resetForm = (): void => {
   Object.assign(form, { majorVersion: '', minorVersion: '', remark: '' });
-  specificationFile.value = props.variant?.specificationFile ?? null;
-  expectedFileId.value = props.variant?.specificationFileId ?? null;
+  specificationFiles.value = [...(props.variant?.specificationFiles ?? [])];
+  expectedFileIds.value = [...(props.variant?.specificationFileIds ?? [])];
 };
 watch(
   () => props.visible,
@@ -157,18 +164,18 @@ watch(
   },
 );
 const submit = (): void => {
-  if (!canSubmit.value || !specificationFile.value) return;
+  if (!canSubmit.value || !specificationFiles.value.length) return;
   if (props.variant) {
     emit('save-specification', {
-      specificationFileId: specificationFile.value.id,
-      expectedSpecificationFileId: expectedFileId.value,
+      specificationFileIds: specificationFiles.value.map((file) => file.id),
+      expectedSpecificationFileIds: expectedFileIds.value,
     });
   } else {
     emit('save', {
       majorVersion: form.majorVersion.trim(),
       minorVersion: form.minorVersion.trim(),
       remark: form.remark.trim() || null,
-      specificationFileId: specificationFile.value.id,
+      specificationFileIds: specificationFiles.value.map((file) => file.id),
     });
   }
 };

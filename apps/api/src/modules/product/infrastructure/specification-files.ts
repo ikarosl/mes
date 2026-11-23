@@ -1,27 +1,67 @@
 import type { TechnicalFileListItem } from '@company/contracts';
+import { SPECIFICATION_FILE_MAX_COUNT } from '@company/constants';
 import type { AttachmentService } from '../../attachment/public.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 
-/** 调用方持有主数据根锁；附件资格锁由 Attachment 在同池事务中持有。 */
-export async function requireSpecificationFile(
-  files: AttachmentService,
-  id: string,
-): Promise<void> {
-  if (!id || !/^\d+$/.test(id)) {
-    throw new ProductDomainError('INVALID_INPUT', '请选择规格书文件');
-  }
-  await files.requireAvailable([id], 'specification');
+function isSpecificationFileIds(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= SPECIFICATION_FILE_MAX_COUNT &&
+    new Set(value).size === value.length &&
+    value.every((id) => typeof id === 'string' && /^[1-9][0-9]{0,19}$/.test(id))
+  );
 }
 
-/** 只为当前结果集批量补齐展示元数据，不改变业务分页或授予绑定资格。 */
+export async function requireSpecificationFiles(
+  files: AttachmentService,
+  ids: string[],
+): Promise<void> {
+  if (!isSpecificationFileIds(ids) || ids.length < 1) {
+    throw new ProductDomainError(
+      'INVALID_INPUT',
+      `请选择 1 至 ${SPECIFICATION_FILE_MAX_COUNT} 个不重复的规格文件`,
+    );
+  }
+  await files.requireAvailable(ids, 'specification');
+}
+
+/** JSON 中保存十进制 ID 字符串，不能转成可能丢失 BIGINT 精度的 number。 */
+export function readSpecificationIds(value: unknown): string[] {
+  const ids: unknown = typeof value === 'string' ? JSON.parse(value) : value;
+  if (!isSpecificationFileIds(ids)) throw new Error('规格文件存储数据不合法');
+  return [...ids].sort((left, right) => left.length - right.length || left.localeCompare(right));
+}
+
+export interface SpecificationFiles {
+  specificationFileIds: string[];
+  specificationFiles: TechnicalFileListItem[];
+}
+
+/** 先读取本页根记录中的 JSON，再批量补充附件元数据。 */
 export async function readSpecificationFiles(
   files: AttachmentService,
-  fileIds: Array<number | string | null>,
-): Promise<Map<string, TechnicalFileListItem>> {
-  const ids = [...new Set(fileIds.filter((id): id is number | string => id !== null).map(String))];
-  if (!ids.length) return new Map();
-  const references = await files.getManyTechnicalFiles(ids);
+  rows: { id: string | number; specification_file_ids: unknown }[],
+): Promise<Map<string, SpecificationFiles>> {
+  const associations = new Map(
+    rows.map((row) => [String(row.id), readSpecificationIds(row.specification_file_ids)]),
+  );
+  const ids = [...new Set([...associations.values()].flat())];
+  const metadata = ids.length ? await files.getManyTechnicalFiles(ids) : [];
+  const byId = new Map(
+    metadata.filter((file) => file.fileType === 'specification').map((file) => [file.id, file]),
+  );
   return new Map(
-    references.filter((file) => file.fileType === 'specification').map((file) => [file.id, file]),
+    [...associations].map(([id, specificationFileIds]) => {
+      return [
+        id,
+        {
+          specificationFileIds,
+          specificationFiles: specificationFileIds.flatMap((fileId) => {
+            const file = byId.get(fileId);
+            return file ? [file] : [];
+          }),
+        },
+      ];
+    }),
   );
 }
