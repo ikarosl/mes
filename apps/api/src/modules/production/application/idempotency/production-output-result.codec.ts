@@ -15,7 +15,7 @@ const inbound = z
     inboundQuantity: quantity,
   })
   .strict();
-const output = z
+const outputCore = z
   .object({
     id,
     productionBatchId: id,
@@ -34,18 +34,42 @@ const output = z
     productName: z.string(),
     unit: z.string(),
     cardNo: z.string().nullable(),
-    status: z.enum(PRODUCTION_OUTPUT_STATUSES),
     cancellation: z
       .object({ id, reason: z.string(), createdBy: id, createdAt: time })
       .strict()
       .nullable(),
-    inbound: inbound.nullable(),
   })
   .strict();
 
+const output = outputCore.extend({
+  status: z.enum(PRODUCTION_OUTPUT_STATUSES),
+  receivedQuantity: quantity,
+  pendingQuantity: quantity,
+  receipts: z.array(inbound),
+});
+const legacyOutput = outputCore
+  .extend({
+    status: z.enum(['pending_inbound', 'inbounded', 'cancelled', 'no_inbound_required']),
+    inbound: inbound.nullable(),
+  })
+  .transform(({ inbound: previousInbound, ...value }) => {
+    const receivedQuantity = previousInbound?.inboundQuantity ?? '0';
+    const pendingQuantity = value.cancellation
+      ? 0n
+      : BigInt(value.quantity) - BigInt(receivedQuantity);
+    if (pendingQuantity < 0n) throw new Error('历史产出入库事实数量不一致');
+    return {
+      ...value,
+      receivedQuantity,
+      pendingQuantity: String(pendingQuantity),
+      receipts: previousInbound ? [previousInbound] : [],
+    };
+  });
+
 export const productionOutputResultCodec: IdempotencyResultCodec<ProductionOutputItem> = {
   encode: (value) => output.parse(value),
-  decode: (value) => output.parse(value),
+  // Historical receipts are only projected from the stored response, never from current state or inferred piece identities.
+  decode: (value) => z.union([output, legacyOutput]).parse(value),
 };
 export const productionOutputInboundResultCodec: IdempotencyResultCodec<ProductionOutputInboundResult> =
   {

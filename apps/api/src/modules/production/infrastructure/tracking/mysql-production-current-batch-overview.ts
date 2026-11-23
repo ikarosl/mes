@@ -19,7 +19,8 @@ export async function selectCurrentBatchOverview(
     [batchId],
   );
   const quantityByOutput = new Map(outputs.map((output) => [output.id, BigInt(output.quantity)]));
-  const received = new Set<string>();
+  const receivedDetails = new Set<string>();
+  const receivedByOutput = new Map<string, bigint>();
   let availableQuantity = 0n;
   for (const quantity of quantityByOutput.values()) availableQuantity += quantity;
   let inboundQuantity = 0n;
@@ -29,9 +30,17 @@ export async function selectCurrentBatchOverview(
     });
     for (const receipt of receipts) {
       const quantity = BigInt(receipt.inboundQuantity);
-      if (received.has(receipt.outputId) || quantityByOutput.get(receipt.outputId) !== quantity)
+      const produced = quantityByOutput.get(receipt.outputId);
+      const received = (receivedByOutput.get(receipt.outputId) ?? 0n) + quantity;
+      if (
+        receivedDetails.has(receipt.inboundDetailId) ||
+        produced === undefined ||
+        quantity <= 0n ||
+        received > produced
+      )
         throw new ProductionDomainError('CONFLICT', '产出与实际入库事实不一致，请核查后重试');
-      received.add(receipt.outputId);
+      receivedDetails.add(receipt.inboundDetailId);
+      receivedByOutput.set(receipt.outputId, received);
       inboundQuantity += quantity;
     }
   }

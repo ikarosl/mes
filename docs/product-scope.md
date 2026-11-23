@@ -15,9 +15,11 @@
 | Approval       | BOM、需求更正；顺序节点支持角色、指定用户及场景业务人员，工单下达审批未接入                                                                                                                                      |
 | Notification   | 审批事件的站内消息、本人收件及点击已读、角标轮询；未接外部渠道                                                                                                                                                   |
 
-任务先保存草稿，再独立下达。批量任务下达时冻结路线，以追踪卡组织每盘流转，末道显式完成时按剩余盘量确认待入库产出；研发无路线，可多次手填实际产出。仓管勾选同任务产出整笔归入一个新批次或本任务已有批次。任务明确结束并可恢复执行，计划与实际产出不设硬约束；选择理由及取代边界见 [ADR-0029](adr/0029-terminal-output-manual-inbound-and-task-reopen.md)。
+任务先保存草稿，再独立下达。批量任务下达时冻结路线，以追踪卡组织每盘流转，末道显式完成时按剩余盘量确认待入库产出；研发无路线，可多次手填实际产出。仓管勾选同任务产出整笔归入一个新批次或本任务已有批次，入库保留追踪卡来源，不再逐件选码或拆分盘量。任务明确结束并可恢复执行，计划与实际产出不设硬约束；选择理由及取代边界见 [ADR-0029](adr/0029-terminal-output-manual-inbound-and-task-reopen.md)。
 
-过程中的强制检查配置为路线工序，随机检查可在追踪卡已到过的工序登记带影响数量的异常。所有异常立即暂停整盘，逐条一次性结算返修成功、新增报废及关联已有报废；只对新增报废扣减盘量，处理全部异常后恢复流转，零余量结束为整盘报废。不设置独立检查确认、返修过程管理或报废补产链。
+批量任务的全部追踪卡均须在终检前绑齐单件刻码，绑定不限制工序。Production 登记全局唯一的实物刻码、更正录入、释放误绑号码、同任务跨卡换绑及关联具体报废码；换包装后凭实物码查回原盘，再查看本盘入库单。Inventory 按产出保存实际入库来源，退出逐件入库分配。每盘仍按整体流转与终检，不接打标设备、不增加逐件检验、包装盒模型或第二套库存账本；规则见[单件刻码](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#单件刻码)与[成品入库](../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。
+
+过程中的强制检查配置为路线工序。随盘异常按现场实际结果登记返修或报废，可填写异常数量和多个描述标签。报废扣减本盘余量，末道报废按单件刻码追溯。误报可据原登记更正报废或作废异常，更正按差额调整盘量。历史待处理异常仍占用数量并阻止整盘交接。适用条件见[追踪卡执行](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#随盘异常)。
 
 采购、独立检查报告与实际库存分工见[采购入库流程](procurement-inbound-design.md)。[来料分组已停用](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)，检查继续逐来源办理；实际入库的合单范围不改变来源身份。按[仓库简化实验](adr/0028-independent-warehouse-receipt-and-inspection.md)，来料报告、仓库入库及补单不互相设完成门槛；其他处理在到货物料行独立登记问题或去向说明。
 

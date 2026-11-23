@@ -66,6 +66,8 @@ BOM 保存完整替换明细，须携带读取时的成品聚合版本；锁成�
 
 `ProductProductionDefinitionCommand` 分别提供任务草稿路线引用核验和正式下达的生产定义核验。`requireApprovedBomForProductionTask` 在下达事务内锁定并复核成品、批准 BOM、显式选定的启用路线及步骤，成功返回非空路线快照；草稿引用核验不提前冻结 BOM 或生成生产工序。历史路线身份查询只供草稿展示，不授予下达资格，也不回写已下达任务快照。
 
+`ProductSnapshotQuery.getHistoricalRouteStepProcessId` 按既有路线步骤 ID 解析标准工序 ID，允许该步骤或工序已停用、软删除；已发布路线内容不可改，因此该关联可用于 Production 已核验冻结工序的异常标签分域，跨任务及路线版本复用同一标准工序的历史描述。它不核验新任务下达资格，不按工序编码或名称猜测身份；Production 仍负责异常涉及站必须已到站的命令校验。
+
 ## 候选、历史展示与写入资格
 
 `MaterialVariantQuery` 明确区分用途：`listEnabledByMaterials` 返回版本、基础物料及分类均启用且未删除的

@@ -50,12 +50,13 @@ export class ProductionOutputService {
     payload: CreateProductionOutputInboundPayload,
     context: IdempotentCommandContext,
   ) {
+    const selection = payload.outputIds;
     if (
-      !payload.outputIds.length ||
-      payload.outputIds.length > 100 ||
-      new Set(payload.outputIds).size !== payload.outputIds.length
+      !selection?.length ||
+      selection.length > 100 ||
+      new Set(selection).size !== selection.length
     )
-      throw new ProductionDomainError('INVALID_INPUT', '请选择不重复的产出记录，每次最多 100 笔');
+      throw new ProductionDomainError('INVALID_INPUT', '请选择不重复的有效入库来源');
     const target =
       payload.target.mode === 'new_batch'
         ? { mode: 'new_batch' as const }
@@ -70,7 +71,7 @@ export class ProductionOutputService {
     )
       throw new ProductionDomainError('INVALID_INPUT', '新建库批时不能指定已有库批或版本');
     const body: CreateProductionOutputInboundPayload = {
-      outputIds: [...payload.outputIds].sort((a, b) => a.length - b.length || a.localeCompare(b)),
+      outputIds: [...selection].sort(compareIds),
       target,
       remark: payload.remark?.trim() || null,
     };
@@ -86,4 +87,8 @@ export class ProductionOutputService {
       })
     ).result;
   }
+}
+
+function compareIds(a: string, b: string): number {
+  return a.length - b.length || a.localeCompare(b);
 }

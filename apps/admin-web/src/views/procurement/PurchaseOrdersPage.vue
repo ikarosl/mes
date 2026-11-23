@@ -62,11 +62,6 @@
             :icon="Plus"
             @click="create('stock')"
             >独立备料采购</el-button
-          ><el-button
-            v-if="hasExplicitEntry()"
-            :disabled="blocked"
-            @click="retryLocation"
-            >重新读取定位</el-button
           ></template
         >
         <template #tools
@@ -79,33 +74,107 @@
             @click="load()"
         /></template>
       </TableToolbar>
-      <el-alert
-        v-if="expansion.focused.value"
-        :title="`当前定位：${expansion.focused.value.purchaseNo}${focusedOutsidePage ? '（临时置顶）' : ''}`"
-        type="info"
-        :closable="false"
-        class="focus-notice"
+      <section
+        v-if="focusedOutsidePage || locationError"
+        class="located-block"
+        aria-label="跳转目标"
       >
-        <template #title
-          ><span class="focus-title"
-            >当前定位：
-            <strong class="identity-value">{{ expansion.focused.value.purchaseNo }}</strong
-            ><template v-if="focusedOutsidePage">（临时置顶）</template></span
-          ></template
+        <div class="located-heading">
+          <strong>跳转目标</strong>
+          <el-button
+            :icon="Close"
+            text
+            circle
+            aria-label="关闭跳转目标"
+            @click="clearLocation"
+          />
+        </div>
+        <div
+          v-if="locationError"
+          class="location-feedback"
         >
-        <span v-if="focusedOutsidePage">该单不在当前查询页，分页总数仍对应查询结果。</span>
-        <el-button
-          link
-          type="primary"
-          :disabled="blocked"
-          @click="clearLocation"
-          >清除定位</el-button
-        >
-      </el-alert>
+          <InlineHint tone="danger">{{ locationError }}</InlineHint>
+          <el-button
+            link
+            type="primary"
+            :disabled="blocked"
+            @click="retryLocation"
+            >重试跳转</el-button
+          >
+        </div>
+        <template v-if="focusedOutsidePage && expansion.focused.value">
+          <p class="located-note">此采购单不在当前筛选页，不计入分页总数。</p>
+          <div class="located-order-heading">
+            <DisclosureToggle
+              :expanded="expansion.expanded.value.includes(expansion.focusedId.value)"
+              :label="`采购单 ${expansion.focused.value.purchaseNo} 的物料`"
+              @toggle="toggleLocatedOrder"
+            />
+            <strong :id="`purchase-order-${expansion.focusedId.value}`">{{
+              expansion.focused.value.purchaseNo
+            }}</strong>
+            <span>{{ expansion.focused.value.supplierName }}</span>
+            <el-tag v-bind="purchaseOrderStatusTag(expansion.focused.value.status)">{{
+              PURCHASE_ORDER_STATUS_LABELS[expansion.focused.value.status]
+            }}</el-tag>
+            <div class="located-order-actions">
+              <el-button
+                link
+                type="primary"
+                :disabled="blocked"
+                @click="viewOrEdit(expansion.focusedId.value)"
+                >查看/编辑</el-button
+              >
+              <el-button
+                v-if="expansion.focused.value.status === 'draft'"
+                link
+                type="primary"
+                :disabled="blocked"
+                @click="handleAction(expansion.focusedId.value, 'place')"
+                >正式下单</el-button
+              >
+              <el-button
+                v-if="['draft', 'ordered'].includes(expansion.focused.value.status)"
+                link
+                type="danger"
+                :disabled="blocked"
+                @click="handleAction(expansion.focusedId.value, 'cancel')"
+                >取消整单</el-button
+              >
+              <el-button
+                v-if="expansion.focused.value.status === 'ordered'"
+                link
+                type="primary"
+                :disabled="blocked"
+                @click="handleAction(expansion.focusedId.value, 'close-order')"
+                >结束整单</el-button
+              >
+            </div>
+          </div>
+          <PurchaseOrderExpandedRows
+            v-if="expansion.expanded.value.includes(expansion.focusedId.value)"
+            :detail="expansion.focused.value"
+            :focused-line-id="focusedLineId"
+            :loading="expansion.entries[expansion.focusedId.value]?.loading ?? false"
+            :failed="expansion.entries[expansion.focusedId.value]?.failed ?? false"
+            :disabled="blocked"
+            :line-count="expansion.focused.value.lineCount"
+            @refresh="expansion.read(expansion.focusedId.value, true)"
+            @close-line="handleAction(expansion.focusedId.value, 'close', $event)"
+            @reopen-line="handleAction(expansion.focusedId.value, 'reopen', $event)"
+            @supplements="showSupplements"
+            @supplement="openSupplement(expansion.focusedId.value, $event)"
+            @supplement-origin="navigateSupplementOrigin"
+            @receipt-records="openReceiptRecords(expansion.focusedId.value, $event)"
+            @source-receipt="goSourceReceipt"
+            @navigate="navigate"
+          />
+        </template>
+      </section>
       <el-table
         ref="orderTable"
         v-loading="loading"
-        :data="displayRows"
+        :data="rows"
         :expand-row-keys="expansion.expanded.value"
         :row-class-name="orderClassName"
         row-key="id"
@@ -130,7 +199,7 @@
               @reopen-line="handleAction(row.id, 'reopen', $event)"
               @supplements="showSupplements"
               @supplement="openSupplement(row.id, $event)"
-              @supplement-origin="openSupplement($event, undefined, 'excess_purchase')"
+              @supplement-origin="navigateSupplementOrigin"
               @receipt-records="openReceiptRecords(row.id, $event)"
               @source-receipt="goSourceReceipt"
               @navigate="navigate"
@@ -147,13 +216,6 @@
                 :id="`purchase-order-${row.id}`"
                 class="purchase-order-number"
                 >{{ row.purchaseNo }}</strong
-              >
-              <el-tag
-                v-if="row.id === expansion.focusedId.value"
-                size="small"
-                type="primary"
-                effect="light"
-                >当前定位</el-tag
               >
             </div>
           </template>
@@ -265,7 +327,7 @@
     </div>
     <PurchaseOrderEditorDialog
       ref="editor"
-      @saved="saved"
+      @saved="actionChanged($event, null)"
     />
     <PurchaseOrderActionDialog
       ref="actions"
@@ -281,9 +343,17 @@
     />
     <PurchaseOrderSupplementDialog
       ref="supplement"
-      @saved="saved"
+      @saved="(_id, originId) => actionChanged(originId, null)"
       @related-navigate="navigateRelatedSupplement"
-      @source-order="openSupplement($event.orderId, undefined, $event.reason ?? 'excess_purchase')"
+      @source-order="
+        openSupplement(
+          $event.orderId,
+          undefined,
+          $event.reason ?? 'excess_purchase',
+          undefined,
+          true,
+        )
+      "
     />
     <PurchaseOrderLineReceiptRecordsDialog
       ref="receiptRecords"
@@ -296,7 +366,7 @@
 import { computed, nextTick, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import type { TableInstance } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
-import { Plus, Refresh } from '@element-plus/icons-vue';
+import { Close, Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   PurchaseOrderDetail,
   PurchaseOrderItem,
@@ -313,6 +383,8 @@ import {
 } from '@company/constants';
 import TableToolbar from '../../components/TableToolbar.vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
+import DisclosureToggle from '../../components/DisclosureToggle.vue';
+import InlineHint from '../../components/InlineHint.vue';
 import { formatDateTimeForDisplay } from '../../utils/date';
 import { EMessage } from '../../utils/message';
 import { usePurchaseOrdersList } from './composables/usePurchaseOrdersList';
@@ -353,10 +425,10 @@ const {
   pageSize,
   loading,
   load,
-  search,
-  reset,
-  changePage,
-  changePageSize,
+  search: searchOrders,
+  reset: resetOrders,
+  changePage: changeOrdersPage,
+  changePageSize: changeOrdersPageSize,
 } = usePurchaseOrdersList((listRows, options) => {
   // 定位读取成功后才写入路由，进行中的办理也优先于默认首条。
   const explicitEntry =
@@ -374,13 +446,8 @@ const focusedOutsidePage = computed(
     Boolean(expansion.focused.value) &&
     !rows.value.some((row) => row.id === expansion.focusedId.value),
 );
-const displayRows = computed(() =>
-  expansion.focused.value && focusedOutsidePage.value
-    ? [expansion.focused.value, ...rows.value]
-    : rows.value,
-);
 const { tablePanel, actionColumnWidth } = useTableActionColumn(
-  displayRows,
+  rows,
   '.purchase-order-actions, .purchase-order-actions-heading',
 );
 const editor = ref<InstanceType<typeof PurchaseOrderEditorDialog>>(),
@@ -391,6 +458,8 @@ const editor = ref<InstanceType<typeof PurchaseOrderEditorDialog>>(),
   receiptRecords = ref<InstanceType<typeof PurchaseOrderLineReceiptRecordsDialog>>();
 const navigating = ref(false);
 const focusedLineId = ref('');
+const locationError = ref('');
+let retryTarget: (() => Promise<boolean>) | undefined;
 const pageRoot = ref<HTMLElement>();
 const orderTable = ref<TableInstance>();
 const orderClassName = ({ row }: { row: PurchaseOrderItem }): string =>
@@ -509,7 +578,6 @@ const releaseDialogs = async (
 const focusOrder = async (
   id: string,
   resolveLine: (detail: PurchaseOrderDetail) => string | undefined | false,
-  release = true,
 ): Promise<boolean> => {
   if (navigating.value) return false;
   const revision = routeRevision;
@@ -517,7 +585,9 @@ const focusOrder = async (
   const current = (): boolean => isCurrent(revision) && operation === navigationRevision;
   beginNavigation();
   try {
-    if (!current() || (release && !(await releaseDialogs(current)))) return false;
+    if (!current() || !(await releaseDialogs(current))) return false;
+    locationError.value = '';
+    retryTarget = () => focusOrder(id, resolveLine);
     let selectedLineId: string | undefined;
     let location: LocateQuery = {};
     const loaded = await expansion.focus(id, async (detail) => {
@@ -528,7 +598,10 @@ const focusOrder = async (
       location = { purchaseOrderId: id, ...(lineId ? { purchaseOrderLineId: lineId } : {}) };
       return writeLocation(location, current);
     });
-    if (!loaded || !current()) return false;
+    if (!loaded || !current()) {
+      if (current()) locationError.value = '跳转目标未能读取或定位，请核对来源后重试。';
+      return false;
+    }
     focusedLineId.value = selectedLineId ?? '';
     rememberLocation(location);
     await scrollLocation(id, selectedLineId, current);
@@ -557,26 +630,42 @@ const navigateRelatedSupplement = (target: RelatedSupplementLocation): Promise<b
     EMessage.warning('未能唯一定位关联明细，请核对本单来源');
     return undefined;
   });
-const clearLocation = async (): Promise<boolean> => {
-  if (navigating.value) return false;
+const clearLocation = async (): Promise<void> => {
+  navigationRevision += 1;
+  pendingLocate = false;
+  expansion.clearFocus();
+  focusedLineId.value = '';
+  locationError.value = '';
+  retryTarget = undefined;
+  rememberLocation({});
   const revision = routeRevision;
-  const operation = ++navigationRevision;
-  const current = (): boolean => isCurrent(revision) && operation === navigationRevision;
-  beginNavigation();
-  try {
-    if (!(await releaseDialogs(current)) || !(await writeLocation({}, current))) return false;
-    expansion.clearFocus();
-    focusedLineId.value = '';
-    rememberLocation({});
-    return true;
-  } finally {
-    finishNavigation();
-  }
+  await writeLocation({}, () => isCurrent(revision));
+};
+const search = async (): Promise<void> => {
+  await clearLocation();
+  await searchOrders();
+};
+const reset = async (): Promise<void> => {
+  await clearLocation();
+  await resetOrders();
+};
+const changePage = async (value: number): Promise<void> => {
+  await clearLocation();
+  await changeOrdersPage(value);
+};
+const changePageSize = async (value: number): Promise<void> => {
+  await clearLocation();
+  await changeOrdersPageSize(value);
+};
+const toggleLocatedOrder = (): void => {
+  const id = expansion.focusedId.value;
+  if (id) expansion.setExpanded(id, !expansion.expanded.value.includes(id));
 };
 const create = async (
   type: PurchaseOrderSourceType,
   demandIds?: string[],
   workOrderId?: string,
+  consumeIntent = false,
 ): Promise<boolean> => {
   if (navigating.value) return false;
   const revision = routeRevision;
@@ -587,6 +676,7 @@ const create = async (
     if (!(await releaseDialogs(current))) return false;
     await editor.value?.open(type, undefined, demandIds, workOrderId);
     if (!current()) return false;
+    if (!consumeIntent) return true;
     const location: LocateQuery = {};
     if (expansion.focusedId.value) {
       location.purchaseOrderId = expansion.focusedId.value;
@@ -625,19 +715,12 @@ const handleAction = async (id: string, action: PurchaseOrderAction, lineId?: st
     finishNavigation();
   }
 };
-const saved = async (id: string): Promise<void> => {
-  const revision = routeRevision;
-  const operation = navigationRevision;
-  await load({ refreshExpanded: false });
-  if (!isCurrent(revision) || operation !== navigationRevision) return;
-  // 成功回调仍可能处在原命令的 busy 阶段，无需再次关闭已保存的编辑器。
-  await focusOrder(id, () => undefined, false);
-};
 const openSupplement = async (
   orderId: string,
   lineId?: string,
   reason?: PurchaseOrderSupplementReason,
   receiptLineId?: string,
+  locateOrder = false,
 ): Promise<boolean> => {
   if (navigating.value) return false;
   const revision = routeRevision;
@@ -646,6 +729,13 @@ const openSupplement = async (
   beginNavigation();
   try {
     if (!(await releaseDialogs(current))) return false;
+    if (!locateOrder)
+      return (
+        Boolean(await supplement.value?.open(orderId, { lineId, reason, receiptLineId })) &&
+        current()
+      );
+    locationError.value = '';
+    retryTarget = () => openSupplement(orderId, lineId, reason, receiptLineId, true);
     const location: LocateQuery = {
       purchaseOrderId: orderId,
       ...(lineId ? { purchaseOrderLineId: lineId } : {}),
@@ -663,7 +753,10 @@ const openSupplement = async (
       });
       return Boolean(opened) && current() && (await writeLocation(location, current));
     });
-    if (!loaded || !current()) return false;
+    if (!loaded || !current()) {
+      if (current()) locationError.value = '跳转目标未能读取或定位，请核对来源后重试。';
+      return false;
+    }
     focusedLineId.value = lineId ?? '';
     rememberLocation(location);
     return true;
@@ -671,9 +764,14 @@ const openSupplement = async (
     finishNavigation();
   }
 };
+const navigateSupplementOrigin = (id: string): Promise<boolean> =>
+  openSupplement(id, undefined, 'excess_purchase', undefined, true);
 const actionChanged = async (id: string, latest: PurchaseOrderDetail | null): Promise<void> => {
+  const revision = routeRevision;
+  const operation = navigationRevision;
   if (latest) expansion.replace(latest);
   await load({ refreshExpanded: false });
+  if (!isCurrent(revision) || operation !== navigationRevision) return;
   if (expansion.expanded.value.includes(id) && (!latest || !expansion.entries[id]?.detail))
     await expansion.read(id, true);
 };
@@ -711,8 +809,7 @@ const goSourceReceipt = async (id: string) => {
     await router.push({ name: 'procurement-receipts', query: { receiptLineId: id } });
 };
 const retryLocation = (): void => {
-  consumed = '';
-  void locate();
+  if (locationError.value && !blocked.value) void retryTarget?.();
 };
 const locate = async (): Promise<void> => {
   const revision = routeRevision;
@@ -747,12 +844,13 @@ const locate = async (): Promise<void> => {
         query.supplementLineId,
         reason,
         query.receiptLineId,
+        true,
       );
     } else {
       succeeded = await navigate(orderId, query.purchaseOrderLineId);
     }
   } else if (demandId) {
-    succeeded = await create('demand', [demandId], query.workOrderId);
+    succeeded = await create('demand', [demandId], query.workOrderId, true);
   }
   if (succeeded || !current() || locateToken(readLocateQuery()) !== token) return;
   const previous = { ...accepted };
@@ -821,21 +919,41 @@ onScopeDispose(deactivate);
   border: 1px solid #e5e7eb;
   border-radius: 8px;
 }
-.focus-notice {
-  margin-bottom: 8px;
+.located-block {
+  margin: 0 16px 16px;
+  padding: 12px;
+  border: 1px solid var(--el-color-primary-light-5);
+  border-radius: 8px;
 }
-.focus-title {
-  font-weight: 400;
-}
-.identity-value {
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-}
-.focus-notice :deep(.el-alert__description) {
+.located-heading,
+.located-order-heading,
+.location-feedback {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 4px 12px;
+  gap: 8px 12px;
+}
+.located-heading {
+  justify-content: space-between;
+}
+.located-note {
+  margin: 0 0 12px;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+.located-order-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+}
+.located-order-actions :deep(.el-button) {
+  margin-left: 0;
+}
+.located-block :deep(.order-lines) {
+  position: static;
+  width: auto;
+  margin: 12px 0 0;
 }
 .purchase-order-identity {
   display: flex;

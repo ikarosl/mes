@@ -1,4 +1,4 @@
-import type { ProductionOutputItem } from '@company/contracts';
+import type { ProductionOutputInboundResult, ProductionOutputItem } from '@company/contracts';
 import type { RowDataPacket } from 'mysql2/promise';
 import { toBeijingISOString } from '../../../../common/time/date-time.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
@@ -10,11 +10,6 @@ export type OutputRow = RowDataPacket &
     cancellationReason: string | null;
     cancellationCreatedBy: string | null;
     cancellationCreatedAt: Date | null;
-    inboundId?: string | null;
-    inboundNo?: string | null;
-    itemBatchId?: string | null;
-    batchCode?: string | null;
-    inboundQuantity?: string | null;
   };
 
 export const PRODUCTION_OUTPUT_COLUMNS = `CAST(o.id AS CHAR) id,CAST(o.production_batch_id AS CHAR) productionBatchId,
@@ -29,7 +24,10 @@ export const PRODUCTION_OUTPUT_FROM = `FROM production_tracking_output o
  LEFT JOIN production_tracking_card c ON c.id=o.tracking_card_id
  LEFT JOIN production_tracking_output_cancellation x ON x.production_output_id=o.id`;
 
-export function mapProductionOutput(row: OutputRow): ProductionOutputItem {
+export function mapProductionOutput(
+  row: OutputRow,
+  receipts: ProductionOutputInboundResult[] = [],
+): ProductionOutputItem {
   let cancellation: ProductionOutputItem['cancellation'] = null;
   if (row.cancellationId !== null) {
     if (
@@ -45,22 +43,17 @@ export function mapProductionOutput(row: OutputRow): ProductionOutputItem {
       createdAt: toBeijingISOString(row.cancellationCreatedAt),
     };
   }
-  let inbound: ProductionOutputItem['inbound'] = null;
-  if (row.inboundId) {
-    if (!row.inboundNo || !row.itemBatchId || !row.batchCode || row.inboundQuantity == null)
-      throw new Error('产出入库事实不完整');
-    inbound = {
-      inboundId: row.inboundId,
-      inboundNo: row.inboundNo,
-      itemBatchId: row.itemBatchId,
-      batchCode: row.batchCode,
-      inboundQuantity: String(row.inboundQuantity),
-    };
-  }
+  const quantity = BigInt(row.quantity);
+  const receivedQuantity = receipts.reduce(
+    (sum, receipt) => sum + BigInt(receipt.inboundQuantity),
+    0n,
+  );
+  if (receivedQuantity > quantity) throw new Error('产出实际入库量超过产出数量');
   let status: ProductionOutputItem['status'] = 'pending_inbound';
   if (cancellation) status = 'cancelled';
-  else if (inbound) status = 'inbounded';
-  else if (Number(row.quantity) === 0) status = 'no_inbound_required';
+  else if (quantity === 0n) status = 'no_inbound_required';
+  else if (receivedQuantity === quantity) status = 'inbounded';
+  else if (receivedQuantity > 0n) status = 'partially_inbounded';
   return {
     id: row.id,
     productionBatchId: row.productionBatchId,
@@ -81,7 +74,9 @@ export function mapProductionOutput(row: OutputRow): ProductionOutputItem {
     cardNo: row.cardNo,
     status,
     cancellation,
-    inbound,
+    receivedQuantity: String(receivedQuantity),
+    pendingQuantity: String(cancellation ? 0n : quantity - receivedQuantity),
+    receipts,
   };
 }
 

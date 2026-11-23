@@ -24,8 +24,17 @@ import { ProductionTrackingService } from '../../application/production-tracking
 import { ProductionDomainExceptionFilter } from './production-domain-exception.filter.js';
 import { BatchStepRecordParamDto } from './dto/production.dto.js';
 import {
+  BindProductionTrackingItemMarkDto,
+  CancelProductionTrackingItemMarkDto,
+  CorrectProductionTrackingItemMarkDto,
+  ProductionTrackingItemMarkQueryDto,
+  TrackingItemMarkWorkspaceQueryDto,
+  SaveTrackingItemMarkWorkspaceDto,
+  ProductionTrackingItemMarkCodeAvailabilityDto,
+  TrackingItemMarkParamDto,
   ConfirmProductionTrackingOutputDto,
   ConfirmProductionResearchOutputDto,
+  CorrectProductionTrackingAbnormalityScrapDto,
   CorrectProductionTrackingQuantityDto,
   CreateProductionTrackingAbnormalityDto,
   CreateProductionTrackingCardDto,
@@ -34,19 +43,114 @@ import {
   HandleProductionTrackingAbnormalityDto,
   ProductionTrackingCardQueryDto,
   ProductionTrackingReportQueryDto,
+  ProductionTrackingAbnormalityDescriptionQueryDto,
   ReopenProductionTrackingTaskDto,
   ScanProductionTrackingCardDto,
   StartProductionTrackingTaskDto,
   TrackingAbnormalityParamDto,
   TrackingBatchParamDto,
   TrackingCardParamDto,
+  VoidProductionTrackingAbnormalityDto,
   VoidProductionTrackingCardDto,
 } from './dto/production-tracking.dto.js';
+import { PageQueryDto } from '../../../../presentation/http/dto/page-query.dto.js';
 
 @Controller('production')
 @UseFilters(ProductionDomainExceptionFilter)
 export class ProductionTrackingController {
   constructor(private readonly service: ProductionTrackingService) {}
+  @Get('tracking-item-marks/workspace')
+  @RequirePermission([
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+    PERMISSIONS.production.tracking.view,
+  ])
+  itemMarkWorkspace(@Query() query: TrackingItemMarkWorkspaceQueryDto) {
+    return this.service.itemMarkWorkspace(query);
+  }
+  @Post('batches/:batchId/tracking-item-marks/workspace')
+  @RequirePermission(PERMISSIONS.production.workbench.operate)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['item-mark.save'] })
+  @AuditInApplication()
+  saveItemMarkWorkspace(
+    @Param() { batchId }: TrackingBatchParamDto,
+    @Body() body: SaveTrackingItemMarkWorkspaceDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.saveItemMarkWorkspace(batchId, body, context);
+  }
+  @Get('tracking-item-marks/code-availability')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  itemMarkCodeAvailability(@Query() query: ProductionTrackingItemMarkCodeAvailabilityDto) {
+    return this.service.itemMarkCodeAvailability(query.markCode);
+  }
+  @Get('tracking-item-marks')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  itemMarks(@Query() query: ProductionTrackingItemMarkQueryDto) {
+    return this.service.itemMarks(query);
+  }
+  @Get('tracking-cards/:cardId/item-marks/:markId')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  itemMark(@Param() { cardId, markId }: TrackingItemMarkParamDto) {
+    return this.service.itemMark(cardId, markId);
+  }
+  @Get('tracking-cards/:cardId/item-marks/:markId/corrections')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  itemMarkCorrections(
+    @Param() { cardId, markId }: TrackingItemMarkParamDto,
+    @Query() query: PageQueryDto,
+  ) {
+    return this.service.itemMarkCorrections(cardId, markId, query);
+  }
+  @Post('tracking-cards/:cardId/item-marks')
+  @RequirePermission(PERMISSIONS.production.workbench.operate)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['item-mark.bind'] })
+  @AuditInApplication()
+  bindItemMark(
+    @Param() { cardId }: TrackingCardParamDto,
+    @Body() body: BindProductionTrackingItemMarkDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.bindItemMark(cardId, body, context);
+  }
+  @Post('tracking-cards/:cardId/item-marks/:markId/actions/cancel')
+  @RequirePermission(PERMISSIONS.production.workbench.operate)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['item-mark.cancel'] })
+  @AuditInApplication()
+  cancelItemMark(
+    @Param() { cardId, markId }: TrackingItemMarkParamDto,
+    @Body() body: CancelProductionTrackingItemMarkDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.cancelItemMark(cardId, markId, body, context);
+  }
+  @Post('tracking-cards/:cardId/item-marks/:markId/actions/correct')
+  @RequirePermission(PERMISSIONS.production.workbench.operate)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['item-mark.correct'] })
+  @AuditInApplication()
+  correctItemMark(
+    @Param() { cardId, markId }: TrackingItemMarkParamDto,
+    @Body() body: CorrectProductionTrackingItemMarkDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.correctItemMark(cardId, markId, body, context);
+  }
   @Get('tracking-cards')
   @RequirePermission([PERMISSIONS.production.tracking.view, PERMISSIONS.production.workbench.view])
   list(@Query() query: ProductionTrackingCardQueryDto) {
@@ -139,6 +243,18 @@ export class ProductionTrackingController {
   ) {
     return this.service.createAbnormality(cardId, body, context);
   }
+  @Get('tracking-cards/:cardId/abnormality-description-options')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  abnormalityDescriptionOptions(
+    @Param() { cardId }: TrackingCardParamDto,
+    @Query() query: ProductionTrackingAbnormalityDescriptionQueryDto,
+  ) {
+    return this.service.abnormalityDescriptionOptions(cardId, query);
+  }
   @Post('tracking-cards/:cardId/abnormalities/:abnormalityId/handlings')
   @RequirePermission(PERMISSIONS.production.workbench.operate)
   @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['abnormality.handle'] })
@@ -149,6 +265,28 @@ export class ProductionTrackingController {
     @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
   ) {
     return this.service.handleAbnormality(cardId, abnormalityId, body, context);
+  }
+  @Post('tracking-cards/:cardId/abnormalities/:abnormalityId/scrap-correction')
+  @RequirePermission(PERMISSIONS.production.workbench.operate)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['abnormality.scrap-correction'] })
+  @AuditInApplication()
+  correctAbnormalityScrap(
+    @Param() { cardId, abnormalityId }: TrackingAbnormalityParamDto,
+    @Body() body: CorrectProductionTrackingAbnormalityScrapDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.correctAbnormalityScrap(cardId, abnormalityId, body, context);
+  }
+  @Post('tracking-cards/:cardId/abnormalities/:abnormalityId/void')
+  @RequirePermission(PERMISSIONS.production.workbench.operate)
+  @IdempotentEndpoint({ scope: PRODUCTION_TRACKING_SCOPES['abnormality.void'] })
+  @AuditInApplication()
+  voidAbnormality(
+    @Param() { cardId, abnormalityId }: TrackingAbnormalityParamDto,
+    @Body() body: VoidProductionTrackingAbnormalityDto,
+    @CurrentIdempotentCommandContext() context: IdempotentCommandContext,
+  ) {
+    return this.service.voidAbnormality(cardId, abnormalityId, body, context);
   }
   @Post('tracking-cards/:cardId/actions/confirm-output')
   @RequirePermission(PERMISSIONS.production.tracking.confirmOutput)

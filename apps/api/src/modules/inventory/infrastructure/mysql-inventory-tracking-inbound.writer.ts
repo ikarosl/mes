@@ -42,17 +42,8 @@ export class MysqlInventoryTrackingInboundWriter {
       });
       if (eligibility.status !== 'success')
         throw new InventoryDomainError('INVALID_INPUT', eligibility.message);
-      const outputs = [...input.outputs].sort((a, b) =>
-        BigInt(a.outputId) < BigInt(b.outputId) ? -1 : 1,
-      );
-      // Production's source locks serialize posting and revocation; the unique source key
-      // also rejects a second command intent after HTTP replay records have expired.
-      const [consumed] = await db.query<RowDataPacket[]>(
-        `SELECT id FROM inbound_detail WHERE production_output_id IN (${outputs.map(() => '?').join(',')}) ORDER BY production_output_id FOR UPDATE`,
-        outputs.map((output) => output.outputId),
-      );
-      if (consumed.length)
-        throw new InventoryDomainError('CONFLICT', '所选产出已有入库记录，请刷新后重新选择');
+      const outputs = [...input.outputs].sort((a, b) => compareIds(a.outputId, b.outputId));
+      await lockUnconsumedSources(db, outputs);
       const target = await resolveTarget(db, input, context);
       const inboundNo = await allocateBusinessNumber(db, 'inbound_order');
       const [order] = await db.execute<ResultSetHeader>(
@@ -69,7 +60,11 @@ export class MysqlInventoryTrackingInboundWriter {
         ],
       );
       const inboundId = String(order.insertId);
-      const details: Array<{ outputId: string; quantity: string; detailId: string }> = [];
+      const details: Array<{
+        outputId: string;
+        quantity: string;
+        detailId: string;
+      }> = [];
       for (const [index, output] of outputs.entries()) {
         const [detail] = await db.execute<ResultSetHeader>(
           `INSERT INTO inbound_detail(inbound_id,line_no,source_type,product_id,batch_id,target_mode,new_batch_key,production_output_id,item_code_snapshot,inbound_number,unit_snapshot,stock_status,created_by,updated_by)
@@ -89,7 +84,8 @@ export class MysqlInventoryTrackingInboundWriter {
             context.actorId,
           ],
         );
-        details.push({ ...output, detailId: String(detail.insertId) });
+        const detailId = String(detail.insertId);
+        details.push({ ...output, detailId });
       }
       // Every source detail must exist before the first ledger posting freezes the order.
       for (const detail of details)
@@ -227,5 +223,25 @@ function validateInput(input: TrackingOutputsInput): void {
       );
     })
   )
-    throw new InventoryDomainError('INVALID_INPUT', '产出入库来源、目标或整笔数量无效');
+    throw new InventoryDomainError('INVALID_INPUT', '产出入库来源、目标或数量无效');
+}
+
+async function lockUnconsumedSources(
+  db: PoolConnection,
+  outputs: TrackingOutputsInput['outputs'],
+): Promise<void> {
+  // Production's output locks serialize posting and revocation. Historical
+  // split receipts also consume the whole output and remain untouched.
+  const [consumed] = await db.query<RowDataPacket[]>(
+    `SELECT id FROM inbound_detail WHERE production_output_id IN (${outputs.map(() => '?').join(',')}) ORDER BY production_output_id,id FOR UPDATE`,
+    outputs.map((output) => output.outputId),
+  );
+  if (consumed.length)
+    throw new InventoryDomainError('CONFLICT', '所选产出已有入库记录，请刷新后重新选择');
+}
+
+function compareIds(a: string, b: string): number {
+  if (BigInt(a) < BigInt(b)) return -1;
+  if (BigInt(a) > BigInt(b)) return 1;
+  return 0;
 }

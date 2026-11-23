@@ -1,29 +1,48 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { withTransaction } from '@company/database';
-import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
+import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
 import type {
+  BindProductionTrackingItemMarkPayload,
+  CancelProductionTrackingItemMarkPayload,
+  CorrectProductionTrackingItemMarkPayload,
+  PageQuery,
+  ProductionTrackingItemMarkQuery,
+  ProductionTrackingItemMarkWorkspaceQuery,
+  SaveProductionTrackingItemMarkWorkspacePayload,
   ConfirmProductionTrackingOutputPayload,
   ConfirmProductionResearchOutputPayload,
+  CorrectProductionTrackingAbnormalityScrapPayload,
   CorrectProductionTrackingQuantityPayload,
   CreateProductionTrackingAbnormalityPayload,
   CreateProductionTrackingCardPayload,
   CreateProductionTrackingCardsPayload,
   FinishProductionTrackingTaskPayload,
   HandleProductionTrackingAbnormalityPayload,
+  PageResult,
   ProductionTrackingCardDetail,
-  ProductionTrackingCardQuery,
+  ProductionTrackingAbnormalityDescriptionQuery,
   ProductionTrackingCardsCreatedResult,
   ProductionTrackingPersonnelSnapshot,
   ProductionTrackingReportQuery,
   ReopenProductionTrackingTaskPayload,
   ScanProductionTrackingCardPayload,
+  VoidProductionTrackingAbnormalityPayload,
   VoidProductionTrackingCardPayload,
 } from '@company/contracts';
 import type { CommandContext } from '../../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../../infrastructure/database/database.module.js';
-import { ProductionTrackingRepository } from '../../application/ports/production-tracking.repository.js';
+import { listTrackingItemMarkWorkspaceRows } from '../queries/production-item-mark-workspace.query.js';
+import { saveTrackingItemMarkWorkspace } from './mysql-production-tracking-item-mark-workspace.js';
+import {
+  ProductionTrackingRepository,
+  type ProductionTrackingCardListQuery,
+} from '../../application/ports/production-tracking.repository.js';
 import { ProductionDomainError } from '../../domain/production.errors.js';
-import { requireTrackingAffectedQuantity } from '../../domain/production-tracking-disposition.policy.js';
+import {
+  requireTrackingAffectedQuantity,
+  requireTrackingCorrectedQuantity,
+  resolveTrackingAbnormalityReportHandling,
+} from '../../domain/production-tracking-disposition.policy.js';
 import { writeProductionAudit } from '../shared/mysql-production-audit.js';
 import { findBatch } from '../tasks/mysql-production-batch.persistence.js';
 import { findWorkOrder } from '../tasks/mysql-work-order.persistence.js';
@@ -35,7 +54,16 @@ import {
   selectTrackingWorkbench,
 } from './mysql-production-tracking.read.js';
 import { MysqlProductionTrackingTaskRepository } from './mysql-production-tracking-task.repository.js';
+import {
+  adjustTrackingAbnormality,
+  trackingAdjustmentCardBlockedReason,
+  type TrackingAbnormalityAdjustment,
+} from './mysql-production-tracking-abnormality-adjustment.js';
 import { settleTrackingAbnormality } from './mysql-production-tracking-disposition.js';
+import {
+  requireTrackingDescriptionLabels,
+  selectTrackingDescriptionOptions,
+} from './mysql-production-tracking-labels.js';
 import {
   confirmResearchTrackingOutput,
   insertTrackingOutput,
@@ -44,6 +72,18 @@ import {
   createTrackingCardAtFirstStation,
   createUnusedTrackingCards,
 } from './mysql-production-tracking-create.js';
+import {
+  bindTrackingItemMark,
+  cancelTrackingItemMark,
+  correctTrackingItemMark,
+  selectTrackingItemMarkingSummary,
+} from './mysql-production-tracking-item-mark.js';
+import {
+  listTrackingItemMarks,
+  getItemMarkCodeAvailability,
+  getTrackingItemMark,
+  listTrackingItemMarkCorrections,
+} from '../queries/production-item-mark.query.js';
 
 type CardRow = RowDataPacket & {
   id: string;
@@ -53,7 +93,7 @@ type CardRow = RowDataPacket & {
   current_step_record_id: string | null;
   version: number;
 };
-type StepRow = RowDataPacket & { id: string; step_order: number };
+type StepRow = RowDataPacket & { id: string; step_order: number; step_name: string };
 
 @Injectable()
 export class MysqlProductionTrackingRepository extends ProductionTrackingRepository {
@@ -64,8 +104,66 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
     super();
   }
 
-  list(query: ProductionTrackingCardQuery) {
+  list(query: ProductionTrackingCardListQuery) {
     return listTrackingCards(this.pool, query);
+  }
+  itemMarks(query: ProductionTrackingItemMarkQuery) {
+    return withTransaction(this.pool, (db) => listTrackingItemMarks(db, query));
+  }
+  itemMarkWorkspace(query: ProductionTrackingItemMarkWorkspaceQuery) {
+    return withTransaction(this.pool, (db) => listTrackingItemMarkWorkspaceRows(db, query));
+  }
+  saveItemMarkWorkspace(
+    batchId: string,
+    payload: SaveProductionTrackingItemMarkWorkspacePayload,
+    person: ProductionTrackingPersonnelSnapshot,
+    context: CommandContext,
+  ) {
+    return withTransaction(this.pool, (db) =>
+      saveTrackingItemMarkWorkspace(db, batchId, payload, person, context),
+    );
+  }
+  itemMarkCodeAvailability(markCode: string) {
+    return getItemMarkCodeAvailability(this.pool, markCode);
+  }
+  itemMark(cardId: string, markId: string) {
+    return withTransaction(this.pool, (db) => getTrackingItemMark(db, cardId, markId));
+  }
+  itemMarkCorrections(cardId: string, markId: string, query: PageQuery) {
+    return listTrackingItemMarkCorrections(this.pool, cardId, markId, query);
+  }
+  bindItemMark(
+    cardId: string,
+    payload: BindProductionTrackingItemMarkPayload,
+    person: ProductionTrackingPersonnelSnapshot,
+    context: CommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    return withTransaction(this.pool, async (db) => {
+      await bindTrackingItemMark(db, cardId, payload, person, context);
+      return selectTrackingCard(db, cardId, true);
+    });
+  }
+  cancelItemMark(
+    cardId: string,
+    markId: string,
+    payload: CancelProductionTrackingItemMarkPayload,
+    context: CommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    return withTransaction(this.pool, async (db) => {
+      await cancelTrackingItemMark(db, cardId, markId, payload, context);
+      return selectTrackingCard(db, cardId, true);
+    });
+  }
+  correctItemMark(
+    cardId: string,
+    markId: string,
+    payload: CorrectProductionTrackingItemMarkPayload,
+    context: CommandContext,
+  ): Promise<ProductionTrackingCardDetail> {
+    return withTransaction(this.pool, async (db) => {
+      await correctTrackingItemMark(db, cardId, markId, payload, context);
+      return selectTrackingCard(db, cardId, true);
+    });
   }
   get(cardId: string) {
     return withTransaction(this.pool, (db) => selectTrackingCard(db, cardId));
@@ -78,6 +176,40 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
   }
   startCheck(batchId: string) {
     return this.tasks.startCheck(batchId);
+  }
+  abnormalityDescriptionOptions(
+    processStepId: string | null,
+    query: ProductionTrackingAbnormalityDescriptionQuery,
+  ): Promise<PageResult<string>> {
+    return selectTrackingDescriptionOptions(this.pool, processStepId, query);
+  }
+  async abnormalityStepReference(
+    cardId: string,
+    stepRecordId?: string | null,
+  ): Promise<{ stepRecordId: string; routeStepId: string } | null> {
+    return withTransaction(this.pool, async (db) => {
+      const [[row]] = await db.query<
+        (RowDataPacket & {
+          stepRecordId: string | null;
+          routeStepId: string | null;
+          visited: number;
+        })[]
+      >(
+        `SELECT CAST(? AS CHAR) stepRecordId,
+         CAST(s.route_step_id AS CHAR) routeStepId,v.id IS NOT NULL visited
+         FROM production_tracking_card c
+         LEFT JOIN batch_step_records s ON s.id=?
+          AND s.production_batch_id=c.production_batch_id
+         LEFT JOIN production_tracking_visit v ON v.tracking_card_id=c.id AND v.batch_step_record_id=s.id
+         WHERE c.id=?`,
+        [stepRecordId ?? null, stepRecordId ?? null, cardId],
+      );
+      if (!row) throw new ProductionDomainError('NOT_FOUND', '追踪卡不存在');
+      if (row.stepRecordId === null) return null;
+      if (!row.routeStepId || !row.visited)
+        throw new ProductionDomainError('INVALID_INPUT', '异常关联工序必须是该盘已经到站的工序');
+      return { stepRecordId: row.stepRecordId, routeStepId: row.routeStepId };
+    });
   }
   async withBatchTransaction<T>(batchId: string, action: () => Promise<T>): Promise<T> {
     return withTransaction(this.pool, async (db) => {
@@ -157,7 +289,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       if (batch.status !== 'doing')
         throw new ProductionDomainError('INVALID_STATE', '请先开始任务，再扫码流转');
       this.requireMutableCard(card);
-      if ((await this.openAbnormalityCount(db, cardId)) > 0)
+      if ((await this.openAbnormalitySummary(db, cardId)).count > 0)
         throw new ProductionDomainError(
           'CONFLICT',
           '该盘存在未处理异常，全部处理完成后才能继续流转',
@@ -166,8 +298,15 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         card.current_step_record_id === null
           ? -1
           : steps.findIndex((step) => step.id === card.current_step_record_id);
-      if (next !== current + 1)
-        throw new ProductionDomainError('CONFLICT', '必须按工艺路线逐站扫码，不能跳站');
+      if (next !== current + 1) {
+        const expected = steps[current + 1];
+        throw new ProductionDomainError(
+          'CONFLICT',
+          expected
+            ? `请先流转至第 ${expected.step_order} 步「${expected.step_name}」并扫码，不能跳站。`
+            : '当前路线中没有可流转的下一步，请刷新并核对追踪卡记录。',
+        );
+      }
       let completedVisitId: string | null = null;
       if (current >= 0) {
         const [[visit]] = await db.query<(RowDataPacket & { id: string })[]>(
@@ -231,6 +370,11 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
       if (Number(card.quantity) === payload.quantity)
         throw new ProductionDomainError('INVALID_INPUT', '更正数量与当前盘量相同');
+      const open = await this.openAbnormalitySummary(db, cardId);
+      requireTrackingCorrectedQuantity(payload.quantity, open.affectedQuantity);
+      const marking = await selectTrackingItemMarkingSummary(db, cardId, true);
+      if (payload.quantity < marking.activeCount)
+        throw new ProductionDomainError('INVALID_INPUT', '更正后的盘量不能小于有效单件刻码数量');
       await db.execute(
         'INSERT INTO production_tracking_quantity_change (tracking_card_id,previous_quantity,quantity,reason,created_by) VALUES (?,?,?,?,?)',
         [cardId, card.quantity, payload.quantity, payload.reason, context.actorId],
@@ -276,6 +420,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
   async createAbnormality(
     cardId: string,
     payload: CreateProductionTrackingAbnormalityPayload,
+    processStepId: string | null,
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
   ) {
@@ -284,24 +429,36 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       this.requireMutableCard(card);
       this.requireVersion(card.version, payload.version);
       this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
-      requireTrackingAffectedQuantity(payload.affectedQuantity, Number(card.quantity));
-      const stepRecordId = payload.stepRecordId ?? card.current_step_record_id;
+      const open = await this.openAbnormalitySummary(db, cardId);
+      requireTrackingAffectedQuantity(
+        payload.affectedQuantity,
+        Number(card.quantity),
+        open.affectedQuantity,
+      );
+      const handling = resolveTrackingAbnormalityReportHandling(payload);
+      const stepRecordId = payload.stepRecordId ?? null;
       if (stepRecordId !== null) {
         const [visited] = await db.query<RowDataPacket[]>(
           'SELECT id FROM production_tracking_visit WHERE tracking_card_id=? AND batch_step_record_id=? FOR UPDATE',
           [cardId, stepRecordId],
         );
         if (!visited.length)
-          throw new ProductionDomainError('INVALID_INPUT', '异常涉及工序必须是该盘已经到站的工序');
+          throw new ProductionDomainError('INVALID_INPUT', '异常关联工序必须是该盘已经到站的工序');
       }
-      await db.execute(
+      const labels = await requireTrackingDescriptionLabels(
+        db,
+        processStepId,
+        payload.descriptionLabels,
+        context.actorId,
+      );
+      const [created] = await db.execute<ResultSetHeader>(
         `INSERT INTO production_tracking_abnormality (tracking_card_id,production_batch_id,batch_step_record_id,affected_quantity,description,personnel_id,personnel_code_snapshot,personnel_name_snapshot,created_by,updated_by) VALUES (?,?,?,?,?,?,?,?,?,?)`,
         [
           cardId,
           card.production_batch_id,
           stepRecordId,
           payload.affectedQuantity,
-          payload.description,
+          labels.map(({ label }) => label).join('；'),
           person.personnelId,
           person.personnelCode,
           person.personnelName,
@@ -309,10 +466,13 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
           context.actorId,
         ],
       );
-      await db.execute(
-        'UPDATE production_tracking_card SET version=version+1,updated_by=? WHERE id=?',
-        [context.actorId, cardId],
-      );
+      const abnormalityId = String(created.insertId);
+      for (const [index, label] of labels.entries())
+        await db.execute(
+          `INSERT INTO production_tracking_abnormality_label_assignment
+           (abnormality_id,label_id,label_order) VALUES (?,?,?)`,
+          [abnormalityId, label.id, index + 1],
+        );
       await writeProductionAudit(
         db,
         context,
@@ -320,7 +480,24 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
         'production_tracking_card',
         cardId,
         null,
-        { ...payload, ...person },
+        {
+          ...payload,
+          ...person,
+          abnormalityId,
+          descriptionLabels: labels.map(({ label }) => label),
+        },
+      );
+      const lastStep = (await this.steps(db, card.production_batch_id)).at(-1);
+      const scrapMode =
+        lastStep?.id === card.current_step_record_id ? 'item_marked' : 'quantity_only';
+      await settleTrackingAbnormality(
+        db,
+        card,
+        abnormalityId,
+        handling,
+        person,
+        context,
+        scrapMode,
       );
       return selectTrackingCard(db, cardId, true);
     });
@@ -337,6 +514,51 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       this.requireUnfinishedCard(card);
       this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
       await settleTrackingAbnormality(db, card, abnormalityId, payload, person, context);
+      return selectTrackingCard(db, cardId, true);
+    });
+  }
+  correctAbnormalityScrap(
+    cardId: string,
+    abnormalityId: string,
+    payload: CorrectProductionTrackingAbnormalityScrapPayload,
+    context: CommandContext,
+  ) {
+    return this.adjustAbnormality(cardId, abnormalityId, { ...payload, kind: 'correct' }, context);
+  }
+  voidAbnormality(
+    cardId: string,
+    abnormalityId: string,
+    payload: VoidProductionTrackingAbnormalityPayload,
+    context: CommandContext,
+  ) {
+    return this.adjustAbnormality(cardId, abnormalityId, { ...payload, kind: 'void' }, context);
+  }
+  private async adjustAbnormality(
+    cardId: string,
+    abnormalityId: string,
+    adjustment: TrackingAbnormalityAdjustment,
+    context: CommandContext,
+  ) {
+    return withTransaction(this.pool, async (db) => {
+      const card = await this.card(db, cardId);
+      this.requireVersion(card.version, adjustment.cardVersion);
+      const batch = await findBatch(db, card.production_batch_id, true);
+      const output = await selectTrackingOutput(db, card.production_batch_id, cardId, true);
+      const blocked = trackingAdjustmentCardBlockedReason(
+        batch.status,
+        card.status,
+        output !== null,
+      );
+      if (blocked) throw new ProductionDomainError('INVALID_STATE', blocked);
+      const open = await this.openAbnormalitySummary(db, cardId);
+      await adjustTrackingAbnormality(
+        db,
+        card,
+        abnormalityId,
+        adjustment,
+        open.affectedQuantity,
+        context,
+      );
       return selectTrackingCard(db, cardId, true);
     });
   }
@@ -357,7 +579,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       const last = steps.at(-1);
       if (!last || card.current_step_record_id !== last.id)
         throw new ProductionDomainError('CONFLICT', '该盘尚未到达末站，不能确认最终产出');
-      if ((await this.openAbnormalityCount(db, cardId)) > 0)
+      if ((await this.openAbnormalitySummary(db, cardId)).count > 0)
         throw new ProductionDomainError('CONFLICT', '请先处理该盘全部异常，再确认最终可用产出');
       if (await selectTrackingOutput(db, card.production_batch_id, cardId, true))
         throw new ProductionDomainError('CONFLICT', '该追踪卡已经确认有效产出');
@@ -439,17 +661,23 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
   }
   private async steps(db: PoolConnection, batchId: string): Promise<StepRow[]> {
     const [rows] = await db.query<StepRow[]>(
-      'SELECT CAST(id AS CHAR) id,step_order_snapshot step_order FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id',
+      'SELECT CAST(id AS CHAR) id,step_order_snapshot step_order,step_name_snapshot step_name FROM batch_step_records WHERE production_batch_id=? ORDER BY step_order_snapshot,id',
       [batchId],
     );
     return rows;
   }
-  private async openAbnormalityCount(db: PoolConnection, cardId: string): Promise<number> {
-    const [rows] = await db.query<RowDataPacket[]>(
-      "SELECT id FROM production_tracking_abnormality WHERE tracking_card_id=? AND status='open' FOR UPDATE",
+  private async openAbnormalitySummary(
+    db: PoolConnection,
+    cardId: string,
+  ): Promise<{ count: number; affectedQuantity: number }> {
+    const [rows] = await db.query<(RowDataPacket & { affected_quantity: number | string })[]>(
+      "SELECT id,affected_quantity FROM production_tracking_abnormality WHERE tracking_card_id=? AND status='open' ORDER BY id FOR UPDATE",
       [cardId],
     );
-    return rows.length;
+    return {
+      count: rows.length,
+      affectedQuantity: rows.reduce((sum, row) => sum + Number(row.affected_quantity), 0),
+    };
   }
   private requireMutableCard(card: CardRow): void {
     this.requireUnfinishedCard(card);

@@ -1,6 +1,7 @@
 <template>
   <div
     class="purchase-receipt"
+    :class="{ 'is-focused': focused }"
     :data-receipt-id="receipt.id"
   >
     <ReceiptWorklistReceiptGroup
@@ -25,11 +26,6 @@
         ></template
       >
       <template #receipt-meta
-        ><el-tag
-          v-if="focused"
-          size="small"
-          effect="plain"
-          >当前定位</el-tag
         ><span class="receipt-source"
           >采购单 <strong>{{ header.purchaseNo }}</strong></span
         ><span class="secondary">到货 {{ formatDateTimeForDisplay(header.receivedAt) }}</span>
@@ -309,6 +305,9 @@ watch(
 .purchase-receipt :deep(.receipt-heading) {
   padding: 10px 12px;
   background: var(--el-bg-color);
+}
+.is-focused :deep(.receipt-heading) {
+  background: var(--el-color-primary-light-9);
 }
 .purchase-receipt :deep(.receipt-table-scroll) {
   border-top: 1px solid var(--el-border-color-lighter);

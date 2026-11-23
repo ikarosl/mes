@@ -57,42 +57,50 @@
         show-icon
         class="list-notice"
       />
-      <div
-        v-if="focusedLineId || locationError || locationLoading"
-        class="location-bar"
-      >
-        <span v-if="locationLoading">正在定位到货…</span>
-        <span v-else-if="locationError">{{ locationError }}</span>
-        <span v-else
-          >当前定位：<strong class="identity-value">{{ focusedReceipt?.receipt.receiptNo }}</strong>
-          · 到货行 ID：<strong class="identity-value">{{ focusedLineId }}</strong></span
-        >
-        <el-button
-          v-if="locationError"
-          link
-          type="primary"
-          @click="list.revealLine(detail?.openedLineId ?? focusedLineId)"
-          >重试列表定位</el-button
-        >
-        <el-button
-          link
-          type="primary"
-          @click="clearLocation"
-          >清除列表定位</el-button
-        >
-      </div>
       <section
-        v-if="focusedReceipt && !focusedIsInPage"
+        v-if="(focusedReceipt && !focusedIsInPage) || locationError || locationLoading"
         class="located-block"
+        aria-label="跳转目标"
       >
-        <p class="located-note">此到货不在当前筛选页，不计入分页总数</p>
+        <div class="located-heading">
+          <strong>跳转目标</strong>
+          <el-button
+            :icon="Close"
+            text
+            circle
+            aria-label="关闭跳转目标"
+            @click="clearLocation"
+          />
+        </div>
+        <div
+          v-if="locationLoading || locationError"
+          class="location-feedback"
+        >
+          <InlineHint :tone="locationError ? 'danger' : 'info'">{{
+            locationError || '正在定位到货…'
+          }}</InlineHint>
+          <el-button
+            v-if="locationError"
+            link
+            type="primary"
+            @click="retryLocation"
+            >重试列表定位</el-button
+          >
+        </div>
+        <p
+          v-if="focusedReceipt && !focusedIsInPage"
+          class="located-note"
+        >
+          此到货不在当前筛选页，不计入分页总数。
+        </p>
         <IncomingInspectionReceipt
+          v-if="focusedReceipt && !focusedIsInPage"
           :receipt="focusedReceipt.receipt"
           :state="focusedReceipt"
           :expanded="focusedExpanded"
           :highlighted-line-id="focusedLineId"
           @toggle="toggleFocused"
-          @retry="list.revealLine(focusedLineId)"
+          @retry="retryLocation"
           @open="openLine"
         />
       </section>
@@ -134,9 +142,9 @@
   </section>
 </template>
 <script setup lang="ts">
-import { nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
+import { nextTick, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Refresh } from '@element-plus/icons-vue';
+import { Close, Refresh } from '@element-plus/icons-vue';
 import PaginationFooter from '../../components/PaginationFooter.vue';
 import TableToolbar from '../../components/TableToolbar.vue';
 import InlineHint from '../../components/InlineHint.vue';
@@ -174,10 +182,10 @@ const {
   locationLoading,
   locationError,
   load,
-  search,
-  reset,
-  changePage,
-  changePageSize,
+  search: searchReceipts,
+  reset: resetReceipts,
+  changePage: changeReceiptsPage,
+  changePageSize: changeReceiptsPageSize,
   toggleReceipt,
   toggleFocused,
   loadLines,
@@ -185,28 +193,41 @@ const {
   collapsePage,
 } = list;
 const detail = ref<InstanceType<typeof InboundInspectionDetailDialog>>();
-let revealedLineId = '';
-function revealOpenedLine(id: string): void {
-  if (id === revealedLineId) return;
-  revealedLineId = id;
-  void list.revealLine(id);
-}
+let locationTarget = '';
+let active = true;
+let navigationRevision = 0;
 async function clearLocation(): Promise<void> {
+  navigationRevision += 1;
+  pendingLocate = false;
   list.clearLocation();
-  revealedLineId = '';
+  locationTarget = '';
   accepted = {};
   consumed = JSON.stringify(['', '']);
+  if (route.name !== 'quality-inbound-inspections') return;
   const query = { ...route.query };
   delete query.receiptLineId;
   delete query.reportId;
   await router.replace({ query });
 }
-watch(
-  () => detail.value?.openedLineId,
-  (id) => {
-    if (id && route.name === 'quality-inbound-inspections') revealOpenedLine(id);
-  },
-);
+async function search(): Promise<void> {
+  await clearLocation();
+  await searchReceipts();
+}
+async function reset(): Promise<void> {
+  await clearLocation();
+  await resetReceipts();
+}
+async function changePage(value: number): Promise<void> {
+  await clearLocation();
+  await changeReceiptsPage(value);
+}
+async function changePageSize(value: number): Promise<void> {
+  await clearLocation();
+  await changeReceiptsPageSize(value);
+}
+async function retryLocation(): Promise<void> {
+  if (locationTarget) await list.revealLine(locationTarget);
+}
 onScopeDispose(
   useTabsStore().registerCloseGuard(
     'quality-inbound-inspections',
@@ -218,41 +239,39 @@ let consumed = '';
 let accepted: Record<string, string> = {};
 let routeRevision = 0;
 async function navigate(id: string, reportId = '', matches = () => true): Promise<boolean> {
-  if (navigating) return false;
+  if (navigating || !active || route.name !== 'quality-inbound-inspections') return false;
   if (detail.value?.locked) {
     EMessage.warning('请先确认当前检验操作结果再切换');
     return false;
   }
+  const operation = ++navigationRevision;
+  const revision = routeRevision;
+  const current = (): boolean =>
+    active &&
+    route.name === 'quality-inbound-inspections' &&
+    revision === routeRevision &&
+    operation === navigationRevision &&
+    matches();
   navigating = true;
   try {
     if (detail.value?.visible && !(await detail.value.close())) return false;
-    if (!matches()) return false;
-    revealedLineId = '';
+    if (!current()) return false;
     const succeeded = (await detail.value?.open(id, reportId)) ?? false;
-    const openedLineId = detail.value?.openedLineId;
-    if (succeeded && openedLineId && matches()) revealOpenedLine(openedLineId);
-    return succeeded;
+    return succeeded && current();
   } finally {
     navigating = false;
-    if (pendingLocate) {
+    if (pendingLocate && active && route.name === 'quality-inbound-inspections') {
       pendingLocate = false;
       void locate();
     }
   }
 }
 async function openLine(id: string, reportId = '') {
-  if (!(await navigate(id, reportId))) return;
-  accepted = { receiptLineId: id, ...(reportId ? { reportId } : {}) };
-  consumed = JSON.stringify([id, reportId]);
-  const query = { ...route.query };
-  query.receiptLineId = id;
-  if (reportId) query.reportId = reportId;
-  else delete query.reportId;
-  await router.replace({ name: 'quality-inbound-inspections', query });
+  await navigate(id, reportId);
 }
 async function locate(): Promise<void> {
   const revision = routeRevision;
-  if (route.name !== 'quality-inbound-inspections') return;
+  if (!active || route.name !== 'quality-inbound-inspections') return;
   await nextTick();
   if (revision !== routeRevision || route.name !== 'quality-inbound-inspections') return;
   const lineId = typeof route.query.receiptLineId === 'string' ? route.query.receiptLineId : '';
@@ -274,9 +293,17 @@ async function locate(): Promise<void> {
     () => revision === routeRevision && route.name === 'quality-inbound-inspections',
   );
   if (revision !== routeRevision || route.name !== 'quality-inbound-inspections') return;
-  if (succeeded)
-    accepted = { ...(lineId ? { receiptLineId: lineId } : {}), ...(reportId ? { reportId } : {}) };
-  else {
+  if (succeeded && detail.value?.openedLineId) {
+    const openedLineId = detail.value.openedLineId;
+    locationTarget = openedLineId;
+    await list.revealLine(openedLineId);
+    if (revision !== routeRevision || route.name !== 'quality-inbound-inspections') return;
+    accepted = { receiptLineId: openedLineId, ...(reportId ? { reportId } : {}) };
+    consumed = JSON.stringify([openedLineId, reportId]);
+    const query = { ...route.query, ...accepted };
+    if (!reportId) delete query.reportId;
+    await router.replace({ query });
+  } else {
     const query = { ...route.query };
     delete query.receiptLineId;
     delete query.reportId;
@@ -293,8 +320,16 @@ watch(
   { immediate: true, flush: 'sync' },
 );
 onActivated(() => {
+  active = true;
   void locate();
 });
+const deactivate = (): void => {
+  active = false;
+  routeRevision += 1;
+  pendingLocate = false;
+};
+onDeactivated(deactivate);
+onScopeDispose(deactivate);
 </script>
 <style scoped>
 .query-panel {
@@ -321,18 +356,18 @@ onActivated(() => {
   margin: 0 16px 12px;
   width: auto;
 }
-.identity-value {
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-}
-.location-bar {
+.located-heading,
+.location-feedback {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px 12px;
-  color: var(--el-text-color-regular);
-  font-size: 13px;
+  gap: 8px 12px;
+}
+.located-heading {
+  justify-content: space-between;
+}
+.location-feedback {
+  margin-bottom: 12px;
 }
 .located-block {
   margin: 0 16px 18px;

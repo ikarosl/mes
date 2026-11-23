@@ -1,5 +1,6 @@
 export const PRODUCTION_OUTPUT_STATUSES = [
   'pending_inbound',
+  'partially_inbounded',
   'inbounded',
   'cancelled',
   'no_inbound_required',
@@ -7,6 +8,7 @@ export const PRODUCTION_OUTPUT_STATUSES = [
 
 export const PRODUCTION_OUTPUT_STATUS_LABELS = {
   pending_inbound: '待入库',
+  partially_inbounded: '部分入库',
   inbounded: '已入库',
   cancelled: '已撤销',
   no_inbound_required: '零产出无需入库',

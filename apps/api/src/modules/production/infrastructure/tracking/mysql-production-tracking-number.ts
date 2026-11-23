@@ -30,7 +30,7 @@ export async function allocateTrackingCardNumbers(
   if (last > MAX_SEQUENCE)
     throw new ProductionDomainError('CONFLICT', '该任务追踪卡序号已用尽，请联系管理员');
   const numbers = Array.from({ length: count }, (_, index) => {
-    const sequence = (previous + BigInt(index) + 1n).toString().padStart(3, '0');
+    const sequence = (previous + BigInt(index) + 1n).toString();
     const number = `${batchNo}-k-${sequence}`;
     if (Array.from(number).length > MAX_CARD_NUMBER_LENGTH)
       throw new ProductionDomainError('CONFLICT', '追踪卡号超过允许长度，请联系管理员');

@@ -7,6 +7,7 @@
 | [仓库简化](prepare-warehouse-simplification-demo.mjs) | 无数量到货、独立检查报告、先入库后报告、独立补购／补发、仅说明和跨供应商共批 |
 | [采购金额](prepare-procurement-amount-demo.mjs)       | 报价、含税总额、舍入、正式单更正及审计                                       |
 | [追踪卡](prepare-tracking-workbench-demo.mjs)         | 扫码、异常结算、末站产出与库存                                               |
+| [单件刻码](prepare-item-marking-demo.mjs)             | 独立批量任务、跨卡输入、选码报废／撤销／更正及90件整盘入库人工验收       |
 | [审批开关](prepare-optional-approval-demo.mjs)         | 独立 BOM 草稿及研发人工需求，保留给人工提交、更正与关闭                      |
 | [统一附件](prepare-attachment-demo.mjs)               | 真实 PDF／图片、当前工序引用、替换后无引用文件、归档路线保留、回收与物理清理 |
 | [仓库单据](prepare-warehouse-documents-demo.mjs) | 物料／成品单种多行其他入出库、草稿／确认／取消、方向共号及直接流水单号 |
@@ -112,11 +113,42 @@ $env:TRACKING_DEMO_TAG='acceptance_01'
 node tools/demo/prepare-tracking-workbench-demo.mjs prepare
 ```
 
-十盘包括正常流转10件、交接后改量并结算异常剩余5件、首站未结异常、未使用待打印、已用作废、整盘报废、零盘量待异常结算，以及追加同批4件、待入库6件、撤销产出后待重新终检2件。前两盘终检后先保留待入库，再通过人工归批接口合入一个新批次；追加4件选择本任务该批次继续入库。
+十盘覆盖正常产出、数量更正后的产出、前道无码报废、未用卡、已用作废、末道整盘报废、可换码和改数的末道报废，以及追加入同库批、待入库和撤销产出。办理终检的盘先逐件绑定按本卡 ID 派生并全局避重的示例码。两笔产出合计 15 件进入新库批，随后完整 4 件追加到该库批。
 
-第二盘先登记影响3件的异常，按返修1件与新增报废2件一次结算；另两条各影响2件的异常分别引用相同的已有报废，不再次扣量，也不累计耗用引用额度。场景记录同幂等键重放的盘量、未结异常扫码拒绝、最终剩余量产出和全报废无产出的观察结果。盘量更正与报废结算分别留痕，历史过站5件保持原值。本组有效产出25件、入库19件、待入库6件，另保留一条2件已撤销记录及回到末站的卡；全报废卡无产出和库存。数量不包含任务原有事实，计划量不阻止这些样例实际产出。
+第二盘在末站更正为 7 件，绑定后报废第 2、3 个示例码，另登记 1 件返修，最终以 5 件和 5 个有效码确认产出。报告保留同一报废请求重放的结果。整盘报废样例选择全部 3 个编码，保留到站与交接历史。另留可编辑的终检样例供人工核对同数换码、少报或多报的差额及作废。
 
-`prepare` 通过公开 API 写入以上单据、处理事实及库存，不自动结束任务；留下正量未结、零量未结和未用卡供人工继续办理。重复同 TAG 只读取报告，不覆盖、修复或续写已存在的样例，准备中断后换新 TAG 建立另一组；确认成品入库需要 warehouse:inbound:confirm-finished，工具不自动修改角色授权。`report` 只读取该组当前状态，不重新执行历史观察；准备时输出的 `preparedObservations` 可保存到 `temp/`。业务语义见[追踪卡所有者](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)。
+`prepare` 通过公开 API 写入上述单据、实物结果和库存，保留任务供手工验收。已有同 TAG 的卡继续只读报告，不补码、改写或续写。准备中断后可换新 TAG 建立另一组。确认入库需要 warehouse:inbound:confirm-finished，工具不改授权。`report` 只读，准备时的 `preparedObservations` 可保存到 `temp/`。
+
+## 单件刻码样例
+
+[刻码工具](prepare-item-marking-demo.mjs)只提供 `prepare`／`report`，省略模式为 `report`。先将已有演示库增量升级并启动匹配 API；首次准备时用 `ITEM_MARKING_DEMO_SOURCE_BATCH_ID` 显式指定一张已下达、完整初配的批量任务。工具只读复用其有效自制成品、已批准锁定的 BOM、当前启用路线和已冻结且仍启用的精确物料版本，不修改来源任务、主数据或角色授权。工单／任务负责人各取对应场景当前首位合格候选，登记人取首位启用现场人员；缺少任一前提时，在首次业务写入前拒绝。
+
+```powershell
+$env:ALLOW_DEMO_SEED='1'
+$env:ITEM_MARKING_DEMO_API_BASE_URL='http://127.0.0.1:3005/api'
+$env:ITEM_MARKING_DEMO_SOURCE_BATCH_ID='<已有完整初配的批量任务ID>'
+$env:ITEM_MARKING_DEMO_TAG='marking_01'
+node tools/demo/prepare-item-marking-demo.mjs prepare
+node tools/demo/prepare-item-marking-demo.mjs report
+```
+
+API 默认本机 3005，拒绝远程主机、URL 凭证、查询串、片段及重定向。TAG 默认 `sample`，接受 1～40 位字母、数字、下划线或连字符并转为小写；工单外部订单号为 `demo-item-marking-TAG`，本组备注标记为 `[demo-item-marking-v1:TAG]`。相同 TAG 任一工单已存在时，`prepare` 只报告现状，不补缺、续写或覆盖；中断后先同 TAG `report`，另一组准备使用新 TAG。`report` 不需要来源任务参数。
+
+工具新建一张计划 102 件的批量工单，分别新建计划 9 件的常规追踪任务、计划 3 件的通用追踪任务和计划 90 件的整盘入库任务。任务各自下达、按真实 BOM 完整初配，再填写未领料说明明确缺料开工；不预留、领料或生成库存。八张卡中七张通过真实扫码到达冻结末站，一张保留未到站并预先绑定。仅90件卡自动绑齐并确认终检，留下完整待入库产出；其余卡留待手工办理，工具不结束任务。
+
+| 场景键 | 初始留下的数据 | 手工入口 |
+| --- | --- | --- |
+| `single-first`、`single-next` | 同一任务的两张单件卡，均未绑定 | 使用报告中各卡 `suggestedCodes` 连续输入并切换卡，观察全局码身份 |
+| `partial` | 三件卡仅绑定一个示例码 | 观察未齐码终检限制，可先手工更正错码并查询历史，再补齐另外两件 |
+| `scrapped` | 三件先绑不同示例码，选中第2个码同次异常报废；剩余盘量 2，两个有效码及一个报废码 | 查询报废历史，按剩余两件办理终检 |
+| `cancelled` | 单件卡绑定示例码后以原因撤销，当前未绑定 | 查询原登记及撤销历史，用释放的号码重新绑定到正确的卡 |
+| `general` | 通用任务的一件卡，没有刻码 | 同样先绑定齐码，再办理终检 |
+| `unused` | 通用任务的一张 2 件预生成卡，未到站即绑定一个示例码，仍为 unused | 查询未到站绑定历史，继续绑定或在首站扫码，不因绑定生成到站事实 |
+| `inbound-90` | 独立90件任务的一盘，90个不同码均已绑定并终检，尚未入库 | 在成品入库页勾选本盘完整90件，按盘查看真实入库单 |
+
+示例码由新建卡ID派生，不带前导零；写入前读取全部当前刻码避重，包含报废件的当前码，不复用已有号码或改动来源任务。报告中的 `suggestedCodes` 也按当前全局码避重，但不预占，手工提交仍由服务端复核。真实绑定、报废、撤销、更正历史和所属盘的实际入库记录均按当前记录报告；同 TAG 重跑只读，不给旧样例补码、新增90件任务或改写用户后续操作，另一组使用新 TAG。
+
+90件卡的 `inboundPlan` 给出完整产出的 `outputIds`；到 `/warehouse/inbound-orders/finished` 选择本组任务并勾选整盘90件，可共建新批次或选择同任务已有批次。工具不自动入库，提交后重新 `report` 查看实时 `receivedQuantity`、`pendingQuantity` 和全部真实 `receipts`；已有入库记录时不再提供本盘待选 ID。旧 TAG 及已经存在的25/25/25/15四笔历史仅按事实报告，不改写、合并或继续包装分次办理。工序终检仍在员工工作台“工序作业”选择末站办理，编码绑定使用 `/production/workbench/code-binding`，编码只关联所属盘并沿盘查看单据。输出可保存在 `temp/`，不含认证凭据；这些场景与报告不代表正式测试或用户验收通过。业务规则由[追踪卡所有者](../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md)与[成品入库所有者](../../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)维护。
 
 ## 仓库单据整合样例
 

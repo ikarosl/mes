@@ -1,9 +1,10 @@
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   ArrayMaxSize,
   ArrayMinSize,
   ArrayUnique,
   IsArray,
+  IsBoolean,
   IsIn,
   IsInt,
   IsNotEmpty,
@@ -31,6 +32,14 @@ export class ProductionOutputQueryDto extends PageQueryDto implements Production
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) batchId?: string;
   @IsOptional() @IsString() @MaxLength(100) keyword?: string;
   @IsOptional() @IsIn(PRODUCTION_OUTPUT_STATUSES) status?: ProductionOutputQuery['status'];
+  @IsOptional()
+  @Transform(({ value }: { value: unknown }) => {
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return value;
+  })
+  @IsBoolean()
+  pendingOnly?: boolean;
 }
 export class RevokeProductionOutputDto implements RevokeProductionOutputPayload {
   @IsString() @IsNotEmpty() @MaxLength(5000) reason!: string;

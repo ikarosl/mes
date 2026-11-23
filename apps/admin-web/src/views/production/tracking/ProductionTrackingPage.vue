@@ -65,6 +65,7 @@
             v-model="query.keyword"
             clearable
             placeholder="扫码枪 / 手输追踪码"
+            @blur="normalizeKeyword"
             @keyup.enter="search"
         /></el-form-item>
         <el-form-item
@@ -180,6 +181,12 @@
           ></template
         ><template #tools
           ><el-button
+            :icon="Printer"
+            :disabled="printer.busy.value"
+            @click="printerSettingsVisible = true"
+            >打印设置</el-button
+          >
+          <el-button
             v-if="view === 'cards'"
             :disabled="!selectedLabels.length || loading || !!listError || labelVisible"
             @click="openSelectedLabels"
@@ -212,7 +219,7 @@
           link
           type="primary"
           :loading="quantityLoading"
-          :disabled="actionVisible"
+          :disabled="actionInProgress"
           @click="loadQuantityAction"
           >重新加载更正依据</el-button
         >
@@ -285,6 +292,12 @@
           ></el-table-column
         >
         <el-table-column
+          label="异常标签"
+          min-width="240"
+          ><template #default="{ row }"
+            ><TrackingAbnormalityTags :labels="row.abnormalityLabels" /></template
+        ></el-table-column>
+        <el-table-column
           label="实际可用产出"
           min-width="130"
           align="right"
@@ -317,7 +330,7 @@
               link
               type="primary"
               :loading="quantityLoading && quantityTarget?.id === row.id"
-              :disabled="actionVisible"
+              :disabled="actionInProgress"
               @click.stop="openQuantityAction(row)"
               >更正盘量</el-button
             ></template
@@ -386,34 +399,51 @@
       :steps="selectedSteps"
       :loading="detailLoading"
       :error="detailError"
+      :change-in-progress="actionInProgress"
+      allow-actions
       @refresh="loadDetail"
       @label="openLabel"
       @action="openAction"
+      @abnormality-correction="openAbnormalityCorrection"
     />
     <TrackingCardActionDialog
       v-model:visible="actionVisible"
       :action="action"
       :card="actionCard"
+      :step-context="actionStepContext"
       :abnormality="abnormality"
+      route-name="production-tracking"
+      @changed="cardChanged"
+      @basis-refreshed="cardBasisRefreshed"
+    />
+    <TrackingAbnormalityCorrectionDialog
+      v-model:visible="correctionVisible"
+      :target="correctionTarget"
       route-name="production-tracking"
       @changed="cardChanged"
     />
     <TrackingLabelDialog
       v-model:visible="labelVisible"
+      route-name="production-tracking"
       :card="labelCard"
       :cards="labelCards"
       :card-no="labelTarget?.cardNo"
       :loading="labelLoading"
       :error="labelError"
       @refresh="loadLabel"
+      @settings="printerSettingsVisible = true"
+    />
+    <LabelPrinterSettingsDialog
+      v-model:visible="printerSettingsVisible"
+      route-name="production-tracking"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { onActivated, reactive, ref, watch } from 'vue';
+import { computed, onActivated, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Refresh } from '@element-plus/icons-vue';
+import { Printer, Refresh } from '@element-plus/icons-vue';
 import type { TableInstance } from 'element-plus';
 import {
   PRODUCTION_TRACKING_ABNORMALITY_STATUSES,
@@ -423,13 +453,9 @@ import {
 } from '@company/constants';
 import type {
   ProductionTrackingAbnormality,
-  ProductionTrackingAbnormalityStatus,
   ProductionTrackingCardDetail,
   ProductionTrackingCardItem,
-  ProductionTrackingCardStatus,
   ProductionTrackingStep,
-  ProductionTrackingVisit,
-  ProductionTrackingWorkbench,
 } from '@company/contracts';
 import { productionTrackingApi } from '../../../api/production/tracking';
 import InlineHint from '../../../components/InlineHint.vue';
@@ -439,121 +465,57 @@ import RemoteSearchSelect from '../../../components/RemoteSearchSelect.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
+import { useLabelPrinter } from '../../../composables/printing/use-label-printer';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
 import { batchStatusMeta } from '../shared/production-status';
 import TrackingCardEvidence from './TrackingCardEvidence.vue';
 import TrackingCardActionDialog from './TrackingCardActionDialog.vue';
+import TrackingAbnormalityCorrectionDialog from './TrackingAbnormalityCorrectionDialog.vue';
+import TrackingAbnormalityTags from './TrackingAbnormalityTags.vue';
 import TrackingLabelDialog from './TrackingLabelDialog.vue';
-import {
-  trackingCardStatus,
-  trackingOutputLabel,
-  type TrackingCardAction,
-} from './tracking-presentation';
+import LabelPrinterSettingsDialog from './LabelPrinterSettingsDialog.vue';
+import { trackingCardStatus, trackingOutputLabel } from './tracking-presentation';
+import type { TrackingCardAction } from './tracking-presentation';
+import type { TrackingCardActionStepContext } from './use-tracking-card-action';
+import type {
+  TrackingAbnormalityCorrectionAction,
+  TrackingAbnormalityCorrectionTarget,
+} from './use-tracking-abnormality-correction';
 import { useTrackingTaskSearch } from './use-tracking-task-search';
+import { useProductionTrackingList } from './use-production-tracking-list';
 
 defineOptions({ name: 'ProductionTrackingPage' });
 const route = useRoute(),
   router = useRouter();
 const { canAccessRoute } = useRouteAccess();
-const view = ref('cards'),
-  page = ref(1),
-  pageSize = ref(10),
-  total = ref(0);
-const query = reactive<{
-  batchId: string | null;
-  stepRecordId: string;
-  keyword: string;
-  status: ProductionTrackingCardStatus | '';
-  abnormalityStatus: ProductionTrackingAbnormalityStatus | '';
-}>({ batchId: null, stepRecordId: '', keyword: '', status: '', abnormalityStatus: '' });
-const cards = ref<ProductionTrackingCardItem[]>([]),
-  reports = ref<ProductionTrackingVisit[]>([]),
-  loading = ref(false),
-  listError = ref('');
 const cardTable = ref<TableInstance>();
 const selectedLabels = ref<ProductionTrackingCardItem[]>([]);
-const context = ref<ProductionTrackingWorkbench | null>(null),
-  contextLoading = ref(false),
-  contextError = ref('');
-const taskSearch = useTrackingTaskSearch(() => context.value?.batch ?? null);
-const listReads = useLatestReadRequest(() => {
-    loading.value = false;
-  }),
-  contextReads = useLatestReadRequest(() => {
-    contextLoading.value = false;
-  });
-async function loadContext(): Promise<void> {
-  const id = query.batchId;
-  contextReads.invalidate();
-  if (!id) {
-    context.value = null;
-    return;
-  }
-  if (!contextReads.isActive()) return;
-  const read = contextReads.begin(() => query.batchId === id);
-  contextLoading.value = true;
-  contextError.value = '';
-  try {
-    const value = await productionTrackingApi.workbench(id, {
-      signal: read.signal,
-      skipErrorHandling: true,
-    });
-    if (read.isCurrent()) context.value = value;
-  } catch (error) {
-    if (read.isCurrent()) {
-      context.value = null;
-      contextError.value = error instanceof Error ? error.message : '工序概览加载失败';
-    }
-  } finally {
-    if (read.isCurrent()) contextLoading.value = false;
-  }
-}
-async function loadList(): Promise<void> {
-  if (!listReads.isActive()) return;
-  const read = listReads.begin();
+const {
+  view,
+  page,
+  pageSize,
+  total,
+  query,
+  cards,
+  reports,
+  loading,
+  listError,
+  context,
+  contextLoading,
+  contextError,
+  contextReads,
+  loadContext,
+  loadList,
+  normalizeKeyword,
+} = useProductionTrackingList(() => {
   selectedLabels.value = [];
   cardTable.value?.clearSelection();
-  loading.value = true;
-  listError.value = '';
-  const params = {
-    page: page.value,
-    pageSize: pageSize.value,
-    batchId: query.batchId || undefined,
-    stepRecordId: query.stepRecordId || undefined,
-  };
-  try {
-    if (view.value === 'history') {
-      const value = await productionTrackingApi.reports(params, {
-        signal: read.signal,
-        skipErrorHandling: true,
-      });
-      if (!read.isCurrent()) return;
-      reports.value = value.items;
-      total.value = value.total;
-    } else {
-      const value = await productionTrackingApi.list(
-        {
-          ...params,
-          keyword: query.keyword.trim() || undefined,
-          status: query.status || undefined,
-          abnormalityStatus: query.abnormalityStatus || undefined,
-        },
-        { signal: read.signal, skipErrorHandling: true },
-      );
-      if (!read.isCurrent()) return;
-      cards.value = value.items;
-      total.value = value.total;
-    }
-  } catch (error) {
-    if (read.isCurrent())
-      listError.value = error instanceof Error ? error.message : '追踪记录加载失败';
-  } finally {
-    if (read.isCurrent()) loading.value = false;
-  }
-}
+});
+const taskSearch = useTrackingTaskSearch(() => context.value?.batch ?? null);
 async function search(): Promise<void> {
+  normalizeKeyword();
   cancelQuantityAction();
   page.value = 1;
   await loadList();
@@ -631,6 +593,8 @@ async function loadDetail(): Promise<void> {
       signal: read.signal,
       skipErrorHandling: true,
     });
+    if (workbench.batch.id !== card.productionBatchId)
+      throw new Error('任务工序资料与所选追踪卡不一致，请重新加载');
     if (read.isCurrent()) {
       selectedCard.value = card;
       selectedSteps.value = workbench.steps;
@@ -669,8 +633,14 @@ const labelVisible = ref(false),
   labelError = ref(''),
   actionVisible = ref(false),
   actionCard = ref<ProductionTrackingCardDetail | null>(null),
+  actionStepContext = ref<TrackingCardActionStepContext | null>(null),
   action = ref<TrackingCardAction>('abnormality'),
   abnormality = ref<ProductionTrackingAbnormality | null>(null);
+const correctionVisible = ref(false);
+const correctionTarget = ref<TrackingAbnormalityCorrectionTarget | null>(null);
+const actionInProgress = computed(() => actionVisible.value || correctionVisible.value);
+const printer = useLabelPrinter();
+const printerSettingsVisible = ref(false);
 const labelReads = useLatestReadRequest(() => {
   if (labelLoading.value) labelError.value = '标签预览加载已中断，请重试';
   labelLoading.value = false;
@@ -744,16 +714,45 @@ function openAction(value: TrackingCardAction, item?: ProductionTrackingAbnormal
   if (
     !card ||
     !detailVisible.value ||
-    actionVisible.value ||
+    actionInProgress.value ||
     detailLoading.value ||
     detailError.value ||
     !detailReads.isActive()
   )
     return;
   actionCard.value = { ...card };
+  actionStepContext.value = {
+    productionBatchId: card.productionBatchId,
+    steps: selectedSteps.value.map((step) => ({
+      stepRecordId: step.stepRecordId,
+      stepOrder: step.stepOrder,
+    })),
+  };
   action.value = value;
   abnormality.value = item ?? null;
   actionVisible.value = true;
+}
+function openAbnormalityCorrection(
+  action: TrackingAbnormalityCorrectionAction,
+  abnormality: ProductionTrackingAbnormality,
+): void {
+  const card = selectedCard.value;
+  if (
+    !card ||
+    !detailVisible.value ||
+    detailLoading.value ||
+    detailError.value ||
+    actionInProgress.value ||
+    !detailReads.isActive()
+  )
+    return;
+  correctionTarget.value = {
+    action,
+    cardId: card.id,
+    cardNo: card.cardNo,
+    abnormalityId: abnormality.id,
+  };
+  correctionVisible.value = true;
 }
 const quantityTarget = ref<Pick<ProductionTrackingCardItem, 'id' | 'cardNo'> | null>(null),
   quantityLoading = ref(false),
@@ -772,15 +771,15 @@ function cancelQuantityAction(): void {
   quantityError.value = '';
 }
 async function openQuantityAction(card: ProductionTrackingCardItem): Promise<void> {
-  if (actionVisible.value || !canCorrectQuantity(card) || !quantityReads.isActive()) return;
+  if (actionInProgress.value || !canCorrectQuantity(card) || !quantityReads.isActive()) return;
   quantityTarget.value = { id: card.id, cardNo: card.cardNo };
   await loadQuantityAction();
 }
 async function loadQuantityAction(): Promise<void> {
   const target = quantityTarget.value;
-  if (!target || actionVisible.value || detailVisible.value || !quantityReads.isActive()) return;
+  if (!target || actionInProgress.value || detailVisible.value || !quantityReads.isActive()) return;
   const read = quantityReads.begin(
-    () => quantityTarget.value === target && !actionVisible.value && !detailVisible.value,
+    () => quantityTarget.value === target && !actionInProgress.value && !detailVisible.value,
   );
   quantityLoading.value = true;
   quantityError.value = '';
@@ -797,6 +796,7 @@ async function loadQuantityAction(): Promise<void> {
       return;
     }
     actionCard.value = { ...card };
+    actionStepContext.value = null;
     action.value = 'quantity';
     abnormality.value = null;
     quantityLoading.value = false;
@@ -819,14 +819,24 @@ watch(labelVisible, (visible) => {
   labelError.value = '';
 });
 function updateCardFacts(card: ProductionTrackingCardDetail): void {
-  cards.value = cards.value.map((item) => (item.id === card.id ? card : item));
-  if (actionCard.value?.id === card.id) actionCard.value = card;
+  cards.value = cards.value.map((item) =>
+    item.id === card.id && item.version <= card.version ? card : item,
+  );
+  if (actionCard.value?.id === card.id && actionCard.value.version <= card.version)
+    actionCard.value = card;
+}
+function cardBasisRefreshed(card: ProductionTrackingCardDetail): void {
+  if (selectedCard.value?.id === card.id && selectedCard.value.version <= card.version)
+    selectedCard.value = card;
+  if (actionCard.value?.id === card.id && actionCard.value.version <= card.version)
+    actionCard.value = card;
 }
 async function cardChanged(card: ProductionTrackingCardDetail): Promise<void> {
   if (detailVisible.value && selectedId.value === card.id) {
     detailReads.invalidate();
     detailError.value = '';
-    selectedCard.value = card;
+    if (!selectedCard.value || selectedCard.value.version <= card.version)
+      selectedCard.value = card;
   }
   updateCardFacts(card);
   await refresh();

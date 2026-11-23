@@ -16,6 +16,16 @@ type FactRow = RowDataPacket & {
   quantity: number | string;
 };
 
+type TrackingReceiptRow = RowDataPacket & {
+  output_id: number | string;
+  detail_id: number | string;
+  inbound_id: number | string;
+  inbound_no: string;
+  batch_id: number | string;
+  batch_code: string;
+  quantity: number | string;
+};
+
 @Injectable()
 export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {
@@ -152,58 +162,9 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
   }
 
   getTrackingOutputReceipts(input: { outputIds: string[] }): Promise<TrackingOutputReceipt[]> {
-    const ids = [...new Set(input.outputIds)];
-    if (ids.length > 100 || ids.some((id) => !/^[1-9]\d*$/.test(id)))
-      throw new InventoryDomainError('INVALID_INPUT', '一次最多查询 100 笔有效产出');
-    if (!ids.length) return Promise.resolve([]);
-    ids.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1));
-    return withActiveConnection(this.pool, async (db) => {
-      const [rows] = await db.query<
-        (RowDataPacket & {
-          output_id: number | string;
-          inbound_id: number | string;
-          inbound_no: string;
-          batch_id: number | string;
-          quantity: number | string;
-        })[]
-      >(
-        `SELECT d.production_output_id output_id,o.id inbound_id,o.inbound_no,d.batch_id,t.quantity
-         FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
-         JOIN inventory_transaction t ON t.reference_type='inbound_detail' AND t.reference_detail_id=d.id
-           AND t.transaction_type='production_inbound' AND t.reversal_of_transaction_id IS NULL AND t.quantity=d.inbound_number AND t.quantity>0
-           AND t.product_id=d.product_id AND t.batch_id=d.batch_id AND t.unit_snapshot=d.unit_snapshot AND t.stock_status=d.stock_status
-         WHERE o.source_type='finished_product' AND o.status='completed' AND d.source_type='finished_product' AND d.is_deleted=0
-           AND d.production_output_id IN (${ids.map(() => '?').join(',')})
-         ORDER BY d.production_output_id,d.id,t.id${db === this.pool ? '' : ' FOR SHARE'}`,
-        ids,
-      );
-      if (new Set(rows.map((row) => String(row.output_id))).size !== rows.length)
-        throw new InventoryDomainError('INVALID_STATE', '产出存在重复入库事实');
-      if (!rows.length) return [];
-      const batchIds = [...new Set(rows.map((row) => String(row.batch_id)))];
-      // A receipt may have committed after this transaction established its snapshot.
-      // Current-read its batch too; source commands reject already-received outputs
-      // before selecting or locking a target for a new posting.
-      const [batches] = await db.query<
-        (RowDataPacket & { id: number | string; batch_code: string })[]
-      >(
-        `SELECT id,batch_code FROM item_batch WHERE id IN (${batchIds.map(() => '?').join(',')})${db === this.pool ? '' : ' FOR SHARE'}`,
-        batchIds,
-      );
-      const batchById = new Map(batches.map((batch) => [String(batch.id), batch.batch_code]));
-      return rows.map((row) => {
-        const batchCode = batchById.get(String(row.batch_id));
-        if (!batchCode) throw new InventoryDomainError('INVALID_STATE', '产出入库批次事实缺失');
-        return {
-          outputId: String(row.output_id),
-          inboundId: String(row.inbound_id),
-          inboundNo: row.inbound_no,
-          itemBatchId: String(row.batch_id),
-          batchCode,
-          inboundQuantity: String(row.quantity),
-        };
-      });
-    });
+    return readTrackingReceiptRows(this.pool, input.outputIds).then((rows) =>
+      rows.map(mapTrackingReceipt),
+    );
   }
 
   getReceiptInboundFacts(input: { receiptLineIds: string[] }): Promise<ReceiptInboundFacts[]> {
@@ -258,4 +219,45 @@ export class MysqlInventoryInboundQuery extends InventoryInboundQuery {
       return ids.map((id) => byReceipt.get(id)!);
     });
   }
+}
+
+function readTrackingReceiptRows(pool: Pool, sourceIds: string[]): Promise<TrackingReceiptRow[]> {
+  const ids = [...new Set(sourceIds)];
+  if (ids.length > 100 || ids.some((id) => !/^[1-9]\d*$/.test(id)))
+    throw new InventoryDomainError('INVALID_INPUT', '一次最多查询 100 个有效产出');
+  if (!ids.length) return Promise.resolve([]);
+  ids.sort((a, b) => (BigInt(a) < BigInt(b) ? -1 : 1));
+  return withActiveConnection(pool, async (db) => {
+    // Read the receipt, original ledger fact and batch from the same current view.
+    // Preserve all historical receipt details for an output.
+    const [rows] = await db.query<TrackingReceiptRow[]>(
+      `SELECT d.production_output_id output_id,d.id detail_id,
+       o.id inbound_id,o.inbound_no,d.batch_id,b.batch_code,t.quantity
+       FROM inbound_order o JOIN inbound_detail d ON d.inbound_id=o.id
+       JOIN inventory_transaction t ON t.reference_type='inbound_detail' AND t.reference_detail_id=d.id
+         AND t.transaction_type='production_inbound' AND t.reversal_of_transaction_id IS NULL AND t.quantity=d.inbound_number AND t.quantity>0
+         AND t.product_id=d.product_id AND t.batch_id=d.batch_id AND t.unit_snapshot=d.unit_snapshot AND t.stock_status=d.stock_status
+       JOIN item_batch b ON b.id=d.batch_id
+       WHERE o.source_type='finished_product' AND o.status='completed' AND d.source_type='finished_product' AND d.is_deleted=0
+         AND d.production_output_id IN (${ids.map(() => '?').join(',')})
+       ORDER BY d.production_output_id,d.id,t.id${db === pool ? '' : ' FOR SHARE'}`,
+      ids,
+    );
+    const keys = rows.map((row) => String(row.detail_id));
+    if (new Set(keys).size !== rows.length)
+      throw new InventoryDomainError('INVALID_STATE', '产出明细存在重复入库事实');
+    return rows;
+  });
+}
+
+function mapTrackingReceipt(row: TrackingReceiptRow): TrackingOutputReceipt {
+  return {
+    outputId: String(row.output_id),
+    inboundDetailId: String(row.detail_id),
+    inboundId: String(row.inbound_id),
+    inboundNo: row.inbound_no,
+    itemBatchId: String(row.batch_id),
+    batchCode: row.batch_code,
+    inboundQuantity: String(row.quantity),
+  };
 }

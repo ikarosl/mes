@@ -32,11 +32,6 @@
             :disabled="blocked"
             @click="create()"
             >记录到货</el-button
-          ><el-button
-            v-if="hasExplicitLocation() || focusedReceipt"
-            :disabled="blocked"
-            @click="retryLocation"
-            >重新读取定位</el-button
           ></template
         >
         <template #tools
@@ -78,42 +73,49 @@
         show-icon
         class="list-notice"
       />
-      <div
-        v-if="focusedReceipt || locationLoading || locationError"
-        class="location-bar"
-      >
-        <span v-if="locationLoading">正在定位到货…</span
-        ><span v-else-if="locationError">{{ locationError }}</span
-        ><span v-else
-          >当前定位：<strong class="identity-value">{{ focusedReceipt?.receipt.receiptNo }}</strong
-          ><template v-if="focusedLineId">
-            · 到货行 ID：<strong class="identity-value">{{ focusedLineId }}</strong></template
-          ></span
-        ><el-button
-          v-if="locationError"
-          link
-          type="primary"
-          :disabled="blocked"
-          @click="retryLocation"
-          >重试列表定位</el-button
-        ><el-button
-          link
-          type="primary"
-          @click="clearListLocation"
-          >清除列表定位</el-button
-        >
-      </div>
       <section
-        v-if="focusedReceipt && !focusedIsInPage"
+        v-if="(focusedReceipt && !focusedIsInPage) || locationLoading || locationError"
         class="located-block"
+        aria-label="跳转目标"
       >
-        <p class="located-note">此到货不在当前筛选页，不计入分页总数</p>
+        <div class="located-heading">
+          <strong>跳转目标</strong>
+          <el-button
+            :icon="Close"
+            text
+            circle
+            aria-label="关闭跳转目标"
+            @click="clearListLocation"
+          />
+        </div>
+        <div
+          v-if="locationLoading || locationError"
+          class="location-feedback"
+        >
+          <InlineHint :tone="locationError ? 'danger' : 'info'">{{
+            locationError || '正在定位到货…'
+          }}</InlineHint>
+          <el-button
+            v-if="locationError"
+            link
+            type="primary"
+            :disabled="blocked"
+            @click="retryLocation"
+            >重试列表定位</el-button
+          >
+        </div>
+        <p
+          v-if="focusedReceipt && !focusedIsInPage"
+          class="located-note"
+        >
+          此到货不在当前筛选页，不计入分页总数。
+        </p>
         <ReceiptLinesTable
+          v-if="focusedReceipt && !focusedIsInPage"
           :receipt="focusedReceipt.receipt"
-          :state="locationError ? undefined : focusedReceipt"
+          :state="focusedReceipt"
           :expanded="focusedExpanded"
           :highlighted-line-id="focusedLineId"
-          focused
           :inbound-status-disabled="blocked"
           @inbound-status="toggleInboundStatus"
           @toggle="toggleFocused"
@@ -166,9 +168,9 @@
   </section>
 </template>
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
+import { computed, nextTick, onActivated, onDeactivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { Plus, Refresh } from '@element-plus/icons-vue';
+import { Close, Plus, Refresh } from '@element-plus/icons-vue';
 import type {
   ProcurementReceiptLineOverview,
   ReceiptInboundStatusResult,
@@ -218,10 +220,10 @@ const {
   locationLoading,
   locationError,
   load,
-  search,
-  reset,
-  changePage,
-  changePageSize,
+  search: searchReceipts,
+  reset: resetReceipts,
+  changePage: changeReceiptsPage,
+  changePageSize: changeReceiptsPageSize,
   expandPage,
   collapsePage,
   toggleReceipt,
@@ -260,9 +262,11 @@ async function toggleInboundStatus(line: ProcurementReceiptLineOverview): Promis
   );
 }
 let pendingLocate = false;
+let active = true;
+let navigationRevision = 0;
 const finishNavigation = (): void => {
   navigating.value = false;
-  if (pendingLocate) {
+  if (pendingLocate && active && route.name === 'procurement-receipts') {
     pendingLocate = false;
     void locate();
   }
@@ -283,25 +287,23 @@ const navigate = async (
   lineId?: string,
   intent?: ReceiptDetailIntent,
   matches: () => boolean = () => route.name === 'procurement-receipts',
-  synchronizeRoute = true,
+  locateTarget = false,
 ): Promise<boolean> => {
-  if (navigating.value) return false;
+  if (navigating.value || !active) return false;
   const revision = routeRevision;
-  const isCurrent = (): boolean => matches() && revision === routeRevision;
+  const operation = ++navigationRevision;
+  const isCurrent = (): boolean =>
+    active && matches() && revision === routeRevision && operation === navigationRevision;
   navigating.value = true;
-  list.prioritizeLocation();
+  if (locateTarget) list.prioritizeLocation();
   try {
     if (!(await release()) || !isCurrent()) return false;
     const opened = (await detail.value?.open(id, lineId, intent)) ?? false;
     if (!opened || !isCurrent()) return false;
+    if (!locateTarget) return true;
     backgroundTarget.value = { receiptId: id, lineId };
     await list.revealReceipt(id, lineId, isCurrent);
     if (!isCurrent()) return false;
-    if (synchronizeRoute) {
-      if (!(await recordLocation(id, lineId, isCurrent))) return false;
-      await scrollLocation(id, lineId);
-      return true;
-    }
     await scrollLocation(id, lineId, isCurrent);
     return isCurrent();
   } finally {
@@ -311,29 +313,37 @@ const navigate = async (
 const create = async (
   orderId?: string,
   matches: () => boolean = () => route.name === 'procurement-receipts',
+  explicit = false,
 ): Promise<boolean> => {
-  if (navigating.value) return false;
+  if (navigating.value || !active) return false;
+  const revision = routeRevision;
+  const operation = ++navigationRevision;
+  const isCurrent = (): boolean =>
+    active && matches() && revision === routeRevision && operation === navigationRevision;
   navigating.value = true;
-  list.prioritizeLocation();
+  if (explicit) list.prioritizeLocation();
   try {
-    if (!(await release()) || !matches()) return false;
+    if (!(await release()) || !isCurrent()) return false;
     await editor.value?.open(orderId);
-    return matches();
+    return isCurrent();
   } finally {
     finishNavigation();
   }
 };
 const saved = async (id: string): Promise<void> => {
-  list.prioritizeLocation();
-  backgroundTarget.value = { receiptId: id };
+  const revision = routeRevision;
+  const operation = navigationRevision;
   await load();
-  if (route.name !== 'procurement-receipts') return;
+  if (
+    !active ||
+    route.name !== 'procurement-receipts' ||
+    revision !== routeRevision ||
+    operation !== navigationRevision ||
+    navigating.value ||
+    detail.value?.visible
+  )
+    return;
   await detail.value?.open(id);
-  await list.revealReceipt(id);
-  if (route.name === 'procurement-receipts') {
-    await recordLocation(id);
-    await scrollLocation(id);
-  }
 };
 let consumed = '',
   accepted: Record<string, string> = {};
@@ -349,7 +359,10 @@ const recordLocation = async (
   matches: () => boolean = () => route.name === 'procurement-receipts',
 ): Promise<boolean> => {
   if (!matches()) return false;
-  accepted = { receiptId, ...(lineId ? { receiptLineId: lineId } : {}) };
+  accepted = {
+    ...(receiptId ? { receiptId } : {}),
+    ...(lineId ? { receiptLineId: lineId } : {}),
+  };
   const token = JSON.stringify([receiptId, lineId ?? '', '']);
   consumed = token;
   const query = { ...route.query };
@@ -378,28 +391,44 @@ const scrollLocation = async (
   (line ?? receipt)?.scrollIntoView({ block: lineId ? 'center' : 'nearest', inline: 'nearest' });
 };
 const clearListLocation = async (): Promise<void> => {
+  navigationRevision += 1;
+  pendingLocate = false;
   list.clearLocation();
   backgroundTarget.value = null;
   locator.invalidate();
   accepted = {};
   consumed = JSON.stringify(['', '', '']);
+  if (route.name !== 'procurement-receipts') return;
   const query = { ...route.query };
   delete query.receiptId;
   delete query.receiptLineId;
   delete query.purchaseOrderId;
   await router.replace({ query });
 };
+const search = async (): Promise<void> => {
+  await clearListLocation();
+  await searchReceipts();
+};
+const reset = async (): Promise<void> => {
+  await clearListLocation();
+  await resetReceipts();
+};
+const changePage = async (value: number): Promise<void> => {
+  await clearListLocation();
+  await changeReceiptsPage(value);
+};
+const changePageSize = async (value: number): Promise<void> => {
+  await clearListLocation();
+  await changeReceiptsPageSize(value);
+};
 const retryLocation = (): void => {
   if (locationError.value && backgroundTarget.value) {
     void list.revealReceipt(backgroundTarget.value.receiptId, backgroundTarget.value.lineId);
-  } else if (hasExplicitLocation()) {
-    consumed = '';
-    void locate();
-  } else void refreshLocation();
+  }
 };
 const locate = async (): Promise<void> => {
   const revision = routeRevision;
-  if (route.name !== 'procurement-receipts') return;
+  if (!active || route.name !== 'procurement-receipts') return;
   await nextTick();
   if (revision !== routeRevision || route.name !== 'procurement-receipts') return;
   const [receiptId, lineId, orderId] = readLocation();
@@ -428,25 +457,25 @@ const locate = async (): Promise<void> => {
         lineId || undefined,
         undefined,
         current.isCurrent,
-        false,
+        true,
       );
     else if (lineId) {
       const location = await procurementApi.locateReceiptLine(lineId, current.signal);
       if (!current.isCurrent()) return;
       if (location.receiptLineId !== lineId) throw new Error('到货明细定位不匹配');
-      succeeded = await navigate(location.receiptId, lineId, undefined, current.isCurrent, false);
-    } else succeeded = await create(orderId, current.isCurrent);
+      succeeded = await navigate(location.receiptId, lineId, undefined, current.isCurrent, true);
+    } else succeeded = await create(orderId, current.isCurrent, true);
   } catch (cause) {
     if (current.isCurrent()) EMessage.error(cause, '到货定位失败');
   }
   if (!current.isCurrent()) return;
-  if (succeeded)
-    accepted = {
-      ...(receiptId ? { receiptId } : {}),
-      ...(lineId ? { receiptLineId: lineId } : {}),
-      ...(orderId ? { purchaseOrderId: orderId } : {}),
-    };
-  else {
+  if (succeeded) {
+    await recordLocation(
+      backgroundTarget.value?.receiptId ?? '',
+      backgroundTarget.value?.lineId,
+      current.isCurrent,
+    );
+  } else {
     const query = { ...route.query };
     delete query.receiptId;
     delete query.receiptLineId;
@@ -469,14 +498,18 @@ watch(
   { immediate: true, flush: 'sync' },
 );
 onActivated(() => {
+  active = true;
   void locate();
 });
+const deactivate = (): void => {
+  active = false;
+  routeRevision += 1;
+  pendingLocate = false;
+};
+onDeactivated(deactivate);
+onScopeDispose(deactivate);
 </script>
 <style scoped>
-.identity-value {
-  color: var(--el-text-color-primary);
-  font-weight: 600;
-}
 .query-panel {
   padding: 20px 20px 4px;
   margin-bottom: 16px;
@@ -505,14 +538,18 @@ onActivated(() => {
   min-height: 160px;
   padding: 0 16px 16px;
 }
-.location-bar {
+.located-heading,
+.location-feedback {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px 12px;
-  font-size: 13px;
-  color: var(--el-text-color-regular);
+  gap: 8px 12px;
+}
+.located-heading {
+  justify-content: space-between;
+}
+.location-feedback {
+  margin-bottom: 12px;
 }
 .located-block {
   margin: 0 16px 16px;

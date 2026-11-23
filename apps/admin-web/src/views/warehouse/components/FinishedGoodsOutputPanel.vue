@@ -1,7 +1,7 @@
 <template>
   <section class="pending-outputs">
     <InlineHint
-      >选择任务后核对待入库产出，可将多盘产出合并至同一批次。终检确认不增加库存，成品入库确认后才计入库存。</InlineHint
+      >选择任务后核对待入库产出，按整笔勾选入库；可合并同任务多张卡，盘号关联本次入库单。</InlineHint
     >
     <el-form
       :inline="true"
@@ -79,7 +79,10 @@
           width="130"
           align="right"
           ><template #default="{ row }"
-            >{{ formatQuantity(row.quantity) }} {{ row.unit }}</template
+            >{{ formatQuantity(row.pendingQuantity) }} {{ row.unit }}
+            <div class="secondary">
+              已入 {{ formatQuantity(row.receivedQuantity) }} {{ row.unit }}
+            </div></template
           ></el-table-column
         >
         <el-table-column
@@ -147,7 +150,7 @@ async function load(): Promise<void> {
   try {
     const result = await productionOutputsApi.list(
       {
-        status: 'pending_inbound',
+        pendingOnly: true,
         keyword: keyword.value.trim() || undefined,
         page: page.value,
         pageSize: pageSize.value,

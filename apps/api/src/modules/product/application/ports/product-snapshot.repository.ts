@@ -7,6 +7,7 @@ import type {
 } from '../product-snapshot.query.js';
 
 export abstract class ProductSnapshotRepository {
+  abstract getHistoricalRouteStepProcessId(routeStepId: string): Promise<string | null>;
   abstract listProcessRouteDisplayReferencesByIds(
     routeIds: string[],
   ): Promise<ProcessRouteDisplayReference[]>;

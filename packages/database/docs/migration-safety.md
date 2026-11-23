@@ -85,6 +85,22 @@ down 在任何结构回退前检查免审生效 BOM 和需求更正；存在任�
 
 中途失败须保持停写，核对计数表、外键、CHECK、两项保护触发器及迁移登记，按统一恢复流程处理，不能重跑文件或更改校验和。down 仅在尚无任何已提交新序号时允许删除计数表；只要存在 `last_sequence > 0` 即拒绝，即使卡已作废也不允许回收编号。已有分配后的不兼容降级使用验证过的匹配备份及应用，不清卡、不清计数或平台日序列。
 
+## 随盘异常纠错
+
+`202611200010-tracking-abnormality-adjustments` 在旧结算上增加可空报废口径，既有结算留空。两张新表记录纠错及其单件快照，追踪卡在同卡、同版本的纠错事实支持下可恢复整盘误报。执行前暂停生产、终检和成品入库写入。升级后核对旧结算、新表及保护触发器，再刷新旧登记表单。结构见[追踪卡执行](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#production_tracking_abnormality_adjustment)。
+
+down 要求没有纠错事实，且原结算均未记录新口径。已使用任一能力时，降级须恢复匹配版本的备份。
+
+## 随盘异常描述标签
+
+`202611180010-tracking-abnormality-description-labels` 的原文回填依据、停写范围、客户端切换、逐项核验及空观察字典的 down 限制统一由 [Production 标签升级](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#标签数据升级)维护；不沿用早期实验的空库重建边界。备份、中断登记及恢复继续遵守本页通用规则。
+
+## 单件刻码
+
+从 `202611180010` 升级时，暂停任务、追踪卡、终检和成品入库写入，依序执行单件刻码、整笔入库和随盘异常纠错三份迁移后再启动匹配应用。刻码和入库的核验与降级条件分别见 [Production 刻码升级](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#单件刻码数据升级)和 [Inventory 整笔入库升级](../../../apps/api/src/modules/inventory/docs/database/inventory-ledger-and-inbound.md#整笔入库数据升级)。
+
+已登记过 11 月 19–20 日未发布八步方案中任一迁移的库，不支持直接升级到这组三步迁移。需要保留数据的环境须继续使用与原登记匹配的迁移和应用，另行确定转换路径。重建仅限明确授权的具体开发库。
+
 ## 终检待入库与任务恢复
 
 `202611120010-manual-tracking-output-inbound` 在已有实验库增量升级，保留全部旧产出、库存和任务事实。执行前暂停生产执行、任务状态、成品入库及其他库存写入，生成匹配旧应用的备份并验证隔离恢复。旧正数产出必须已存在完整同源、同量的已完成入库及原始正流水；不一致在 DDL 前拒绝，不猜造入库或把历史产出重新放入待入库。
