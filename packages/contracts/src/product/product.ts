@@ -58,8 +58,8 @@ export interface ProductListItem {
   unit: string;
   acquireMethod: ProductAcquireMethod;
   specValues: JsonTableData;
-  specificationFileId: string | null;
-  specificationFile: TechnicalFileListItem | null;
+  specificationFileIds: string[];
+  specificationFiles: TechnicalFileListItem[];
   status: number;
   materialCount: number;
   bomLockedAt: string | null;
@@ -79,14 +79,14 @@ export interface ProductPayload {
   unit: string;
   acquireMethod: ProductAcquireMethod;
   specValues?: JsonTableData;
-  specificationFileId: string;
+  specificationFileIds: string[];
   status: number;
   remark?: string | null;
 }
 
 export interface ProductUpdatePayload extends ProductPayload {
   /** 从读取结果回传当前关联，防止并发替换覆盖。 */
-  expectedSpecificationFileId: string | null;
+  expectedSpecificationFileIds: string[];
 }
 
 export interface ProductOption {
@@ -141,8 +141,8 @@ export interface MaterialVariantItem {
   majorVersion: string;
   minorVersion: string;
   variantCode: string;
-  specificationFileId: string | null;
-  specificationFile: TechnicalFileListItem | null;
+  specificationFileIds: string[];
+  specificationFiles: TechnicalFileListItem[];
   status: number;
   remark: string | null;
   updatedAt: string | null;
@@ -152,13 +152,13 @@ export interface MaterialVariantPayload {
   materialId: string;
   majorVersion: string;
   minorVersion: string;
-  specificationFileId: string;
+  specificationFileIds: string[];
   remark?: string | null;
 }
 
 export interface MaterialVariantSpecificationPayload {
-  specificationFileId: string;
-  expectedSpecificationFileId: string | null;
+  specificationFileIds: string[];
+  expectedSpecificationFileIds: string[];
 }
 
 export interface MaterialListQuery extends PageQuery {

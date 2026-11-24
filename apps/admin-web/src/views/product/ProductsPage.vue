@@ -133,16 +133,9 @@
           min-width="200"
         >
           <template #default="{ row }">
-            <TechnicalFileCell
-              :file-name="row.specificationFile?.originalName ?? null"
-              :pending-action="
-                productFileActionId === row.id
-                  ? productSpecificationActions.pendingAction.value
-                  : null
-              "
-              :disabled="Boolean(productSpecificationActions.pendingAction.value)"
-              @preview="viewProductSpecification(row, 'preview')"
-              @download="viewProductSpecification(row, 'download')"
+            <SpecificationFileList
+              :files="row.specificationFiles"
+              :active="pageActive && viewMode === 'products'"
             />
           </template>
         </el-table-column>
@@ -415,8 +408,7 @@ import MaterialFormDialog, { type MaterialFormValue } from './components/Materia
 import MaterialVariantFormDialog from './components/MaterialVariantFormDialog.vue';
 import type { MaterialVariantFormValue } from './components/MaterialVariantFormDialog.vue';
 import MaterialVariantsPanel from './components/MaterialVariantsPanel.vue';
-import { useTechnicalFileActions } from '../../composables/useTechnicalFileActions';
-import TechnicalFileCell from '../../components/TechnicalFileCell.vue';
+import SpecificationFileList from './components/SpecificationFileList.vue';
 
 defineOptions({ name: 'ProductsPage' });
 type ViewMode = 'products' | 'materials';
@@ -541,21 +533,6 @@ const currentEditingProduct = computed(
   () => products.products.value.find((row) => row.id === editingProductId.value) ?? null,
 );
 const specificationVariant = ref<MaterialVariantItem | null>(null);
-const productFileActionId = ref<string | null>(null);
-const productSpecificationActions = useTechnicalFileActions(
-  () =>
-    products.products.value.find((row) => row.id === productFileActionId.value)
-      ?.specificationFile ?? null,
-  () => pageActive.value && viewMode.value === 'products',
-);
-const viewProductSpecification = (
-  product: ProductListItem,
-  action: 'preview' | 'download',
-): void => {
-  if (!product.specificationFile) return;
-  productFileActionId.value = product.id;
-  void productSpecificationActions[action]();
-};
 const replaceVariantSpecification = (variant: MaterialVariantItem): void => {
   activeMaterial.value =
     materials.materials.value.find((row) => row.id === variant.materialId) ?? null;
@@ -643,7 +620,7 @@ const saveProduct = (d: ProductFormValue) =>
         unit: d.unit,
         acquireMethod: d.acquireMethod as ProductAcquireMethod,
         specValues: d.specValues,
-        specificationFileId: d.specificationFileId,
+        specificationFileIds: d.specificationFileIds,
         status: d.enabled ? 1 : 0,
         remark: d.remark || null,
       };
@@ -651,7 +628,7 @@ const saveProduct = (d: ProductFormValue) =>
         try {
           await productApi.updateProduct(editingProductId.value, {
             ...p,
-            expectedSpecificationFileId: d.expectedSpecificationFileId,
+            expectedSpecificationFileIds: d.expectedSpecificationFileIds,
           });
         } catch (error) {
           await products.load();

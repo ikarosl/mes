@@ -64,11 +64,11 @@ export abstract class AttachmentLifecycleRepository {
 }
 
 export abstract class AttachmentReferenceRepository {
-  abstract setReference(
+  abstract setReferences(
     ownerType: AttachmentOwnerType,
     ownerId: string,
     slot: AttachmentReferenceSlot,
-    attachmentId: string | null,
+    attachmentIds: string[],
     audit: CommandContext,
   ): Promise<void>;
   abstract bindReference(

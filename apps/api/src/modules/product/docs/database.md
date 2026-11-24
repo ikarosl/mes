@@ -1,8 +1,8 @@
 # Product 数据库设计
 
-本文维护 Product 八张业务表的职责、结构与关系，与[版本化 migration](../../../../../../packages/database/migrations/)同步；公共原则见[数据库规则](../../../../../../docs/database-conventions.md)。
+本文维护 Product 业务表的职责、结构与关系，与[版本化 migration](../../../../../../packages/database/migrations/)同步；公共原则见[数据库规则](../../../../../../docs/database-conventions.md)。
 
-各表使用 InnoDB、`utf8mb4_0900_ai_ci`，`id` 均为 `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` 主键。未写 `DEFAULT` 的非空列无数据库默认值，可空列默认 `NULL`。下表的审计列组 M 在八张表中逐列存在：
+各表使用 InnoDB、`utf8mb4_0900_ai_ci`；`id` 均为 `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` 主键。未写 `DEFAULT` 的非空列无数据库默认值，可空列默认 `NULL`。下表的审计列组 M 在主数据表中逐列存在：
 
 | 字段                                       | 物理定义                                                                  | 含义                                        |
 | ------------------------------------------ | ------------------------------------------------------------------------- | ------------------------------------------- |
@@ -72,17 +72,17 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 | `unit`                     | `VARCHAR(20) NOT NULL`                    | 固定基础计量单位                    |
 | `acquire_method`           | `VARCHAR(32) NOT NULL`                    | `self_made/outsourced/purchased`    |
 | `spec_values`              | `JSON NOT NULL`                           | 完整规格参数表格；无数据库默认值    |
-| `specification_file_id`    | `BIGINT UNSIGNED NULL`                    | 当前规格书                          |
+| `specification_file_ids`   | `JSON NOT NULL DEFAULT (JSON_ARRAY())`    | 当前规格附件 ID 字符串集合，空数组表示未补充 |
 | `status`                   | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`                  |
 | `remark`                   | `TEXT NULL`                               | 备注                                |
 | 审计列组 M                 | 见公共列组                                | 主数据创建、修改与软删除审计        |
 
-- 唯一键 `uk_products_item_code(item_code)`；索引 `idx_products_category(category_id)`、`idx_products_default_route(default_route_id)`、`idx_products_bom_locked_by(bom_locked_by)`、`idx_products_bom_approval_instance(bom_approval_instance_id)`、`idx_products_specification_file(specification_file_id)`。
-- 外键：`category_id → item_categories.id`；`default_route_id → process_routes.id ON DELETE SET NULL`；`bom_approval_instance_id → approval_instances.id`；`bom_locked_by → users.id`；`specification_file_id → attachments.id ON DELETE RESTRICT`；另有 M 组操作者外键。
+- 唯一键 `uk_products_item_code(item_code)`；索引 `idx_products_category(category_id)`、`idx_products_default_route(default_route_id)`、`idx_products_bom_locked_by(bom_locked_by)`、`idx_products_bom_approval_instance(bom_approval_instance_id)`。
+- 外键：`category_id → item_categories.id`；`default_route_id → process_routes.id ON DELETE SET NULL`；`bom_approval_instance_id → approval_instances.id`；`bom_locked_by → users.id`；另有 M 组操作者外键。
 - CHECK：获取方式为表列三值；状态、删除标志为 `0/1`；`version >= 0`；`bom_locked_at IS NOT NULL OR bom_locked_by IS NULL`。`chk_products_bom_status` 进一步要求草稿无申请和锁定依据、在审有申请而无锁定依据、批准后锁定人／锁定时间均非空；批准后申请可空以表达免审，非空仍受原外键保护。规格参数结构 CHECK 见[下文](#规格参数存储与迁移)。
 - `trg_products_reject_item_code_update` 是 `BEFORE UPDATE` 触发器，拒绝修改 `item_code`；固定单位、BOM 冻结及永久锁定的命令约束由应用执行，不能视为此触发器已覆盖。
 
-`item_code` 是永久身份；`product_name` 可重复。BOM 批准人、时间及当前申请关联保存于成品根；当前规格书引用 Attachment `attachments`，保存资料同事务维护 `product/specification` 统一引用，绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
+`item_code` 是永久身份；`product_name` 可重复。BOM 批准人、时间及当前申请关联保存于成品根；`specification_file_ids` 保存当前规格文件集合，JSON 约束及附件关系见[规格文件 JSON](#27-规格文件-json)。保存资料同事务维护 `product/specification` 统一引用，绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
 说明：
 
@@ -111,7 +111,7 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 
 唯一键 `uk_materials_code(material_code)`；索引 `idx_materials_category(category_id)`；外键 `category_id → item_categories.id`，另有 M 组操作者外键。CHECK 限定获取方式为表列三值、状态和删除标志为 `0/1`；`chk_materials_delete_facts` 保证未删除时删除人／时间均空，删除时二者均非空。规格参数 CHECK 见下文。`trg_materials_reject_identity_update` 在 `BEFORE UPDATE` 拒绝改变 `material_code` 或 `unit`。
 
-本表的参数由同一基础物料全部版本共用；不保存规格书字段。每个精确版本的规格书由 `material_variants` 自身引用，边界见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
+本表的参数由同一基础物料全部版本共用；不保存规格书字段。规格文件集合保存在精确版本的 `specification_file_ids` 中，边界见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
 物料编码与固定单位创建后不可变；编码按物料表永久唯一，不与成品共用注册表。分类必须为 `material`，获取方式独立于分类。
 
@@ -275,25 +275,35 @@ CHECK 保证 `step_order > 0`，`status/is_deleted` 均为 `0/1`；`chk_process_
 | `major_version`         | `VARCHAR(32) NOT NULL`                    | 主版本                       |
 | `minor_version`         | `VARCHAR(32) NOT NULL`                    | 次版本                       |
 | `variant_code`          | `VARCHAR(180) NOT NULL`                   | 服务端生成的永久版本编码     |
-| `specification_file_id` | `BIGINT UNSIGNED NULL`                    | 当前精确版本规格书           |
+| `specification_file_ids` | `JSON NOT NULL DEFAULT (JSON_ARRAY())`   | 当前规格附件 ID 字符串集合，空数组表示未补充 |
 | `status`                | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
 | `remark`                | `TEXT NULL`                               | 备注                         |
 | 审计列组 M              | 见公共列组                                | 主数据创建、修改与软删除审计 |
 
-- 唯一键 `uk_material_variants_code(variant_code)`、`uk_material_variants_version(material_id,major_version,minor_version)`、`uk_material_variants_material_reference(id,material_id)`；索引 `idx_material_variants_material_status(material_id,status,is_deleted,id)`、`idx_material_variants_specification_file(specification_file_id)`。
-- 外键 `material_id → materials.id`、`specification_file_id → attachments.id ON DELETE RESTRICT`，另有 M 组操作者外键。组合引用键支持外部同时校验精确版本及基础物料归属。
+- 唯一键 `uk_material_variants_code(variant_code)`、`uk_material_variants_version(material_id,major_version,minor_version)`、`uk_material_variants_material_reference(id,material_id)`；索引 `idx_material_variants_material_status(material_id,status,is_deleted,id)`。
+- 外键 `material_id → materials.id`，另有 M 组操作者外键。组合引用键支持外部同时校验精确版本及基础物料归属。
 - CHECK 要求大小版本和版本编码去空白后非空、状态及删除标志为 `0/1`；`chk_material_variants_delete_facts` 要求未删除时删除人／时间均空，删除时二者均非空。
 - `trg_material_variants_reject_identity_update` 在 `BEFORE UPDATE` 拒绝改变基础物料、大小版本或版本编码；更换规格书不改变这些身份字段。
 
-基础物料与大小版本联合唯一，版本编码也永久唯一；不同基础物料可使用相同大小版本。版本编码由服务端按物料编码及大小版本生成，身份创建后不可改。每个精确版本独立引用当前规格书，并在创建或替换事务中维护 `material_variant/specification` 统一附件引用。
+基础物料与大小版本联合唯一，版本编码也永久唯一；不同基础物料可使用相同大小版本。版本编码由服务端按物料编码及大小版本生成，身份创建后不可改。每个精确版本的 `specification_file_ids` 独立保存当前规格文件集合，JSON 约束及附件关系见[规格文件 JSON](#27-规格文件-json)，创建或替换事务维护 `material_variant/specification` 统一附件引用。
 
 版本停用不改变历史需求、批次和库存事实。采购允许停用但未删除版本，生产新选版及领料要求启用版本；基础物料及分类资格、历史身份锁和固定锁序统一见[公开用途资格](product-rules.md#候选历史展示与写入资格)。库存批次的冻结／停用由 Inventory 判断。
 
 版本启停只锁本版本行，不借展示 JOIN 反向取得基础物料锁。
 
-规格书引用限制物理删除。规格书替换只更新该关联及修改审计，不改精确版本身份、编码、大小版本或基础物料参数；文件用途和可绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
+规格书的统一保留引用限制附件物理删除。规格书替换只更新 JSON 集合、保留引用及修改审计，不改精确版本身份、编码、大小版本或基础物料参数；文件用途和可绑定资格见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
 BOM 只选择基础物料，不能固定大小版本。版本候选不等于管理员已经认可替代：Production 按任务类型决定是否允许选择另一版本：批量同任务锁版，研发按每次需求选版，详见[工单物料版本规则](../../production/docs/database/work-orders-and-batches.md)。已停用版本继续用于历史查询，但不允许新增需求选择。
+
+## 2.7 规格文件 JSON
+
+`products.specification_file_ids` 与 `material_variants.specification_file_ids` 是各自当前规格文件集合的唯一业务事实，采用小容量 JSON 数组，例如 `["12","35"]`。只保存十进制 ID 字符串以避免 BIGINT 精度丢失；文件名、类型和对象键仍由 Attachment 保存，文件内容不写入 JSON。集合不赋予顺序业务含义，读取按 ID 排序。
+
+`chk_products_specification_file_ids`、`chk_material_variants_specification_file_ids` 使用 `JSON_SCHEMA_VALID` 限定数组、最多 5 项、元素互异且均为匹配 `^[1-9][0-9]{0,19}$` 的字符串。默认空数组用于保留尚未补充文件的记录；新建和资料保存仍按[规格书规则](product-rules.md#成品与精确物料版本规格书)要求 1 至 5 个有效附件。没有 JSON 元素外键、额外索引或专属触发器；字段不用于文件反向查询。
+
+应用持有业务根锁，在同一事务内比较客户端期望集合、验证每个附件存在及用途／绑定资格，更新 JSON、Attachment 统一保留引用和成功审计。JSON 元素不能由普通外键约束，保留引用负责阻止仍被使用的附件进入清理；其表设计和锁序由 [Attachment](../../attachment/docs/database.md#attachment_references) 所有。未变化引用保留原登记人和时间，主数据停用或软删除保留 JSON 与引用。此存储选择不改变版本身份、BOM 或生产快照。
+
+[JSON 迁移](../../../../../../packages/database/migrations/202611230020-specification-files-json.up.sql) 直接将两个原 `specification_file_id` 单值字段转换为 `specification_file_ids`：非空 ID 转为仅含该 ID 字符串的数组，NULL 转为空数组，包含停用及软删除根。附件用途异常或保留引用缺失／多余时，在永久 DDL 前拒绝，不能猜造关联。转换核对完成后删除原单值列及其外键、索引；不新增规格文件关联表。附件、对象、保留引用及其登记审计、主数据审计和版本均不改写。down 仅支持所有对象至多一个文件且引用一致的环境，不丢弃多余文件；停写、恢复及验证要求见[迁移安全](../../../../../../packages/database/docs/migration-safety.md#规格文件-json)。
 
 ## 3. 数据库实施与应用适配边界
 
@@ -301,7 +311,7 @@ BOM 只选择基础物料，不能固定大小版本。版本候选不等于管�
 
 ### 规格书关联与重建边界
 
-规格书关联列物理上可空，NULL 表示尚未补充真实规格书；应用的新建与资料保存必须提交有效规格书，独立启停命令不强制补资料。此可空性不提供省略规格书的新建入口，也不能用于猜测历史文件关联。
+规格文件关联集合可以为空，表示尚未补充真实规格文件；应用的新建与资料保存必须提交有效规格书，独立启停命令不强制补资料。空集合不提供省略规格书的新建入口，也不能用于猜测历史文件关联。
 
 规格书名称使用原始文件名，版本为空；SOP 的版本和历史快照继续独立保留。附件所有权与文件 ID、对象定位的升级由增量 migration 保留；数据库恢复与对象存储保留的边界分别见[迁移安全](../../../../../../packages/database/docs/migration-safety.md)和[技术文件](technical-files.md)。
 

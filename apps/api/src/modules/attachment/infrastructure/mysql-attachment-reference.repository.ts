@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, RowDataPacket } from 'mysql2/promise';
 import { withActiveConnection } from '@company/database';
+import { sameStringSet } from '@company/utils';
 import type { AttachmentOwnerType, AttachmentReferenceSlot } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { DATABASE_POOL } from '../../../infrastructure/database/database.module.js';
@@ -14,38 +15,39 @@ import { writeAttachmentAudit } from './attachment-audit.js';
 export class MysqlAttachmentReferenceRepository implements AttachmentReferenceRepository {
   constructor(@Inject(DATABASE_POOL) private readonly pool: Pool) {}
 
-  async setReference(
+  async setReferences(
     ownerType: AttachmentOwnerType,
     ownerId: string,
     slot: AttachmentReferenceSlot,
-    attachmentId: string | null,
+    attachmentIds: string[],
     audit: CommandContext,
   ): Promise<void> {
     return this.inBusinessTransaction(async (db) => {
       const before = await this.currentIds(db, ownerType, ownerId, slot, false);
-      const ids = [...new Set([...before, ...(attachmentId ? [attachmentId] : [])])];
+      const next = [...new Set(attachmentIds)];
+      const ids = [...new Set([...before, ...next])];
       const files = await this.lockAttachments(db, ids);
-      if (attachmentId) this.requireAvailable(files, attachmentId, ownerType, slot);
+      for (const id of next) this.requireAvailable(files, id, ownerType, slot);
       const current = await this.currentIds(db, ownerType, ownerId, slot, true);
       if (current.join(',') !== before.join(','))
         throw new AttachmentError('CONFLICT', '附件引用已变化，请重新提交业务资料');
-      if (
-        (attachmentId === null && current.length === 0) ||
-        (current.length === 1 && current[0] === attachmentId)
-      )
-        return;
-      await db.execute(
-        'DELETE FROM attachment_references WHERE owner_type=? AND owner_id=? AND slot=?',
-        [ownerType, ownerId, slot],
-      );
-      if (attachmentId) await this.insert(db, ownerType, ownerId, slot, attachmentId, audit);
+      if (sameStringSet(current, next)) return;
+      for (const id of current.filter((id) => !next.includes(id))) {
+        await db.execute(
+          'DELETE FROM attachment_references WHERE owner_type=? AND owner_id=? AND slot=? AND attachment_id=?',
+          [ownerType, ownerId, slot, id],
+        );
+      }
+      for (const id of next.filter((id) => !current.includes(id))) {
+        await this.insert(db, ownerType, ownerId, slot, id, audit);
+      }
       await writeAttachmentAudit(
         db,
         audit,
         'attachment.reference.replace',
-        attachmentId ?? current[0],
+        next[0] ?? current[0],
         { ownerType, ownerId, slot, attachmentIds: current },
-        { ownerType, ownerId, slot, attachmentIds: attachmentId ? [attachmentId] : [] },
+        { ownerType, ownerId, slot, attachmentIds: next },
       );
     });
   }

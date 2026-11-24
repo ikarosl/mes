@@ -1,6 +1,9 @@
 import { Type } from 'class-transformer';
 import {
   ArrayMaxSize,
+  ArrayMinSize,
+  ArrayUnique,
+  Matches,
   IsArray,
   IsIn,
   IsInt,
@@ -20,6 +23,7 @@ import {
   PRODUCT_ACQUIRE_METHODS,
   PRODUCT_ITEM_KINDS,
   SYSTEM_STATUS,
+  SPECIFICATION_FILE_MAX_COUNT,
   TECHNICAL_FILE_STORAGE_PROVIDERS,
   TECHNICAL_FILE_TYPES,
 } from '@company/constants';
@@ -101,13 +105,26 @@ export class MaterialVariantDto {
   @IsNumberString() materialId!: string;
   @IsString() @IsNotEmpty() @MaxLength(32) majorVersion!: string;
   @IsString() @IsNotEmpty() @MaxLength(32) minorVersion!: string;
-  @IsNumberString() specificationFileId!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(SPECIFICATION_FILE_MAX_COUNT)
+  @ArrayUnique()
+  @Matches(/^[1-9]\d*$/, { each: true })
+  specificationFileIds!: string[];
   @IsOptional() @IsString() @MaxLength(255) remark?: string | null;
 }
 export class MaterialVariantSpecificationDto {
-  @IsNumberString() specificationFileId!: string;
-  @ValidateIf((_, value) => value !== null) @IsNumberString() expectedSpecificationFileId!:
-    string | null;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(SPECIFICATION_FILE_MAX_COUNT)
+  @ArrayUnique()
+  @Matches(/^[1-9]\d*$/, { each: true })
+  specificationFileIds!: string[];
+  @IsArray()
+  @ArrayMaxSize(SPECIFICATION_FILE_MAX_COUNT)
+  @ArrayUnique()
+  @Matches(/^[1-9]\d*$/, { each: true })
+  expectedSpecificationFileIds!: string[];
 }
 export class ProcessRouteQueryDto extends PageQueryDto {
   @IsOptional() @IsString() @MaxLength(255) keyword?: string;
@@ -137,13 +154,21 @@ export class ProductDto {
   @IsOptional()
   @IsObject()
   specValues?: JsonTableData;
-  @IsNumberString() specificationFileId!: string;
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(SPECIFICATION_FILE_MAX_COUNT)
+  @ArrayUnique()
+  @Matches(/^[1-9]\d*$/, { each: true })
+  specificationFileIds!: string[];
   @IsIn([SYSTEM_STATUS.disabled, SYSTEM_STATUS.enabled]) status!: number;
   @IsOptional() @IsString() remark?: string | null;
 }
 export class ProductUpdateDto extends ProductDto {
-  @ValidateIf((_, value) => value !== null) @IsNumberString() expectedSpecificationFileId!:
-    string | null;
+  @IsArray()
+  @ArrayMaxSize(SPECIFICATION_FILE_MAX_COUNT)
+  @ArrayUnique()
+  @Matches(/^[1-9]\d*$/, { each: true })
+  expectedSpecificationFileIds!: string[];
 }
 export class ProductMaterialDto {
   @IsNumberString() materialId!: string;

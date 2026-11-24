@@ -6,7 +6,7 @@ Product 拥有 SOP 与规格书的业务含义、授权、绑定规则和 SOP �
 
 `POST /api/product/technical-files` 保留为有业务权限的上传入口，委托 Attachment 创建对象。multipart 的 `file` 为实际文件，`fileType` 省略时为 `sop`，可显式指定 `specification`。文件名使用原始文件名，不另填业务名称或版本号；Product 为 SOP 生成北京时间版本，规格书的 `versionNo` 固定为空。每次上传创建独立附件，不按文件名或摘要覆盖旧内容。
 
-`GET /api/product/technical-files` 省略用途时只读 SOP，按 `fileType` 精确筛选；下载使用 `/:id/content`。上传、目录与下载仍分别独立校验 `product:files:upload/view/download`，委托统一附件能力不授予主数据写入权限。业务入口的上传类型和容量由共享技术文件常量与 HTTP 校验维护。
+`GET /api/product/technical-files` 省略用途时只读 SOP，按 `fileType` 精确筛选；下载使用 `/:id/content`。上传、目录与下载仍分别独立校验 `product:files:upload/view/download`，委托统一附件能力不授予主数据写入权限。业务入口的上传类型和容量由共享技术文件常量与 HTTP 校验维护，支持图片、Office、PDF、DWG 和 DXF。每个 multipart 请求仍只上传一个文件，多文件资料通过多次上传后提交完整关联集合，数量与并发规则见[规格书规则](product-rules.md#成品与精确物料版本规格书)。
 
 工序直接上传先登记附件，再在工序保存事务内绑定；业务保存失败时不伪造绑定，也不删除已登记附件。未关联上传后续按 Attachment 的无引用附件规则处理。
 
@@ -18,8 +18,8 @@ Product 拥有 SOP 与规格书的业务含义、授权、绑定规则和 SOP �
 | --- | --- | --- |
 | 标准工序 | `product_process_step/default_sop` | 上传、改绑或取消默认 SOP 时同步替换当前引用 |
 | 路线步骤 | `product_route_step/sop` | 草稿保存时按真实步骤 ID 更新引用；完全移除的当前草稿步骤及删除从未启用的整条草稿时解除引用；路线停用、归档保留引用 |
-| 成品 | `product/specification` | 资料创建或替换规格书时替换当前引用 |
-| 精确物料版本 | `material_variant/specification` | 版本创建或替换规格书时替换当前引用 |
+| 成品 | `product/specification` | 资料保存时按当前规格文件集合增减引用 |
+| 精确物料版本 | `material_variant/specification` | 版本创建或保存规格文件时按集合增减引用 |
 
 路线保存从工序及 Attachment 公开能力复制 SOP 文件名、对象键和版本；路线启用后不能原地改写。生产下达另存自己的默认／覆盖 SOP 保留引用，规则由 [Production](../../production/docs/database/execution-traceability-quality.md#batch_step_records) 维护，不依赖当前工序或路线引用持续存在。
 

@@ -1,11 +1,12 @@
 import type { Pool, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { sameStringSet } from '@company/utils';
 import { withTransaction } from '@company/database';
 import type { ProductPayload, ProductUpdatePayload } from '@company/contracts';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
 import { ProductDomainError } from '../domain/product.errors.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
 import type { AttachmentReferenceService, AttachmentService } from '../../attachment/public.js';
-import { requireSpecificationFile } from './specification-files.js';
+import { requireSpecificationFiles, readSpecificationIds } from './specification-files.js';
 import {
   readProductCatalogRecord,
   requireProductCatalogCategory,
@@ -23,9 +24,9 @@ export class MysqlProductCommands {
   async createProduct(payload: ProductPayload, audit: CommandContext): Promise<{ id: string }> {
     return withTransaction(this.pool, async (connection) => {
       await requireProductCatalogCategory(connection, payload.categoryId);
-      await requireSpecificationFile(this.attachments, payload.specificationFileId);
+      await requireSpecificationFiles(this.attachments, payload.specificationFileIds);
       const [result] = await connection.execute<ResultSetHeader>(
-        `INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,specification_file_id,status,remark,created_by,updated_by)
+        `INSERT INTO products (item_code,product_name,category_id,unit,acquire_method,spec_values,specification_file_ids,status,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
         [
           payload.itemCode,
@@ -34,18 +35,18 @@ export class MysqlProductCommands {
           payload.unit,
           payload.acquireMethod,
           JSON.stringify(payload.specValues ?? { columns: [], rows: [] }),
-          payload.specificationFileId,
+          JSON.stringify(payload.specificationFileIds),
           payload.status,
           payload.remark ?? null,
           audit.actorId,
           audit.actorId,
         ],
       );
-      await this.attachmentReferences.setReference(
+      await this.attachmentReferences.setReferences(
         'product',
         String(result.insertId),
         'specification',
-        payload.specificationFileId,
+        payload.specificationFileIds,
         audit,
       );
       await writeProductCatalogAudit(
@@ -69,9 +70,8 @@ export class MysqlProductCommands {
   ): Promise<void> {
     await withTransaction(this.pool, async (connection) => {
       const before = await readProductCatalogRecord(connection, id, true);
-      const currentSpecificationFileId =
-        before.specification_file_id === null ? null : String(before.specification_file_id);
-      if (payload.expectedSpecificationFileId !== currentSpecificationFileId) {
+      const currentSpecificationFileIds = readSpecificationIds(before.specification_file_ids);
+      if (!sameStringSet(payload.expectedSpecificationFileIds, currentSpecificationFileIds)) {
         throw new ProductDomainError('CONFLICT', '规格书已被其他人修改，请刷新后重试');
       }
       if (before.bom_status === 'pending_approval') {
@@ -100,7 +100,7 @@ export class MysqlProductCommands {
         );
       }
       await requireProductCatalogCategory(connection, payload.categoryId);
-      await requireSpecificationFile(this.attachments, payload.specificationFileId);
+      await requireSpecificationFiles(this.attachments, payload.specificationFileIds);
       if (payload.acquireMethod !== 'self_made') {
         const [[dependent]] = await connection.query<(RowDataPacket & { bom_count: number })[]>(
           `SELECT (SELECT COUNT(*) FROM product_materials WHERE product_id=? AND is_deleted=0) bom_count`,
@@ -114,25 +114,25 @@ export class MysqlProductCommands {
         }
       }
       await connection.execute(
-        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,specification_file_id=?,status=?,remark=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0`,
+        `UPDATE products SET product_name=?,category_id=?,unit=?,acquire_method=?,spec_values=?,specification_file_ids=?,status=?,remark=?,version=version+1,updated_by=? WHERE id=? AND is_deleted=0`,
         [
           payload.productName,
           payload.categoryId,
           payload.unit,
           payload.acquireMethod,
           JSON.stringify(payload.specValues ?? { columns: [], rows: [] }),
-          payload.specificationFileId,
+          JSON.stringify(payload.specificationFileIds),
           payload.status,
           payload.remark ?? null,
           audit.actorId,
           id,
         ],
       );
-      await this.attachmentReferences.setReference(
+      await this.attachmentReferences.setReferences(
         'product',
         id,
         'specification',
-        payload.specificationFileId,
+        payload.specificationFileIds,
         audit,
       );
       await writeProductCatalogAudit(
@@ -140,7 +140,7 @@ export class MysqlProductCommands {
         audit,
         'product.update',
         id,
-        { ...before, specificationFileId: currentSpecificationFileId },
+        { ...before, specificationFileIds: currentSpecificationFileIds },
         payload,
       );
     }).catch((error) =>

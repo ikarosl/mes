@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { Pool, PoolConnection, ResultSetHeader, RowDataPacket } from 'mysql2/promise';
+import { sameStringSet } from '@company/utils';
 import { withActiveConnection, withTransaction } from '@company/database';
 import type {
   MaterialOption,
@@ -7,7 +8,6 @@ import type {
   MaterialVariantListQuery,
   MaterialVariantSpecificationPayload,
   PageResult,
-  TechnicalFileListItem,
 } from '@company/contracts';
 import { MATERIAL_OPTIONS_WINDOW_SIZE } from '@company/constants';
 import type { CommandContext } from '../../../common/audit/audit.types.js';
@@ -25,7 +25,12 @@ import {
   type MaterialVariantDisplayReference,
 } from '../application/ports/material-variant.repository.js';
 import { mapProductWriteError } from './mysql-product.shared.js';
-import { readSpecificationFiles, requireSpecificationFile } from './specification-files.js';
+import {
+  readSpecificationFiles,
+  requireSpecificationFiles,
+  readSpecificationIds,
+  type SpecificationFiles,
+} from './specification-files.js';
 
 type Db = Pool | PoolConnection;
 type VariantRow = RowDataPacket & {
@@ -36,7 +41,7 @@ type VariantRow = RowDataPacket & {
   major_version: string;
   minor_version: string;
   variant_code: string;
-  specification_file_id: number | null;
+  specification_file_ids: unknown;
   status: number;
   is_deleted: number;
   remark: string | null;
@@ -76,7 +81,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     );
     const [rows] = await this.pool.query<VariantRow[]>(
       `SELECT v.id,v.material_id,p.material_code,p.material_name,
-              v.major_version,v.minor_version,v.variant_code,v.specification_file_id,v.status,v.is_deleted,v.remark,v.updated_at
+              v.major_version,v.minor_version,v.variant_code,v.specification_file_ids,v.status,v.is_deleted,v.remark,v.updated_at
          FROM material_variants v
          JOIN materials p ON p.id=v.material_id
          JOIN item_categories c ON c.id=p.category_id
@@ -85,10 +90,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         LIMIT ? OFFSET ?`,
       [...parameters, pageSize, (page - 1) * pageSize],
     );
-    const files = await readSpecificationFiles(
-      this.attachments,
-      rows.map((row) => row.specification_file_id),
-    );
+    const files = await readSpecificationFiles(this.attachments, rows);
     return {
       items: rows.map((row) => this.map(row, files)),
       total: Number(count?.total ?? 0),
@@ -107,7 +109,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     const { where, parameters } = this.filters({ materialId });
     const [rows] = await this.pool.query<VariantRow[]>(
       `SELECT v.id,v.material_id,p.material_code,p.material_name,
-              v.major_version,v.minor_version,v.variant_code,v.specification_file_id,v.status,v.is_deleted,v.remark,v.updated_at
+              v.major_version,v.minor_version,v.variant_code,v.specification_file_ids,v.status,v.is_deleted,v.remark,v.updated_at
          FROM material_variants v
          JOIN materials p ON p.id=v.material_id
          JOIN item_categories c ON c.id=p.category_id
@@ -115,10 +117,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         ORDER BY v.major_version,v.minor_version,v.id`,
       parameters,
     );
-    const files = await readSpecificationFiles(
-      this.attachments,
-      rows.map((row) => row.specification_file_id),
-    );
+    const files = await readSpecificationFiles(this.attachments, rows);
     return rows.map((row) => this.map(row, files));
   }
 
@@ -146,7 +145,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     return withActiveConnection(this.pool, async (db) => {
       const [rows] = await db.query<VariantRow[]>(
         `SELECT v.id,v.material_id,p.material_code,p.material_name,
-                v.major_version,v.minor_version,v.variant_code,v.specification_file_id,v.status,v.is_deleted,v.remark,v.updated_at
+                v.major_version,v.minor_version,v.variant_code,v.specification_file_ids,v.status,v.is_deleted,v.remark,v.updated_at
            FROM material_variants v
            JOIN materials p ON p.id=v.material_id
            JOIN item_categories c ON c.id=p.category_id
@@ -156,10 +155,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
           ORDER BY v.material_id,v.major_version,v.minor_version,v.id`,
         ids,
       );
-      const files = await readSpecificationFiles(
-        this.attachments,
-        rows.map((row) => row.specification_file_id),
-      );
+      const files = await readSpecificationFiles(this.attachments, rows);
       return rows.map((row) => this.map(row, files));
     });
   }
@@ -233,7 +229,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     return withActiveConnection(this.pool, async (queryable) => {
       const [rows] = await queryable.query<VariantRow[]>(
         `SELECT v.id,v.material_id,p.material_code,p.material_name,
-                v.major_version,v.minor_version,v.variant_code,v.specification_file_id,v.status,v.is_deleted,v.remark,v.updated_at
+                v.major_version,v.minor_version,v.variant_code,v.specification_file_ids,v.status,v.is_deleted,v.remark,v.updated_at
            FROM material_variants v
            JOIN materials p ON p.id=v.material_id
            JOIN item_categories c ON c.id=p.category_id
@@ -255,10 +251,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
           throw new ProductDomainError('INVALID_INPUT', eligibility.message);
         }
       }
-      const files = await readSpecificationFiles(
-        this.attachments,
-        rows.map((row) => row.specification_file_id),
-      );
+      const files = await readSpecificationFiles(this.attachments, rows);
       return rows.map((row) => {
         requireEnabledCompatibleMaterialVariant(String(row.material_id), {
           id: String(row.id),
@@ -298,27 +291,27 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       // The external code is deterministic and server-owned. Keep the base
       // code intact so all BOMs continue to resolve to the same material.
       const variantCode = `${material.material_code}-${majorVersion}-${minorVersion}`;
-      await requireSpecificationFile(this.attachments, command.specificationFileId);
+      await requireSpecificationFiles(this.attachments, command.specificationFileIds);
       const [result] = await connection.execute<ResultSetHeader>(
         `INSERT INTO material_variants
-          (material_id,major_version,minor_version,variant_code,specification_file_id,remark,created_by,updated_by)
+          (material_id,major_version,minor_version,variant_code,specification_file_ids,remark,created_by,updated_by)
          VALUES (?,?,?,?,?,?,?,?)`,
         [
           command.materialId,
           majorVersion,
           minorVersion,
           variantCode,
-          command.specificationFileId,
+          JSON.stringify(command.specificationFileIds),
           command.remark?.trim() || null,
           context.actorId,
           context.actorId,
         ],
       );
-      await this.attachmentReferences.setReference(
+      await this.attachmentReferences.setReferences(
         'material_variant',
         String(result.insertId),
         'specification',
-        command.specificationFileId,
+        command.specificationFileIds,
         context,
       );
       await this.audit(
@@ -332,7 +325,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
           majorVersion,
           minorVersion,
           variantCode,
-          specificationFileId: command.specificationFileId,
+          specificationFileIds: command.specificationFileIds,
         },
       );
       return { id: String(result.insertId), variantCode };
@@ -382,26 +375,25 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       );
       if (!material) throw new ProductDomainError('NOT_FOUND', '基础物料不存在');
       const [[before]] = await connection.query<VariantRow[]>(
-        'SELECT id,specification_file_id FROM material_variants WHERE id=? AND material_id=? AND is_deleted=0 FOR UPDATE',
+        'SELECT id,specification_file_ids FROM material_variants WHERE id=? AND material_id=? AND is_deleted=0 FOR UPDATE',
         [id, identity.material_id],
       );
       if (!before) throw new ProductDomainError('NOT_FOUND', '物料版本不存在');
-      const currentFileId =
-        before.specification_file_id === null ? null : String(before.specification_file_id);
-      if (payload.expectedSpecificationFileId !== currentFileId) {
+      const currentFileIds = readSpecificationIds(before.specification_file_ids);
+      if (!sameStringSet(payload.expectedSpecificationFileIds, currentFileIds)) {
         throw new ProductDomainError('CONFLICT', '规格书已被其他人修改，请刷新后重试');
       }
-      await requireSpecificationFile(this.attachments, payload.specificationFileId);
-      if (payload.specificationFileId === currentFileId) return;
+      await requireSpecificationFiles(this.attachments, payload.specificationFileIds);
+      if (sameStringSet(payload.specificationFileIds, currentFileIds)) return;
       await connection.execute(
-        'UPDATE material_variants SET specification_file_id=?,updated_by=? WHERE id=? AND is_deleted=0',
-        [payload.specificationFileId, context.actorId, id],
+        'UPDATE material_variants SET specification_file_ids=?,updated_at=CURRENT_TIMESTAMP,updated_by=? WHERE id=? AND is_deleted=0',
+        [JSON.stringify(payload.specificationFileIds), context.actorId, id],
       );
-      await this.attachmentReferences.setReference(
+      await this.attachmentReferences.setReferences(
         'material_variant',
         id,
         'specification',
-        payload.specificationFileId,
+        payload.specificationFileIds,
         context,
       );
       await this.audit(
@@ -409,8 +401,8 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
         context,
         'material-variant.specification',
         id,
-        { specificationFileId: currentFileId },
-        { specificationFileId: payload.specificationFileId },
+        { specificationFileIds: currentFileIds },
+        { specificationFileIds: payload.specificationFileIds },
       );
     });
   }
@@ -441,7 +433,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
     return { where: conditions.join(' AND '), parameters };
   }
 
-  private map(row: VariantRow, files: Map<string, TechnicalFileListItem>): MaterialVariantItem {
+  private map(row: VariantRow, files: Map<string, SpecificationFiles>): MaterialVariantItem {
     return {
       id: String(row.id),
       materialId: String(row.material_id),
@@ -450,12 +442,7 @@ export class MysqlMaterialVariantRepository extends MaterialVariantRepository {
       majorVersion: row.major_version,
       minorVersion: row.minor_version,
       variantCode: row.variant_code,
-      specificationFileId:
-        row.specification_file_id === null ? null : String(row.specification_file_id),
-      specificationFile:
-        row.specification_file_id === null
-          ? null
-          : (files.get(String(row.specification_file_id)) ?? null),
+      ...(files.get(String(row.id)) ?? { specificationFileIds: [], specificationFiles: [] }),
       status: row.status,
       remark: row.remark,
       updatedAt: row.updated_at ? toBeijingISOString(row.updated_at) : null,

@@ -119,7 +119,7 @@
       >
         <SpecificationUpload
           :key="editingProductId ?? 'new'"
-          v-model="specificationFile"
+          v-model="specificationFiles"
           :active="visible"
           :disabled="submitting"
           @uploading="uploading = $event"
@@ -160,7 +160,7 @@
       <el-button
         type="primary"
         :loading="submitting"
-        :disabled="busy || stale || !specificationFile"
+        :disabled="busy || stale || !specificationFiles.length"
         @click="handleSubmit"
         >保存产品</el-button
       >
@@ -188,7 +188,7 @@ import { RouteMessageBox } from '../../../utils/route-message-box';
 import { useDraftCloseGuard } from '../../../composables/useDraftCloseGuard';
 import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import { BusinessTemplatePicker } from '../../template/public';
-import { normalizeJsonTable } from '@company/utils';
+import { normalizeJsonTable, sameStringSet } from '@company/utils';
 import SpecificationUpload from './SpecificationUpload.vue';
 import type { JsonTableData } from '@company/contracts';
 
@@ -201,10 +201,10 @@ export type ProductFormValue = {
   enabled: boolean;
   remark: string;
   specValues: JsonTableData;
-  specificationFileId: string;
-  expectedSpecificationFileId: string | null;
+  specificationFileIds: string[];
+  expectedSpecificationFileIds: string[];
 };
-type ProductFormDraft = Omit<ProductFormValue, 'specificationFileId'>;
+type ProductFormDraft = Omit<ProductFormValue, 'specificationFileIds'>;
 
 const props = defineProps<{
   visible: boolean;
@@ -231,11 +231,11 @@ const initialForm = (): ProductFormDraft => ({
   enabled: true,
   remark: '',
   specValues: { columns: [], rows: [] },
-  expectedSpecificationFileId: null,
+  expectedSpecificationFileIds: [],
 });
 
 const form = reactive<ProductFormDraft>(initialForm());
-const specificationFile = ref<Pick<TechnicalFileListItem, 'id' | 'originalName'> | null>(null);
+const specificationFiles = ref<Pick<TechnicalFileListItem, 'id' | 'originalName'>[]>([]);
 const uploading = ref(false);
 const busy = computed(() => props.submitting || uploading.value);
 const templatesVisible = ref(false);
@@ -257,14 +257,14 @@ const applyTemplate = async (content: JsonTableData): Promise<void> => {
 const signature = () =>
   JSON.stringify({
     form,
-    fileId: specificationFile.value?.id ?? '',
+    fileIds: specificationFiles.value.map((file) => file.id),
   });
 const baseline = ref(signature());
 const stale = computed(
   () =>
     Boolean(props.editingProductId) &&
     (!props.currentProduct ||
-      props.currentProduct.specificationFileId !== form.expectedSpecificationFileId),
+      !sameStringSet(props.currentProduct.specificationFileIds, form.expectedSpecificationFileIds)),
 );
 const { close, beforeClose } = useDraftCloseGuard({
   visible: () => props.visible,
@@ -282,17 +282,17 @@ const categoryChoices = computed(() =>
 );
 
 const resetForm = (): void => {
-  specificationFile.value = null;
+  specificationFiles.value = [];
   Object.assign(form, initialForm());
   templatesVisible.value = false;
   baseline.value = signature();
 };
 
 const setForm = (row: ProductListItem): void => {
-  specificationFile.value = row.specificationFile;
+  specificationFiles.value = [...row.specificationFiles];
   Object.assign(form, {
     itemCode: row.itemCode,
-    expectedSpecificationFileId: row.specificationFileId,
+    expectedSpecificationFileIds: [...row.specificationFileIds],
     productName: row.productName,
     categoryId: row.categoryId ?? '',
     unit: row.unit,
@@ -317,7 +317,7 @@ const reloadProduct = async (): Promise<void> => {
 
 const handleSubmit = (): void => {
   if (busy.value || stale.value) return;
-  if (!(specificationFile.value?.id ?? '')) {
+  if (!specificationFiles.value.length) {
     EMessage.warning('请完成规格书上传后再保存');
     return;
   }
@@ -342,7 +342,7 @@ const handleSubmit = (): void => {
   }
   emit('save', {
     ...form,
-    specificationFileId: specificationFile.value?.id ?? '',
+    specificationFileIds: specificationFiles.value.map((file) => file.id),
     specValues,
   });
 };

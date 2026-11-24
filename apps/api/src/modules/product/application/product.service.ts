@@ -136,7 +136,7 @@ export class ProductService {
       id,
       {
         ...this.cleanProduct(payload),
-        expectedSpecificationFileId: payload.expectedSpecificationFileId,
+        expectedSpecificationFileIds: payload.expectedSpecificationFileIds,
       },
       audit,
     );
@@ -159,7 +159,7 @@ export class ProductService {
         materialId: payload.materialId,
         majorVersion: payload.majorVersion.trim(),
         minorVersion: payload.minorVersion.trim(),
-        specificationFileId: payload.specificationFileId,
+        specificationFileIds: payload.specificationFileIds,
         remark: payload.remark?.trim() || null,
       },
       audit,

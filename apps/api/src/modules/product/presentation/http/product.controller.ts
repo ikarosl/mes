@@ -1,3 +1,4 @@
+import { sameStringSet } from '@company/utils';
 import {
   BadRequestException,
   Body,
@@ -303,7 +304,7 @@ export class ProductController {
     @CurrentUser() user: UserProfile,
   ) {
     if (
-      body.specificationFileId !== body.expectedSpecificationFileId &&
+      !sameStringSet(body.specificationFileIds, body.expectedSpecificationFileIds) &&
       !permissionMatches(user.permissions, PERMISSIONS.product.files.attach)
     ) {
       throw new ForbiddenException('没有绑定技术文件的权限');

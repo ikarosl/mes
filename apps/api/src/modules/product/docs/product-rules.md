@@ -22,15 +22,15 @@
 
 ## 成品与精确物料版本规格书
 
-每个成品、每个精确物料版本各维护一份当前规格书，引用 Attachment 的 `specification` 附件。基础物料不拥有规格书；其参数仍由所有版本共用。新建成品、新建精确版本和保存成品资料时必须提供启用且可绑定的规格书；既有未关联记录显式返回空值，补充真实文件后才可保存资料。停用／启用仍是独立状态命令，不以资料补齐改变其既有资格。
+每个成品、每个精确物料版本各维护 1 至 5 个当前规格文件（共享上限见 `SPECIFICATION_FILE_MAX_COUNT`），引用 Attachment 的 `specification` 附件。基础物料不拥有规格书；其参数仍由所有版本共用。新建成品、新建精确版本和保存成品资料时必须提供启用且可绑定的规格书；既有未关联记录显式返回空数组，补充真实文件后才可保存资料。停用／启用仍是独立状态命令，不以资料补齐改变其既有资格。
 
-规格书替换创建新的文件记录和存储对象，只更换当前关联，不覆盖旧文件内容，不改变成品／物料的编码、基础单位、大小版本或库存身份；文件名和版本边界见[上传契约](technical-files.md#用途与上传契约)。替换在同一事务解除旧的当前附件引用并登记新引用；未关联和已解除引用附件的回收由 Attachment 统一判断，主数据软删除保留引用。关联前后文件 ID 与主数据修改在同一事务审计，不补造审批或主管角色；成品 BOM 在审时仍冻结全部普通资料编辑。规格书关联不增加 Production 的快照或选版资格规则。
+新增上传创建新的文件记录和存储对象；保存时可增加、移除或替换当前集合，不覆盖旧文件内容，不改变成品／物料的编码、基础单位、大小版本或库存身份；文件名和版本边界见[上传契约](technical-files.md#用途与上传契约)。集合变更在同一事务解除已移除文件的当前附件引用并登记新增引用，未变化的关联保留原登记审计；未关联和已解除引用附件的回收由 Attachment 统一判断，主数据软删除保留引用。关联前后文件 ID 与主数据修改在同一事务审计，不补造审批或主管角色；成品 BOM 在审时仍冻结全部普通资料编辑。规格书关联不增加 Production 的快照或选版资格规则。
 
-成品更新使用 `ProductUpdatePayload.expectedSpecificationFileId`，精确版本替换使用 `PATCH /product/material-variants/:id/specification` 的同名字段；两者都须从读取结果原样回传当前文件 ID 或 `null`。事务锁定主数据后比较实际关联，旧值不符返回 `409 CONFLICT`，不能用最后一次保存覆盖并发替换。保存时还要通过 Attachment 锁定并复核目标文件的用途及可绑定资格，防止与回收、清理竞态。
+成品更新使用 `ProductUpdatePayload.expectedSpecificationFileIds`，精确版本替换使用 `PATCH /product/material-variants/:id/specification` 的同名字段；两者都须从读取结果回传当前文件 ID 集合（未关联为 `[]`），按集合比较，排列顺序不影响并发判断。事务锁定主数据后比较实际关联，旧值不符返回 `409 CONFLICT`，不能用最后一次保存覆盖并发替换。保存时还要通过 Attachment 锁定并复核目标文件的用途及可绑定资格，防止与回收、清理竞态。
 
 创建成品需要 `product:products:create` 和 `product:files:attach`；创建精确版本需要 `product:material-variants:create` 和 `product:files:attach`。成品编辑继续要求 `product:products:update`，仅关联变化时额外校验 `product:files:attach`；服务端先按期望值做并发核对，不能靠伪造期望值绕过绑定授权。精确版本规格书替换需要 `product:materials:update` 和 `product:files:attach`。文件上传、目录查询、下载分别使用现有文件上传、查看、下载权限，上传成功不授予任何主数据写入资格。
 
-成品列表和物料版本读取携带 `specificationFileId` 与 `specificationFile` 元数据，缺失关联均为 `null`；只对本次结果集关联的文件批量补充元数据，不改变成品分页、基础物料分页或版本候选的业务资格。
+成品列表和物料版本读取携带 `specificationFileIds` 与 `specificationFiles` 元数据，缺失关联均为 `[]`，按文件 ID 稳定排列；只对本次结果集关联的文件批量补充元数据，不改变成品分页、基础物料分页或版本候选的业务资格。
 
 ## 成品列表与筛选
 

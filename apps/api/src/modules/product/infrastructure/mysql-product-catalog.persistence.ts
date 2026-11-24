@@ -21,7 +21,7 @@ export interface ProductCatalogRecord extends RowDataPacket {
   bom_approval_instance_id: number | null;
   version: number;
   spec_values: string | object;
-  specification_file_id: number | null;
+  specification_file_ids: unknown;
 }
 
 export async function readProductCatalogRecord(
@@ -30,7 +30,7 @@ export async function readProductCatalogRecord(
   lock = false,
 ): Promise<ProductCatalogRecord> {
   const [[row]] = await db.query<ProductCatalogRecord[]>(
-    `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.unit,p.bom_locked_at,p.bom_status,p.bom_approval_instance_id,p.version,p.spec_values,p.specification_file_id
+    `SELECT p.id,p.item_code,p.product_name,p.category_id,c.item_kind,p.acquire_method,p.status,p.unit,p.bom_locked_at,p.bom_status,p.bom_approval_instance_id,p.version,p.spec_values,p.specification_file_ids
            FROM products p JOIN item_categories c ON c.id=p.category_id WHERE p.id=? AND p.is_deleted=0${lock ? ' FOR UPDATE' : ''}`,
     [id],
   );

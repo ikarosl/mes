@@ -35,30 +35,10 @@
           label="规格书"
           :span="2"
         >
-          <div
-            v-if="row.specificationFile"
-            class="file-attachment"
-          >
-            <span>{{ row.specificationFile.originalName }}</span>
-            <el-button
-              v-if="canPreviewFile(row.specificationFile.originalName)"
-              link
-              type="primary"
-              :loading="fileActions.pendingAction.value === 'preview'"
-              :disabled="Boolean(fileActions.pendingAction.value)"
-              @click="fileActions.preview"
-              >预览</el-button
-            >
-            <el-button
-              link
-              type="primary"
-              :loading="fileActions.pendingAction.value === 'download'"
-              :disabled="Boolean(fileActions.pendingAction.value)"
-              @click="fileActions.download"
-              >下载</el-button
-            >
-          </div>
-          <span v-else>未上传规格书</span>
+          <SpecificationFileList
+            :files="row.specificationFiles"
+            :active="visible"
+          />
         </el-descriptions-item>
         <el-descriptions-item
           label="备注"
@@ -86,20 +66,14 @@ import type { ProductItemKind, ProductListItem } from '@company/contracts';
 import { DialogWidth } from '../../../utils/dialog';
 import JsonTableEditor from '../../../components/JsonTableEditor.vue';
 import { formatDateTimeForDisplay } from '../../../utils/date';
-import { canPreviewFile } from '../../../utils/file-preview';
-import { useTechnicalFileActions } from '../../../composables/useTechnicalFileActions';
+import SpecificationFileList from './SpecificationFileList.vue';
 
-const props = defineProps<{
+defineProps<{
   visible: boolean;
   row: ProductListItem | null;
   itemKindLabel: (kind: ProductItemKind) => string;
   acquireMethodLabels: Record<string, string>;
 }>();
-const fileActions = useTechnicalFileActions(
-  () => props.row?.specificationFile ?? null,
-  () => props.visible,
-);
-
 defineEmits<{
   (e: 'update:visible', val: boolean): void;
 }>();
@@ -128,15 +102,5 @@ const bomStatusLabel = (row: ProductListItem): string => {
   color: var(--el-text-color-primary);
   font-size: 16px;
   font-weight: 600;
-}
-.file-attachment {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 12px;
-  overflow-wrap: anywhere;
-}
-.file-attachment .el-button {
-  margin: 0;
 }
 </style>

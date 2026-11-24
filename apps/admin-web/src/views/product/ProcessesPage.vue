@@ -200,7 +200,7 @@
         <div>将文件拖到这里，或点击选择文件</div>
       </el-upload>
       <p class="upload-hint">
-        支持图片、PDF、Word、Excel 和 PowerPoint，单个文件不超过
+        支持图片、PDF、Office、DWG 和 DXF，单个文件不超过
         {{ TECHNICAL_FILE_MAX_SIZE_MIB }} MiB。
       </p>
       <el-progress

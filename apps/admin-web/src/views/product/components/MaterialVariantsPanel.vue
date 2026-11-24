@@ -57,15 +57,7 @@
         min-width="220"
       >
         <template #default="{ row }">
-          <TechnicalFileCell
-            :file-name="row.specificationFile?.originalName ?? null"
-            :pending-action="
-              fileActionVariantId === row.id ? fileActions.pendingAction.value : null
-            "
-            :disabled="Boolean(fileActions.pendingAction.value)"
-            @preview="viewSpecification(row, 'preview')"
-            @download="viewSpecification(row, 'download')"
-          />
+          <SpecificationFileList :files="row.specificationFiles" />
         </template>
       </el-table-column>
       <el-table-column
@@ -91,7 +83,7 @@
             link
             type="primary"
             @click="$emit('replace-specification', row)"
-            >替换规格书</el-button
+            >管理规格文件</el-button
           ><el-button
             v-if="canChangeStatus"
             link
@@ -106,9 +98,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue';
-import TechnicalFileCell from '../../../components/TechnicalFileCell.vue';
-import { useTechnicalFileActions } from '../../../composables/useTechnicalFileActions';
+import SpecificationFileList from './SpecificationFileList.vue';
 import type { MaterialVariantItem } from '@company/contracts';
 import { useMaterialVariants } from '../composables/useMaterialVariants';
 
@@ -126,15 +116,6 @@ const { variants, loading, ready, errorMessage, load } = useMaterialVariants(
   () => props.materialId,
   () => props.snapshotRevision,
 );
-const fileActionVariantId = ref<string | null>(null);
-const fileActions = useTechnicalFileActions(
-  () =>
-    variants.value.find((row) => row.id === fileActionVariantId.value)?.specificationFile ?? null,
-);
-const viewSpecification = (variant: MaterialVariantItem, action: 'preview' | 'download'): void => {
-  fileActionVariantId.value = variant.id;
-  void fileActions[action]();
-};
 </script>
 
 <style scoped>
