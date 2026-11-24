@@ -3,7 +3,6 @@ import type {
   CancelProductionTrackingItemMarkPayload,
   CorrectProductionTrackingItemMarkPayload,
   ProductionTrackingItemMark,
-  ProductionTrackingItemMarkCodeAvailability,
   ProductionTrackingItemMarkCorrection,
   ProductionTrackingItemMarkQuery,
   ProductionTrackingItemMarkWorkspaceQuery,
@@ -54,9 +53,7 @@ export abstract class ProductionTrackingRepository {
     person: ProductionTrackingPersonnelSnapshot,
     context: CommandContext,
   ): Promise<SaveProductionTrackingItemMarkWorkspaceResult>;
-  abstract itemMarkCodeAvailability(
-    markCode: string,
-  ): Promise<ProductionTrackingItemMarkCodeAvailability>;
+  abstract occupiedItemMarkCodes(markCodes: string[]): Promise<string[]>;
   abstract itemMark(cardId: string, markId: string): Promise<ProductionTrackingItemMark>;
   abstract itemMarkCorrections(
     cardId: string,

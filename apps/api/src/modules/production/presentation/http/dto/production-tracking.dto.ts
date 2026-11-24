@@ -50,6 +50,7 @@ import {
   PRODUCTION_TRACKING_CARD_STATUSES,
   PRODUCTION_TASK_FINISH_MODES,
   PRODUCTION_TRACKING_ITEM_MARK_STATUSES,
+  PRODUCTION_TRACKING_MARK_AVAILABILITY_BATCH_SIZE,
   PRODUCTION_TRACKING_MARK_WORKSPACE_STATUSES,
 } from '@company/constants';
 import {
@@ -80,6 +81,19 @@ export class ProductionTrackingItemMarkCodeAvailabilityDto {
   )
   @Matches(TRACKING_ITEM_MARK_CODE_PATTERN, { message: TRACKING_ITEM_MARK_CODE_ERROR_MESSAGE })
   markCode!: string;
+}
+export class OccupiedTrackingItemMarkCodesDto {
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.split(',').map(normalizeTrackingItemMarkCode) : value,
+  )
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(PRODUCTION_TRACKING_MARK_AVAILABILITY_BATCH_SIZE)
+  @Matches(TRACKING_ITEM_MARK_CODE_PATTERN, {
+    each: true,
+    message: TRACKING_ITEM_MARK_CODE_ERROR_MESSAGE,
+  })
+  markCodes!: string[];
 }
 class TrackingItemMarkFiltersDto extends PageQueryDto {
   @IsOptional() @IsString() @Matches(/^[1-9]\d{0,19}$/) batchId?: string;
@@ -124,6 +138,7 @@ export class SaveTrackingItemMarkWorkspaceDto implements SaveProductionTrackingI
   @IsOptional() @IsString() @MaxLength(5000) reason?: string;
   @IsArray()
   @ArrayMinSize(1)
+  @ArrayMaxSize(MAX_PERSISTED_INTEGER_QUANTITY)
   @IsObject({ each: true })
   @ValidateNested({ each: true })
   @Type(() => TrackingItemMarkWorkspaceChangeDto)

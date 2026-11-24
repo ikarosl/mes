@@ -1026,7 +1026,7 @@ usePageInitialLoad(async () => {
 .work-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
-  align-items: start;
+  align-items: stretch;
   gap: 20px;
 }
 .scan-card {

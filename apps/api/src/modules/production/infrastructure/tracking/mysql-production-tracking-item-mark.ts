@@ -276,7 +276,7 @@ export async function requireTrackingItemMarkScrap(
   if (scrapMode === 'item_marked' && itemMarkIds.length !== scrappedQuantity)
     throw new ProductionDomainError('INVALID_INPUT', '末站报废数量必须与所选有效单件刻码数量一致');
   if (scrapMode === 'quantity_only' && itemMarkIds.length > 0)
-    throw new ProductionDomainError('INVALID_INPUT', '前道报废按数量办理，无需选择单件刻码');
+    throw new ProductionDomainError('INVALID_INPUT', '原结算按数量办理，不能选择单件刻码');
   const rows = await selectMarkIdentities(db, cardId, true);
   const previous = rows.filter((row) => row.scrapAbnormalityId === restoredAbnormalityId);
   if (previous.some((row) => row.cancelled))
@@ -299,12 +299,14 @@ export async function requireTrackingItemMarkScrap(
       );
     return mark;
   });
-  if (available.size - selected.length > remainingQuantity)
+  // Keeping room for every remaining mark limits unmarked scrap to the unbound quantity.
+  const minimumSelected = available.size - remainingQuantity;
+  if (selected.length < minimumSelected)
     throw new ProductionDomainError(
       'INVALID_INPUT',
       scrapMode === 'quantity_only'
         ? '前道报废后的盘量不能少于有效单件刻码数'
-        : '报废后盘量不能小于剩余有效刻码数，请核对报废数量及刻码',
+        : `本次报废至少须选择 ${minimumSelected} 个实际报废编码`,
     );
   return {
     previous: previous.map(({ itemMarkId, markCode }) => ({ itemMarkId, markCode })),

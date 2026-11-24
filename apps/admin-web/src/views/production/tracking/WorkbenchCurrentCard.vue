@@ -153,6 +153,10 @@
         </template>
       </el-dropdown>
       <el-button @click="$emit('detail')">查看追踪</el-button>
+      <TrackingQuantityCorrectionLink
+        :card="card"
+        :disabled="disabled"
+      />
     </div>
   </div>
 </template>
@@ -172,6 +176,7 @@ import {
   type TrackingCardAction,
 } from './tracking-presentation';
 import TrackingItemMarkSummary from './TrackingItemMarkSummary.vue';
+import TrackingQuantityCorrectionLink from './TrackingQuantityCorrectionLink.vue';
 
 const props = defineProps<{
   card: ProductionTrackingCardDetail | null;

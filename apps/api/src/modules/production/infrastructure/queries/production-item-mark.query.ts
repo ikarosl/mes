@@ -2,7 +2,6 @@ import type {
   PageResult,
   ProductionOutputInboundResult,
   ProductionTrackingItemMark,
-  ProductionTrackingItemMarkCodeAvailability,
   ProductionTrackingItemMarkCorrection,
   ProductionTrackingItemMarkOutput,
   ProductionTrackingItemMarkQuery,
@@ -21,15 +20,12 @@ const MARK_COLUMNS = `CAST(m.id AS CHAR) id,CAST(c.id AS CHAR) trackingCardId,c.
  CAST(b.id AS CHAR) productionBatchId,b.batch_no batchNo,m.mark_code markCode,
  CONCAT(c.card_no,'-',m.mark_code) fullCode`;
 
-export async function getItemMarkCodeAvailability(
-  db: Db,
-  markCode: string,
-): Promise<ProductionTrackingItemMarkCodeAvailability> {
-  const [rows] = await db.query<RowDataPacket[]>(
-    'SELECT id FROM production_tracking_item_mark WHERE occupied_mark_code=? LIMIT 1',
-    [markCode],
+export async function listOccupiedItemMarkCodes(db: Db, markCodes: string[]): Promise<string[]> {
+  const [rows] = await db.query<(RowDataPacket & { markCode: string })[]>(
+    'SELECT occupied_mark_code markCode FROM production_tracking_item_mark WHERE occupied_mark_code IN (?)',
+    [markCodes],
   );
-  return { markCode, available: rows.length === 0 };
+  return rows.map((row) => row.markCode);
 }
 const FACT_COLUMNS = `CAST(final_output.outputId AS CHAR) outputId,
  CAST(final_output.outputQuantity AS CHAR) outputQuantity,final_output.outputConfirmedAt,

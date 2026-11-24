@@ -87,11 +87,15 @@ export class ProductionTrackingService {
       keyword: query.keyword?.trim() || undefined,
     });
   }
-  itemMarkCodeAvailability(markCode: string) {
+  async itemMarkCodeAvailability(markCode: string) {
     const code = normalizeTrackingItemMarkCode(markCode);
     if (!TRACKING_ITEM_MARK_CODE_PATTERN.test(code))
       throw new ProductionDomainError('INVALID_INPUT', TRACKING_ITEM_MARK_CODE_ERROR_MESSAGE);
-    return this.repository.itemMarkCodeAvailability(code);
+    const occupied = await this.occupiedItemMarkCodes([code]);
+    return { markCode: code, available: !occupied.length };
+  }
+  occupiedItemMarkCodes(markCodes: string[]) {
+    return this.repository.occupiedItemMarkCodes(markCodes);
   }
   itemMarkWorkspace(query: ProductionTrackingItemMarkWorkspaceQuery) {
     return this.repository.itemMarkWorkspace({

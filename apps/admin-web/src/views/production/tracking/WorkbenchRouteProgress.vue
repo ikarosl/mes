@@ -17,7 +17,12 @@
         记录 <el-icon><ArrowRight /></el-icon>
       </el-button>
     </header>
-    <div class="route-body">
+    <div
+      class="route-body"
+      role="region"
+      aria-label="工序进度"
+      :tabindex="context?.steps.length ? 0 : undefined"
+    >
       <template v-if="context?.steps.length">
         <div class="route-identity">
           <span>{{ context.batch.productName }}</span>
@@ -76,24 +81,6 @@
             </div>
           </li>
         </ol>
-        <div class="route-note">
-          <span
-            >待首站到站 <strong>{{ context.summary.unusedCardCount }}</strong> 盘</span
-          >
-          <span
-            >待处理异常
-            <strong :class="{ 'has-abnormality': context.summary.openAbnormalityCount > 0 }">{{
-              context.summary.openAbnormalityCount
-            }}</strong>
-            条</span
-          >
-          <span
-            >整盘报废 <strong>{{ context.summary.scrappedCardCount }}</strong> 盘</span
-          >
-          <p>
-            进度按本站报工量与任务计划数量核对。下一站扫码完成前站交接，末站以剩余盘量确认产出。
-          </p>
-        </div>
       </template>
       <el-empty
         v-else
@@ -140,6 +127,10 @@ function completionPercent(step: ProductionTrackingStep): number {
 
 <style scoped>
 .route-card {
+  display: flex;
+  flex-direction: column;
+  /* 并排时由扫码卡决定网格行高。 */
+  contain: size;
   min-width: 0;
   border: 1px solid var(--el-border-color-lighter);
   border-radius: 8px;
@@ -147,6 +138,7 @@ function completionPercent(step: ProductionTrackingStep): number {
 }
 .card-heading {
   display: flex;
+  flex-shrink: 0;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
@@ -170,7 +162,14 @@ function completionPercent(step: ProductionTrackingStep): number {
   flex-shrink: 0;
 }
 .route-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   padding: 20px;
+}
+.route-body:focus-visible {
+  outline: 2px solid var(--el-color-primary);
+  outline-offset: -2px;
 }
 .route-identity {
   display: flex;
@@ -181,6 +180,7 @@ function completionPercent(step: ProductionTrackingStep): number {
   color: var(--el-text-color-regular);
   font-size: 12px;
   line-height: 1.6;
+  overflow-wrap: anywhere;
 }
 .route-identity strong {
   color: var(--el-text-color-primary);
@@ -271,23 +271,5 @@ function completionPercent(step: ProductionTrackingStep): number {
 }
 .sop-link :deep(span) {
   overflow-wrap: anywhere;
-}
-.route-note {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--el-border-color-lighter);
-  color: var(--el-text-color-regular);
-  font-size: 12px;
-  line-height: 1.7;
-}
-.route-note p {
-  width: 100%;
-  margin: 0;
-}
-.has-abnormality {
-  color: var(--el-color-warning);
 }
 </style>

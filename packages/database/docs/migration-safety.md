@@ -85,6 +85,10 @@ down 在任何结构回退前检查免审生效 BOM 和需求更正；存在任�
 
 down 要求没有纠错事实，且原结算均未记录新口径。已使用任一能力时，降级须恢复匹配版本的备份。
 
+`202611240010-tracking-optional-scrap-marks` 按相同范围停写并备份，以单条 ALTER 扩展原结算报废口径的 CHECK。既有口径与 NULL 可直接通过新约束。核对约束及既有结算按口径的数量后启动新应用。[原结算数据库设计](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#production_tracking_abnormality_handling)
+
+本次 down 在替换约束前检查原结算。存在 `optional_marks` 原结算即拒绝，即使该结算已经更正或撤销。此时按本页恢复流程使用迁移前备份与匹配应用降级。
+
 ## 随盘异常描述标签
 
 `202611180010-tracking-abnormality-description-labels` 的原文回填依据、停写范围、客户端切换、逐项核验及空观察字典的 down 限制统一由 [Production 标签升级](../../../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#标签数据升级)维护；不沿用早期实验的空库重建边界。备份、中断登记及恢复继续遵守本页通用规则。

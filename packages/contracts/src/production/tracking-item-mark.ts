@@ -38,17 +38,17 @@ export interface ProductionTrackingItemMarkWorkspaceQuery extends Omit<
   ProductionTrackingItemMarkQuery,
   'status'
 > {
-  status?: 'pending' | 'active' | 'scrapped';
+  status?: 'active' | 'scrapped';
 }
 
-export type ProductionTrackingItemMarkWorkspaceRow = {
+export interface ProductionTrackingItemMarkWorkspaceRow {
   trackingCardId: string;
   cardNo: string;
   productionBatchId: string;
   cardVersion: number;
-  canBind: boolean;
   canClear: boolean;
-} & ({ item: ProductionTrackingItemMark; slot: null } | { item: null; slot: number });
+  item: ProductionTrackingItemMark;
+}
 
 export interface ProductionTrackingItemMark extends ProductionTrackingPersonnelSnapshot {
   id: string;

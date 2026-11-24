@@ -8,7 +8,8 @@ export type ProductionTrackingCardStatus =
   'unused' | 'in_progress' | 'completed' | 'scrapped' | 'voided';
 export type ProductionTrackingAbnormalityStatus = 'open' | 'resolved';
 export type ProductionTrackingAbnormalityResolution = 'repair' | 'scrap';
-export type ProductionTrackingAbnormalityScrapMode = 'quantity_only' | 'item_marked' | 'unknown';
+export type ProductionTrackingAbnormalityScrapMode =
+  'quantity_only' | 'optional_marks' | 'item_marked' | 'unknown';
 
 export interface ProductionTrackingPersonnelSnapshot {
   personnelId: string;
@@ -218,7 +219,7 @@ export interface VoidProductionTrackingCardPayload extends VersionedCommand {
 }
 
 export interface CreateProductionTrackingAbnormalityPayload extends VersionedCommand {
-  /** 当前已到末站时，报废数量须与所选有效单件刻码数一致。 */
+  /** 非末站无码报废限于未绑余量。末站须为每件报废选本卡有效刻码。 */
   scrappedItemMarkIds?: string[];
   /** 可选关联工序；省略或 null 表示未关联，指定值必须是本卡已到站的工序。 */
   stepRecordId?: string | null;

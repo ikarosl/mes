@@ -8,13 +8,19 @@ import {
   watch,
   type ComputedRef,
 } from 'vue';
-import type { ProductionTrackingItemMarkWorkspaceRow as Row } from '@company/contracts';
+import type {
+  ProductionTrackingCardDetail,
+  ProductionTrackingItemMarkWorkspaceRow as Row,
+} from '@company/contracts';
 import { normalizeTrackingItemMarkCode, TRACKING_ITEM_MARK_CODE_PATTERN } from '@company/utils';
 import { readItemMarkCodeAvailability } from './use-item-mark-code-availability';
 
-export type WorkspaceMarkDraft = { row: Row; input: string };
-export const workspaceMarkRowKey = (row: Row) =>
-  row.item ? 'item-' + row.item.id : 'pending-' + row.trackingCardId + '-' + row.slot;
+export type WorkspaceMarkDraft = {
+  row: Row;
+  input: string;
+  transferTarget?: Pick<ProductionTrackingCardDetail, 'id' | 'cardNo' | 'version'>;
+};
+export const workspaceMarkRowKey = (row: Row) => row.item.id;
 export const canonicalDraftCode = (input: string) => normalizeTrackingItemMarkCode(input.trim());
 type Check = 'checking' | 'available' | 'occupied' | 'failed';
 export type MarkFieldFeedback = {
@@ -30,6 +36,7 @@ export function useWorkspaceMarkValidation(drafts: ComputedRef<WorkspaceMarkDraf
     () =>
       new Set(
         drafts.value
+          .filter((draft) => !draft.transferTarget)
           .map((d) => canonicalDraftCode(d.input))
           .filter((code) => TRACKING_ITEM_MARK_CODE_PATTERN.test(code)),
       ),
@@ -91,12 +98,12 @@ export function useWorkspaceMarkValidation(drafts: ComputedRef<WorkspaceMarkDraf
     const targets = new Map<string, number>();
     const sources = new Map<string, Row>();
     for (const { row, input } of drafts.value) {
-      if (row.item) sources.set(row.item.markCode, row);
+      sources.set(row.item.markCode, row);
       const target = canonicalDraftCode(input);
       if (target) targets.set(target, (targets.get(target) ?? 0) + 1);
     }
     const result = new Map<string, MarkFieldFeedback>();
-    for (const { row, input } of drafts.value) {
+    for (const { row, input, transferTarget } of drafts.value) {
       const key = workspaceMarkRowKey(row),
         code = canonicalDraftCode(input);
       const remote = checks.get(code);
@@ -114,7 +121,8 @@ export function useWorkspaceMarkValidation(drafts: ComputedRef<WorkspaceMarkDraf
           state: 'invalid',
           message: remote === 'occupied' && !source ? duplicate + '，编码已占用' : duplicate,
         };
-      } else if (row.item && !row.canClear && (targets.has(row.item.markCode) || source)) {
+      } else if (transferTarget) continue;
+      else if (!row.canClear && (targets.has(row.item.markCode) || source)) {
         field = { state: 'invalid', message: '此件只能改为未占用的编码' };
       } else if (source && !source.canClear) {
         field = { state: 'invalid', message: '原绑定不能参与换码' };

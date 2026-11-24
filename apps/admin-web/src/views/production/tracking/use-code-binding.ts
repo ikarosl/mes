@@ -1,4 +1,3 @@
-import { useItemMarkCodeAvailability } from './use-item-mark-code-availability';
 import { computed, nextTick, onActivated, onScopeDispose, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import type { InputInstance } from 'element-plus';
@@ -26,9 +25,15 @@ import { confirmSubmissionClose } from '../../../composables/idempotency/submiss
 import { useTabsStore } from '../../../stores/tabs';
 import { EMessage } from '../../../utils/message';
 import { trackingItemMarkPending } from './tracking-presentation';
+import type { BatchItemMarkBindingTarget } from './use-batch-item-mark-binding';
+import { useItemMarkCodeAvailability } from './use-item-mark-code-availability';
 import { useTrackingTaskSearch } from './use-tracking-task-search';
 
-export function useCodeBinding(refreshRecords: () => Promise<void>) {
+export function useCodeBinding(
+  refreshRecords: () => Promise<void>,
+  otherActionOpen: () => boolean,
+  hasBatchPreview: () => boolean,
+) {
   const route = useRoute();
   const batchId = ref<string | null>(null),
     personnelId = ref(''),
@@ -69,13 +74,20 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
   const cardReads = useLatestReadRequest(() => {
     cardLoading.value = false;
   });
-  const codeAvailability = useItemMarkCodeAvailability(markCode, () => !locked.value);
+  const codeAvailability = useItemMarkCodeAvailability(
+    markCode,
+    () => !locked.value && !otherActionOpen(),
+  );
   function normalizeMarkCode(): void {
-    if (!locked.value) markCode.value = normalizeTrackingItemMarkCode(markCode.value);
+    if (!locked.value && !otherActionOpen())
+      markCode.value = normalizeTrackingItemMarkCode(markCode.value);
   }
   const taskSearch = useTrackingTaskSearch(() => context.value?.batch ?? null);
   const selectedPersonnel = computed(() =>
     personnel.value.find((item) => item.id === personnelId.value),
+  );
+  const personnelCanBind = computed(
+    () => !!selectedPersonnel.value && personnelVerified.value && !personnelError.value,
   );
   const taskCanBind = computed(
     () =>
@@ -157,17 +169,18 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     cardNo.value = '';
   }
   function cardInputChanged(): void {
-    if (locked.value) return;
+    if (locked.value || otherActionOpen()) return;
     cardReads.invalidate();
     currentCard.value = null;
     cardError.value = '';
     resultLabel.value = '';
   }
   function normalizeCardNo(): void {
-    if (!locked.value) cardNo.value = normalizeTrackingCardNo(cardNo.value);
+    if (!locked.value && !otherActionOpen()) cardNo.value = normalizeTrackingCardNo(cardNo.value);
   }
   async function changeBatch(id: string | null): Promise<void> {
-    if (id === batchId.value || locked.value || !contextReads.isActive()) return;
+    if (id === batchId.value || locked.value || otherActionOpen() || !contextReads.isActive())
+      return;
     contextReads.invalidate();
     clearCard();
     context.value = null;
@@ -178,7 +191,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     await loadContext();
   }
   async function lookupCard(): Promise<ProductionTrackingCardDetail | null> {
-    if (locked.value || !batchId.value || !cardReads.isActive()) return null;
+    if (locked.value || otherActionOpen() || !batchId.value || !cardReads.isActive()) return null;
     normalizeCardNo();
     const no = cardNo.value,
       id = batchId.value;
@@ -218,7 +231,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     }
   }
   async function bind(): Promise<void> {
-    if (submitting.value || cardLoading.value || !cardReads.isActive()) return;
+    if (submitting.value || otherActionOpen() || cardLoading.value || !cardReads.isActive()) return;
     if (!pendingSubmission) {
       normalizeMarkCode();
       if (!hasValidMarkCode.value || codeAvailability.unavailable.value) return;
@@ -226,12 +239,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
         EMessage.warning('请先选择已开工的批量任务并核对任务信息');
         return;
       }
-      if (
-        !personnelId.value ||
-        !selectedPersonnel.value ||
-        !personnelVerified.value ||
-        personnelError.value
-      ) {
+      if (!personnelCanBind.value) {
         EMessage.warning('请明确选择有效登记人员，人员加载失败时请先刷新');
         return;
       }
@@ -240,6 +248,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
         !card ||
         !cardReads.isActive() ||
         locked.value ||
+        otherActionOpen() ||
         card.productionBatchId !== batchId.value
       )
         return;
@@ -247,8 +256,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
         !hasValidMarkCode.value ||
         codeAvailability.unavailable.value ||
         !taskCanBind.value ||
-        !personnelVerified.value ||
-        !selectedPersonnel.value
+        !personnelCanBind.value
       )
         return;
       if (cardBlockedReason.value) {
@@ -303,6 +311,125 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
       }
     }
   }
+  function prepareBatchBinding(): BatchItemMarkBindingTarget | null {
+    if (locked.value || otherActionOpen() || cardLoading.value || !cardReads.isActive())
+      return null;
+    normalizeMarkCode();
+    const card = currentCard.value;
+    const batch = context.value?.batch;
+    const person = selectedPersonnel.value;
+    if (
+      !card ||
+      !batch ||
+      !taskCanBind.value ||
+      card.productionBatchId !== batch.id ||
+      !hasValidMarkCode.value
+    )
+      return null;
+    if (cardBlockedReason.value) {
+      EMessage.warning(cardBlockedReason.value);
+      return null;
+    }
+    if (!person || !personnelCanBind.value) {
+      EMessage.warning('请明确选择有效登记人员，人员加载失败时请先刷新');
+      return null;
+    }
+    return {
+      batchId: batch.id,
+      batchNo: batch.batchNo,
+      cardId: card.id,
+      cardNo: card.cardNo,
+      cardVersion: card.version,
+      personnelId: person.id,
+      personnelName: person.name,
+      startCode: markCode.value,
+      remaining: trackingItemMarkPending(card),
+    };
+  }
+  function matchesBatchTarget(target: BatchItemMarkBindingTarget): boolean {
+    return batchId.value === target.batchId && cardNo.value === target.cardNo;
+  }
+  async function reloadBatchCard(
+    target: BatchItemMarkBindingTarget,
+  ): Promise<ProductionTrackingCardDetail | null> {
+    if (!cardReads.isActive() || !matchesBatchTarget(target)) return null;
+    const read = cardReads.begin(() => matchesBatchTarget(target));
+    cardLoading.value = true;
+    cardError.value = '';
+    currentCard.value = null;
+    try {
+      const card = await productionTrackingApi.detail(target.cardId, {
+        signal: read.signal,
+        skipErrorHandling: true,
+      });
+      if (!read.isCurrent()) return null;
+      if (
+        card.id !== target.cardId ||
+        card.productionBatchId !== target.batchId ||
+        card.cardNo !== target.cardNo
+      )
+        throw new Error('追踪卡与批量绑定目标不一致，请重新查询');
+      currentCard.value = card;
+      return card;
+    } catch (failure) {
+      if (read.isCurrent())
+        cardError.value = failure instanceof Error ? failure.message : '追踪卡查询失败，请重试';
+      return null;
+    } finally {
+      if (read.isCurrent()) cardLoading.value = false;
+    }
+  }
+  async function refreshBatchBindingTarget(
+    target: BatchItemMarkBindingTarget,
+  ): Promise<BatchItemMarkBindingTarget> {
+    const [card] = await Promise.all([reloadBatchCard(target), loadContext(), loadPersonnel()]);
+    if (!card) throw new Error(cardError.value || '请重新查询本次批量绑定的追踪卡');
+    if (!taskCanBind.value) throw new Error('请核对当前任务的办理状态');
+    const person = selectedPersonnel.value;
+    if (!personnelCanBind.value || !person || person.id !== target.personnelId)
+      throw new Error('请重新选择有效登记人员');
+    if (cardBlockedReason.value) throw new Error(cardBlockedReason.value);
+    return {
+      ...target,
+      cardVersion: card.version,
+      personnelName: person.name,
+      remaining: trackingItemMarkPending(card),
+    };
+  }
+  async function batchBindingSaved(
+    target: BatchItemMarkBindingTarget,
+    lastCode: string,
+    count: number,
+  ): Promise<void> {
+    const nextCode = (BigInt(lastCode) + 1n).toString();
+    markCode.value = isValidTrackingItemMarkCode(nextCode) ? nextCode : '';
+    resultLabel.value = `已为 ${target.cardNo} 绑定 ${count} 个刻码`;
+    EMessage.success(resultLabel.value);
+    if (!matchesBatchTarget(target)) return;
+    if (!cardReads.isActive()) {
+      currentCard.value = null;
+      if (count === target.remaining) clearCard();
+      return;
+    }
+    submitting.value = true;
+    let focusCard = false;
+    try {
+      const [card] = await Promise.all([reloadBatchCard(target), refreshRecords()]);
+      if (card && !trackingItemMarkPending(card)) {
+        clearCard();
+        focusCard = true;
+      }
+    } catch (failure) {
+      if (cardReads.isActive()) EMessage.error(failure, '绑定已完成，请刷新当前卡及记录');
+    } finally {
+      submitting.value = false;
+      if (cardReads.isActive()) {
+        await nextTick();
+        if (focusCard) cardInput.value?.focus();
+        else codeInput.value?.focus();
+      }
+    }
+  }
   function restart(): void {
     if (submitting.value) return;
     intent.reset();
@@ -313,7 +440,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     cardNo.value = no;
   }
   async function refreshSetup(): Promise<void> {
-    if (submitting.value) return;
+    if (submitting.value || otherActionOpen()) return;
     await Promise.all([loadContext(), loadPersonnel()]);
   }
   async function cardChanged(card: ProductionTrackingCardDetail): Promise<void> {
@@ -332,7 +459,7 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     if (submitting.value) return false;
     return confirmSubmissionClose(intent.getStatus(), {
       entityLabel: '编码绑定',
-      dirty: Boolean(cardNo.value.trim()),
+      dirty: Boolean(cardNo.value.trim()) && !hasBatchPreview(),
     });
   }
   onScopeDispose(useTabsStore().registerCloseGuard('production-workbench', allowClose));
@@ -341,7 +468,8 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     if (
       route.name !== 'production-workbench-code-binding' ||
       !contextReads.isActive() ||
-      locked.value
+      locked.value ||
+      otherActionOpen()
     )
       return;
     const id = typeof route.query.batchId === 'string' ? route.query.batchId : '';
@@ -400,6 +528,9 @@ export function useCodeBinding(refreshRecords: () => Promise<void>) {
     cardInputChanged,
     normalizeCardNo,
     bind,
+    prepareBatchBinding,
+    refreshBatchBindingTarget,
+    batchBindingSaved,
     restart,
     refreshSetup,
     loadPersonnel,

@@ -38,6 +38,11 @@ export const trackingCardStatus = (status: ProductionTrackingCardStatus) => ({
   label: PRODUCTION_TRACKING_CARD_STATUS_LABELS[status],
   type: CARD_STATUS_TYPES[status],
 });
+export function canCorrectTrackingQuantity(
+  card: Pick<ProductionTrackingCardItem, 'quantity' | 'status'>,
+): boolean {
+  return Number(card.quantity) > 0 && (card.status === 'unused' || card.status === 'in_progress');
+}
 export function trackingOutputLabel(
   card: Pick<ProductionTrackingCardItem, 'status' | 'availableQuantity' | 'unit'>,
 ): string {

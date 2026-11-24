@@ -24,7 +24,7 @@ export async function settleTrackingAbnormality(
   payload: HandleProductionTrackingAbnormalityPayload,
   person: ProductionTrackingPersonnelSnapshot,
   context: CommandContext,
-  scrapMode: ProductionTrackingAbnormalityScrapMode = 'unknown',
+  scrapMode: ProductionTrackingAbnormalityScrapMode,
 ): Promise<void> {
   const [[abnormality]] = await db.query<
     (RowDataPacket & { version: number; status: string; affected_quantity: number })[]

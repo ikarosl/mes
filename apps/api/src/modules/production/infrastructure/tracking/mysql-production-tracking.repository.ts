@@ -80,7 +80,7 @@ import {
 } from './mysql-production-tracking-item-mark.js';
 import {
   listTrackingItemMarks,
-  getItemMarkCodeAvailability,
+  listOccupiedItemMarkCodes,
   getTrackingItemMark,
   listTrackingItemMarkCorrections,
 } from '../queries/production-item-mark.query.js';
@@ -123,8 +123,8 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       saveTrackingItemMarkWorkspace(db, batchId, payload, person, context),
     );
   }
-  itemMarkCodeAvailability(markCode: string) {
-    return getItemMarkCodeAvailability(this.pool, markCode);
+  occupiedItemMarkCodes(markCodes: string[]) {
+    return listOccupiedItemMarkCodes(this.pool, markCodes);
   }
   itemMark(cardId: string, markId: string) {
     return withTransaction(this.pool, (db) => getTrackingItemMark(db, cardId, markId));
@@ -489,7 +489,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       );
       const lastStep = (await this.steps(db, card.production_batch_id)).at(-1);
       const scrapMode =
-        lastStep?.id === card.current_step_record_id ? 'item_marked' : 'quantity_only';
+        lastStep?.id === card.current_step_record_id ? 'item_marked' : 'optional_marks';
       await settleTrackingAbnormality(
         db,
         card,
@@ -513,7 +513,7 @@ export class MysqlProductionTrackingRepository extends ProductionTrackingReposit
       const card = await this.card(db, cardId);
       this.requireUnfinishedCard(card);
       this.requireOpenTask((await findBatch(db, card.production_batch_id, true)).status);
-      await settleTrackingAbnormality(db, card, abnormalityId, payload, person, context);
+      await settleTrackingAbnormality(db, card, abnormalityId, payload, person, context, 'unknown');
       return selectTrackingCard(db, cardId, true);
     });
   }

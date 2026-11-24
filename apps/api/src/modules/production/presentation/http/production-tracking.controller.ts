@@ -31,6 +31,7 @@ import {
   TrackingItemMarkWorkspaceQueryDto,
   SaveTrackingItemMarkWorkspaceDto,
   ProductionTrackingItemMarkCodeAvailabilityDto,
+  OccupiedTrackingItemMarkCodesDto,
   TrackingItemMarkParamDto,
   ConfirmProductionTrackingOutputDto,
   ConfirmProductionResearchOutputDto,
@@ -87,6 +88,15 @@ export class ProductionTrackingController {
   ])
   itemMarkCodeAvailability(@Query() query: ProductionTrackingItemMarkCodeAvailabilityDto) {
     return this.service.itemMarkCodeAvailability(query.markCode);
+  }
+  @Get('tracking-item-marks/occupied-codes')
+  @RequirePermission([
+    PERMISSIONS.production.tracking.view,
+    PERMISSIONS.production.workbench.view,
+    PERMISSIONS.production.workbench.operate,
+  ])
+  occupiedItemMarkCodes(@Query() query: OccupiedTrackingItemMarkCodesDto) {
+    return this.service.occupiedItemMarkCodes(query.markCodes);
   }
   @Get('tracking-item-marks')
   @RequirePermission([

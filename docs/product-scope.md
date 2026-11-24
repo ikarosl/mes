@@ -19,7 +19,7 @@
 
 批量任务的全部追踪卡均须在终检前绑齐单件刻码，绑定不限制工序。Production 登记全局唯一的实物刻码、更正录入、释放误绑号码、同任务跨卡换绑及关联具体报废码；换包装后凭实物码查回原盘，再查看本盘入库单。Inventory 按产出保存实际入库来源，退出逐件入库分配。每盘仍按整体流转与终检，不接打标设备、不增加逐件检验、包装盒模型或第二套库存账本；规则见[单件刻码](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#单件刻码)与[成品入库](../apps/api/src/modules/production/docs/database/finished-goods-inbound.md)。
 
-过程中的强制检查配置为路线工序。随盘异常按现场实际结果登记返修或报废，可填写异常数量和多个描述标签。报废扣减本盘余量，末道报废按单件刻码追溯。误报可据原登记更正报废或作废异常，更正按差额调整盘量。历史待处理异常仍占用数量并阻止整盘交接。适用条件见[追踪卡执行](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#随盘异常)。
+过程中的强制检查配置为路线工序。随盘异常按现场实际结果登记返修或报废，可填写异常数量和多个描述标签。各站报废均扣减本盘余量，并追溯已绑定实物的编码；末道须逐件追溯。误报可据原登记更正报废或作废异常，更正按差额调整盘量。历史待处理异常仍占用数量并阻止整盘交接。适用条件见[追踪卡执行](../apps/api/src/modules/production/docs/database/execution-traceability-quality.md#随盘异常)。
 
 采购、独立检查报告与实际库存分工见[采购入库流程](procurement-inbound-design.md)。[来料分组已停用](../apps/api/src/modules/quality/docs/incoming-inspection-orders.md)，检查继续逐来源办理；实际入库的合单范围不改变来源身份。按[仓库简化实验](adr/0028-independent-warehouse-receipt-and-inspection.md)，来料报告、仓库入库及补单不互相设完成门槛；其他处理在到货物料行独立登记问题或去向说明。
 

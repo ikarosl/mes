@@ -1,11 +1,41 @@
 <template>
-  <div class="item-mark-list">
+  <div
+    v-if="collapsible"
+    class="mark-disclosure"
+  >
+    <DisclosureToggle
+      :expanded="candidatesExpanded"
+      :aria-controls="candidatesId"
+      label="报废编码"
+      @toggle="expanded = !expanded"
+    />
+    <el-text
+      v-if="minimumSelection > 0"
+      :type="modelValue.length < minimumSelection ? 'danger' : undefined"
+      role="status"
+      >至少选择 {{ formatQuantity(minimumSelection) }} 个实际报废编码。</el-text
+    >
+    <span
+      v-else
+      class="selection-hint"
+      >{{
+        selectionTarget !== undefined
+          ? '按实物逐件选码。'
+          : '已绑定的报废实物请选码，未绑定的按数量扣减。'
+      }}
+    </span>
+  </div>
+  <div
+    v-show="candidatesExpanded"
+    :id="candidatesId"
+    class="item-mark-list"
+  >
     <section
-      v-if="selectable && retainedScrapMarks.length"
+      v-if="selectable && retainedMarks.length"
       class="retained-scrap"
       aria-label="更正前报废编码"
     >
-      <div>更正前报废编码（{{ retainedScrapMarks.length }} 个）</div>
+      <div>更正前报废编码（{{ retainedMarks.length }} 个）</div>
       <div class="retained-scrap-codes">
         <el-checkbox
           v-for="mark in retainedPageMarks"
@@ -17,8 +47,8 @@
         >
       </div>
       <PaginationFooter
-        v-if="retainedScrapMarks.length > 20"
-        :total="retainedScrapMarks.length"
+        v-if="retainedMarks.length > 20"
+        :total="retainedMarks.length"
         :current-page="retainedPage"
         :page-size="20"
         :show-page-size="false"
@@ -68,6 +98,11 @@
         @click="load"
         >刷新</el-button
       >
+      <span
+        v-if="selectable"
+        class="selection-hint"
+        >勾选表头只选择本页，已选编码跨页保留</span
+      >
     </div>
     <el-alert
       v-if="error"
@@ -77,58 +112,12 @@
       :closable="false"
     />
     <div
-      v-if="selectable"
-      class="selection-summary"
-      aria-live="polite"
-    >
-      <span
-        >已选 <strong>{{ selectionCount }}</strong> 个报废编码</span
-      >
-      <span>（跨页保留，勾选表头只选择本页）</span>
-      <el-button
-        link
-        type="primary"
-        :disabled="locked || !modelValue.length"
-        @click="emit('update:modelValue', [])"
-        >清空选择</el-button
-      >
-    </div>
-    <div
       v-if="restoredCodes.length || addedScrapCodes.length"
       class="scrap-selection-impact"
     >
       <div v-if="restoredCodes.length">恢复为有效绑定 · {{ restoredCodes.join('、') }}</div>
       <div v-if="addedScrapCodes.length">新增报废 · {{ addedScrapCodes.join('、') }}</div>
     </div>
-    <el-collapse v-if="selectable && modelValue.length">
-      <el-collapse-item
-        title="查看与取消已选编码"
-        name="selected"
-      >
-        <div
-          v-for="id in selectedPageIds"
-          :key="id"
-          class="selected-code"
-        >
-          <span>{{ retainedCodes.get(id) ?? selectedCodes[id] ?? '已选编码' }}</span>
-          <el-button
-            link
-            type="danger"
-            :disabled="locked"
-            @click="selectRow(id, false)"
-            >取消选择</el-button
-          >
-        </div>
-        <PaginationFooter
-          :total="modelValue.length"
-          :current-page="selectedPage"
-          :page-size="20"
-          :show-page-size="false"
-          compact
-          @page-change="selectedPage = $event"
-        />
-      </el-collapse-item>
-    </el-collapse>
     <el-table
       ref="tableRef"
       v-loading="loading"
@@ -201,7 +190,7 @@
           <el-checkbox
             :model-value="pageSelected"
             :indeterminate="pagePartiallySelected"
-            :disabled="selectionLocked || !items.length"
+            :disabled="selectionLocked || !selectablePageIds.length"
             aria-label="选择本页有效编码"
             @change="selectPage(Boolean($event))"
           />
@@ -298,10 +287,98 @@
       @page-change="changePage"
       @update:page-size="changePageSize"
     />
+    <Teleport
+      v-if="selectable && selectionFooterHost"
+      :to="selectionFooterHost"
+    >
+      <div
+        class="selection-bar"
+        :class="{ 'selection-bar--active': modelValue.length }"
+      >
+        <span
+          ref="selectionStatus"
+          role="status"
+          tabindex="-1"
+          >已选 <strong>{{ selectionCount }}</strong> 个报废编码</span
+        >
+        <div
+          v-if="modelValue.length"
+          class="selection-actions"
+        >
+          <el-button
+            link
+            type="primary"
+            :disabled="false"
+            aria-haspopup="dialog"
+            @click="openSelectionReview"
+            >查看已选</el-button
+          >
+          <el-button
+            link
+            :disabled="selectionReadOnly"
+            @click="clearSelection"
+            >清空选择</el-button
+          >
+        </div>
+      </div>
+    </Teleport>
+    <el-dialog
+      v-if="selectable && selectionReviewHost"
+      v-model="reviewVisible"
+      :append-to="selectionReviewHost"
+      title="已选报废编码"
+      :width="DialogWidth.sm"
+      destroy-on-close
+      @closed="restoreSelectionFocus"
+    >
+      <ul
+        ref="reviewList"
+        class="selected-codes"
+      >
+        <li
+          v-for="(mark, index) in selectedPageMarks"
+          :key="mark.id"
+          class="selected-code"
+        >
+          <span>{{ mark.code }}</span>
+          <el-button
+            link
+            type="danger"
+            :disabled="selectionReadOnly"
+            :aria-label="`取消选择 ${mark.code}`"
+            @click="removeSelectedMark(mark.id, index)"
+            >取消选择</el-button
+          >
+        </li>
+      </ul>
+      <PaginationFooter
+        v-if="modelValue.length > SELECTED_PAGE_SIZE"
+        :total="modelValue.length"
+        total-suffix="个"
+        :current-page="selectedPage"
+        :page-size="SELECTED_PAGE_SIZE"
+        :show-page-size="false"
+        layout="prev, pager, next"
+        compact
+        @page-change="selectedPage = $event"
+      />
+      <template #footer>
+        <el-button
+          :disabled="selectionReadOnly || !modelValue.length"
+          @click="clearSelection"
+          >清空选择</el-button
+        >
+        <el-button
+          :disabled="false"
+          @click="reviewVisible = false"
+          >{{ candidatesExpanded ? '返回表格' : '返回表单' }}</el-button
+        >
+      </template>
+    </el-dialog>
   </div>
 </template>
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, onDeactivated, ref, useId, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type { TableInstance } from 'element-plus';
 import type {
@@ -316,10 +393,13 @@ import {
 } from '@company/constants';
 import { normalizeTrackingCardNo } from '@company/utils';
 import { productionTrackingApi } from '../../../api/production/tracking';
+import DisclosureToggle from '../../../components/DisclosureToggle.vue';
 import PaginationFooter from '../../../components/PaginationFooter.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { formatDateTimeForDisplay } from '../../../utils/date';
+import { DialogWidth } from '../../../utils/dialog';
+import { formatQuantity } from '../../../utils/quantity';
 import { trackingItemMarkStatus } from './tracking-presentation';
 import TrackingItemMarkCorrectionHistory from './TrackingItemMarkCorrectionHistory.vue';
 
@@ -336,8 +416,13 @@ const props = withDefaults(
     allowCancel?: boolean;
     allowCorrect?: boolean;
     allowCorrectScrap?: boolean;
+    collapsible?: boolean;
+    defaultExpanded?: boolean;
+    minimumSelection?: number;
     retainedScrapMarks?: ProductionTrackingAbnormalityScrappedItemMark[];
-    selectionTarget?: number;
+    selectionTarget?: number | null;
+    selectionFooterHost?: HTMLElement | null;
+    selectionReviewHost?: HTMLElement | null;
     showFullCode?: boolean;
     compact?: boolean;
   }>(),
@@ -352,12 +437,17 @@ const props = withDefaults(
     allowCancel: false,
     allowCorrect: false,
     allowCorrectScrap: false,
-    retainedScrapMarks: () => [],
+    collapsible: false,
+    defaultExpanded: false,
+    minimumSelection: 0,
     selectionTarget: undefined,
+    selectionFooterHost: null,
+    selectionReviewHost: null,
     showFullCode: true,
     compact: false,
   },
 );
+const expanded = defineModel<boolean>('expanded', { default: false });
 const emit = defineEmits<{
   'update:modelValue': [ids: string[]];
   cancel: [item: ProductionTrackingItemMark];
@@ -366,6 +456,22 @@ const emit = defineEmits<{
 }>();
 const router = useRouter();
 const { canAccessRoute } = useRouteAccess();
+const candidatesId = useId();
+const candidatesExpanded = computed(() => !props.collapsible || expanded.value);
+watch(
+  () => props.defaultExpanded,
+  (value) => {
+    if (value) expanded.value = true;
+  },
+  { immediate: true },
+);
+watch(
+  () => props.minimumSelection,
+  (minimum) => {
+    if (props.collapsible && minimum > props.modelValue.length) expanded.value = true;
+  },
+  { immediate: true },
+);
 const tableRef = ref<TableInstance>();
 const expandedIds = ref<string[]>([]);
 function setExpanded(_row: ProductionTrackingItemMark, rows: ProductionTrackingItemMark[]): void {
@@ -389,47 +495,62 @@ const page = ref(1),
   keyword = ref(''),
   cardNo = ref(''),
   status = ref<ProductionTrackingItemMarkStatus | ''>('');
-const selectedCodes = ref<Record<string, string>>({}),
-  selectedPage = ref(1);
+const SELECTED_PAGE_SIZE = 20;
+const selectedCodes = ref<Record<string, string>>({});
+const selectedPage = ref(1);
+const reviewVisible = ref(false);
+const reviewList = ref<HTMLUListElement>();
+const selectionStatus = ref<HTMLSpanElement>();
 const retainedPage = ref(1);
+const retainedMarks = computed(() => props.retainedScrapMarks ?? []);
 const retainedPageMarks = computed(() =>
-  props.retainedScrapMarks.slice((retainedPage.value - 1) * 20, retainedPage.value * 20),
+  retainedMarks.value.slice((retainedPage.value - 1) * 20, retainedPage.value * 20),
 );
 const retainedCodes = computed(
-  () => new Map(props.retainedScrapMarks.map((item) => [item.itemMarkId, item.markCode])),
+  () => new Map(retainedMarks.value.map((item) => [item.itemMarkId, item.markCode])),
 );
 const selectionCount = computed(() => {
   const count = props.modelValue.length;
-  return props.selectionTarget === undefined
-    ? String(count)
-    : `${count} / ${props.selectionTarget}`;
+  return typeof props.selectionTarget === 'number'
+    ? `${count} / ${props.selectionTarget}`
+    : String(count);
 });
 const selectedIds = computed(() => new Set(props.modelValue));
 const restoredCodes = computed(() =>
-  props.retainedScrapMarks
+  retainedMarks.value
     .filter((mark) => !selectedIds.value.has(mark.itemMarkId))
     .map((mark) => mark.markCode),
 );
 const addedScrapCodes = computed(() => {
-  if (!retainedCodes.value.size) return [];
+  if (!props.retainedScrapMarks) return [];
   return props.modelValue
     .filter((id) => !retainedCodes.value.has(id))
     .map((id) => selectedCodes.value[id] ?? '已选编码');
 });
-const selectedPageIds = computed(() =>
-  props.modelValue.slice((selectedPage.value - 1) * 20, selectedPage.value * 20),
-);
+const selectedPageMarks = computed(() => {
+  const end = selectedPage.value * SELECTED_PAGE_SIZE;
+  return props.modelValue.slice(end - SELECTED_PAGE_SIZE, end).map((id) => ({
+    id,
+    code: retainedCodes.value.get(id) ?? selectedCodes.value[id] ?? '已选编码',
+  }));
+});
 const reads = useLatestReadRequest(() => {
   loading.value = false;
 });
+const selectionReadOnly = computed(() => props.locked || !props.enabled);
 const selectionLocked = computed(
-  () => props.locked || loading.value || Boolean(error.value) || !props.enabled,
+  () => selectionReadOnly.value || loading.value || Boolean(error.value),
+);
+const selectablePageIds = computed(() =>
+  items.value.filter((item) => item.status === 'active').map((item) => item.id),
 );
 const pageSelected = computed(
-  () => items.value.length > 0 && items.value.every((item) => props.modelValue.includes(item.id)),
+  () =>
+    selectablePageIds.value.length > 0 &&
+    selectablePageIds.value.every((id) => selectedIds.value.has(id)),
 );
 const pagePartiallySelected = computed(
-  () => !pageSelected.value && items.value.some((item) => props.modelValue.includes(item.id)),
+  () => !pageSelected.value && selectablePageIds.value.some((id) => selectedIds.value.has(id)),
 );
 function updateSelection(ids: string[]): void {
   if (selectionLocked.value) return;
@@ -438,13 +559,6 @@ function updateSelection(ids: string[]): void {
   emit('update:modelValue', ids);
 }
 function selectRow(id: string, checked: boolean): void {
-  if (!checked && !props.locked) {
-    emit(
-      'update:modelValue',
-      props.modelValue.filter((value) => value !== id),
-    );
-    return;
-  }
   updateSelection(
     checked
       ? [...new Set([...props.modelValue, id])]
@@ -452,7 +566,7 @@ function selectRow(id: string, checked: boolean): void {
   );
 }
 function selectRetainedMark(id: string, checked: boolean): void {
-  if (props.locked || !props.enabled) return;
+  if (selectionReadOnly.value) return;
   emit(
     'update:modelValue',
     checked
@@ -461,17 +575,43 @@ function selectRetainedMark(id: string, checked: boolean): void {
   );
 }
 function selectPage(checked: boolean): void {
-  const pageIds = new Set(
-    items.value.filter((item) => item.status === 'active').map((item) => item.id),
-  );
+  const pageIds = new Set(selectablePageIds.value);
   updateSelection(
     checked
       ? [...new Set([...props.modelValue, ...pageIds])]
       : props.modelValue.filter((id) => !pageIds.has(id)),
   );
 }
+function openSelectionReview(): void {
+  selectedPage.value = 1;
+  reviewVisible.value = true;
+}
+function restoreSelectionFocus(): void {
+  if (!props.modelValue.length) selectionStatus.value?.focus({ preventScroll: true });
+}
+async function removeSelectedMark(id: string, index: number): Promise<void> {
+  if (selectionReadOnly.value) return;
+  emit(
+    'update:modelValue',
+    props.modelValue.filter((value) => value !== id),
+  );
+  await nextTick();
+  if (reviewVisible.value && reviewList.value) {
+    const buttons = reviewList.value.querySelectorAll<HTMLButtonElement>('button:not(:disabled)');
+    buttons[Math.min(index, buttons.length - 1)]?.focus();
+  }
+}
+async function clearSelection(): Promise<void> {
+  if (selectionReadOnly.value) return;
+  const clearingFromReview = reviewVisible.value;
+  emit('update:modelValue', []);
+  if (!clearingFromReview) {
+    await nextTick();
+    restoreSelectionFocus();
+  }
+}
 async function load(): Promise<void> {
-  if (!props.enabled || !reads.isActive()) return;
+  if (!props.enabled || !candidatesExpanded.value || !reads.isActive()) return;
   if (!props.batchId && !props.cardId && !keyword.value.trim() && !cardNo.value.trim()) {
     reads.invalidate();
     items.value = [];
@@ -480,7 +620,10 @@ async function load(): Promise<void> {
     return;
   }
   const target = `${props.batchId}/${props.cardId}`;
-  const read = reads.begin(() => props.enabled && target === `${props.batchId}/${props.cardId}`);
+  const read = reads.begin(
+    () =>
+      props.enabled && candidatesExpanded.value && target === `${props.batchId}/${props.cardId}`,
+  );
   loading.value = true;
   error.value = '';
   try {
@@ -522,10 +665,12 @@ async function changePageSize(value: number): Promise<void> {
   await search();
 }
 watch(
-  () => [props.batchId, props.cardId, props.enabled, props.revision] as const,
+  () =>
+    [props.batchId, props.cardId, props.enabled, props.revision, candidatesExpanded.value] as const,
   (value, previous) => {
     reads.invalidate();
     if (!previous || value[0] !== previous[0] || value[1] !== previous[1]) {
+      reviewVisible.value = false;
       items.value = [];
       total.value = 0;
       page.value = 1;
@@ -541,16 +686,28 @@ watch(
 watch(
   () => props.modelValue,
   (ids) => {
-    selectedPage.value = Math.max(1, Math.min(selectedPage.value, Math.ceil(ids.length / 20)));
-    if (!ids.length) selectedCodes.value = {};
+    selectedPage.value = Math.max(
+      1,
+      Math.min(selectedPage.value, Math.ceil(ids.length / SELECTED_PAGE_SIZE)),
+    );
+    if (!ids.length) {
+      selectedCodes.value = {};
+      reviewVisible.value = false;
+    }
   },
 );
 watch(
-  () => props.retainedScrapMarks,
-  (marks) => {
-    retainedPage.value = Math.max(1, Math.min(retainedPage.value, Math.ceil(marks.length / 20)));
+  () => props.selectionFooterHost,
+  (host) => {
+    if (!host) reviewVisible.value = false;
   },
 );
+watch(retainedMarks, (marks) => {
+  retainedPage.value = Math.max(1, Math.min(retainedPage.value, Math.ceil(marks.length / 20)));
+});
+onDeactivated(() => {
+  reviewVisible.value = false;
+});
 defineExpose({ reload: load });
 </script>
 <style scoped>
@@ -558,6 +715,11 @@ defineExpose({ reload: load });
   display: grid;
   gap: 12px;
   min-width: 0;
+}
+.mark-disclosure {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 .mark-filters {
   display: flex;
@@ -584,14 +746,35 @@ defineExpose({ reload: load });
 .mark-filters .el-select {
   width: 140px;
 }
-.selection-summary {
+.selection-hint {
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.selection-bar,
+.selection-actions {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+}
+.selection-bar {
+  text-align: start;
+  font-size: 13px;
+  color: var(--el-text-color-regular);
+}
+.selection-bar strong {
+  font-size: 14px;
   color: var(--el-text-color-primary);
 }
-.selection-summary {
-  flex-wrap: wrap;
+.selection-bar--active {
+  padding: 6px 12px;
+  border: 1px solid var(--el-border-color);
+  border-radius: 8px;
+  background: var(--el-bg-color);
+  box-shadow: var(--el-box-shadow-light);
+}
+.selection-actions .el-button + .el-button {
+  margin-left: 0;
 }
 .scrap-selection-impact {
   max-height: 8em;
@@ -599,12 +782,21 @@ defineExpose({ reload: load });
   overflow-wrap: anywhere;
   line-height: 1.65;
 }
+.selected-codes {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
 .selected-code {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   gap: 12px;
-  padding: 6px 0;
+  padding: 8px 0;
   overflow-wrap: anywhere;
+}
+.selected-code + .selected-code {
+  border-top: 1px solid var(--el-border-color-lighter);
 }
 .mark-filters .el-button + .el-button {
   margin-left: 0;

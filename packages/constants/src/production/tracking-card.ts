@@ -1,5 +1,6 @@
 export const PRODUCTION_TRACKING_CARD_BATCH_LIMIT = 100;
 export const PRODUCTION_TRACKING_ITEM_MARK_MAX_LENGTH = 32;
+export const PRODUCTION_TRACKING_MARK_AVAILABILITY_BATCH_SIZE = 200;
 export const PRODUCTION_TRACKING_ITEM_MARK_STATUSES = ['active', 'scrapped', 'cancelled'] as const;
 export const PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS = {
   active: '正常',
@@ -7,16 +8,7 @@ export const PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS = {
   cancelled: '已撤销',
 } as const;
 export const PRODUCTION_TRACKING_ABNORMALITY_LABEL_LIMIT = 20;
-export const PRODUCTION_TRACKING_MARK_WORKSPACE_STATUSES = [
-  'pending',
-  'active',
-  'scrapped',
-] as const;
-export const PRODUCTION_TRACKING_MARK_WORKSPACE_LABELS = {
-  pending: '待绑',
-  active: PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS.active,
-  scrapped: PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS.scrapped,
-} as const;
+export const PRODUCTION_TRACKING_MARK_WORKSPACE_STATUSES = ['active', 'scrapped'] as const;
 export const PRODUCTION_TRACKING_ABNORMALITY_LABEL_MAX_LENGTH = 5000;
 export const PRODUCTION_TRACKING_ABNORMALITY_RESOLUTIONS = ['repair', 'scrap'] as const;
 export const PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS = {
@@ -25,6 +17,7 @@ export const PRODUCTION_TRACKING_ABNORMALITY_RESOLUTION_LABELS = {
 } as const;
 export const PRODUCTION_TRACKING_ABNORMALITY_SCRAP_MODES = [
   'quantity_only',
+  'optional_marks',
   'item_marked',
   'unknown',
 ] as const;

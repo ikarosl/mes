@@ -40,11 +40,11 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 当前实物码在全库唯一，正常件和报废件都占码。录错号码可对同一件留因更正，包括已报废、已终检、已入库或任务结束的单件。更正保留原卡、登记人员、报废及产出关联。旧错误输入和已撤销绑定仅供历史查询；按实物码追溯时查当前归属。
 
-同一任务内可以一次提交多卡的绑定、改号、清空及号码互换。可办理的卡按当前剩余盘量减正常绑定数推导待绑名额。空位没有单件 ID、登记人员或绑定时间。清空错误绑定释放号码及本卡名额，盘量不变，已撤销的登记只读。报废件及已有有效终检产出的件只允许纠正同一件录错的号码，不能清空或参与号码互换。返修完成或误报恢复的实物继续使用原身份。
+同一任务内可以一次提交多卡的绑定、改号、清空及号码互换。可办理的卡按当前剩余盘量减正常绑定数推导待绑名额。预览和查重均不占号，只有实际提交并成功绑定的单件才占用编码。清空错误绑定释放号码及本卡名额，盘量不变，已撤销的登记只读。报废件及已有有效终检产出的件只允许纠正同一件录错的号码，不能清空或参与号码互换。返修完成或误报恢复的实物继续使用原身份。
 
 整次保存按最终号码分配核验唯一性和逐卡容量。跨卡换绑在同一事务内完成，改动前后的卡和号码由全局操作日志记录。翻页或提交中的中间值不参与占号，任何一行冲突均回滚整次保存。
 
-新登记的前道报废只按数量扣盘，扣后盘量须容纳全部有效绑定。末道报废逐件指定本卡有效编码，数量须等于报废件数。系统以结算时本卡在冻结路线的实际位置决定规则，另选的异常关联工序仅用于追溯。历史未结异常沿原口径办理，无码数量只可来自未绑定余量。
+新登记报废时，按实物选择本卡有效编码。前道（含尚未到站）允许同一笔报废包含已绑定件和未绑定件：所选编码数不得超过报废件数，两者之差不得超过本盘未绑定余量。末道须逐件选齐。系统以结算时本卡在冻结路线的实际位置决定规则，另选的异常关联工序仅用于追溯。历史未结异常沿原口径办理，无码数量只可来自未绑定余量。
 
 每张卡在终检确认时，必须满足有效、未报废、未撤销的绑定数等于当前剩余盘量，且原有末站及异常清零条件成立；按每张卡独立检查，不等待同任务其他卡。产出保存当次有效绑定关联，表示这些实物随本卡完成终检，不表示分别登记过独立检验结果。产出撤销保留原关联及绑定事实，再次确认按当时有效绑定重新建立关联。卡作废只停止所属卡办理，不把绑定转为实物报废；已入库后的处理继续遵守原产出和库存边界。
 
@@ -68,7 +68,7 @@ Production 以任务下的追踪卡表示一盘实物。卡、到站、交接报
 
 新登记额度约束新上报及盘量更正命令，不将既有发现重释为实物互不重叠。历史发现、处理及关联事实保持原义，不按新额度回填、去重或改写；系统无法仅凭历史数量推断实物重叠关系，既有异常仍按原有高级结算规则办理。
 
-更正报废提交该笔更正后的正整数总数和原因。按首次结算冻结的前道或末道口径办理，末道同时提交更正后的完整编码集合。当前盘量增加原有效报废数，再减新数，仍须满足未结异常占量、有效绑定与数量上限。只换码时盘量保持原值。作废整笔报废恢复当前仍扣减的数量及编码，作废返修只登记作废。原始发现及结算快照保留，当前有效结果取最新纠错。
+更正报废提交该笔更正后的正整数总数和原因，沿用首次结算冻结的选码规则。允许选码的记录提交更正后全部实际报废编码，可保留本笔原有效报废码或选入本卡有效绑定。历史只按数量办理的记录继续按数量更正。当前盘量增加原有效报废数，再减新数，仍须满足未结异常占量、有效绑定与数量上限。只换码时盘量保持原值。作废整笔报废恢复当前仍扣减的数量及编码，作废返修只登记作废。原始发现及结算快照保留，当前有效结果取最新纠错。
 
 纠错要求任务在执行中，卡无有效产出且未人工作废。混合结算及已有上下游重叠归因的记录保留历史口径。既有纯报废若缺少原站依据，允许依据原实扣与原编码整笔作废，更正数量或换码须能确定原结算口径。既往已完成交接的数量快照保留。异常与盘量按各自版本在同一卡锁内校验，纠错、编码归属、盘量、状态及成功审计原子提交。
 
@@ -446,7 +446,7 @@ CONSTRAINT `chk_tracking_abnormality_version` CHECK ((`version` >= 0));
 | `content`                 | `text NOT NULL`                               | 本次处理说明，不覆盖原始发现或之前处理 |
 | `repaired_quantity`       | `int NOT NULL`                                | 返修数量，不增加卡量                   |
 | `scrapped_quantity`       | `int NOT NULL`                                | 原始结算时实际扣减的报废数量 |
-| `scrap_mode` | `varchar(16) NULL` | 新登记结算时的数量口径 `quantity_only` 或逐码口径 `item_marked`，旧结算缺少可证口径时为 NULL |
+| `scrap_mode` | `varchar(16) NULL` | 首次结算的报废规则：`optional_marks` 允许前道按实物选码，`item_marked` 要求逐件选码，`quantity_only` 为历史仅扣数量；旧结算缺少可证口径时为 NULL |
 | `previous_card_quantity`  | `int NOT NULL`                                | 本次处理前锁定的剩余盘量               |
 | `remaining_card_quantity` | `int NOT NULL`                                | 本次处理后盘量，等于前量减新增报废     |
 | `personnel_id`            | `bigint unsigned NOT NULL`                    | 登记时选择的现场人员ID，不是登录账号   |
@@ -466,7 +466,7 @@ CONSTRAINT `fk_tracking_handling_abnormality` FOREIGN KEY (`abnormality_id`) REF
 CONSTRAINT `fk_tracking_handling_actor` FOREIGN KEY (`created_by`) REFERENCES `users` (`id`);
 CONSTRAINT `fk_tracking_handling_personnel` FOREIGN KEY (`personnel_id`) REFERENCES `personnel` (`id`);
 CONSTRAINT `chk_tracking_handling_quantities` CHECK (repaired_quantity BETWEEN 0 AND 99999999 AND scrapped_quantity BETWEEN 0 AND 99999999);
-CONSTRAINT `chk_tracking_handling_scrap_mode` CHECK (scrap_mode IN ('quantity_only','item_marked'));
+CONSTRAINT `chk_tracking_handling_scrap_mode` CHECK (scrap_mode IN ('quantity_only','item_marked','optional_marks'));
 CONSTRAINT `chk_tracking_handling_card_quantities` CHECK (previous_card_quantity BETWEEN 0 AND 99999999 AND remaining_card_quantity BETWEEN 0 AND 99999999 AND remaining_card_quantity=previous_card_quantity-scrapped_quantity AND repaired_quantity+scrapped_quantity<=previous_card_quantity);
 ```
 

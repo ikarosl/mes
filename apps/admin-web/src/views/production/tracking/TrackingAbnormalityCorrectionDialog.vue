@@ -2,7 +2,7 @@
   <el-dialog
     :model-value="visible"
     :title="title"
-    :width="needsMarks ? DialogWidth.xl : DialogWidth.md"
+    :width="showScrapItemMarks && scrapMarksExpanded ? DialogWidth.xl : DialogWidth.md"
     :before-close="beforeClose"
     :show-close="!submitting"
     @update:model-value="requestClose"
@@ -44,7 +44,7 @@
             {{ formatDateTimeForDisplay(handling.createdAt) }}
           </el-descriptions-item>
           <el-descriptions-item
-            v-if="!needsMarks && originalMarks.length"
+            v-if="!showScrapItemMarks && originalMarks.length"
             label="当前报废编码"
             :span="2"
           >
@@ -104,20 +104,26 @@
             /><span class="unit">{{ basis.card.unit }}</span>
           </el-form-item>
           <el-form-item
-            v-if="needsMarks"
+            v-if="showScrapItemMarks"
             label="更正后报废编码"
-            required
+            :required="requiredScrapMarks || minimumScrapMarks > 0"
           >
             <div class="mark-choice">
               <TrackingItemMarkList
                 v-model="selectedIds"
+                v-model:expanded="scrapMarksExpanded"
                 :card-id="basis.card.id"
                 :revision="basis.card.version"
                 :enabled="visible && !blockedReason"
                 :locked="locked"
+                :default-expanded="requiredScrapMarks"
+                :minimum-selection="minimumScrapMarks"
                 :retained-scrap-marks="originalMarks"
-                :selection-target="quantity"
+                :selection-target="requiredScrapMarks ? (quantity ?? null) : undefined"
+                :selection-footer-host="selectionFooterHost"
+                :selection-review-host="selectionReviewHost"
                 selectable
+                collapsible
                 compact
               />
             </div>
@@ -174,30 +180,43 @@
       </el-form>
     </div>
     <template #footer>
-      <el-button
-        :disabled="submitting"
-        @click="requestClose(false)"
-        >取消</el-button
-      >
-      <el-button
-        :loading="loading"
-        :disabled="submitting || recovery"
-        @click="reloadBasis"
-      >
-        {{ stale ? '载入最新资料' : '刷新信息' }}
-      </el-button>
-      <el-button
-        :type="isCorrection ? 'primary' : 'danger'"
-        :loading="submitting"
-        :disabled="!canSubmit"
-        @click="submit"
-        >{{ isCorrection ? '确认更正' : '作废登记' }}</el-button
-      >
+      <div class="dialog-footer">
+        <div
+          v-if="visible && showScrapItemMarks"
+          ref="selectionFooterHost"
+        />
+        <div class="dialog-actions">
+          <el-button
+            :disabled="submitting"
+            @click="requestClose(false)"
+            >取消</el-button
+          >
+          <el-button
+            :loading="loading"
+            :disabled="submitting || recovery"
+            @click="reloadBasis"
+          >
+            {{ stale ? '载入最新资料' : '刷新信息' }}
+          </el-button>
+          <el-button
+            :type="isCorrection ? 'primary' : 'danger'"
+            :loading="submitting"
+            :disabled="!canSubmit"
+            @click="submit"
+            >{{ isCorrection ? '确认更正' : '作废登记' }}</el-button
+          >
+        </div>
+      </div>
     </template>
   </el-dialog>
+  <div
+    ref="selectionReviewHost"
+    class="selection-review-host"
+  />
 </template>
 
 <script setup lang="ts">
+import { ref } from 'vue';
 import type { ProductionTrackingCardDetail } from '@company/contracts';
 import { MAX_PERSISTED_INTEGER_QUANTITY } from '@company/utils';
 import InlineHint from '../../../components/InlineHint.vue';
@@ -222,6 +241,8 @@ const emit = defineEmits<{
   'update:visible': [value: boolean];
   changed: [card: ProductionTrackingCardDetail];
 }>();
+const selectionFooterHost = ref<HTMLElement | null>(null);
+const selectionReviewHost = ref<HTMLElement | null>(null);
 const {
   target,
   title,
@@ -230,7 +251,10 @@ const {
   handling,
   originalQuantity,
   originalMarks,
-  needsMarks,
+  showScrapItemMarks,
+  requiredScrapMarks,
+  scrapMarksExpanded,
+  minimumScrapMarks,
   quantity,
   selectedIds,
   reason,
@@ -283,5 +307,26 @@ const {
 .quantity-state {
   display: block;
   margin-bottom: 12px;
+}
+.dialog-footer,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dialog-footer {
+  column-gap: 16px;
+  justify-content: space-between;
+}
+.dialog-actions {
+  justify-content: flex-end;
+  margin-inline-start: auto;
+}
+.dialog-actions .el-button + .el-button {
+  margin-left: 0;
+}
+.selection-review-host {
+  display: contents;
 }
 </style>

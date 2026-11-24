@@ -67,6 +67,15 @@ export const productionTrackingApi = {
       url: '/production/tracking-item-marks/code-availability',
       params: { markCode },
     }),
+  occupiedItemMarkCodes: (
+    markCodes: string[],
+    options: ReadRequestOptions = {},
+  ): Promise<string[]> =>
+    request({
+      ...options,
+      url: '/production/tracking-item-marks/occupied-codes',
+      params: { markCodes: markCodes.join(',') },
+    }),
   itemMark: (
     cardId: string,
     markId: string,

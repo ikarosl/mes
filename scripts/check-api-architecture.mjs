@@ -102,6 +102,7 @@ const knownIdempotencyScopes = [
   'production.tracking.abnormality.create.v4',
   'production.tracking.abnormality.create.v5',
   'production.tracking.abnormality.create.v6',
+  'production.tracking.abnormality.create.v7',
   'production.tracking.abnormality.handle.v2',
   'production.tracking.abnormality.handle.v3',
   'production.tracking.abnormality.scrap-correction.v1',

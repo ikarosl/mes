@@ -116,7 +116,14 @@
           label="工单类型"
           width="120"
         >
-          <template #default="{ row }">{{ formatWorkOrderType(row.orderType) }}</template>
+          <template #default="{ row }">
+            <el-tag
+              :type="taskTypeTagType(row.orderType)"
+              size="small"
+            >
+              {{ formatWorkOrderType(row.orderType) }}
+            </el-tag>
+          </template>
         </el-table-column>
         <el-table-column
           label="计划数量"
@@ -333,7 +340,7 @@ import type { ProductOption, WorkOrderItem } from '@company/contracts';
 import { useRowPending } from '../../../composables/use-row-pending';
 import { buildLiveOptions } from '../../../utils/live-options';
 import { formatDateForDisplay } from '../../../utils/date';
-import { deadlinePresentation } from '../shared/production-task-presentation';
+import { deadlinePresentation, taskTypeTagType } from '../shared/production-task-presentation';
 import { useProductOptions } from '../../../composables/options/useProductOptions';
 import { useTableActionColumn } from '../../../composables/useTableActionColumn';
 import { formatQuantity } from '../../../utils/quantity';
@@ -542,23 +549,23 @@ onMounted(() => {
   font-weight: 500;
   line-height: 22px;
 }
-.orders-table :deep(.el-tag--success) {
+.orders-table :deep(:where(.order-status-tag).el-tag--success) {
   background: #dcfce7;
   color: #22c55e;
 }
-.orders-table :deep(.el-tag--info) {
+.orders-table :deep(:where(.order-status-tag).el-tag--info) {
   background: #f3f4f6;
   color: #6b7280;
 }
-.orders-table :deep(.el-tag--danger) {
+.orders-table :deep(:where(.order-status-tag).el-tag--danger) {
   background: #fce8e8;
   color: #ef4444;
 }
-.orders-table :deep(.el-tag--warning) {
+.orders-table :deep(:where(.order-status-tag).el-tag--warning) {
   background: #fef3c7;
   color: #f59e0b;
 }
-.orders-table :deep(.el-tag--primary) {
+.orders-table :deep(:where(.order-status-tag).el-tag--primary) {
   background: #e8f0fe;
   color: #306188;
 }

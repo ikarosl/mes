@@ -326,13 +326,13 @@
               @click.stop="openCardLabel(row)"
               >标签 / 打印</el-button
             ><el-button
-              v-if="canCorrectQuantity(row)"
+              v-if="canCorrectTrackingQuantity(row)"
               link
               type="primary"
               :loading="quantityLoading && quantityTarget?.id === row.id"
               :disabled="actionInProgress"
               @click.stop="openQuantityAction(row)"
-              >更正盘量</el-button
+              >{{ TRACKING_ACTION_LABELS.quantity }}</el-button
             ></template
           ></el-table-column
         >
@@ -476,7 +476,12 @@ import TrackingAbnormalityCorrectionDialog from './TrackingAbnormalityCorrection
 import TrackingAbnormalityTags from './TrackingAbnormalityTags.vue';
 import TrackingLabelDialog from './TrackingLabelDialog.vue';
 import LabelPrinterSettingsDialog from './LabelPrinterSettingsDialog.vue';
-import { trackingCardStatus, trackingOutputLabel } from './tracking-presentation';
+import {
+  canCorrectTrackingQuantity,
+  TRACKING_ACTION_LABELS,
+  trackingCardStatus,
+  trackingOutputLabel,
+} from './tracking-presentation';
 import type { TrackingCardAction } from './tracking-presentation';
 import type { TrackingCardActionStepContext } from './use-tracking-card-action';
 import type {
@@ -485,6 +490,10 @@ import type {
 } from './use-tracking-abnormality-correction';
 import { useTrackingTaskSearch } from './use-tracking-task-search';
 import { useProductionTrackingList } from './use-production-tracking-list';
+import {
+  useTrackingQuantityCorrection,
+  type TrackingQuantityTarget,
+} from './use-tracking-quantity-correction';
 
 defineOptions({ name: 'ProductionTrackingPage' });
 const route = useRoute(),
@@ -754,44 +763,22 @@ function openAbnormalityCorrection(
   };
   correctionVisible.value = true;
 }
-const quantityTarget = ref<Pick<ProductionTrackingCardItem, 'id' | 'cardNo'> | null>(null),
-  quantityLoading = ref(false),
-  quantityError = ref('');
-const quantityReads = useLatestReadRequest(() => {
-  quantityLoading.value = false;
-});
-function canCorrectQuantity(
-  card: Pick<ProductionTrackingCardItem, 'quantity' | 'status'>,
-): boolean {
-  return Number(card.quantity) > 0 && (card.status === 'unused' || card.status === 'in_progress');
-}
-function cancelQuantityAction(): void {
-  quantityReads.invalidate();
-  quantityTarget.value = null;
-  quantityError.value = '';
-}
-async function openQuantityAction(card: ProductionTrackingCardItem): Promise<void> {
-  if (actionInProgress.value || !canCorrectQuantity(card) || !quantityReads.isActive()) return;
-  quantityTarget.value = { id: card.id, cardNo: card.cardNo };
-  await loadQuantityAction();
-}
-async function loadQuantityAction(): Promise<void> {
-  const target = quantityTarget.value;
-  if (!target || actionInProgress.value || detailVisible.value || !quantityReads.isActive()) return;
-  const read = quantityReads.begin(
-    () => quantityTarget.value === target && !actionInProgress.value && !detailVisible.value,
-  );
-  quantityLoading.value = true;
-  quantityError.value = '';
-  try {
-    const card = await productionTrackingApi.detail(target.id, {
-      signal: read.signal,
-      skipErrorHandling: true,
-    });
-    if (!read.isCurrent()) return;
-    if (card.id !== target.id) throw new Error('更正依据与所选追踪卡不一致，请重新加载');
+const hasOpenOperation = () =>
+  actionInProgress.value || labelVisible.value || printerSettingsVisible.value;
+const {
+  target: quantityTarget,
+  loading: quantityLoading,
+  error: quantityError,
+  cancel: cancelQuantityAction,
+  load: loadQuantityAction,
+  open: readQuantityAction,
+  consumeLocation: consumeQuantityLocation,
+} = useTrackingQuantityCorrection(
+  () => !hasOpenOperation() && !detailVisible.value,
+  (card) => {
+    selectedId.value = card.id;
     updateCardFacts(card);
-    if (!canCorrectQuantity(card)) {
+    if (!canCorrectTrackingQuantity(card)) {
       EMessage.warning(`${card.cardNo} 当前已不能更正盘量，请查看最新详情`);
       return;
     }
@@ -799,14 +786,31 @@ async function loadQuantityAction(): Promise<void> {
     actionStepContext.value = null;
     action.value = 'quantity';
     abnormality.value = null;
-    quantityLoading.value = false;
     actionVisible.value = true;
-  } catch (error) {
-    if (read.isCurrent())
-      quantityError.value = `${target.cardNo}：${error instanceof Error ? error.message : '盘量更正依据加载失败，请重试'}`;
-  } finally {
-    if (read.isCurrent()) quantityLoading.value = false;
+  },
+);
+async function openQuantityAction(card: ProductionTrackingCardItem): Promise<void> {
+  if (canCorrectTrackingQuantity(card)) await readQuantityAction(card);
+}
+async function locateQuantityAction(target: TrackingQuantityTarget): Promise<void> {
+  if (hasOpenOperation()) {
+    if (!(actionVisible.value && action.value === 'quantity' && actionCard.value?.id === target.id))
+      EMessage.warning(`请先完成或关闭当前操作，再更正 ${target.cardNo} 的盘量`);
+    return;
   }
+  detailVisible.value = false;
+  if (context.value?.batch.id !== target.productionBatchId) context.value = null;
+  Object.assign(query, {
+    batchId: target.productionBatchId,
+    stepRecordId: '',
+    keyword: target.cardNo,
+    status: '',
+    abnormalityStatus: '',
+  });
+  view.value = 'cards';
+  page.value = 1;
+  selectedId.value = '';
+  await Promise.all([loadContext(), loadList(), readQuantityAction(target)]);
 }
 watch(detailVisible, (visible) => {
   if (!visible) detailReads.invalidate();
@@ -847,6 +851,13 @@ async function locate(): Promise<void> {
   const batchId = typeof route.query.batchId === 'string' ? route.query.batchId : '';
   const cardId = typeof route.query.cardId === 'string' ? route.query.cardId : '';
   const key = `${batchId}/${cardId}/${String(route.query.stepRecordId || '')}/${String(route.query.view || '')}`;
+  const cardNo = route.query.quantityCorrection;
+  if (batchId && cardId && typeof cardNo === 'string' && cardNo) {
+    consumedLocation = key;
+    if (await consumeQuantityLocation())
+      await locateQuantityAction({ id: cardId, productionBatchId: batchId, cardNo });
+    return;
+  }
   if (key === consumedLocation) return;
   consumedLocation = key;
   query.batchId = batchId || null;
@@ -861,6 +872,7 @@ watch(
     route.query.cardId,
     route.query.stepRecordId,
     route.query.view,
+    route.query.quantityCorrection,
   ],
   () => {
     void locate();

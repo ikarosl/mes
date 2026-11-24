@@ -27,7 +27,7 @@ export const PRODUCTION_TRACKING_SCOPES = {
   scan: 'production.tracking.scan.v2',
   'correct-quantity': 'production.tracking.correct-quantity.v3',
   void: 'production.tracking.void.v3',
-  'abnormality.create': 'production.tracking.abnormality.create.v6',
+  'abnormality.create': 'production.tracking.abnormality.create.v7',
   'abnormality.handle': 'production.tracking.abnormality.handle.v3',
   'abnormality.scrap-correction': 'production.tracking.abnormality.scrap-correction.v1',
   'abnormality.void': 'production.tracking.abnormality.void.v1',

@@ -70,12 +70,17 @@ export function useTrackingAbnormalityCorrection(
   const handling = computed(() => basis.value?.record.handling);
   const originalQuantity = computed(() => Number(handling.value?.currentScrappedQuantity ?? 0));
   const originalMarks = computed(() => handling.value?.currentScrappedItemMarks ?? []);
-  const needsMarks = computed(
+  const requiredScrapMarks = computed(
     () => isCorrection.value && handling.value?.scrapMode === 'item_marked',
   );
+  const optionalScrapMarks = computed(
+    () => isCorrection.value && handling.value?.scrapMode === 'optional_marks',
+  );
+  const showScrapItemMarks = computed(() => requiredScrapMarks.value || optionalScrapMarks.value);
+  const scrapMarksExpanded = ref(false);
   const changesScrap = computed(() => {
     if (quantity.value !== originalQuantity.value) return true;
-    if (!needsMarks.value) return false;
+    if (!showScrapItemMarks.value) return false;
     const marks = new Set(selectedIds.value);
     return (
       marks.size !== originalMarks.value.length ||
@@ -99,7 +104,7 @@ export function useTrackingAbnormalityCorrection(
     if (!result.canCorrectScrap)
       return result.scrapCorrectionBlockedReason || '当前异常不能更正报废，请核对异常处理记录。';
     if (result.scrapMode === 'unknown') return '原报废结算所处的工序无法核实。';
-    if (needsMarks.value && result.currentScrappedItemMarks === null)
+    if (showScrapItemMarks.value && result.currentScrappedItemMarks === null)
       return '原报废编码读取不完整，请刷新重试。';
     return '';
   });
@@ -109,6 +114,15 @@ export function useTrackingAbnormalityCorrection(
     if (next === undefined || !Number.isSafeInteger(next) || next < 0) return undefined;
     return Number(basis.value.card.quantity) + originalQuantity.value - next;
   });
+  const minimumScrapMarks = computed(() => {
+    const card = basis.value?.card;
+    const remaining = remainingQuantity.value;
+    if (!optionalScrapMarks.value || !card || remaining === undefined || remaining < 0) return 0;
+    return Math.max(0, card.itemMarking.activeCount + originalMarks.value.length - remaining);
+  });
+  const missingOptionalScrapMarks = computed(
+    () => selectedIds.value.length < minimumScrapMarks.value,
+  );
   const quantityError = computed(() => {
     const card = basis.value?.card;
     const next = quantity.value;
@@ -131,10 +145,13 @@ export function useTrackingAbnormalityCorrection(
     );
     if (remaining < openQuantity)
       return `更正后盘量不能小于待处理异常数量 ${formatQuantity(openQuantity)} ${card.unit}。`;
-    if (needsMarks.value && selectedIds.value.length !== next)
+    const selected = selectedIds.value.length;
+    if (requiredScrapMarks.value && selected !== next)
       return `请选择 ${formatQuantity(next)} 个更正后实际报废编码。`;
-    const nextActiveCount = needsMarks.value
-      ? card.itemMarking.activeCount + originalMarks.value.length - selectedIds.value.length
+    if (optionalScrapMarks.value)
+      return selected > next ? '所选编码数不能超过更正后报废总量。' : '';
+    const nextActiveCount = requiredScrapMarks.value
+      ? card.itemMarking.activeCount + originalMarks.value.length - selected
       : card.itemMarking.activeCount;
     if (remaining < nextActiveCount) return `更正后盘量不能小于有效绑定编码数 ${nextActiveCount}。`;
     return '';
@@ -147,7 +164,8 @@ export function useTrackingAbnormalityCorrection(
       !readError.value &&
       !blockedReason.value &&
       Boolean(reason.value.trim()) &&
-      (!isCorrection.value || (changesScrap.value && !quantityError.value)),
+      (!isCorrection.value ||
+        (changesScrap.value && !quantityError.value && !missingOptionalScrapMarks.value)),
   );
 
   async function load(replace = false): Promise<void> {
@@ -192,10 +210,9 @@ export function useTrackingAbnormalityCorrection(
       basis.value = { card, record };
       if (!previous || replace) {
         quantity.value = Number(record.handling.currentScrappedQuantity);
-        selectedIds.value =
-          record.handling.scrapMode === 'item_marked'
-            ? (record.handling.currentScrappedItemMarks ?? []).map((mark) => mark.itemMarkId)
-            : [];
+        selectedIds.value = showScrapItemMarks.value
+          ? originalMarks.value.map((mark) => mark.itemMarkId)
+          : [];
         stale.value = false;
       }
     } catch (failure) {
@@ -281,7 +298,7 @@ export function useTrackingAbnormalityCorrection(
           body: {
             ...body,
             scrappedQuantity: quantity.value,
-            scrappedItemMarkIds: needsMarks.value ? [...selectedIds.value] : [],
+            scrappedItemMarkIds: showScrapItemMarks.value ? [...selectedIds.value] : [],
           },
         };
       } else {
@@ -354,6 +371,7 @@ export function useTrackingAbnormalityCorrection(
       basis.value = null;
       quantity.value = undefined;
       selectedIds.value = [];
+      scrapMarksExpanded.value = false;
       reason.value = '';
       readError.value = '';
       stale.value = false;
@@ -374,7 +392,10 @@ export function useTrackingAbnormalityCorrection(
     handling,
     originalQuantity,
     originalMarks,
-    needsMarks,
+    showScrapItemMarks,
+    requiredScrapMarks,
+    scrapMarksExpanded,
+    minimumScrapMarks,
     quantity,
     selectedIds,
     reason,

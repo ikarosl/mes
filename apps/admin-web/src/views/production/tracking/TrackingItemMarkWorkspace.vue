@@ -53,10 +53,7 @@
         width="42"
       >
         <template #default="{ row }">
-          <div
-            v-if="row.item"
-            class="details"
-          >
+          <div class="details">
             <span v-if="row.item.scrap"
               >报废时间 {{ formatDateTimeForDisplay(row.item.scrap.createdAt) }}</span
             >
@@ -84,11 +81,6 @@
               :enabled="true"
             />
           </div>
-          <span
-            v-else
-            class="details"
-            >待绑，尚无登记记录</span
-          >
         </template>
       </el-table-column>
       <el-table-column
@@ -103,21 +95,26 @@
         <template #default="{ row }">
           <WorkspaceMarkCodeInput
             :id="'grid-' + rowKey(row)"
-            :model-value="drafts.get(rowKey(row))?.input ?? row.item?.markCode ?? ''"
-            :placeholder="row.item ? '' : '输入编码'"
+            :model-value="drafts.get(rowKey(row))?.input ?? row.item.markCode"
             :label="`${row.cardNo} 编码`"
-            :disabled="editLocked || (!row.item && !row.canBind)"
+            :disabled="editLocked || Boolean(drafts.get(rowKey(row))?.transferTarget)"
             :feedback="fields.get(rowKey(row))"
             @update:model-value="edit(row, $event)"
             @retry="retry(drafts.get(rowKey(row))?.input ?? '')"
           />
           <el-text
+            v-if="drafts.get(rowKey(row))?.transferTarget"
+            size="small"
+            >待换绑到 {{ drafts.get(rowKey(row))?.transferTarget?.cardNo }}</el-text
+          >
+          <el-text
             v-if="drafts.has(rowKey(row)) && stale(row)"
             type="warning"
             size="small"
           >
-            当前记录为 {{ row.item?.markCode ?? '待绑' }}，版本已变化。
+            当前记录为 {{ row.item.markCode }}，版本已变化。
             <el-button
+              v-if="!drafts.get(rowKey(row))?.transferTarget"
               link
               type="primary"
               :disabled="editLocked"
@@ -131,34 +128,49 @@
         label="状态"
         width="85"
         ><template #default="{ row }">
-          <el-tag :type="row.item ? trackingItemMarkStatus(row.item.status).type : 'info'">{{
-            row.item ? trackingItemMarkStatus(row.item.status).label : labels.pending
+          <el-tag :type="trackingItemMarkStatus(row.item.status).type">{{
+            trackingItemMarkStatus(row.item.status).label
           }}</el-tag>
         </template></el-table-column
       >
       <el-table-column
         label="绑定登记人"
         min-width="108"
-        ><template #default="{ row }">{{ row.item?.personnelName }}</template></el-table-column
+        ><template #default="{ row }">{{ row.item.personnelName }}</template></el-table-column
       >
       <el-table-column
         label="绑定时间"
         min-width="155"
         ><template #default="{ row }">{{
-          row.item ? formatDateTimeForDisplay(row.item.createdAt) : ''
+          formatDateTimeForDisplay(row.item.createdAt)
         }}</template></el-table-column
       >
       <el-table-column
         label="操作"
-        width="94"
+        width="120"
         ><template #default="{ row }">
           <el-button
-            v-if="row.item?.scrap"
+            v-if="drafts.get(rowKey(row))?.transferTarget"
+            link
+            :disabled="editLocked"
+            @click="discard(row)"
+            >撤回换绑</el-button
+          >
+          <el-button
+            v-else-if="row.item.scrap"
             link
             type="primary"
             :disabled="editLocked"
             @click="emit('correctScrap', row.item)"
             >更正报废</el-button
+          >
+          <el-button
+            v-else-if="canStageTransfer(row)"
+            link
+            type="primary"
+            :disabled="editLocked || !transferSlots"
+            @click="stageTransfer(row)"
+            >换绑到当前卡</el-button
           >
         </template></el-table-column
       >
@@ -197,7 +209,7 @@
             >查看更改</el-button
           >
           <label
-            v-if="needsReason"
+            v-if="activeDrafts.length"
             class="reason"
           >
             <span>更改原因</span>
@@ -230,6 +242,12 @@
         >
       </div>
       <el-text
+        v-if="staleTransfer"
+        type="warning"
+        role="status"
+        >换绑涉及的卡或绑定已变化，请撤回相关换绑并重新核对。</el-text
+      >
+      <el-text
         v-if="feedback"
         type="danger"
         role="status"
@@ -259,15 +277,14 @@
         >
           <div class="review-identity">
             <strong>{{ draft.row.cardNo }}</strong>
-            <span>{{
-              draft.row.item ? '原码 ' + draft.row.item.markCode : '待绑位置 ' + draft.row.slot
-            }}</span>
+            <span>原码 {{ draft.row.item.markCode }}</span>
+            <span v-if="draft.transferTarget">待换绑到 {{ draft.transferTarget.cardNo }}</span>
           </div>
           <WorkspaceMarkCodeInput
             :id="'review-' + rowKey(draft.row)"
             :label="draft.row.cardNo + ' 待保存编码'"
             :model-value="draft.input"
-            :disabled="editLocked"
+            :disabled="editLocked || Boolean(draft.transferTarget)"
             :feedback="fields.get(rowKey(draft.row))"
             @update:model-value="edit(draft.row, $event)"
             @retry="retry(draft.input)"
@@ -288,16 +305,18 @@
 import { computed, onActivated, onDeactivated, onScopeDispose, reactive, ref, watch } from 'vue';
 import { useRouter } from 'vue-router';
 import type {
+  ProductionTrackingCardDetail,
   ProductionTrackingItemMark,
+  ProductionTrackingItemMarkWorkspaceChange,
   ProductionTrackingItemMarkWorkspaceQuery,
   ProductionTrackingItemMarkWorkspaceRow as Row,
   SaveProductionTrackingItemMarkWorkspacePayload,
 } from '@company/contracts';
 import {
   PRODUCTION_TRACKING_MARK_WORKSPACE_STATUSES,
-  PRODUCTION_TRACKING_MARK_WORKSPACE_LABELS as labels,
+  PRODUCTION_TRACKING_ITEM_MARK_STATUS_LABELS as labels,
 } from '@company/constants';
-import { normalizeTrackingCardNo } from '@company/utils';
+import { normalizeTrackingCardNo, TRACKING_ITEM_MARK_CODE_PATTERN } from '@company/utils';
 import { DialogWidth } from '../../../utils/dialog';
 import WorkspaceMarkCodeInput from './WorkspaceMarkCodeInput.vue';
 import {
@@ -319,11 +338,16 @@ import { useRouteAccess } from '../../../composables/useRouteAccess';
 import { useTabsStore } from '../../../stores/tabs';
 import { formatDateTimeForDisplay } from '../../../utils/date';
 import { EMessage } from '../../../utils/message';
-import { trackingItemMarkStatus } from './tracking-presentation';
+import { trackingItemMarkPending, trackingItemMarkStatus } from './tracking-presentation';
 import TrackingItemMarkCorrectionHistory from './TrackingItemMarkCorrectionHistory.vue';
 
 defineOptions({ name: 'TrackingItemMarkWorkspace' });
-const props = defineProps<{ batchId: string; personnelId: string; locked: boolean }>();
+const props = defineProps<{
+  batchId: string;
+  personnelId: string;
+  locked: boolean;
+  targetCard?: ProductionTrackingCardDetail | null;
+}>();
 const emit = defineEmits<{
   saved: [];
   choosePersonnel: [];
@@ -431,7 +455,25 @@ const reason = computed({
   get: () => reasons.get(draftBatch.value) ?? '',
   set: (value: string) => reasons.set(draftBatch.value, value),
 });
-const needsReason = computed(() => activeDrafts.value.some((d) => d.row.item));
+const transferTarget = computed(() => {
+  const card = props.targetCard;
+  if (
+    !card ||
+    card.productionBatchId !== props.batchId ||
+    (card.status !== 'unused' && card.status !== 'in_progress') ||
+    card.output ||
+    card.openAbnormalityCount ||
+    !trackingItemMarkPending(card)
+  )
+    return null;
+  return card;
+});
+const transferSlots = computed(() => {
+  const card = transferTarget.value;
+  if (!card) return 0;
+  const staged = activeDrafts.value.filter((draft) => draft.transferTarget?.id === card.id).length;
+  return Math.max(0, trackingItemMarkPending(card) - staged);
+});
 const intent = useIdempotentIntent('保存单件刻码');
 const recovery = ref<IdempotentIntentStatus>('idle'),
   saving = ref(false);
@@ -441,6 +483,27 @@ watch(
   (v) => emit('lock', v),
   { flush: 'sync' },
 );
+function canStageTransfer(row: Row) {
+  const target = transferTarget.value;
+  return (
+    target &&
+    target.productionBatchId === row.productionBatchId &&
+    target.id !== row.trackingCardId &&
+    row.canClear &&
+    TRACKING_ITEM_MARK_CODE_PATTERN.test(row.item.markCode) &&
+    !drafts.has(rowKey(row))
+  );
+}
+function stageTransfer(row: Row) {
+  const target = transferTarget.value;
+  if (editLocked.value || !target || !transferSlots.value || !canStageTransfer(row)) return;
+  drafts.set(rowKey(row), {
+    row,
+    input: row.item.markCode,
+    transferTarget: { id: target.id, cardNo: target.cardNo, version: target.version },
+  });
+  feedback.value = '';
+}
 function discard(row: Row) {
   drafts.delete(rowKey(row));
   if (![...drafts.values()].some((d) => d.row.productionBatchId === row.productionBatchId))
@@ -453,9 +516,11 @@ function edit(row: Row, input: string) {
     feedback.value = '请先保存当前任务的改动，或选择目标任务继续编辑';
     return;
   }
-  const key = rowKey(row),
-    original = drafts.get(key)?.row ?? row;
-  if (normal(input) === (original.item?.markCode ?? '')) discard(original);
+  const key = rowKey(row);
+  const draft = drafts.get(key);
+  if (draft?.transferTarget) return;
+  const original = draft?.row ?? row;
+  if (normal(input) === original.item.markCode) discard(original);
   else drafts.set(key, { row: original, input });
   feedback.value = '';
 }
@@ -463,17 +528,34 @@ function stale(row: Row) {
   const original = drafts.get(rowKey(row))?.row;
   return (
     original &&
-    (original.cardVersion !== row.cardVersion || original.item?.version !== row.item?.version)
+    (original.cardVersion !== row.cardVersion || original.item.version !== row.item.version)
   );
 }
 function rebase(row: Row) {
   const draft = drafts.get(rowKey(row));
-  if (draft) {
+  if (draft && !draft.transferTarget) {
     const input = draft.input;
     drafts.delete(rowKey(row));
     edit(row, input);
   }
 }
+const staleTransfer = computed(() => {
+  const target = props.targetCard;
+  return (
+    rows.value.some(
+      (row) =>
+        row.productionBatchId === draftBatch.value &&
+        drafts.get(rowKey(row))?.transferTarget &&
+        (!row.canClear || stale(row)),
+    ) ||
+    activeDrafts.value.some(
+      (draft) =>
+        draft.transferTarget &&
+        target?.id === draft.transferTarget.id &&
+        (target.version !== draft.transferTarget.version || !transferTarget.value),
+    )
+  );
+});
 const reviewVisible = ref(false);
 onDeactivated(() => {
   reviewVisible.value = false;
@@ -494,8 +576,9 @@ const canSave = computed(
     !editLocked.value &&
     !issues.value &&
     !checking.value &&
+    !staleTransfer.value &&
     !!props.personnelId &&
-    (!needsReason.value || !!reason.value.trim()),
+    !!reason.value.trim(),
 );
 async function refreshWorkspace() {
   refreshChecks();
@@ -515,15 +598,31 @@ async function save() {
       keys: activeDrafts.value.map((d) => rowKey(d.row)),
       body: {
         personnelId: props.personnelId,
-        reason: reason.value.trim() || undefined,
-        changes: activeDrafts.value.map(({ row, input }) => ({
-          cardId: row.trackingCardId,
-          cardVersion: row.cardVersion,
-          markId: row.item?.id ?? null,
-          previousMarkCode: row.item?.markCode ?? null,
-          version: row.item?.version ?? null,
-          markCode: normal(input) || null,
-        })),
+        reason: reason.value.trim(),
+        changes: activeDrafts.value.flatMap<ProductionTrackingItemMarkWorkspaceChange>(
+          ({ row, input, transferTarget }) => {
+            const source = {
+              cardId: row.trackingCardId,
+              cardVersion: row.cardVersion,
+              markId: row.item.id,
+              previousMarkCode: row.item.markCode,
+              version: row.item.version,
+              markCode: transferTarget ? null : normal(input) || null,
+            };
+            if (!transferTarget) return [source];
+            return [
+              source,
+              {
+                cardId: transferTarget.id,
+                cardVersion: transferTarget.version,
+                markId: null,
+                previousMarkCode: null,
+                version: null,
+                markCode: row.item.markCode,
+              },
+            ];
+          },
+        ),
       },
     };
   }
@@ -531,7 +630,7 @@ async function save() {
   saving.value = true;
   feedback.value = '';
   try {
-    const result = await intent.execute(
+    await intent.execute(
       {
         intentType: 'production.tracking.item-mark.save',
         params: { batchId: command.batchId },
@@ -542,17 +641,18 @@ async function save() {
     );
     for (const key of command.keys) drafts.delete(key);
     reasons.delete(command.batchId);
-    EMessage.success(`已保存 ${result.changedCount} 处更改`);
+    EMessage.success(`已保存 ${command.keys.length} 处更改`);
     await load();
-    emit('saved');
   } catch (e) {
     feedback.value = e instanceof Error ? e.message : '保存失败，草稿已保留';
     if (intent.getStatus() === 'idle') await refreshWorkspace();
+    return;
   } finally {
     recovery.value = intent.getStatus();
     if (recovery.value === 'idle') pending = null;
     saving.value = false;
   }
+  emit('saved');
 }
 function restart() {
   if (saving.value) return;

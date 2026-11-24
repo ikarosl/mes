@@ -133,11 +133,30 @@ export function useTrackingCardAction(
     if (isMixedHandling.value) return form.legacyScrappedQuantity;
     return undefined;
   });
+  const optionalScrapMarks = computed(
+    () => !isLegacyHandling.value && isAtLastStep.value === false,
+  );
+  const requiredScrapMarks = computed(() => !isLegacyHandling.value && isAtLastStep.value === true);
+  const canSelectScrapMarks = computed(
+    () => optionalScrapMarks.value || isAtLastStep.value === true,
+  );
   const showScrapItemMarks = computed(
-    () => (form.resolution === 'scrap' || isMixedHandling.value) && isAtLastStep.value === true,
+    () => (form.resolution === 'scrap' || isMixedHandling.value) && canSelectScrapMarks.value,
   );
   const mountScrapItemMarks = computed(
-    () => props.visible && isAtLastStep.value === true && hasChosenScrap.value,
+    () => props.visible && canSelectScrapMarks.value && hasChosenScrap.value,
+  );
+  const scrapMarksExpanded = ref(false);
+  const minimumScrapMarks = computed(() => {
+    const card = editingCard.value;
+    const quantity = scrapQuantity.value;
+    if (!card || quantity === undefined || !Number.isSafeInteger(quantity) || quantity <= 0)
+      return 0;
+    const unboundQuantity = Number(card.quantity) - card.itemMarking.activeCount;
+    return Math.max(0, quantity - unboundQuantity);
+  });
+  const missingOptionalScrapMarks = computed(
+    () => optionalScrapMarks.value && form.scrappedItemMarkIds.length < minimumScrapMarks.value,
   );
   const scrapError = computed(() => {
     const card = editingCard.value;
@@ -157,15 +176,15 @@ export function useTrackingCardAction(
     }
     if (quantity === undefined || !Number.isSafeInteger(quantity) || quantity <= 0) return '';
     const selected = showScrapItemMarks.value ? form.scrappedItemMarkIds.length : 0;
-    if (isAtLastStep.value && !isLegacyHandling.value) {
+    if (requiredScrapMarks.value) {
       if (quantity > card.itemMarking.activeCount)
         return `本盘只有 ${card.itemMarking.activeCount} 个有效绑定，须先在编码绑定页补齐本次报废编码。`;
       return selected === quantity ? '' : `请选择 ${formatQuantity(quantity)} 个实际报废编码。`;
     }
     if (selected > quantity) return '所选编码数不能超过本次报废数量。';
-    if (Number(card.quantity) - quantity < card.itemMarking.activeCount - selected) {
+    if (!optionalScrapMarks.value && selected < minimumScrapMarks.value) {
       if (showScrapItemMarks.value)
-        return `未选编码的报废数量超过本盘未绑定数量，请补选实际报废编码。`;
+        return '未选编码的报废数量超过本盘未绑定数量，请补选实际报废编码。';
       return `报废后盘量不能小于有效绑定编码数 ${card.itemMarking.activeCount}，请核对异常数量和绑定记录。`;
     }
     return '';
@@ -338,6 +357,7 @@ export function useTrackingCardAction(
       editingAbnormality.value = props.abnormality ? { ...props.abnormality } : null;
       editingAction.value = props.action;
       hasChosenScrap.value = false;
+      scrapMarksExpanded.value = false;
       basisError.value = '';
       Object.assign(form, {
         personnelId: props.defaultPersonnelId || '',
@@ -406,6 +426,10 @@ export function useTrackingCardAction(
   function readAbnormalityResolution(): TrackingAbnormalityDisposition | null {
     if (!form.resolution || scrapError.value) {
       EMessage.warning(scrapError.value || '请选择处置方式');
+      return null;
+    }
+    if (missingOptionalScrapMarks.value) {
+      EMessage.warning(`至少选择 ${formatQuantity(minimumScrapMarks.value)} 个实际报废编码。`);
       return null;
     }
     return form.resolution;
@@ -640,6 +664,11 @@ export function useTrackingCardAction(
     contextBlockedReason,
     showScrapItemMarks,
     mountScrapItemMarks,
+    optionalScrapMarks,
+    requiredScrapMarks,
+    scrapMarksExpanded,
+    minimumScrapMarks,
+    missingOptionalScrapMarks,
     isLegacyHandling,
     isMixedHandling,
     allowMixedHandling,

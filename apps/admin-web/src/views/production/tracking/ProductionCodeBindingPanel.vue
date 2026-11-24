@@ -40,7 +40,7 @@
         </div>
         <el-button
           :loading="contextLoading || personnelLoading"
-          :disabled="submitting"
+          :disabled="submitting || changeVisible"
           @click="refreshSetup"
           >刷新任务与人员</el-button
         >
@@ -140,20 +140,37 @@
             >
           </div>
         </div>
-        <el-button
-          type="primary"
-          :loading="submitting"
-          :disabled="
-            locked ||
-            cardLoading ||
-            !taskCanBind ||
-            changeVisible ||
-            codeAvailability.unavailable.value ||
-            !hasValidMarkCode
-          "
-          @click="bind"
-          >绑定单件刻码</el-button
-        >
+        <div class="binding-actions">
+          <el-button
+            type="primary"
+            :loading="submitting"
+            :disabled="
+              locked ||
+              cardLoading ||
+              !taskCanBind ||
+              changeVisible ||
+              codeAvailability.unavailable.value ||
+              !hasValidMarkCode
+            "
+            @click="bind"
+            >绑定单件刻码</el-button
+          >
+          <el-button
+            type="primary"
+            plain
+            :disabled="
+              locked ||
+              cardLoading ||
+              !taskCanBind ||
+              changeVisible ||
+              !hasValidMarkCode ||
+              !currentCard ||
+              Boolean(cardBlockedReason)
+            "
+            @click="openBatchPreview"
+            >批量预览</el-button
+          >
+        </div>
       </form>
       <div class="code-preview">
         <span>完整追溯码预览</span><strong>{{ fullCode }}</strong>
@@ -175,6 +192,18 @@
         原提交：<strong>{{ pendingCodeLabel }}</strong
         >。重试沿用原卡、刻码、登记人员和请求，确认成功前不推进序列。
       </p>
+      <InlineHint
+        v-if="batchPreviewTarget && !batchPreviewVisible"
+        tone="warning"
+      >
+        批量绑定结果待核对，已保留本次提交。
+        <el-button
+          link
+          type="primary"
+          @click="batchPreviewVisible = true"
+          >返回批量绑定</el-button
+        >
+      </InlineHint>
       <el-text
         v-if="resultLabel"
         type="success"
@@ -195,8 +224,15 @@
           <el-descriptions-item
             label="当前卡"
             :span="2"
-            >{{ currentCard.cardNo }}</el-descriptions-item
           >
+            <el-space wrap>
+              <span>{{ currentCard.cardNo }}</span>
+              <TrackingQuantityCorrectionLink
+                :card="currentCard"
+                :disabled="locked || changeVisible || cardLoading"
+              />
+            </el-space>
+          </el-descriptions-item>
           <el-descriptions-item
             label="卡状态"
             :span="2"
@@ -212,9 +248,11 @@
           <el-descriptions-item label="有效绑定量"
             ><strong>{{ currentCard.itemMarking.activeCount }}</strong></el-descriptions-item
           >
-          <el-descriptions-item label="待绑量"
-            ><strong>{{ remainingToBind }}</strong></el-descriptions-item
-          >
+          <el-descriptions-item label="待绑量">
+            <strong :class="{ 'pending-quantity': (remainingToBind ?? 0) > 0 }">
+              {{ remainingToBind }}
+            </strong>
+          </el-descriptions-item>
           <el-descriptions-item label="已报废编码">{{
             currentCard.itemMarking.scrappedCount
           }}</el-descriptions-item>
@@ -236,13 +274,22 @@
         ref="records"
         :batch-id="batchId || ''"
         :personnel-id="personnelId"
-        :locked="locked || scrapCorrectionVisible"
+        :target-card="taskCanBind && !cardLoading && !cardError ? currentCard : null"
+        :locked="locked || scrapCorrectionVisible || Boolean(batchPreviewTarget)"
         @lock="workspaceLocked = $event"
         @choose-personnel="choosePersonnel"
         @saved="workspaceSaved"
         @correct-scrap="openScrapCorrection"
       />
     </section>
+    <TrackingBatchItemMarkDialog
+      :visible="batchPreviewVisible"
+      :target="batchPreviewTarget"
+      :refresh-target="refreshBatchBindingTarget"
+      @saved="batchSaved"
+      @discard="closeBatchPreview"
+      @inspect-records="batchPreviewVisible = false"
+    />
     <TrackingAbnormalityCorrectionDialog
       v-model:visible="scrapCorrectionVisible"
       :target="scrapCorrectionTarget"
@@ -252,7 +299,7 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref, shallowRef } from 'vue';
 import type { SelectInstance } from 'element-plus';
 import type { ProductionTrackingItemMark } from '@company/contracts';
 import RemoteSearchSelect from '../../../components/RemoteSearchSelect.vue';
@@ -263,6 +310,9 @@ import { batchStatusMeta } from '../shared/production-status';
 import { trackingCardStatus } from './tracking-presentation';
 import TrackingItemMarkWorkspace from './TrackingItemMarkWorkspace.vue';
 import TrackingAbnormalityCorrectionDialog from './TrackingAbnormalityCorrectionDialog.vue';
+import TrackingBatchItemMarkDialog from './TrackingBatchItemMarkDialog.vue';
+import TrackingQuantityCorrectionLink from './TrackingQuantityCorrectionLink.vue';
+import type { BatchItemMarkBindingTarget } from './use-batch-item-mark-binding';
 import type { TrackingAbnormalityCorrectionTarget } from './use-tracking-abnormality-correction';
 import { useCodeBinding } from './use-code-binding';
 
@@ -276,7 +326,11 @@ function choosePersonnel() {
 const workspaceLocked = ref(false);
 const scrapCorrectionVisible = ref(false);
 const scrapCorrectionTarget = ref<TrackingAbnormalityCorrectionTarget | null>(null);
-const changeVisible = computed(() => workspaceLocked.value || scrapCorrectionVisible.value);
+const batchPreviewTarget = shallowRef<BatchItemMarkBindingTarget | null>(null);
+const batchPreviewVisible = ref(false);
+const changeVisible = computed(
+  () => workspaceLocked.value || scrapCorrectionVisible.value || !!batchPreviewTarget.value,
+);
 const {
   batchId,
   personnelId,
@@ -313,12 +367,37 @@ const {
   cardInputChanged,
   normalizeCardNo,
   bind,
+  prepareBatchBinding,
+  refreshBatchBindingTarget,
+  batchBindingSaved,
   restart,
   refreshSetup,
   cardChanged,
-} = useCodeBinding(async () => {
-  await records.value?.reload();
-});
+} = useCodeBinding(
+  async () => {
+    await records.value?.reload();
+  },
+  () => changeVisible.value,
+  () => !!batchPreviewTarget.value,
+);
+function openBatchPreview(): void {
+  const target = prepareBatchBinding();
+  if (!target) return;
+  batchPreviewTarget.value = target;
+  batchPreviewVisible.value = true;
+}
+function closeBatchPreview(): void {
+  batchPreviewVisible.value = false;
+  batchPreviewTarget.value = null;
+}
+async function batchSaved(
+  target: BatchItemMarkBindingTarget,
+  lastCode: string,
+  count: number,
+): Promise<void> {
+  closeBatchPreview();
+  await batchBindingSaved(target, lastCode, count);
+}
 function retryCodeCheck(): void {
   codeInput.value?.focus();
   void codeAvailability.check();
@@ -376,9 +455,14 @@ function openScrapCorrection(item: ProductionTrackingItemMark): void {
 .binding-fields > .mark-code-field {
   grid-row: 1 / span 3;
 }
-.binding-fields > .el-button {
+.binding-actions {
+  display: flex;
+  gap: 8px;
   grid-row: 2;
   align-self: start;
+}
+.binding-actions .el-button {
+  margin-left: 0;
 }
 .field {
   min-width: 0;
@@ -413,6 +497,9 @@ function openScrapCorrection(item: ProductionTrackingItemMark): void {
   align-items: center;
   flex-wrap: wrap;
   gap: 8px 16px;
+}
+.pending-quantity {
+  color: var(--el-color-warning-dark-2);
 }
 .code-preview {
   display: grid;

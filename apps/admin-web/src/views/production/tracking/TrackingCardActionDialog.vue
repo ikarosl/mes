@@ -2,7 +2,11 @@
   <el-dialog
     :model-value="visible"
     :title="dialogTitle"
-    :width="showScrapItemMarks ? DialogWidth.xl : DialogWidth.md"
+    :width="
+      showScrapItemMarks && (isLegacyHandling || scrapMarksExpanded)
+        ? DialogWidth.xl
+        : DialogWidth.md
+    "
     :before-close="beforeClose"
     @update:model-value="$emit('update:visible', $event)"
   >
@@ -163,7 +167,7 @@
           v-if="mountScrapItemMarks"
           v-show="showScrapItemMarks"
           label="具体报废编码"
-          :required="!isLegacyHandling"
+          :required="requiredScrapMarks || (optionalScrapMarks && minimumScrapMarks > 0)"
         >
           <div class="scrap-mark-picker">
             <InlineHint v-if="isLegacyHandling"
@@ -171,11 +175,17 @@
             >
             <TrackingItemMarkList
               v-model="form.scrappedItemMarkIds"
+              v-model:expanded="scrapMarksExpanded"
               :card-id="editingCard.id"
               :enabled="showScrapItemMarks && !basisLoading"
               :revision="editingCard.version"
               :locked="formLocked || basisChanged"
-              :selection-target="isLegacyHandling ? undefined : form.affectedQuantity"
+              :collapsible="!isLegacyHandling"
+              :default-expanded="showScrapItemMarks && requiredScrapMarks"
+              :minimum-selection="optionalScrapMarks ? minimumScrapMarks : 0"
+              :selection-target="requiredScrapMarks ? (form.affectedQuantity ?? null) : undefined"
+              :selection-footer-host="selectionFooterHost"
+              :selection-review-host="selectionReviewHost"
               selectable
               compact
             />
@@ -218,37 +228,50 @@
       </el-form>
     </template>
     <template #footer>
-      <el-button
-        :disabled="submitting"
-        @click="requestClose(false)"
-        >取消</el-button
-      >
-      <el-button
-        :type="editingAction === 'void' ? 'danger' : 'primary'"
-        :loading="submitting"
-        :disabled="
-          succeeded ||
-          recovery ||
-          basisChanged ||
-          basisLoading ||
-          Boolean(basisError) ||
-          Boolean(contextBlockedReason) ||
-          Boolean(handlingBlockedReason) ||
-          Boolean(scrapError) ||
-          (needsResolution && !form.resolution) ||
-          (editingAction === 'output' &&
-            !!editingCard &&
-            trackingItemMarkOutputBlocked(editingCard))
-        "
-        @click="submit"
-        >{{ TRACKING_ACTION_LABELS[editingAction] }}</el-button
-      >
+      <div class="dialog-footer">
+        <div
+          v-if="visible && showScrapItemMarks"
+          ref="selectionFooterHost"
+        />
+        <div class="dialog-actions">
+          <el-button
+            :disabled="submitting"
+            @click="requestClose(false)"
+            >取消</el-button
+          >
+          <el-button
+            :type="editingAction === 'void' ? 'danger' : 'primary'"
+            :loading="submitting"
+            :disabled="
+              succeeded ||
+              recovery ||
+              basisChanged ||
+              basisLoading ||
+              Boolean(basisError) ||
+              Boolean(contextBlockedReason) ||
+              Boolean(handlingBlockedReason) ||
+              Boolean(scrapError) ||
+              missingOptionalScrapMarks ||
+              (needsResolution && !form.resolution) ||
+              (editingAction === 'output' &&
+                !!editingCard &&
+                trackingItemMarkOutputBlocked(editingCard))
+            "
+            @click="submit"
+            >{{ TRACKING_ACTION_LABELS[editingAction] }}</el-button
+          >
+        </div>
+      </div>
     </template>
   </el-dialog>
+  <div
+    ref="selectionReviewHost"
+    class="selection-review-host"
+  />
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
+import { computed, ref } from 'vue';
 import type { ProductionTrackingCardDetail } from '@company/contracts';
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
 import InlineHint from '../../../components/InlineHint.vue';
@@ -265,6 +288,8 @@ const emit = defineEmits<{
   (event: 'changed', card: ProductionTrackingCardDetail): void;
   (event: 'basis-refreshed', card: ProductionTrackingCardDetail): void;
 }>();
+const selectionFooterHost = ref<HTMLElement | null>(null);
+const selectionReviewHost = ref<HTMLElement | null>(null);
 const {
   editingCard,
   editingAbnormality,
@@ -274,6 +299,11 @@ const {
   contextBlockedReason,
   showScrapItemMarks,
   mountScrapItemMarks,
+  optionalScrapMarks,
+  requiredScrapMarks,
+  scrapMarksExpanded,
+  minimumScrapMarks,
+  missingOptionalScrapMarks,
   isLegacyHandling,
   isMixedHandling,
   allowMixedHandling,
@@ -369,5 +399,26 @@ const labelSearch = computed(() => ({
   gap: 12px;
   width: 100%;
   min-width: 0;
+}
+.dialog-footer,
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.dialog-footer {
+  column-gap: 16px;
+  justify-content: space-between;
+}
+.dialog-actions {
+  justify-content: flex-end;
+  margin-inline-start: auto;
+}
+.dialog-actions .el-button + .el-button {
+  margin-left: 0;
+}
+.selection-review-host {
+  display: contents;
 }
 </style>
