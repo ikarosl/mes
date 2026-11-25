@@ -50,6 +50,7 @@ export function useCodeBinding(
   const currentCard = ref<ProductionTrackingCardDetail | null>(null),
     cardLoading = ref(false),
     cardError = ref('');
+  const hasManualCardDraft = ref(false);
   const submitting = ref(false),
     intentStatus = ref<IdempotentIntentStatus>('idle'),
     resultLabel = ref('');
@@ -167,9 +168,11 @@ export function useCodeBinding(
     currentCard.value = null;
     cardError.value = '';
     cardNo.value = '';
+    hasManualCardDraft.value = false;
   }
-  function cardInputChanged(): void {
+  function cardInputChanged(value: string): void {
     if (locked.value || otherActionOpen()) return;
+    hasManualCardDraft.value = Boolean(value.trim());
     cardReads.invalidate();
     currentCard.value = null;
     cardError.value = '';
@@ -190,8 +193,12 @@ export function useCodeBinding(
     batchId.value = id;
     await loadContext();
   }
-  async function lookupCard(): Promise<ProductionTrackingCardDetail | null> {
+  async function lookupCard(scannedCardNo?: string): Promise<ProductionTrackingCardDetail | null> {
     if (locked.value || otherActionOpen() || !batchId.value || !cardReads.isActive()) return null;
+    if (scannedCardNo !== undefined) {
+      cardNo.value = scannedCardNo;
+      resultLabel.value = '';
+    }
     normalizeCardNo();
     const no = cardNo.value,
       id = batchId.value;
@@ -199,6 +206,7 @@ export function useCodeBinding(
       EMessage.warning('请扫描或输入追踪卡号');
       return null;
     }
+    hasManualCardDraft.value = false;
     const read = cardReads.begin(() => batchId.value === id && cardNo.value === no);
     cardLoading.value = true;
     cardError.value = '';
@@ -506,6 +514,7 @@ export function useCodeBinding(
     currentCard,
     cardLoading,
     cardError,
+    hasManualCardDraft,
     submitting,
     intentStatus,
     resultLabel,

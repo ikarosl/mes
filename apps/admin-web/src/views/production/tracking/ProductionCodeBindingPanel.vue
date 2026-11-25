@@ -80,7 +80,7 @@
       </InlineHint>
       <form
         class="binding-fields"
-        @submit.prevent="lookupCard"
+        @submit.prevent="lookupCard()"
       >
         <div class="field card-input-field">
           <label for="binding-card">追踪卡号</label>
@@ -94,6 +94,8 @@
               maxlength="160"
               clearable
               @input="cardInputChanged"
+              @compositionstart="isCardInputComposing = true"
+              @compositionend="isCardInputComposing = false"
               @blur="normalizeCardNo"
             />
             <el-button
@@ -299,12 +301,15 @@
   </div>
 </template>
 <script setup lang="ts">
-import { computed, ref, shallowRef } from 'vue';
+import { computed, onActivated, onDeactivated, ref, shallowRef } from 'vue';
+import { useRoute } from 'vue-router';
 import type { SelectInstance } from 'element-plus';
 import type { ProductionTrackingItemMark } from '@company/contracts';
 import RemoteSearchSelect from '../../../components/RemoteSearchSelect.vue';
 import InlineHint from '../../../components/InlineHint.vue';
 import SubmissionRecoveryNotice from '../../../components/SubmissionRecoveryNotice.vue';
+import { useActivePageSerialScan } from '../../../composables/use-active-page-serial-scan';
+import { EMessage } from '../../../utils/message';
 import { formatQuantity } from '../../../utils/quantity';
 import { batchStatusMeta } from '../shared/production-status';
 import { trackingCardStatus } from './tracking-presentation';
@@ -317,6 +322,16 @@ import type { TrackingAbnormalityCorrectionTarget } from './use-tracking-abnorma
 import { useCodeBinding } from './use-code-binding';
 
 defineOptions({ name: 'ProductionCodeBindingPanel' });
+const route = useRoute();
+const bindingActive = ref(true);
+const isCardInputComposing = ref(false);
+onActivated(() => {
+  bindingActive.value = true;
+});
+onDeactivated(() => {
+  bindingActive.value = false;
+  isCardInputComposing.value = false;
+});
 const records = ref<InstanceType<typeof TrackingItemMarkWorkspace>>();
 const personnelSelect = ref<SelectInstance>();
 function choosePersonnel() {
@@ -345,6 +360,7 @@ const {
   currentCard,
   cardLoading,
   cardError,
+  hasManualCardDraft,
   submitting,
   intentStatus,
   resultLabel,
@@ -379,6 +395,27 @@ const {
   },
   () => changeVisible.value,
   () => !!batchPreviewTarget.value,
+);
+const serialScanBlockedReason = computed(() => {
+  if (recovery.value) return '请先核对上一笔绑定结果，再重新扫码';
+  if (locked.value || changeVisible.value || cardLoading.value)
+    return '请先完成当前操作，再重新扫码';
+  if (!batchId.value) return '请先选择当前任务，再重新扫码';
+  if (isCardInputComposing.value || hasManualCardDraft.value)
+    return '追踪卡号框有手输内容，请先查询或清空，再重新扫码';
+  return '';
+});
+useActivePageSerialScan(
+  () => bindingActive.value && route.name === 'production-workbench-code-binding',
+  [batchId, () => route.query.batchId, serialScanBlockedReason],
+  async (code) => {
+    const blockedReason = serialScanBlockedReason.value;
+    if (blockedReason) {
+      EMessage.warning(blockedReason);
+      return;
+    }
+    await lookupCard(code);
+  },
 );
 function openBatchPreview(): void {
   const target = prepareBatchBinding();

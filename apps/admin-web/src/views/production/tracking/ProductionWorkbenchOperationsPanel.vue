@@ -122,7 +122,7 @@
         <div class="scan-body">
           <form
             class="scan-form"
-            @submit.prevent="scan"
+            @submit.prevent="scan()"
           >
             <div class="personnel-field">
               <div class="personnel-label">
@@ -173,6 +173,8 @@
                   maxlength="160"
                   clearable
                   @input="scanInputChanged"
+                  @compositionstart="scanComposing = true"
+                  @compositionend="scanComposing = false"
                   @blur="normalizeScanText"
                 >
                   <template #prefix
@@ -253,7 +255,7 @@
             records-label="追踪卡到站与交接记录"
             :retry-disabled="createBusy || bulkVisible || !contextReads.isActive()"
             allow-restart
-            @retry="scan"
+            @retry="scan()"
             @restart="restartScan"
           />
           <el-alert
@@ -386,6 +388,7 @@ import RemoteSearchSelect from '../../../components/RemoteSearchSelect.vue';
 import { useLatestReadRequest } from '../../../composables/requests/useLatestReadRequest';
 import { usePageInitialLoad } from '../../../composables/requests/usePageInitialLoad';
 import { useRouteAccess } from '../../../composables/useRouteAccess';
+import { useActivePageSerialScan } from '../../../composables/use-active-page-serial-scan';
 import { useLabelPrinter } from '../../../composables/printing/use-label-printer';
 import {
   useIdempotentIntent,
@@ -579,8 +582,11 @@ function clearCurrentCard(): void {
   currentCard.value = null;
   scanResultLabel.value = '';
 }
-function scanInputChanged(): void {
+const hasManualScanDraft = ref(false);
+const scanComposing = ref(false);
+function scanInputChanged(value: string): void {
   if (scanning.value || scanRecovery.value) return;
+  hasManualScanDraft.value = Boolean(value.trim());
   clearCurrentCard();
   scanError.value = '';
 }
@@ -646,7 +652,7 @@ async function openReportDetail(report: ProductionTrackingVisit): Promise<void> 
 watch(detailVisible, (visible) => {
   if (!visible) detailReads.invalidate();
 });
-async function scan(): Promise<void> {
+async function scan(focusAfterSuccess = true): Promise<void> {
   if (
     scanning.value ||
     createBusy.value ||
@@ -686,6 +692,7 @@ async function scan(): Promise<void> {
     ) {
       currentCard.value = result.card;
       scanText.value = '';
+      hasManualScanDraft.value = false;
       if (result.duplicate) {
         scanResultLabel.value = workbenchDuplicateScanMessage(
           result.card,
@@ -699,7 +706,7 @@ async function scan(): Promise<void> {
         EMessage.success(scanResultLabel.value);
       }
       await Promise.all([loadContext(), recentReports.load()]);
-      shouldFocus = true;
+      shouldFocus = focusAfterSuccess;
     }
   } catch (error) {
     scanError.value =
@@ -727,6 +734,7 @@ async function cardCreated(card: ProductionTrackingCardDetail): Promise<void> {
   if (contextReads.isActive() && batchId.value === card.productionBatchId) {
     currentCard.value = card;
     scanText.value = '';
+    hasManualScanDraft.value = false;
     scanResultLabel.value = '追踪卡已生成，首工序已到站。';
     scanError.value = '';
     await Promise.all([loadContext(), recentReports.load()]);
@@ -748,6 +756,33 @@ const labelVisible = ref(false),
 const correctionVisible = ref(false);
 const correctionTarget = ref<TrackingAbnormalityCorrectionTarget | null>(null);
 const actionInProgress = computed(() => actionVisible.value || correctionVisible.value);
+const serialScanBlockedReason = computed(() => {
+  if (scanRecovery.value) return '请先核对上一笔到站结果，再重新扫码';
+  if (
+    setupLocked.value ||
+    createBusy.value ||
+    detailVisible.value ||
+    printerSettingsVisible.value ||
+    labelVisible.value
+  )
+    return '工作台正在办理其他操作，请完成后重新扫码';
+  if (!canWork.value) return '请先确认任务、工作工序和登记人员，再重新扫码';
+  if (scanComposing.value || (hasManualScanDraft.value && scanText.value.trim()))
+    return '追踪码框有手输内容，请先提交或清空，再重新扫码';
+  return '';
+});
+useActivePageSerialScan(
+  () => workbenchActive.value && route.name === 'production-workbench-operations',
+  [batchId, stepId, personnelId, serialScanBlockedReason],
+  async (code) => {
+    if (serialScanBlockedReason.value) {
+      EMessage.warning(serialScanBlockedReason.value);
+      return;
+    }
+    scanText.value = code;
+    await scan(false);
+  },
+);
 const workbenchCardContext = computed(() => ({
   batchId: batchId.value,
   stepId: stepId.value,

@@ -31,8 +31,9 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue';
+import { onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
+import { disconnectSerialScanner } from '../composables/use-serial-scanner';
 import { useAuthStore } from '../stores/auth';
 import { EMessage } from '../utils/message';
 
@@ -43,6 +44,8 @@ const loading = ref(false);
 const auth = useAuthStore();
 const router = useRouter();
 const route = useRoute();
+// 到达登录页表明原会话没有恢复，新登录须由员工重新选择扫码枪。
+onMounted(disconnectSerialScanner);
 
 const submit = async () => {
   if (!form.username || !form.password) return EMessage.warning('请输入用户名和密码');
