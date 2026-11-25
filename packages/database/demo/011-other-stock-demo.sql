@@ -56,9 +56,11 @@ FROM (
 ) sample
 WHERE NOT EXISTS (SELECT 1 FROM materials m WHERE m.material_code = sample.code);
 
-INSERT INTO material_variants (material_id, major_version, minor_version, variant_code, status, created_by, updated_by)
+INSERT INTO material_variants (
+  material_id, major_version, minor_version, variant_code, specification_file_ids, status, created_by, updated_by
+)
 SELECT m.id, sample.major_version, sample.minor_version,
-  CONCAT(m.material_code, '-', sample.major_version, '-', sample.minor_version), sample.status,
+  CONCAT(m.material_code, '-', sample.major_version, '-', sample.minor_version), JSON_ARRAY(), sample.status,
   @other_stock_demo_actor, @other_stock_demo_actor
 FROM (
   SELECT 'demo-stock-multi' code, 'v1' major_version, 'A' minor_version, 1 status UNION ALL
@@ -73,8 +75,12 @@ WHERE NOT EXISTS (
     AND v.major_version = sample.major_version AND v.minor_version = sample.minor_version
 );
 
-INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
-SELECT sample.code, '库存演示控制组件', @other_stock_demo_product_category, '套', 'self_made', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), sample.status,
+INSERT INTO products (
+  item_code, product_name, category_id, unit, acquire_method, spec_values,
+  specification_file_ids, status, created_by, updated_by
+)
+SELECT sample.code, '库存演示控制组件', @other_stock_demo_product_category, '套', 'self_made',
+  JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), JSON_ARRAY(), sample.status,
   @other_stock_demo_actor, @other_stock_demo_actor
 FROM (SELECT 'demo-stock-product' code, 1 status UNION ALL SELECT 'demo-stock-product-second', 1 UNION ALL SELECT 'demo-stock-product-disabled', 0) sample
 WHERE NOT EXISTS (SELECT 1 FROM products p WHERE p.item_code = sample.code);

@@ -15,8 +15,12 @@ SET @material_category_id = (SELECT id FROM item_categories WHERE category_code 
 SET @product_category_id = (SELECT id FROM item_categories WHERE category_code = 'product-microstrip-001');
 
 -- Names are search/display values and intentionally repeat across different codes.
-INSERT INTO products (item_code, product_name, category_id, unit, acquire_method, spec_values, status, created_by, updated_by)
-SELECT sample.item_code, '微带20-30', @product_category_id, 'pcs', 'self_made', JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), 1, @demo_actor_id, @demo_actor_id
+INSERT INTO products (
+  item_code, product_name, category_id, unit, acquire_method, spec_values,
+  specification_file_ids, status, created_by, updated_by
+)
+SELECT sample.item_code, '微带20-30', @product_category_id, 'pcs', 'self_made',
+  JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), JSON_ARRAY(), 1, @demo_actor_id, @demo_actor_id
 FROM (
   SELECT 'p-micro-20-30' item_code UNION ALL
   SELECT 'p-micro-20-30-02' UNION ALL SELECT 'p-micro-20-30-03'
@@ -28,9 +32,11 @@ SELECT sample.material_code, '微带', @material_category_id, 'pcs', 'purchased'
 FROM (SELECT 'm1.077.012' material_code UNION ALL SELECT 'm1.077.013') sample
 WHERE NOT EXISTS (SELECT 1 FROM materials m WHERE m.material_code = sample.material_code);
 
-INSERT INTO material_variants (material_id, major_version, minor_version, variant_code, status, created_by, updated_by)
+INSERT INTO material_variants (
+  material_id, major_version, minor_version, variant_code, specification_file_ids, status, created_by, updated_by
+)
 SELECT m.id, sample.major_version, sample.minor_version,
-  CONCAT(m.material_code, '-', sample.major_version, '-', sample.minor_version), 1, @demo_actor_id, @demo_actor_id
+  CONCAT(m.material_code, '-', sample.major_version, '-', sample.minor_version), JSON_ARRAY(), 1, @demo_actor_id, @demo_actor_id
 FROM (
   SELECT 'm1.077.012' material_code, 'v1' major_version, 'A' minor_version UNION ALL
   SELECT 'm1.077.012', 'v1', 'B' UNION ALL

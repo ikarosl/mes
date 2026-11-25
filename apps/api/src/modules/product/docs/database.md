@@ -28,7 +28,7 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 | --------------- | ----------------------------------------- | ---------------------------- |
 | `id`            | `BIGINT UNSIGNED NOT NULL AUTO_INCREMENT` | 主键                         |
 | `parent_id`     | `BIGINT UNSIGNED NULL`                    | 父分类                       |
-| `category_code` | `VARCHAR(64) NOT NULL`                    | 永久唯一分类编码             |
+| `category_code` | `VARCHAR(64) NOT NULL`                    | 分类编码                     |
 | `category_name` | `VARCHAR(100) NOT NULL`                   | 分类名称                     |
 | `item_kind`     | `VARCHAR(30) NOT NULL`                    | `material/finished_product`  |
 | `status`        | `TINYINT NOT NULL DEFAULT 1`              | 启用 `1`／停用 `0`           |
@@ -41,7 +41,7 @@ BOM 用量遵守公共整数数量约定；用途资格与事务锁由[公开资
 
 `parent_id` 保留为后续半成品、多级物品扩展的分类关系基础；当前仅提供父分类维护、同类型校验及防环，不据此启用半成品或多级物品业务。目录筛选与用途资格针对直接关联分类，不沿父级递归或继承。成品的独立编码身份及逐条平铺规则见[成品列表与筛选](product-rules.md#成品列表与筛选)，分类关系不构成成品之间的父子身份。
 
-分类编码永久唯一，类别仅为物料或成品。
+分类编码在全表当前记录中唯一。分类改码后，其他分类可以使用旧编码。停用或软删除的分类仍占用该记录上的编码。
 
 分类身份与父子引用由[Product 建表基线](../../../../../../packages/database/migrations/202611020105-baseline-product-tables.up.sql)和[外键基线](../../../../../../packages/database/migrations/202611020205-baseline-product-foreign-keys.up.sql)定义。
 

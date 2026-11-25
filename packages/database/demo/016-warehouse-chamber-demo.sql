@@ -8,7 +8,9 @@ INSERT INTO materials (material_code, material_name, category_id, unit, acquire_
 SELECT 'demo-warehouse-chamber', '腔体（仓库简化演示）', @warehouse_demo_category, '个', 'purchased',
   JSON_OBJECT('columns', JSON_ARRAY(), 'rows', JSON_ARRAY()), 1, @warehouse_demo_actor, @warehouse_demo_actor
 WHERE NOT EXISTS (SELECT 1 FROM materials WHERE material_code = 'demo-warehouse-chamber');
-INSERT INTO material_variants (material_id, major_version, minor_version, variant_code, status, created_by, updated_by)
-SELECT m.id, 'v1', 'A', 'demo-warehouse-chamber-v1-A', 1, @warehouse_demo_actor, @warehouse_demo_actor
+INSERT INTO material_variants (
+  material_id, major_version, minor_version, variant_code, specification_file_ids, status, created_by, updated_by
+)
+SELECT m.id, 'v1', 'A', 'demo-warehouse-chamber-v1-A', JSON_ARRAY(), 1, @warehouse_demo_actor, @warehouse_demo_actor
 FROM materials m WHERE m.material_code = 'demo-warehouse-chamber'
   AND NOT EXISTS (SELECT 1 FROM material_variants v WHERE v.material_id = m.id AND v.major_version = 'v1' AND v.minor_version = 'A');

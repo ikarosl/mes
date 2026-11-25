@@ -28,7 +28,7 @@
 - 库存流水等不可变事实使用：`created_by`、`created_at`；错误通过反向冲销流水修正，不更新、不删除。
 - 纯关联表使用复合主键并至少保留 `created_at`；当前 RBAC 关联表的操作者通过 `operation_logs` 追溯。
 - 所有冗余 ID 必须由组合外键或事务校验保证一致，不能成为第二事实来源。
-- MES 主数据编码和配置自然键永久不复用，唯一约束不包含布尔 `is_deleted`；软删除后需要再次使用时恢复原记录，不创建相同编码或自然键的新记录。
+- MES 主数据编码和配置自然键永久不复用，物料和成品分类改码的例外见 [Product 分类表](../apps/api/src/modules/product/docs/database.md#1-item_categories)。唯一约束不包含布尔 `is_deleted`。软删除后需要再次使用相同编码或自然键时，恢复原记录。
 
 ## 基础物料名称与历史身份
 
