@@ -1,5 +1,9 @@
 ﻿import { Module } from '@nestjs/common';
 import { ApprovalModule } from '../approval/public.js';
+import { ProductionDashboardService } from './application/production-dashboard.service.js';
+import { ProductionDashboardRepository } from './application/ports/production-dashboard.repository.js';
+import { MysqlProductionDashboardRepository } from './infrastructure/queries/mysql-production-dashboard.repository.js';
+import { ProductionDashboardController } from './presentation/http/production-dashboard.controller.js';
 import { InventoryModule } from '../inventory/public.js';
 import { IdentityModule } from '../identity/public.js';
 import { ProductModule } from '../product/public.js';
@@ -68,6 +72,7 @@ import { ProductionTrackingController } from './presentation/http/production-tra
     ApprovalModule,
   ],
   controllers: [
+    ProductionDashboardController,
     ProductionController,
     ProductionMaterialController,
     ProductionMaterialDemandController,
@@ -79,6 +84,8 @@ import { ProductionTrackingController } from './presentation/http/production-tra
     ProductionOutputController,
   ],
   providers: [
+    ProductionDashboardService,
+    { provide: ProductionDashboardRepository, useClass: MysqlProductionDashboardRepository },
     ProductionService,
     ProductionWorkOrderOwnerService,
     ProductionTaskOwnerService,

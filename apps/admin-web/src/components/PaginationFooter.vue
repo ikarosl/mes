@@ -13,16 +13,10 @@
         @update:model-value="$emit('update:pageSize', $event)"
       >
         <el-option
-          label="10条/页"
-          :value="10"
-        />
-        <el-option
-          label="20条/页"
-          :value="20"
-        />
-        <el-option
-          label="50条/页"
-          :value="50"
+          v-for="size in pageSizes"
+          :key="size"
+          :label="`${size}条/页`"
+          :value="size"
         />
       </el-select>
       <el-pagination
@@ -47,6 +41,7 @@ withDefaults(
     total: number;
     currentPage: number;
     pageSize: number;
+    pageSizes?: number[];
     layout?: string;
     totalSuffix?: string;
     compact?: boolean;
@@ -59,6 +54,7 @@ withDefaults(
     compact: false,
     disabled: false,
     showPageSize: true,
+    pageSizes: () => [10, 20, 50],
   },
 );
 

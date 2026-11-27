@@ -3,3 +3,4 @@ export { default as MaterialOutboundOrderCreateDialog } from './materials/Materi
 export { useMaterialOutboundOrders } from './materials/use-material-outbound-orders';
 export { materialDemandGroupLabel } from './materials/material-demand-group-presentation';
 export { default as TaskOutputDialog } from './tasks/TaskOutputDialog.vue';
+export { default as ProductionDashboard } from './dashboard/ProductionDashboard.vue';

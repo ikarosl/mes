@@ -4,6 +4,8 @@ Vue 3 管理端。专题只维护代码或页面不容易解释的约束及原�
 
 ## 相关文档
 
+- [生产首页](docs/production-dashboard.md)：看板筛选联动、个人布局与明细归属。
+
 - [管理端架构](docs/architecture.md)：公共状态所有权、候选、刷新、并发和写意图。
 - [视觉设计](docs/visual-design.md)：[界面调整原则](docs/visual-design.md#1-界面调整原则)、显示规范与场景密度；[路由、弹窗和标签页](docs/route-dialogs-and-tabs.md)：接入方式。
 - [HTTP 错误处理](docs/http-error-handling.md)：认证、重试、消息去重和已知限制。

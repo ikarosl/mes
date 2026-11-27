@@ -2,6 +2,10 @@
 
 本页收录范围遵守 [AGENTS.md](../AGENTS.md#文档读取与维护)，交付与正式测试顺序遵守[数据库与交付约定](../AGENTS.md#数据库与交付约定)，通用验证要求见[测试策略](testing-strategy.md)。验收使用当前工作区启动的服务，实验分支入口按根 [README](../README.md#仓库简化实验分支) 确认，不沿用历史临时端口。当前规则从模块所有者读取，ADR 用于追查理由与取代关系。
 
+## 生产首页看板：待验收
+
+范围已批准：全部工单／任务排期、选定任务工序流转、产出对比及异常排行，支持日期范围和个人布局。统计与授权见[生产看板](../apps/api/src/modules/production/docs/dashboard.md)，交互归属见[管理端首页](../apps/admin-web/docs/production-dashboard.md)。待用户整体黑盒／UI 验收；正式测试授权后覆盖跨页排期、缺失日期、撤销与作废事实、产品／单位分组、时区、权限及跨筛选迟到响应。
+
 ## 统一附件与人工清理：待验收
 
 范围已批准：独立 Attachment 模块、统一引用表、系统管理附件页，接入现有 SOP、规格书与生产历史引用。人工回收及物理清理保留元数据和审计，当前实现与公开边界见 [Attachment](../apps/api/src/modules/attachment/README.md)。
